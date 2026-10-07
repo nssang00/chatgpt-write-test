@@ -60,6 +60,13 @@ public:
         const CefString& method,
         const CefV8ValueList& arguments);
 
+    std::string subscribeEvent(
+        CefRefPtr<CefV8Context> context,
+        const CefString& eventName,
+        CefRefPtr<CefV8Value> callback);
+
+    bool unsubscribeEvent(const std::string& subscriptionId);
+
 private:
     struct PendingPromise
     {
@@ -67,11 +74,20 @@ private:
         CefRefPtr<CefV8Value> promise;
     };
 
+    struct EventSubscription
+    {
+        CefRefPtr<CefV8Context> context;
+        CefRefPtr<CefV8Value> callback;
+        std::string eventName;
+    };
+
     class InvokeHandler;
 
     std::function<void()> browserReadyCallback_;
     std::uint64_t nextRequestId_;
+    std::uint64_t nextSubscriptionId_;
     std::map<std::string, PendingPromise> pending_;
+    std::map<std::string, EventSubscription> subscriptions_;
 
     IMPLEMENT_REFCOUNTING(CefRendererApp);
 };

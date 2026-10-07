@@ -4,6 +4,7 @@
 #include "include/cef_process_message.h"
 
 #include <sstream>
+#include <vector>
 
 namespace nativeweb {
 namespace detail {
@@ -23,16 +24,6 @@ public:
         CefRefPtr<CefV8Value>& retval,
         CefString& exception) override
     {
-        if (name != "invoke")
-            return false;
-
-        if (arguments.empty() || !arguments[0]->IsString())
-        {
-            exception =
-                "native.invoke(method, ...args) requires a method string";
-            return true;
-        }
-
         CefRefPtr<CefV8Context> context =
             CefV8Context::GetCurrentContext();
 
@@ -42,29 +33,78 @@ public:
             return true;
         }
 
-        CefRefPtr<CefFrame> frame = context->GetFrame();
-        CefRefPtr<CefV8Value> promise =
-            CefV8Value::CreatePromise();
-
-        if (!promise)
+        if (name == "invoke")
         {
-            exception = "Failed to create NativeWeb Promise";
+            if (arguments.empty() || !arguments[0]->IsString())
+            {
+                exception =
+                    "native.invoke(method, ...args) requires a method string";
+                return true;
+            }
+
+            CefRefPtr<CefFrame> frame = context->GetFrame();
+            CefRefPtr<CefV8Value> promise =
+                CefV8Value::CreatePromise();
+
+            if (!promise)
+            {
+                exception = "Failed to create NativeWeb Promise";
+                return true;
+            }
+
+            CefV8ValueList callArguments;
+            for (std::size_t i = 1; i < arguments.size(); ++i)
+                callArguments.push_back(arguments[i]);
+
+            app_->beginInvoke(
+                frame,
+                context,
+                promise,
+                arguments[0]->GetStringValue(),
+                callArguments);
+
+            retval = promise;
             return true;
         }
 
-        CefV8ValueList callArguments;
-        for (std::size_t i = 1; i < arguments.size(); ++i)
-            callArguments.push_back(arguments[i]);
+        if (name == "on")
+        {
+            if (arguments.size() != 2 ||
+                !arguments[0]->IsString() ||
+                !arguments[1]->IsFunction())
+            {
+                exception =
+                    "native.on(eventName, callback) requires a string and function";
+                return true;
+            }
 
-        app_->beginInvoke(
-            frame,
-            context,
-            promise,
-            arguments[0]->GetStringValue(),
-            callArguments);
+            const std::string id =
+                app_->subscribeEvent(
+                    context,
+                    arguments[0]->GetStringValue(),
+                    arguments[1]);
 
-        retval = promise;
-        return true;
+            retval = CefV8Value::CreateString(id);
+            return true;
+        }
+
+        if (name == "off")
+        {
+            if (arguments.size() != 1 || !arguments[0]->IsString())
+            {
+                exception =
+                    "native.off(subscriptionId) requires a subscription id string";
+                return true;
+            }
+
+            retval = CefV8Value::CreateBool(
+                app_->unsubscribeEvent(
+                    arguments[0]->GetStringValue().ToString()));
+
+            return true;
+        }
+
+        return false;
     }
 
 private:
@@ -74,7 +114,8 @@ private:
 };
 
 CefRendererApp::CefRendererApp()
-    : nextRequestId_(1)
+    : nextRequestId_(1),
+      nextSubscriptionId_(1)
 {
 }
 
@@ -99,14 +140,37 @@ void CefRendererApp::OnContextCreated(
     CefRefPtr<CefV8Value> native =
         CefV8Value::CreateObject(nullptr, nullptr);
 
+    CefRefPtr<InvokeHandler> handler =
+        new InvokeHandler(this);
+
     CefRefPtr<CefV8Value> invoke =
         CefV8Value::CreateFunction(
             "invoke",
-            new InvokeHandler(this));
+            handler);
+
+    CefRefPtr<CefV8Value> on =
+        CefV8Value::CreateFunction(
+            "on",
+            handler);
+
+    CefRefPtr<CefV8Value> off =
+        CefV8Value::CreateFunction(
+            "off",
+            handler);
 
     native->SetValue(
         "invoke",
         invoke,
+        V8_PROPERTY_ATTRIBUTE_READONLY);
+
+    native->SetValue(
+        "on",
+        on,
+        V8_PROPERTY_ATTRIBUTE_READONLY);
+
+    native->SetValue(
+        "off",
+        off,
         V8_PROPERTY_ATTRIBUTE_READONLY);
 
     global->SetValue(
@@ -126,6 +190,16 @@ void CefRendererApp::OnContextReleased(
     {
         if (it->second.context.get() == context.get())
             pending_.erase(it++);
+        else
+            ++it;
+    }
+
+    for (std::map<std::string, EventSubscription>::iterator it =
+             subscriptions_.begin();
+         it != subscriptions_.end();)
+    {
+        if (it->second.context.get() == context.get())
+            subscriptions_.erase(it++);
         else
             ++it;
     }
@@ -169,6 +243,30 @@ std::string CefRendererApp::beginInvoke(
     return id;
 }
 
+std::string CefRendererApp::subscribeEvent(
+    CefRefPtr<CefV8Context> context,
+    const CefString& eventName,
+    CefRefPtr<CefV8Value> callback)
+{
+    std::ostringstream stream;
+    stream << nextSubscriptionId_++;
+    const std::string id = stream.str();
+
+    EventSubscription subscription;
+    subscription.context = context;
+    subscription.callback = callback;
+    subscription.eventName = eventName.ToString();
+
+    subscriptions_[id] = subscription;
+    return id;
+}
+
+bool CefRendererApp::unsubscribeEvent(
+    const std::string& subscriptionId)
+{
+    return subscriptions_.erase(subscriptionId) != 0;
+}
+
 bool CefRendererApp::OnProcessMessageReceived(
     CefRefPtr<CefBrowser> browser,
     CefRefPtr<CefFrame> frame,
@@ -177,11 +275,54 @@ bool CefRendererApp::OnProcessMessageReceived(
 {
     const CefString name = message->GetName();
 
-    if (name != "nativeweb.response")
-        return false;
-
     CefRefPtr<CefListValue> args =
         message->GetArgumentList();
+
+    if (name == "nativeweb.event")
+    {
+        const std::string eventName =
+            args->GetString(0).ToString();
+
+        CefRefPtr<CefV8Value> value =
+            cefValueToV8(args->GetValue(1));
+
+        std::vector<EventSubscription> callbacks;
+
+        for (std::map<std::string, EventSubscription>::const_iterator it =
+                 subscriptions_.begin();
+             it != subscriptions_.end();
+             ++it)
+        {
+            if (it->second.eventName == eventName)
+                callbacks.push_back(it->second);
+        }
+
+        for (std::size_t i = 0; i < callbacks.size(); ++i)
+        {
+            EventSubscription& subscription = callbacks[i];
+
+            if (!subscription.context ||
+                !subscription.callback ||
+                !subscription.context->Enter())
+            {
+                continue;
+            }
+
+            CefV8ValueList callbackArgs;
+            callbackArgs.push_back(value);
+
+            subscription.callback->ExecuteFunction(
+                nullptr,
+                callbackArgs);
+
+            subscription.context->Exit();
+        }
+
+        return true;
+    }
+
+    if (name != "nativeweb.response")
+        return false;
 
     const std::string id =
         args->GetString(0).ToString();

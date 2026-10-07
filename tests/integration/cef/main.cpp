@@ -42,6 +42,21 @@ public:
                 }));
 
         runtime_.bind(
+            "test.emit",
+            nativeweb::detail::makeDynamicFunction(
+                [this](const VariantDict& payload) {
+                    if (backend_)
+                    {
+                        backend_->postBridgeMessage(
+                            runtime_.eventMessage(
+                                "test.event",
+                                Any(payload)));
+                    }
+
+                    return true;
+                }));
+
+        runtime_.bind(
             "test.binary",
             nativeweb::detail::makeDynamicFunction(
                 []() {

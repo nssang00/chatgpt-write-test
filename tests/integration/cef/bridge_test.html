@@ -91,6 +91,31 @@
       return;
     }
 
+    let eventSubscription = "";
+    const eventPromise = new Promise((resolve) => {
+      eventSubscription = native.on(
+        "test.event",
+        (payload) => resolve(payload)
+      );
+    });
+
+    await native.invoke(
+      "test.emit",
+      { value: 42, label: "from-cpp" }
+    );
+
+    const eventPayload = await eventPromise;
+    native.off(eventSubscription);
+
+    if (
+      !eventPayload ||
+      eventPayload.value !== 42 ||
+      eventPayload.label !== "from-cpp"
+    ) {
+      await fail("event transport failed");
+      return;
+    }
+
     let nativeExceptionRejected = false;
     try {
       await native.invoke("test.throw");

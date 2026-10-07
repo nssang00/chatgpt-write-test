@@ -297,6 +297,24 @@ void CefBackend::postBridgeMessage(const Any& message)
     const BridgeMessage parsed =
         parseBridgeMessage(message);
 
+    if (parsed.type == BridgeMessageType::Event)
+    {
+        CefRefPtr<CefProcessMessage> eventMessage =
+            CefProcessMessage::Create("nativeweb.event");
+
+        CefRefPtr<CefListValue> eventArgs =
+            eventMessage->GetArgumentList();
+
+        eventArgs->SetString(0, parsed.eventName);
+        eventArgs->SetValue(1, anyToCefValue(parsed.value));
+
+        browser_->GetMainFrame()->SendProcessMessage(
+            PID_RENDERER,
+            eventMessage);
+
+        return;
+    }
+
     if (parsed.type != BridgeMessageType::Response &&
         parsed.type != BridgeMessageType::Error)
     {
