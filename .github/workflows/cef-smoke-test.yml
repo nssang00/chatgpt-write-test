@@ -1,0 +1,229 @@
+name: CEF Cross-platform Smoke Test
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - demo/chatgpt-pr-2026-10-07
+
+permissions:
+  contents: read
+
+env:
+  PYTHON_EXECUTABLE: python
+
+jobs:
+  linux:
+    name: Linux CEF
+    runs-on: ubuntu-22.04
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout test repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Record environment
+        run: |
+          mkdir -p results/linux
+          {
+            echo "=== uname ==="
+            uname -a
+            echo
+            echo "=== CPU ==="
+            nproc
+            lscpu | head -30
+            echo
+            echo "=== memory ==="
+            free -h
+            echo
+            echo "=== disk ==="
+            df -h
+          } > results/linux/environment.txt
+
+      - name: Install Linux dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential libgtk-3-dev libnss3 libxss1 libasound2 libgbm1 xvfb scrot
+
+      - name: Clone official cef-project
+        run: git clone --depth 1 https://github.com/chromiumembedded/cef-project.git cef-project
+
+      - name: Configure CEF
+        run: cmake -S cef-project -B cef-project/build -G "Unix Makefiles" -DCMAKE_BUILD_TYPE=Release -DWITH_EXAMPLES=Off -DUSE_SANDBOX=OFF
+
+      - name: Build cefsimple
+        run: cmake --build cef-project/build --target cefsimple --parallel 4
+
+      - name: Run CEF and capture screenshot
+        shell: bash
+        run: |
+          set +e
+          RESULT_DIR="$GITHUB_WORKSPACE/results/linux"
+          EXE="$(find cef-project/build -type f -path '*/tests/cefsimple/Release/cefsimple' -print -quit)"
+
+          if [ -z "$EXE" ]; then
+            echo "FAIL: cefsimple executable was not found." | tee "$RESULT_DIR/result.txt"
+            exit 1
+          fi
+
+          EXE_DIR="$(dirname "$EXE")"
+          EXE_NAME="$(basename "$EXE")"
+          echo "Executable: $EXE" >> "$RESULT_DIR/environment.txt"
+          cd "$EXE_DIR"
+
+          Xvfb :99 -screen 0 1280x720x24 > "$RESULT_DIR/xvfb.log" 2>&1 &
+          XVFB_PID=$!
+          export DISPLAY=:99
+          sleep 2
+
+          "./$EXE_NAME" --disable-gpu --no-sandbox --log-file="$RESULT_DIR/cef.log" --log-severity=info > "$RESULT_DIR/stdout-stderr.txt" 2>&1 &
+          CEF_PID=$!
+
+          sleep 8
+
+          if ! kill -0 "$CEF_PID" 2>/dev/null; then
+            echo "FAIL: cefsimple exited before screenshot capture." | tee "$RESULT_DIR/result.txt"
+            kill "$XVFB_PID" 2>/dev/null || true
+            exit 1
+          fi
+
+          scrot "$RESULT_DIR/screenshot.png"
+          if [ ! -s "$RESULT_DIR/screenshot.png" ]; then
+            echo "FAIL: screenshot.png was not created." | tee "$RESULT_DIR/result.txt"
+            kill "$CEF_PID" 2>/dev/null || true
+            kill "$XVFB_PID" 2>/dev/null || true
+            exit 1
+          fi
+
+          sleep 7
+
+          if ! kill -0 "$CEF_PID" 2>/dev/null; then
+            echo "FAIL: cefsimple exited before 15 seconds." | tee "$RESULT_DIR/result.txt"
+            kill "$XVFB_PID" 2>/dev/null || true
+            exit 1
+          fi
+
+          echo "PASS: cefsimple stayed alive for 15 seconds and screenshot.png was captured." | tee "$RESULT_DIR/result.txt"
+          echo "### Linux CEF ✅" >> "$GITHUB_STEP_SUMMARY"
+          echo "CEF stayed alive for 15 seconds and screenshot.png was captured from Xvfb." >> "$GITHUB_STEP_SUMMARY"
+
+          kill "$CEF_PID" 2>/dev/null || true
+          kill "$XVFB_PID" 2>/dev/null || true
+          exit 0
+
+      - name: Upload Linux results
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: cef-linux-results
+          path: results/linux/
+          if-no-files-found: warn
+
+  windows:
+    name: Windows CEF
+    runs-on: windows-2022
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout test repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Record environment
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path results\windows | Out-Null
+          @(
+            "=== system ==="
+            (Get-ComputerInfo | Out-String)
+            "=== CPU ==="
+            (Get-CimInstance Win32_Processor | Format-List Name,NumberOfCores,NumberOfLogicalProcessors | Out-String)
+            "=== memory ==="
+            (Get-CimInstance Win32_OperatingSystem | Select-Object TotalVisibleMemorySize,FreePhysicalMemory | Format-List | Out-String)
+            "=== disk ==="
+            (Get-PSDrive C | Format-List Used,Free | Out-String)
+          ) | Set-Content results\windows\environment.txt
+
+      - name: Clone official cef-project
+        run: git clone --depth 1 https://github.com/chromiumembedded/cef-project.git cef-project
+
+      - name: Configure CEF
+        shell: pwsh
+        run: cmake -S cef-project -B cef-project/build -G "Visual Studio 17 2022" -A x64 -DWITH_EXAMPLES=Off -DUSE_SANDBOX=OFF
+
+      - name: Build cefsimple
+        run: cmake --build cef-project/build --config Release --target cefsimple --parallel 4
+
+      - name: Run CEF and capture screenshot
+        shell: pwsh
+        run: |
+          $resultDir = Join-Path $env:GITHUB_WORKSPACE "results\windows"
+          $exe = Get-ChildItem -Path (Join-Path $env:GITHUB_WORKSPACE "cef-project\build") -Filter cefsimple.exe -File -Recurse |
+            Where-Object { $_.FullName -match '\\tests\\cefsimple\\Release\\cefsimple\.exe$' } |
+            Select-Object -First 1
+
+          if (-not $exe) {
+            "FAIL: cefsimple.exe was not found." | Tee-Object -FilePath (Join-Path $resultDir "result.txt")
+            throw "cefsimple.exe not found"
+          }
+
+          $exePath = $exe.FullName
+          $exeDir = $exe.DirectoryName
+          $log = Join-Path $resultDir "cef.log"
+          $screenshot = Join-Path $resultDir "screenshot.png"
+          "Executable: $exePath" | Out-File -FilePath (Join-Path $resultDir "environment.txt") -Append
+
+          $args = @("--disable-gpu", "--no-sandbox", "--log-file=$log", "--log-severity=info")
+          $p = Start-Process -FilePath $exePath -ArgumentList $args -WorkingDirectory $exeDir -PassThru
+          Start-Sleep -Seconds 8
+
+          if ($p.HasExited) {
+            "FAIL: cefsimple exited before screenshot capture with code $($p.ExitCode)." | Tee-Object -FilePath (Join-Path $resultDir "result.txt")
+            exit 1
+          }
+
+          Add-Type -AssemblyName System.Windows.Forms
+          Add-Type -AssemblyName System.Drawing
+          $bounds = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+          $bitmap = New-Object System.Drawing.Bitmap $bounds.Width, $bounds.Height
+          $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
+          $graphics.CopyFromScreen($bounds.Location, [System.Drawing.Point]::Empty, $bounds.Size)
+          $bitmap.Save($screenshot, [System.Drawing.Imaging.ImageFormat]::Png)
+          $graphics.Dispose()
+          $bitmap.Dispose()
+
+          if (-not (Test-Path $screenshot) -or ((Get-Item $screenshot).Length -eq 0)) {
+            "FAIL: screenshot.png was not created." | Tee-Object -FilePath (Join-Path $resultDir "result.txt")
+            Get-Process cefsimple -ErrorAction SilentlyContinue | Stop-Process -Force
+            exit 1
+          }
+
+          Start-Sleep -Seconds 7
+
+          if ($p.HasExited) {
+            "FAIL: cefsimple exited before 15 seconds with code $($p.ExitCode)." | Tee-Object -FilePath (Join-Path $resultDir "result.txt")
+            exit 1
+          }
+
+          "PASS: cefsimple stayed alive for 15 seconds and screenshot.png was captured." | Tee-Object -FilePath (Join-Path $resultDir "result.txt")
+          "### Windows CEF ✅" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
+          "CEF stayed alive for 15 seconds and screenshot.png was captured." | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
+
+          Get-Process cefsimple -ErrorAction SilentlyContinue | Stop-Process -Force
+
+      - name: Upload Windows results
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: cef-windows-results
+          path: results/windows/
+          if-no-files-found: warn
