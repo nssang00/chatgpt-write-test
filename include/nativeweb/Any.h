@@ -8,7 +8,7 @@
 // applied here:
 //   - include <stdexcept> explicitly for std::runtime_error
 //   - restrict the legacy global type_info compatibility typedef to old MSVC
-//   - add const char* dictionary-key overloads so obj["key"] is unambiguous
+//   - add ergonomic key/index overloads so obj["key"] and list[0] are unambiguous
 
 #include <memory>//std::shared_ptr
 #include <iostream>
@@ -138,6 +138,22 @@ public:
 			throw std::runtime_error("type()==VariantList required : " + std::string(type().name()));
 
 		return (static_cast<Any::Holder< VariantList >*>(_content.get())->_held)[idx];
+	}
+
+	Any& operator [](int idx)
+	{
+		if(idx < 0)
+			throw std::out_of_range("VariantList index must be non-negative");
+
+		return (*this)[static_cast<size_t>(idx)];
+	}
+
+	const Any& operator [](int idx) const
+	{
+		if(idx < 0)
+			throw std::out_of_range("VariantList index must be non-negative");
+
+		return (*this)[static_cast<size_t>(idx)];
 	}
 
 	Any& operator [](const std::string& key)
