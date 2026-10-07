@@ -14,4 +14,8 @@ if(BUILD_TESTING)
   add_executable(cito_type_tests tests/type_test.cpp)
   target_link_libraries(cito_type_tests PRIVATE cito)
   add_test(NAME cito_type_tests COMMAND cito_type_tests)
+
+  add_executable(cito_wire_tests tests/wire_test.cpp)
+  target_link_libraries(cito_wire_tests PRIVATE cito)
+  add_test(NAME cito_wire_tests COMMAND cito_wire_tests)
 endif()
