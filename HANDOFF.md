@@ -25,9 +25,12 @@ Electron 복제품이나 GUI toolkit이 목표가 아니다.
 5. 기존 native code를 Web UI 때문에 다시 작성하도록 강요하지 않는다.
 6. Host layer는 framework가 아니라 얇은 adapter/control이다.
 7. public API에서 CEF/WebView2 implementation detail을 노출하지 않는다.
-8. 새 기능은 테스트 없이 완료로 간주하지 않는다.
-9. 버그는 가능하면 먼저 재현 테스트를 추가한 뒤 수정한다.
-10. C++ public baseline은 **C++11**이다.
+8. JavaScript 기본 DX는 `xytron.foo()` direct API이고 `invoke()`는 primitive/migration API다.
+9. JS -> C++ user callable은 기본적으로 runtime-managed worker pool에서 실행한다.
+10. Binary의 안전한 기본 semantics와 Transfer/Shared ownership semantics를 분리한다.
+11. 새 기능은 테스트 없이 완료로 간주하지 않는다.
+12. 버그는 가능하면 먼저 재현 테스트를 추가한 뒤 수정한다.
+13. C++ public baseline은 **C++11**이다.
 
 ## 3. 핵심 사용자
 
@@ -79,6 +82,28 @@ NativeWeb Core
 상세 내용은 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)를 읽는다.
 
 ## 5. API 방향
+
+상세 계약은 [docs/API_CONTRACT.md](docs/API_CONTRACT.md)를 따른다.
+
+### 5.1 JavaScript API priority
+
+Recommended:
+
+```js
+await xytron.getUser(42);
+await xytron.apple.add(1, 2);
+await xytron.camera.open();
+```
+
+Primitive / Electron migration:
+
+```js
+await xytron.invoke("getUser", 42);
+```
+
+현재 real CEF implementation의 기존 `native.invoke` 경로는 regression compatibility로 유지하면서 `xytron.*` direct facade를 추가하는 방향이다.
+
+
 
 초보자 기본 경험:
 
@@ -397,14 +422,16 @@ Platform Smoke:        37646977368  SUCCESS
 
 가장 먼저 해야 할 일:
 
-1. Windows WebView2 backend를 구현하고 동일 browser contract suite를 재사용한다.
-2. Windows CEF backend를 동일 public contract에 붙인다.
-3. security permission/capability policy skeleton을 추가한다.
-4. thin Host adapters를 Win32/MFC/WinForms 순으로 시작한다.
-5. Plugin stable C ABI + C++ wrapper prototype을 만든다.
-6. native object API의 더 높은 수준 typed/class binding DX를 설계한다.
-7. larger binary/shared-memory transport를 추가한다.
-8. sidecar runtime prototype으로 확장한다.
+1. 최신 Core Regression failure가 없는 green baseline을 항상 유지한다.
+2. real CEF에 `xytron.foo()` / dotted namespace direct facade를 추가하고 `invoke()` compatibility를 함께 테스트한다.
+3. WorkerPool/TaskQueue Core를 테스트 우선으로 추가한다.
+4. JS -> C++ bound callable이 browser thread가 아닌 worker pool에서 실행되도록 연결하고 real CEF concurrency regression을 추가한다.
+5. C++ -> JS typed future path에서 호출당 불필요한 `std::async` thread가 생기지 않도록 pending-result 구조를 개선한다.
+6. root/singleton native object binding metadata API를 설계하고 `xytron.apple.add()`를 실제 테스트한다.
+7. Windows WebView2 backend에 동일 browser contract suite를 재사용한다.
+8. security permission/capability policy skeleton을 추가한다.
+9. TransferBuffer / SharedBuffer는 기본 Binary와 분리된 advanced API로 추가한다.
+10. Plugin stable C ABI + C++ wrapper prototype을 만든다.
 
 세부 단계는 [docs/ROADMAP.md](docs/ROADMAP.md)를 따른다.
 

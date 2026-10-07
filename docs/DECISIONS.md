@@ -199,3 +199,61 @@ Code - OSS를 NativeWeb에서 실행하는 것은 장기 검증 목표다.
 Microsoft VS Code binary 재포장이 아니라 Code - OSS source 기반 port/experiment를 전제로 한다.
 
 Node extension host는 처음부터 제거하려 하지 않는다.
+
+
+## D-021: Direct JavaScript API is the default
+
+**Status: Accepted**
+
+Recommended JavaScript usage is direct namespace/function access such as `xytron.getUser()` and `xytron.camera.open()`.
+
+`xytron.invoke("...")` remains a first-class primitive for Electron migration, dynamic dispatch and framework internals, but it is not the primary Getting Started API.
+
+## D-022: Native objects are first-class Web objects
+
+**Status: Accepted**
+
+C++ native objects map to JS Proxy-like objects through opaque ObjectId + ObjectRegistry.
+
+The public goal includes singleton/root object binding and factory-returned object instances.
+Raw native pointers are never exposed to JS.
+
+Because C++11 has no reflection, exposed methods require explicit binding metadata.
+
+## D-023: JS-to-C++ user code defaults to a worker pool
+
+**Status: Accepted**
+
+Incoming JS calls must not execute arbitrary user C++ inline on the browser/UI dispatch thread.
+
+Default execution is queued to a NativeWeb-managed worker pool.
+
+Advanced users may later choose serial/UI/custom execution policies without changing the beginner path.
+
+## D-024: RequestId correlates concurrent bidirectional calls
+
+**Status: Accepted**
+
+C++ -> JS calls use RequestId-correlated pending state and return `std::future<T>`.
+
+Multiple calls may be outstanding concurrently and may complete out of order.
+
+JS -> C++ calls use the same request/response correlation concept and resolve/reject the matching Promise.
+
+## D-025: Binary has safe defaults; ownership-changing transports are explicit
+
+**Status: Accepted**
+
+`Binary` is the default safe value API.
+
+Transfer and shared-memory semantics use separate explicit advanced APIs/types.
+
+Runtime optimizations may be automatic only when they do not change observable ownership/lifetime semantics.
+
+## D-026: C++17 type support is optional convenience
+
+**Status: Accepted**
+
+C++11 remains the Core/public baseline.
+
+`std::optional`, `std::variant`, `std::string_view` and similar newer-standard adapters may be offered conditionally without raising the Core baseline.

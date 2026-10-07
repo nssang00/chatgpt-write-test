@@ -267,3 +267,45 @@ tests/
 - real browser integration은 mock unit test와 job 이름을 분리한다.
 - flaky test를 무조건 retry해서 숨기지 않는다. 원인을 기록한다.
 - known failure를 success로 포장하지 않는다.
+
+
+## Execution/concurrency regression
+
+새 execution runtime은 최소 다음을 검증한다.
+
+- worker pool이 caller/browser thread와 다른 thread에서 user callable 실행
+- 여러 request를 동시에 queue할 수 있음
+- 여러 worker에서 실제 overlap 가능
+- completion order가 request order와 달라도 RequestId가 올바른 결과를 연결
+- native exception이 해당 request 하나만 reject
+- shutdown 후 새 task reject
+- queued/running task lifecycle을 정의된 정책대로 처리
+- real CEF에서 JS Promise 여러 개를 동시에 호출해도 독립적으로 완료
+
+## JavaScript facade regression
+
+real browser에서 둘 다 유지한다.
+
+Recommended:
+
+```js
+await xytron.math.add(1, 2);
+await xytron.camera.open();
+```
+
+Primitive compatibility:
+
+```js
+await xytron.invoke("math.add", 1, 2);
+```
+
+direct facade는 dotted namespace, Promise rejection, native object return을 모두 동일 bridge contract로 사용해야 한다.
+
+## Binary semantics regression
+
+기본 Binary와 advanced ownership API는 별도 테스트한다.
+
+- Binary: safe ordinary value semantics
+- Transfer: explicit ownership transfer/detach semantics
+- Shared: explicit shared lifetime/release semantics
+- 크기 기반 내부 최적화가 기본 Binary의 observable semantics를 변경하지 않는지 검증

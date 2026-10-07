@@ -47,6 +47,21 @@
 
 완료 기준: public API shape가 C++11에서 안정적으로 compile된다.
 
+## Phase 2.5 — Public execution and JavaScript DX contract
+
+- [x] RequestId / pending future baseline
+- [x] structured request / response / error / event envelope
+- [ ] `xytron.foo()` direct JS facade
+- [ ] `xytron.invoke()` primitive compatibility test
+- [ ] runtime WorkerPool / TaskQueue
+- [ ] JS -> C++ default worker execution
+- [ ] concurrent/out-of-order JS call regression
+- [ ] remove per-call `std::async` from typed C++ -> JS future conversion
+- [ ] root/singleton native object binding metadata
+- [ ] Binary vs Transfer vs Shared public semantics
+
+상세 계약: [API_CONTRACT.md](API_CONTRACT.md)
+
 ## Phase 3 — Linux CEF backend
 
 Selected CEF:
