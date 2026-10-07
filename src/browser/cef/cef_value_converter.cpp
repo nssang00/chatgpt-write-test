@@ -3,6 +3,7 @@
 #include "nativeweb/types.hpp"
 
 #include <cstdint>
+#include <sstream>
 #include <stdexcept>
 #include <vector>
 
@@ -25,6 +26,26 @@ Any cefListToAny(CefRefPtr<CefListValue> list)
 
 Any cefDictionaryToAny(CefRefPtr<CefDictionaryValue> dict)
 {
+    if (dict &&
+        dict->HasKey("__nativeweb_object") &&
+        dict->GetBool("__nativeweb_object"))
+    {
+        const std::string idText =
+            dict->GetString("id").ToString();
+
+        std::istringstream stream(idText);
+        std::uint64_t id = 0;
+        stream >> id;
+
+        if (!stream || !stream.eof() || id == 0)
+            throw std::runtime_error("Invalid NativeWeb object id");
+
+        return Any(
+            NativeObjectHandle(
+                id,
+                dict->GetString("type").ToString()));
+    }
+
     VariantDict output;
 
     CefDictionaryValue::KeyList keys;
@@ -163,6 +184,25 @@ CefRefPtr<CefValue> anyToCefValue(const Any& value)
     {
         output->SetDictionary(
             anyDictionaryToCef(AnyCast<const VariantDict&>(value)));
+        return output;
+    }
+
+    if (value.type() == typeid(NativeObjectHandle))
+    {
+        const NativeObjectHandle& handle =
+            AnyCast<const NativeObjectHandle&>(value);
+
+        CefRefPtr<CefDictionaryValue> dict =
+            CefDictionaryValue::Create();
+
+        std::ostringstream id;
+        id << handle.id;
+
+        dict->SetBool("__nativeweb_object", true);
+        dict->SetString("id", id.str());
+        dict->SetString("type", handle.type);
+
+        output->SetDictionary(dict);
         return output;
     }
 

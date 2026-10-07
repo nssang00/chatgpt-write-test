@@ -7,6 +7,7 @@ option(NATIVEWEB_BUILD_TESTS "Build NativeWeb regression tests" ON)
 add_library(nativeweb_core STATIC
     src/core/pending_call_registry.cpp
     src/core/object_registry.cpp
+    src/core/native_object_runtime.cpp
     src/core/event_dispatcher.cpp
     src/core/bridge_message.cpp
     src/core/bridge_runtime.cpp

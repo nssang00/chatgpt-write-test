@@ -2,6 +2,7 @@
 #define NATIVEWEB_TYPES_HPP_INCLUDED
 
 #include <cstdint>
+#include <string>
 #include <vector>
 
 namespace nativeweb {
@@ -13,6 +14,30 @@ typedef void* NativeWindowHandle;
 // Canonical public byte container. Browser backends decide internally whether
 // to use ordinary IPC, engine-native binary transport, or shared memory.
 typedef std::vector<unsigned char> Binary;
+
+struct NativeObjectHandle
+{
+    NativeObjectHandle()
+        : id(0)
+    {
+    }
+
+    NativeObjectHandle(
+        std::uint64_t valueId,
+        const std::string& valueType)
+        : id(valueId),
+          type(valueType)
+    {
+    }
+
+    bool valid() const
+    {
+        return id != 0;
+    }
+
+    std::uint64_t id;
+    std::string type;
+};
 
 enum class Engine
 {

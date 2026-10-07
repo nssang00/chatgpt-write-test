@@ -147,3 +147,28 @@ add_test(
     NAME core.webview_orchestration
     COMMAND nativeweb_webview_orchestration_regression
 )
+
+add_executable(nativeweb_native_object_runtime_regression
+    native_object_runtime_regression.cpp
+)
+
+target_link_libraries(nativeweb_native_object_runtime_regression
+    PRIVATE
+        NativeWeb::Core
+)
+
+target_include_directories(nativeweb_native_object_runtime_regression
+    PRIVATE
+        ${PROJECT_SOURCE_DIR}/src
+)
+
+set_target_properties(nativeweb_native_object_runtime_regression PROPERTIES
+    CXX_STANDARD 11
+    CXX_STANDARD_REQUIRED YES
+    CXX_EXTENSIONS NO
+)
+
+add_test(
+    NAME core.native_object_runtime
+    COMMAND nativeweb_native_object_runtime_regression
+)

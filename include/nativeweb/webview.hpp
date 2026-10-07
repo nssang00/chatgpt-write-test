@@ -78,6 +78,40 @@ public:
         const std::string& event,
         const Any& payload = Any());
 
+    NativeObjectHandle addObject(
+        const std::shared_ptr<void>& object,
+        const std::string& typeName);
+
+    template <typename T>
+    NativeObjectHandle addObject(
+        const std::shared_ptr<T>& object,
+        const std::string& typeName)
+    {
+        return addObject(
+            std::static_pointer_cast<void>(object),
+            typeName);
+    }
+
+    void bindObjectMethod(
+        const NativeObjectHandle& handle,
+        const std::string& method,
+        const DynamicFunction& function);
+
+    template <typename Callable>
+    void bindObjectMethod(
+        const NativeObjectHandle& handle,
+        const std::string& method,
+        Callable callable)
+    {
+        bindObjectMethod(
+            handle,
+            method,
+            detail::makeDynamicFunction(callable));
+    }
+
+    bool releaseObject(
+        const NativeObjectHandle& handle);
+
     template <typename Callable>
     void bind(const std::string& method, Callable callable)
     {

@@ -197,7 +197,7 @@ public:
             return true;
         }
 
-        if (name == "invoke")
+        if (name == "invoke" || name == "invokeRaw")
         {
             if (arguments.empty() || !arguments[0]->IsString())
             {
@@ -231,7 +231,7 @@ public:
             return true;
         }
 
-        if (name == "on")
+        if (name == "on" || name == "onRaw")
         {
             if (arguments.size() != 2 ||
                 !arguments[0]->IsString() ||
@@ -252,7 +252,7 @@ public:
             return true;
         }
 
-        if (name == "off")
+        if (name == "off" || name == "offRaw")
         {
             if (arguments.size() != 1 || !arguments[0]->IsString())
             {
@@ -307,40 +307,87 @@ void CefRendererApp::OnContextCreated(
     CefRefPtr<InvokeHandler> handler =
         new InvokeHandler(this);
 
-    CefRefPtr<CefV8Value> invoke =
+    CefRefPtr<CefV8Value> invokeRaw =
         CefV8Value::CreateFunction(
-            "invoke",
+            "invokeRaw",
             handler);
 
-    CefRefPtr<CefV8Value> on =
+    CefRefPtr<CefV8Value> onRaw =
         CefV8Value::CreateFunction(
-            "on",
+            "onRaw",
             handler);
 
-    CefRefPtr<CefV8Value> off =
+    CefRefPtr<CefV8Value> offRaw =
         CefV8Value::CreateFunction(
-            "off",
+            "offRaw",
             handler);
 
     native->SetValue(
-        "invoke",
-        invoke,
+        "invokeRaw",
+        invokeRaw,
         V8_PROPERTY_ATTRIBUTE_READONLY);
 
     native->SetValue(
-        "on",
-        on,
+        "onRaw",
+        onRaw,
         V8_PROPERTY_ATTRIBUTE_READONLY);
 
     native->SetValue(
-        "off",
-        off,
+        "offRaw",
+        offRaw,
         V8_PROPERTY_ATTRIBUTE_READONLY);
 
     global->SetValue(
         "native",
         native,
         V8_PROPERTY_ATTRIBUTE_READONLY);
+
+    static const char kWrapperScript[] =
+        "(function(native){"
+        "const wrap=(value)=>{"
+        "if(!value||typeof value!=='object')return value;"
+        "if(value instanceof ArrayBuffer)return value;"
+        "if(value.__nativeweb_object===true){"
+        "const target={"
+        "__nativeweb_object:true,"
+        "id:String(value.id),"
+        "type:String(value.type||'')"
+        "};"
+        "return new Proxy(target,{get(t,p){"
+        "if(p==='then')return undefined;"
+        "if(p==='__nativewebObjectId')return t.id;"
+        "if(p==='__nativewebType')return t.type;"
+        "if(p==='dispose')return ()=>"
+        "native.invokeRaw('__native_object.release',t.id,t.type);"
+        "if(p in t)return t[p];"
+        "if(typeof p!=='string')return undefined;"
+        "return (...args)=>native.invokeRaw("
+        "'__native_object.call',t.id,t.type,p,...args"
+        ").then(wrap);"
+        "}});"
+        "}"
+        "if(Array.isArray(value))return value.map(wrap);"
+        "for(const key of Object.keys(value)){"
+        "value[key]=wrap(value[key]);"
+        "}"
+        "return value;"
+        "};"
+        "native.invoke=(...args)=>"
+        "native.invokeRaw(...args).then(wrap);"
+        "native.on=(name,callback)=>"
+        "native.onRaw(name,(payload)=>callback(wrap(payload)));"
+        "native.off=(id)=>native.offRaw(id);"
+        "})(native);";
+
+    CefRefPtr<CefV8Value> wrapperResult;
+    CefRefPtr<CefV8Exception> wrapperException;
+
+    context->Eval(
+        kWrapperScript,
+        frame ? frame->GetURL() : CefString(),
+        0,
+        wrapperResult,
+        wrapperException);
 }
 
 void CefRendererApp::OnContextReleased(

@@ -2,8 +2,11 @@
 
 #include "browser/common/backend_registry.hpp"
 #include "core/bridge_runtime.hpp"
+#include "core/native_object_runtime.hpp"
 #include "nativeweb/error.hpp"
 
+#include <cstdint>
+#include <sstream>
 #include <utility>
 
 namespace nativeweb {
@@ -16,6 +19,80 @@ public:
         : listener_(0),
           resolvedEngine_(Engine::Auto)
     {
+        runtime_.bind(
+            "__native_object.call",
+            DynamicFunction(
+                [this](const VariantList& args) -> Any
+                {
+                    if (args.size() < 2)
+                    {
+                        throw Error(
+                            "invalid_native_object_call",
+                            "Native object call requires id and method");
+                    }
+
+                    const std::string idText =
+                        AnyCast<std::string>(args[0]);
+
+                    const std::string method =
+                        AnyCast<std::string>(args[1]);
+
+                    NativeObjectHandle handle =
+                        parseObjectHandle(
+                            idText,
+                            args.size() >= 3 &&
+                            args[2].type() ==
+                                typeid(std::string)
+                                ? AnyCast<std::string>(args[2])
+                                : std::string());
+
+                    VariantList methodArgs;
+
+                    const std::size_t firstArg =
+                        args.size() >= 3 &&
+                        args[2].type() == typeid(std::string)
+                            ? 3
+                            : 2;
+
+                    for (std::size_t i = firstArg;
+                         i < args.size();
+                         ++i)
+                    {
+                        methodArgs.push_back(args[i]);
+                    }
+
+                    return objects_.call(
+                        handle,
+                        method,
+                        methodArgs);
+                }));
+
+        runtime_.bind(
+            "__native_object.release",
+            DynamicFunction(
+                [this](const VariantList& args) -> Any
+                {
+                    if (args.empty())
+                    {
+                        throw Error(
+                            "invalid_native_object_release",
+                            "Native object release requires an id");
+                    }
+
+                    const std::string idText =
+                        AnyCast<std::string>(args[0]);
+
+                    const std::string typeName =
+                        args.size() >= 2
+                            ? AnyCast<std::string>(args[1])
+                            : std::string();
+
+                    return Any(
+                        objects_.release(
+                            parseObjectHandle(
+                                idText,
+                                typeName)));
+                }));
     }
 
     ~Impl()
@@ -59,6 +136,7 @@ public:
 
     void destroy()
     {
+        objects_.clear();
         runtime_.shutdown();
 
         if (backend_)
@@ -67,6 +145,7 @@ public:
 
     void shutdown()
     {
+        objects_.clear();
         runtime_.shutdown();
 
         if (backend_)
@@ -119,7 +198,38 @@ public:
         const std::string& method,
         const DynamicFunction& function)
     {
+        if (method.find("__native_object.") == 0)
+        {
+            throw Error(
+                "reserved_method",
+                "NativeWeb internal object method name is reserved");
+        }
+
         runtime_.bind(method, function);
+    }
+
+    NativeObjectHandle addObject(
+        const std::shared_ptr<void>& object,
+        const std::string& typeName)
+    {
+        return objects_.add(object, typeName);
+    }
+
+    void bindObjectMethod(
+        const NativeObjectHandle& handle,
+        const std::string& method,
+        const DynamicFunction& function)
+    {
+        objects_.bindMethod(
+            handle,
+            method,
+            function);
+    }
+
+    bool releaseObject(
+        const NativeObjectHandle& handle)
+    {
+        return objects_.release(handle);
     }
 
     std::future<Any> execute(
@@ -180,6 +290,24 @@ public:
     }
 
 private:
+    static NativeObjectHandle parseObjectHandle(
+        const std::string& idText,
+        const std::string& typeName)
+    {
+        std::istringstream stream(idText);
+        std::uint64_t id = 0;
+        stream >> id;
+
+        if (!stream || !stream.eof() || id == 0)
+        {
+            throw Error(
+                "invalid_native_object",
+                "Native object id is invalid");
+        }
+
+        return NativeObjectHandle(id, typeName);
+    }
+
     detail::BrowserBackend* requireBackend()
     {
         if (!backend_ || !backend_->isCreated())
@@ -193,6 +321,7 @@ private:
     }
 
     detail::BridgeRuntime runtime_;
+    detail::NativeObjectRuntime objects_;
     std::unique_ptr<detail::BrowserBackend> backend_;
     WebViewListener* listener_;
     Engine resolvedEngine_;
@@ -296,6 +425,30 @@ void WebView::emit(
     const Any& payload)
 {
     impl_->emit(event, payload);
+}
+
+NativeObjectHandle WebView::addObject(
+    const std::shared_ptr<void>& object,
+    const std::string& typeName)
+{
+    return impl_->addObject(object, typeName);
+}
+
+void WebView::bindObjectMethod(
+    const NativeObjectHandle& handle,
+    const std::string& method,
+    const DynamicFunction& function)
+{
+    impl_->bindObjectMethod(
+        handle,
+        method,
+        function);
+}
+
+bool WebView::releaseObject(
+    const NativeObjectHandle& handle)
+{
+    return impl_->releaseObject(handle);
 }
 
 } // namespace nativeweb

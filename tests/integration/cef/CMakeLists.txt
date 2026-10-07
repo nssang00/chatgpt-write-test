@@ -29,6 +29,7 @@ ADD_LOGICAL_TARGET(
 add_library(nativeweb_core_for_cef STATIC
   "${NATIVEWEB_ROOT}/src/core/pending_call_registry.cpp"
   "${NATIVEWEB_ROOT}/src/core/object_registry.cpp"
+  "${NATIVEWEB_ROOT}/src/core/native_object_runtime.cpp"
   "${NATIVEWEB_ROOT}/src/core/event_dispatcher.cpp"
   "${NATIVEWEB_ROOT}/src/core/bridge_message.cpp"
   "${NATIVEWEB_ROOT}/src/core/bridge_runtime.cpp"
