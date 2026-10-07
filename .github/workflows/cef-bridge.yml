@@ -39,11 +39,15 @@ jobs:
             libxkbcommon-dev \
             xvfb
 
-      - name: Cache pinned CEF archive
+      - name: Cache pinned CEF runtime
         uses: actions/cache@v4
         with:
-          path: ${{ env.CEF_CACHE_DIR }}
-          key: cef-linux64-144.0.36-g78619fd
+          path: |
+            ${{ env.CEF_CACHE_DIR }}
+            ${{ env.CEF_EXTRACT_DIR }}
+          key: cef-linux64-144.0.36-g78619fd-runtime-v1
+          restore-keys: |
+            cef-linux64-144.0.36-g78619fd
 
       - name: Bootstrap pinned CEF
         shell: bash
