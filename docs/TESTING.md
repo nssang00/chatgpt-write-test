@@ -63,16 +63,22 @@ Platform Smoke 외에 `.github/workflows/core-regression.yml`이 추가되었다
 - public WebView API compile contract
 - BrowserBackend compile contract
 
-Latest full verified baseline:
+Latest full verified feature baseline:
 
-- Head SHA: `2044db6aa4370d91091655512f07ba611357622b`
-- Core Regression run `37640758740`: Ubuntu + Windows success
-- Platform Smoke run `37640758806`: Ubuntu + Windows success
-- NativeWeb CEF Bridge run `37640758818`: Linux real CEF success
+- Head SHA: `c4ac5666c640423b50bb6dfda285e75a0f618713`
+- Core Regression run `37646528511`: Ubuntu + Windows success
+- Platform Smoke run `37646528046`: Ubuntu + Windows success
+- NativeWeb CEF Bridge run `37646528043`: Linux real CEF success
 
-Core coverage now includes Any/containers/binary, typed bind, typed async future casting, structured errors, request IDs/pending calls, event dispatcher, bridge messages/runtime, ObjectRegistry and public API compile contracts.
+Latest public API compile baseline:
 
-Real CEF integration coverage now includes reload reconnect, JS→C++, C++→JS, objects, arrays, binary, events, Promise resolve/reject in both bridge directions where applicable, native exception mapping and missing-method rejection.
+- Head SHA: `fe6dfc5419c7c281a53d7628e938429229b79698`
+- Core Regression run `37646977459`: Ubuntu + Windows success
+- Platform Smoke run `37646977368`: Ubuntu + Windows success
+
+Core coverage now includes Any/containers/binary, typed bind, typed async future casting, structured errors, request IDs/pending calls, event dispatcher, bridge messages/runtime, ObjectRegistry, NativeObjectRuntime, WebView orchestration/engine selection and public API compile contracts.
+
+Real CEF integration coverage now includes public WebView orchestration, reload reconnect, JS→C++, C++→JS, objects, arrays, binary, events, Promise resolve/reject in both bridge directions where applicable, native exception mapping, missing-method rejection, multi-WebView isolation, destroy-with-real-pending-Promise, and native object Proxy lifecycle/round-trip.
 
 ## Target CI topology
 
@@ -178,8 +184,9 @@ CEF integration 완료 조건 및 현재 상태:
 - [x] reload reconnect
 - [x] binary
 - [x] events
-- [ ] destroy while bridge calls are pending (real browser)
-- [ ] multi-WebView isolation
+- [x] destroy while bridge calls are pending (real browser, C++ -> unresolved JS Promise)
+- [x] multi-WebView isolation
+- [x] native object Proxy method call / handle round-trip / dispose
 
 WebView2 backend가 추가되면 같은 browser contract suite를 재사용한다.
 

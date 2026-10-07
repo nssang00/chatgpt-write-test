@@ -304,6 +304,10 @@ ci/smoke/
 - C++11 typed bind adapter: ordinary lambda -> `DynamicFunction(VariantList -> Any)`
 - typed async adapter: `std::future<Any> -> std::future<Result>`
 - `nativeweb::WebView` pImpl public API shape 및 typed `execute<Result>()` adapter
+- public `WebView::Impl` orchestration: BridgeRuntime + BrowserBackend factory/registry
+- `Engine::Auto / Cef / WebView2` selection contract
+- public engine capability API (`webview.capabilities().supports(...)`)
+- optional `WebViewListener` lifecycle callbacks
 - public API compile regression
 - engine-independent internal `BrowserBackend` / listener contract
 - structured `nativeweb::Error(code, message)`
@@ -311,6 +315,8 @@ ci/smoke/
 - resolve/reject/rejectAll contract using `std::promise/std::future`
 - destroy contract baseline: `webview_destroyed` rejection for every pending call
 - thread-safe ObjectRegistry: `shared_ptr<T> -> opaque ObjectId -> typed lookup/release`
+- NativeObjectRuntime + public `NativeObjectHandle`
+- `WebView::addObject / bindObjectMethod / releaseObject`
 - EventDispatcher + subscribe/unsubscribe
 - structured bridge request/response/error/event envelope
 - BridgeRuntime method registry, outbound calls, inbound routing, events, shutdown
@@ -347,26 +353,37 @@ Pinned CEF:
 - C++ event -> JS callback
 - V8 context release 시 pending renderer state / event subscriptions 정리
 - CEF runtime directory 실행과 ICU/resources layout 검증
+- public `WebView.bind/execute/emit` 경로로 real CEF end-to-end 검증
+- `engine=cef` factory 선택 및 capabilities 검증
+- real CEF multi-WebView isolation
+- renderer event subscription을 browser/context별로 격리
+- 실제 JS unresolved Promise가 pending인 상태에서 `WebView::destroy()` 시 C++ future가 `webview_destroyed`로 종료
+- native object handle -> JS Proxy-like object
+- JS object method -> C++ object method 호출
+- native object handle을 JS -> C++ 인자로 round-trip
+- `dispose()` -> native lifetime release
+- release 후 object method 호출 -> `native_object_not_found`
 
-Latest full verified feature run:
+Latest full verified feature baseline:
 
 ```text
-Head SHA: 2044db6aa4370d91091655512f07ba611357622b
+Feature head: c4ac5666c640423b50bb6dfda285e75a0f618713
 
-NativeWeb CEF Bridge: 37640758818  SUCCESS
-Core Regression:       37640758740  SUCCESS
-Platform Smoke:        37640758806  SUCCESS
+NativeWeb CEF Bridge: 37646528043  SUCCESS
+Core Regression:       37646528511  SUCCESS
+Platform Smoke:        37646528046  SUCCESS
+
+Latest public API compile head:
+fe6dfc5419c7c281a53d7628e938429229b79698
+Core Regression:       37646977459  SUCCESS
+Platform Smoke:        37646977368  SUCCESS
 ```
 
 첫 real CEF vertical-slice success는 run `37637283494`, head `d1e9e823f2f7e3ed06c0fd93b32270f3922085b5`였다.
 
 ### 아직 완료되지 않은 것
 
-- actual public `WebView::Impl` orchestration/factory wiring to BrowserBackend
-- capability/permission skeleton
-- real-browser multi-WebView regression
-- real-browser destroy-while-call-pending regression
-- native object Proxy transport across browser boundary
+- security permission/capability policy
 - larger binary/shared-memory transport
 - Windows WebView2 backend
 - Windows CEF backend
@@ -380,15 +397,14 @@ Platform Smoke:        37640758806  SUCCESS
 
 가장 먼저 해야 할 일:
 
-1. public `WebView::Impl`이 BridgeRuntime + BrowserBackend를 실제로 orchestration하도록 연결한다.
-2. engine selection의 최소 contract(`auto / cef / webview2`)와 capability skeleton을 정의한다.
-3. real CEF에서 두 WebView 독립 동작 regression을 추가한다.
-4. real CEF에서 destroy 중 pending C++→JS/JS→C++ call 종료 behavior를 검증한다.
-5. native object registry를 실제 bridge wire format/JS Proxy에 연결한다.
-6. Windows WebView2 backend를 구현하고 동일 browser contract suite를 재사용한다.
-7. Windows CEF backend를 동일 public contract에 붙인다.
-8. thin Host adapters를 Win32/MFC/WinForms 순으로 시작한다.
-9. Plugin stable C ABI + C++ wrapper prototype을 만든다.
+1. Windows WebView2 backend를 구현하고 동일 browser contract suite를 재사용한다.
+2. Windows CEF backend를 동일 public contract에 붙인다.
+3. security permission/capability policy skeleton을 추가한다.
+4. thin Host adapters를 Win32/MFC/WinForms 순으로 시작한다.
+5. Plugin stable C ABI + C++ wrapper prototype을 만든다.
+6. native object API의 더 높은 수준 typed/class binding DX를 설계한다.
+7. larger binary/shared-memory transport를 추가한다.
+8. sidecar runtime prototype으로 확장한다.
 
 세부 단계는 [docs/ROADMAP.md](docs/ROADMAP.md)를 따른다.
 
@@ -428,7 +444,7 @@ Platform Smoke:        37640758806  SUCCESS
 
 - CEF archive가 이미 추출/통합되었다고 가정하지 않는다.
 - Any.h를 새 Value type으로 임의 교체하지 않는다. 현재 committed Any.h를 기준으로 확장한다.
-- Linux CEF integration은 실제로 통과했다. 단, multi-WebView/public WebView orchestration까지 완료됐다고 과장하지 않는다.
+- Linux CEF integration, public WebView orchestration, multi-WebView, destroy-pending, native object Proxy vertical slice는 실제로 통과했다.
 - Windows WebView2 backend가 구현됐다고 가정하지 않는다.
 - placeholder 제품명/CLI 이름을 최종 브랜드로 간주하지 않는다.
 

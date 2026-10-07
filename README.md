@@ -108,9 +108,10 @@ Initial verified workflow run:
 - Run ID: `37597876713`
 - Head SHA: `c253803db28f0047128a4723a2e82862a26f7bf7`
 
-Any 기반 Core regression과 public API contract가 Windows/Ubuntu에서 통과하며, Linux에서는 pinned CEF 144로 실제 JS↔C++ bridge까지 통과한다. 현재 검증에는 object/array/binary, reload, events, C++ exception→Promise reject, C++→JS sync/async Promise 및 JS Promise reject→C++ Error가 포함된다.
+Any 기반 Core regression과 public API contract가 Windows/Ubuntu에서 통과하며, Linux에서는 pinned CEF 144로 public `WebView` API를 통한 실제 JS↔C++ bridge까지 통과한다. 현재 검증에는 object/array/binary, reload, events, C++ exception→Promise reject, C++→JS sync/async Promise, JS Promise reject→C++ Error, multi-WebView isolation, destroy 중 pending Promise 종료, native object Proxy method/round-trip/dispose가 포함된다.
 
-Latest full verified head: `2044db6aa4370d91091655512f07ba611357622b`.
+Latest full verified feature head: `c4ac5666c640423b50bb6dfda285e75a0f618713`.
+Latest public API compile head: `fe6dfc5419c7c281a53d7628e938429229b79698`.
 
 ## Start here
 
@@ -128,14 +129,14 @@ Latest full verified head: `2044db6aa4370d91091655512f07ba611357622b`.
 
 ## Immediate next work
 
-1. public `WebView::Impl` orchestration을 Core/BrowserBackend에 연결
-2. `engine=auto` / CEF / WebView2 최소 selection contract와 capabilities
-3. real CEF multi-WebView isolation regression
-4. real-browser destroy/pending-call regression
-5. native object registry -> JS Proxy bridge
-6. Windows WebView2 및 Windows CEF 동일 contract 확대
-7. Win32/MFC/WinForms thin host adapters
-8. stable C ABI plugin prototype
+1. Windows WebView2 backend + 동일 browser contract
+2. Windows CEF backend + engine-switch regression
+3. security permission/capability policy
+4. Win32/MFC/WinForms thin host adapters
+5. stable C ABI plugin prototype
+6. native object typed/class binding DX 개선
+7. shared-memory large binary transport
+8. sidecar runtime prototype
 
 ## Repository note
 

@@ -25,7 +25,8 @@
 - [x] pending request registry
 - [x] object registry
 - [x] event primitive
-- [ ] permissions/capability skeleton
+- [x] engine capability skeleton
+- [ ] security permission/capability policy
 
 완료 기준: browser 없이 core contracts를 unit test할 수 있다.
 
@@ -38,7 +39,9 @@
 - [x] C++11 typed bind adapter
 - [x] typed execute adapter
 - [x] emit declaration
-- [ ] capabilities
+- [x] capabilities
+- [x] public WebView Impl -> BrowserBackend orchestration
+- [x] engine auto/CEF/WebView2 selection contract
 - [x] API compile regression on Windows/Linux
 - [x] engine-independent BrowserBackend contract
 
@@ -61,7 +64,9 @@ Selected CEF:
 - [x] events
 - [x] reload reconnect
 - [x] binary
-- [ ] multi-WebView
+- [x] multi-WebView
+- [x] real-browser destroy while C++->JS Promise is pending
+- [x] native object handle / JS Proxy vertical slice
 - [x] C++ -> JS synchronous call
 - [x] C++ -> JS Promise result
 - [x] JS Promise rejection -> C++ Error
