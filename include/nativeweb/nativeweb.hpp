@@ -3,6 +3,7 @@
 
 #include "nativeweb/any.hpp"
 #include "nativeweb/types.hpp"
+#include "nativeweb/error.hpp"
 #include "nativeweb/webview.hpp"
 
 #endif

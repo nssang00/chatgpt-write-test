@@ -4,16 +4,26 @@ project(NativeWeb LANGUAGES CXX)
 
 option(NATIVEWEB_BUILD_TESTS "Build NativeWeb regression tests" ON)
 
-add_library(nativeweb_core INTERFACE)
+add_library(nativeweb_core STATIC
+    src/core/pending_call_registry.cpp
+)
 add_library(NativeWeb::Core ALIAS nativeweb_core)
 
 target_include_directories(nativeweb_core
-    INTERFACE
+    PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
         $<INSTALL_INTERFACE:include>
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
 
-target_compile_features(nativeweb_core INTERFACE cxx_std_11)
+target_compile_features(nativeweb_core PUBLIC cxx_std_11)
+
+set_target_properties(nativeweb_core PROPERTIES
+    CXX_STANDARD 11
+    CXX_STANDARD_REQUIRED YES
+    CXX_EXTENSIONS NO
+)
 
 if(NATIVEWEB_BUILD_TESTS)
     include(CTest)
