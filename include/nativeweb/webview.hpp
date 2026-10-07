@@ -3,16 +3,13 @@
 
 #include "nativeweb/any.hpp"
 #include "nativeweb/detail/bind.hpp"
+#include "nativeweb/types.hpp"
 
 #include <future>
 #include <memory>
 #include <string>
 
 namespace nativeweb {
-
-// Opaque parent handle used by the core API. Framework-specific host adapters
-// translate their native widget/window handle to this boundary.
-typedef void* NativeWindowHandle;
 
 class WebView
 {

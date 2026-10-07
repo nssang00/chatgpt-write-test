@@ -1,4 +1,5 @@
 #include "nativeweb/any.hpp"
+#include "nativeweb/types.hpp"
 
 #include <iostream>
 #include <stdexcept>
@@ -140,17 +141,16 @@ void testNestedValues()
 
 void testBinaryStorage()
 {
-    typedef std::vector<unsigned char> Binary;
-
-    Binary bytes;
+    nativeweb::Binary bytes;
     bytes.push_back(0x00);
     bytes.push_back(0x7f);
     bytes.push_back(0xff);
 
     Any value(bytes);
-    CHECK(value.type() == typeid(Binary));
+    CHECK(value.type() == typeid(nativeweb::Binary));
 
-    const Binary& stored = AnyCast<const Binary&>(value);
+    const nativeweb::Binary& stored =
+        AnyCast<const nativeweb::Binary&>(value);
     CHECK(stored.size() == 3u);
     CHECK(stored[0] == 0x00);
     CHECK(stored[1] == 0x7f);
