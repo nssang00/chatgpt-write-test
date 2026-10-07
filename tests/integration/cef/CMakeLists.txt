@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.21)
 
-project(NativeWebCefIntegration LANGUAGES CXX)
+project(NativeWebCefIntegration LANGUAGES C CXX)
 
 if(NOT DEFINED CEF_ROOT OR CEF_ROOT STREQUAL "")
   message(FATAL_ERROR "CEF_ROOT must point to the extracted CEF distribution")
