@@ -137,6 +137,81 @@ window.ui = {
       return;
     }
 
+    const camera =
+      await native.invoke("camera.open");
+
+    if (
+      !camera ||
+      camera.__nativewebType !== "Camera" ||
+      !camera.__nativewebObjectId
+    ) {
+      await fail("native object proxy was not created");
+      return;
+    }
+
+    const cameraValue =
+      await camera.add(2);
+
+    if (cameraValue !== 42) {
+      await fail(
+        "native object method returned " +
+        String(cameraValue)
+      );
+      return;
+    }
+
+    const cameraName =
+      await camera.name();
+
+    if (cameraName !== "camera") {
+      await fail(
+        "native object name returned " +
+        String(cameraName)
+      );
+      return;
+    }
+
+    const accepted =
+      await native.invoke(
+        "camera.accept",
+        camera
+      );
+
+    if (accepted !== true) {
+      await fail(
+        "native object handle did not round-trip"
+      );
+      return;
+    }
+
+    const released =
+      await camera.dispose();
+
+    if (released !== true) {
+      await fail(
+        "native object dispose did not release"
+      );
+      return;
+    }
+
+    let releasedCallRejected = false;
+
+    try {
+      await camera.add(1);
+    } catch (error) {
+      releasedCallRejected =
+        String(error).includes(
+          "native_object_not_found"
+        );
+    }
+
+    if (!releasedCallRejected) {
+      await fail(
+        "released native object remained callable"
+      );
+      return;
+    }
+
     let nativeExceptionRejected = false;
     try {
       await native.invoke("test.throw");

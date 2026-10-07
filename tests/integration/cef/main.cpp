@@ -8,10 +8,21 @@
 #include <chrono>
 #include <future>
 #include <iostream>
+#include <memory>
 #include <stdexcept>
 #include <string>
 
 namespace {
+
+struct Camera
+{
+    explicit Camera(int value)
+        : base(value)
+    {
+    }
+
+    int base;
+};
 
 class IntegrationListener : public nativeweb::WebViewListener
 {
@@ -59,6 +70,41 @@ public:
                 bytes.push_back(127);
                 bytes.push_back(255);
                 return bytes;
+            });
+
+        webview_.bind(
+            "camera.open",
+            [this]() {
+                std::shared_ptr<Camera> camera(
+                    new Camera(40));
+
+                const nativeweb::NativeObjectHandle handle =
+                    webview_.addObject(
+                        camera,
+                        "Camera");
+
+                webview_.bindObjectMethod(
+                    handle,
+                    "add",
+                    [camera](int value) {
+                        return camera->base + value;
+                    });
+
+                webview_.bindObjectMethod(
+                    handle,
+                    "name",
+                    [camera]() {
+                        return std::string("camera");
+                    });
+
+                return handle;
+            });
+
+        webview_.bind(
+            "camera.accept",
+            [](const nativeweb::NativeObjectHandle& handle) {
+                return handle.valid() &&
+                    handle.type == "Camera";
             });
 
         webview_.bind(
