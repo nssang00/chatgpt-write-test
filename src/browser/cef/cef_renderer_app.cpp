@@ -343,7 +343,7 @@ void CefRendererApp::OnContextCreated(
         V8_PROPERTY_ATTRIBUTE_READONLY);
 
     static const char kWrapperScript[] =
-        "(function(native){"
+        "(function(native,global){"
         "const wrap=(value)=>{"
         "if(!value||typeof value!=='object')return value;"
         "if(value instanceof ArrayBuffer)return value;"
@@ -372,12 +372,34 @@ void CefRendererApp::OnContextCreated(
         "}"
         "return value;"
         "};"
-        "native.invoke=(...args)=>"
-        "native.invokeRaw(...args).then(wrap);"
+        "const invoke=(method,...args)=>"
+        "native.invokeRaw(method,...args).then(wrap);"
+        "native.invoke=invoke;"
         "native.on=(name,callback)=>"
         "native.onRaw(name,(payload)=>callback(wrap(payload)));"
         "native.off=(id)=>native.offRaw(id);"
-        "})(native);";
+        "const namespace=(path)=>new Proxy(function(){},{"
+        "get(_target,property){"
+        "if(property==='then')return undefined;"
+        "if(path===''&&property==='invoke')return invoke;"
+        "if(path===''&&property==='on')return native.on;"
+        "if(path===''&&property==='off')return native.off;"
+        "if(typeof property!=='string')return undefined;"
+        "const next=path?path+'.'+property:property;"
+        "return namespace(next);"
+        "},"
+        "apply(_target,_this,args){"
+        "if(!path)throw new TypeError('xytron root is not callable');"
+        "return invoke(path,...args);"
+        "}"
+        "});"
+        "Object.defineProperty(global,'xytron',{"
+        "value:namespace(''),"
+        "writable:false,"
+        "configurable:false,"
+        "enumerable:true"
+        "});"
+        "})(native,globalThis);";
 
     CefRefPtr<CefV8Value> wrapperResult;
     CefRefPtr<CefV8Exception> wrapperException;

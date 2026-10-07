@@ -30,14 +30,14 @@ window.ui = {
 (async function () {
   async function fail(message) {
     try {
-      await native.invoke("test.fail", String(message));
+      await xytron.invoke("test.fail", String(message));
     } catch (_) {
     }
   }
 
   try {
     if (!location.search.includes("reloaded=1")) {
-      const beforeReload = await native.invoke("math.add", 1, 2);
+      const beforeReload = await xytron.math.add(1, 2);
       if (beforeReload !== 3) {
         await fail("pre-reload math.add returned " + String(beforeReload));
         return;
@@ -47,20 +47,25 @@ window.ui = {
       return;
     }
 
-    const result = await native.invoke("math.add", 3, 4);
+    const result = await xytron.math.add(3, 4);
     if (result !== 7) {
       await fail("math.add returned " + String(result));
       return;
     }
 
-    const objectResult = await native.invoke(
-      "echo.object",
-      {
-        name: "camera",
-        retry: true,
-        nested: { count: 2 }
-      }
-    );
+    const primitiveResult =
+      await xytron.invoke("math.add", 2, 5);
+
+    if (primitiveResult !== 7) {
+      await fail("xytron.invoke compatibility returned " + String(primitiveResult));
+      return;
+    }
+
+    const objectResult = await xytron.echo.object({
+      name: "camera",
+      retry: true,
+      nested: { count: 2 }
+    });
 
     if (
       !objectResult ||
@@ -73,8 +78,7 @@ window.ui = {
       return;
     }
 
-    const arrayResult = await native.invoke(
-      "echo.array",
+    const arrayResult = await xytron.echo.array(
       [1, "two", true, [3, 4]]
     );
 
@@ -91,7 +95,7 @@ window.ui = {
       return;
     }
 
-    const binaryResult = await native.invoke("test.binary");
+    const binaryResult = await xytron.test.binary();
 
     if (!(binaryResult instanceof ArrayBuffer)) {
       await fail(
@@ -114,19 +118,18 @@ window.ui = {
 
     let eventSubscription = "";
     const eventPromise = new Promise((resolve) => {
-      eventSubscription = native.on(
+      eventSubscription = xytron.on(
         "test.event",
         (payload) => resolve(payload)
       );
     });
 
-    await native.invoke(
-      "test.emit",
+    await xytron.test.emit(
       { value: 42, label: "from-cpp" }
     );
 
     const eventPayload = await eventPromise;
-    native.off(eventSubscription);
+    xytron.off(eventSubscription);
 
     if (
       !eventPayload ||
@@ -138,7 +141,7 @@ window.ui = {
     }
 
     const camera =
-      await native.invoke("camera.open");
+      await xytron.camera.open();
 
     if (
       !camera ||
@@ -172,10 +175,7 @@ window.ui = {
     }
 
     const accepted =
-      await native.invoke(
-        "camera.accept",
-        camera
-      );
+      await xytron.camera.accept(camera);
 
     if (accepted !== true) {
       await fail(
@@ -214,7 +214,7 @@ window.ui = {
 
     let nativeExceptionRejected = false;
     try {
-      await native.invoke("test.throw");
+      await xytron.test.throw();
     } catch (error) {
       const text = String(error);
       nativeExceptionRejected =
@@ -229,7 +229,7 @@ window.ui = {
 
     let missingMethodRejected = false;
     try {
-      await native.invoke("missing.method");
+      await xytron.missing.method();
     } catch (error) {
       missingMethodRejected =
         String(error).includes("method_not_found");
@@ -240,11 +240,11 @@ window.ui = {
       return;
     }
 
-    await native.invoke("test.beginCppCalls");
+    await xytron.test.beginCppCalls();
 
     let cppStatus = null;
     for (let attempt = 0; attempt < 100; ++attempt) {
-      cppStatus = await native.invoke("test.cppCallsStatus");
+      cppStatus = await xytron.test.cppCallsStatus();
 
       if (cppStatus && cppStatus.done) {
         break;
@@ -270,7 +270,7 @@ window.ui = {
     }
 
     const done =
-      await native.invoke("test.done", result);
+      await xytron.test.done(result);
 
     if (done !== true) {
       await fail("pre-destroy checks did not complete");
@@ -279,7 +279,7 @@ window.ui = {
 
     window.__nativewebPendingStarted = false;
 
-    await native.invoke("test.beginPendingDestroy");
+    await xytron.test.beginPendingDestroy();
 
     for (let attempt = 0; attempt < 100; ++attempt) {
       if (window.__nativewebPendingStarted === true) {
@@ -295,14 +295,14 @@ window.ui = {
     }
 
     try {
-      await native.invoke("test.destroyWithPending");
+      await xytron.test.destroyWithPending();
     } catch (_) {
       // Closing the WebView may prevent this final JS-side Promise
       // from observing the native callback result. The C++ side is
       // the authority for this regression.
     }
   } catch (error) {
-    if (window.native && native.invoke) {
+    if (window.xytron && xytron.invoke) {
       await fail(error && error.stack ? error.stack : String(error));
     }
   }
