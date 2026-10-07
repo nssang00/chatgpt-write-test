@@ -64,9 +64,19 @@ jobs:
         run: |
           set +e
           RESULT_DIR="$GITHUB_WORKSPACE/results/linux"
-          cd cef-project/build/tests/cefsimple
+          EXE="$(find cef-project/build -type f -path '*/tests/cefsimple/Release/cefsimple' -print -quit)"
 
-          timeout 15s xvfb-run -a -s "-screen 0 1280x720x24" ./cefsimple --disable-gpu --no-sandbox --log-file="$RESULT_DIR/cef.log" --log-severity=info > "$RESULT_DIR/stdout-stderr.txt" 2>&1
+          if [ -z "$EXE" ]; then
+            echo "FAIL: cefsimple executable was not found." | tee "$RESULT_DIR/result.txt"
+            exit 1
+          fi
+
+          EXE_DIR="$(dirname "$EXE")"
+          EXE_NAME="$(basename "$EXE")"
+          echo "Executable: $EXE" >> "$RESULT_DIR/environment.txt"
+          cd "$EXE_DIR"
+
+          timeout 15s xvfb-run -a -s "-screen 0 1280x720x24" "./$EXE_NAME" --disable-gpu --no-sandbox --log-file="$RESULT_DIR/cef.log" --log-severity=info > "$RESULT_DIR/stdout-stderr.txt" 2>&1
           code=$?
 
           if [ "$code" -eq 124 ]; then
@@ -132,17 +142,22 @@ jobs:
         shell: pwsh
         run: |
           $resultDir = Join-Path $env:GITHUB_WORKSPACE "results\windows"
-          $exeDir = Join-Path $env:GITHUB_WORKSPACE "cef-project\build\tests\cefsimple\Release"
-          $exe = Join-Path $exeDir "cefsimple.exe"
-          $log = Join-Path $resultDir "cef.log"
+          $exe = Get-ChildItem -Path (Join-Path $env:GITHUB_WORKSPACE "cef-project\build") -Filter cefsimple.exe -File -Recurse |
+            Where-Object { $_.FullName -match '\\tests\\cefsimple\\Release\\cefsimple\.exe$' } |
+            Select-Object -First 1
 
-          if (-not (Test-Path $exe)) {
-            "FAIL: cefsimple.exe was not found at $exe" | Tee-Object -FilePath (Join-Path $resultDir "result.txt")
+          if (-not $exe) {
+            "FAIL: cefsimple.exe was not found." | Tee-Object -FilePath (Join-Path $resultDir "result.txt")
             throw "cefsimple.exe not found"
           }
 
+          $exePath = $exe.FullName
+          $exeDir = $exe.DirectoryName
+          $log = Join-Path $resultDir "cef.log"
+          "Executable: $exePath" | Out-File -FilePath (Join-Path $resultDir "environment.txt") -Append
+
           $args = @("--disable-gpu", "--no-sandbox", "--log-file=$log", "--log-severity=info")
-          $p = Start-Process -FilePath $exe -ArgumentList $args -WorkingDirectory $exeDir -PassThru
+          $p = Start-Process -FilePath $exePath -ArgumentList $args -WorkingDirectory $exeDir -PassThru
           Start-Sleep -Seconds 15
 
           if ($p.HasExited) {
