@@ -10,6 +10,7 @@ add_library(nativeweb_core STATIC
     src/core/native_object_runtime.cpp
     src/core/event_dispatcher.cpp
     src/core/bridge_message.cpp
+    src/core/json_codec.cpp
     src/core/bridge_runtime.cpp
     src/browser/common/backend_registry.cpp
     src/webview.cpp
