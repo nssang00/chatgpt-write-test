@@ -21,7 +21,7 @@ jobs:
     env:
       CEF_VERSION: 154.0.28+g564dd6c+chromium-154.0.8037.58
       CEF_PLATFORM: windows64
-      PAYLOAD_SHA256: cf7bdda6ea6c9540d17b1c72a9474dfdd6fbd1b7ff91b0f5f70f510b58b89e9b
+      PAYLOAD_SHA256: ad2eae30b606d4683f05b3c54fb51a5319dccfefe6039366107a38d9bd756c86
 
     steps:
       - name: Checkout
