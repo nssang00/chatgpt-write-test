@@ -283,8 +283,8 @@ bool CefRendererApp::OnProcessMessageReceived(
         const std::string eventName =
             args->GetString(0).ToString();
 
-        CefRefPtr<CefV8Value> value =
-            cefValueToV8(args->GetValue(1));
+        CefRefPtr<CefValue> eventValue =
+            args->GetValue(1);
 
         std::vector<EventSubscription> callbacks;
 
@@ -309,7 +309,8 @@ bool CefRendererApp::OnProcessMessageReceived(
             }
 
             CefV8ValueList callbackArgs;
-            callbackArgs.push_back(value);
+            callbackArgs.push_back(
+                cefValueToV8(eventValue));
 
             subscription.callback->ExecuteFunction(
                 nullptr,
