@@ -1,6 +1,7 @@
 #include "nativeweb/nativeweb.hpp"
 
 #include <future>
+#include <memory>
 #include <string>
 
 namespace {
@@ -15,6 +16,11 @@ public:
     void onClosed() override
     {
     }
+};
+
+struct CompileDevice
+{
+    int value;
 };
 
 Any dynamicAdd(const VariantList& args)
@@ -58,6 +64,26 @@ void compileBeginnerContract(nativeweb::NativeWindowHandle parent)
     std::future<int> typedResult =
         webview.execute<int>("ui.calculate", 3, 4);
 
+    std::shared_ptr<CompileDevice> device(
+        new CompileDevice());
+
+    device->value = 40;
+
+    const nativeweb::NativeObjectHandle handle =
+        webview.addObject(
+            device,
+            "CompileDevice");
+
+    webview.bindObjectMethod(
+        handle,
+        "add",
+        [device](int value) {
+            return device->value + value;
+        });
+
+    const bool released =
+        webview.releaseObject(handle);
+
     webview.emit("app.ready", Any(true));
     webview.reload();
     webview.destroy();
@@ -66,6 +92,7 @@ void compileBeginnerContract(nativeweb::NativeWindowHandle parent)
     (void)engine;
     (void)hasBinary;
     (void)typedResult;
+    (void)released;
 }
 
 } // namespace
