@@ -32,6 +32,8 @@ add_library(nativeweb_core_for_cef STATIC
   "${NATIVEWEB_ROOT}/src/core/event_dispatcher.cpp"
   "${NATIVEWEB_ROOT}/src/core/bridge_message.cpp"
   "${NATIVEWEB_ROOT}/src/core/bridge_runtime.cpp"
+  "${NATIVEWEB_ROOT}/src/browser/common/backend_registry.cpp"
+  "${NATIVEWEB_ROOT}/src/webview.cpp"
 )
 
 target_include_directories(nativeweb_core_for_cef
