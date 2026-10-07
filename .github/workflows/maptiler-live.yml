@@ -1,0 +1,61 @@
+name: MapTiler Live Recorder
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/maptiler-live.yml"
+      - "tools/record_maptiler_live.py"
+      - "tools/analyze_maptiler_style.py"
+
+permissions:
+  contents: read
+
+jobs:
+  record:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      MAPTILER_KEY: ${{ secrets.MAPTILER_KEY }}
+      MAPTILER_OUT: artifacts/maptiler-live
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Verify secret
+        shell: bash
+        run: |
+          test -n "$MAPTILER_KEY" || (echo "MAPTILER_KEY repository secret is missing" && exit 1)
+
+      - name: Record real MapTiler style and MVT
+        run: python3 tools/record_maptiler_live.py
+
+      - name: Analyze streets-v4 style capabilities
+        run: python3 tools/analyze_maptiler_style.py artifacts/maptiler-live/style.json artifacts/maptiler-live/style-capabilities.json
+
+      - name: Credential leak check
+        shell: bash
+        run: |
+          if grep -R -F --binary-files=without-match "$MAPTILER_KEY" artifacts/maptiler-live; then
+            echo "Secret leaked into recorded fixture"
+            exit 1
+          fi
+
+      - name: Summary
+        shell: bash
+        run: |
+          echo "### MapTiler live recorder" >> "$GITHUB_STEP_SUMMARY"
+          echo "- style: streets-v4" >> "$GITHUB_STEP_SUMMARY"
+          echo "- vector tileset: v4" >> "$GITHUB_STEP_SUMMARY"
+          echo "- cities: Seoul, London, San Francisco" >> "$GITHUB_STEP_SUMMARY"
+          echo "- zooms: 8, 12, 15" >> "$GITHUB_STEP_SUMMARY"
+          echo "- artifact contains redacted Style JSON, TileJSON, MVT PBF, capability inventory and SHA256 manifest" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload recorded fixtures
+        uses: actions/upload-artifact@v4
+        with:
+          name: maptiler-live-fixtures
+          path: artifacts/maptiler-live
+          if-no-files-found: error
+          retention-days: 14
