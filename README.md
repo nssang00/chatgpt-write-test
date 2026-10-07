@@ -108,7 +108,7 @@ Initial verified workflow run:
 - Run ID: `37597876713`
 - Head SHA: `c253803db28f0047128a4723a2e82862a26f7bf7`
 
-현재는 platform smoke 단계이며 real NativeWeb Core/CEF regression은 아직 구현 전이다.
+현재 Any 기반 Core regression과 public WebView/BrowserBackend compile contract도 Windows/Ubuntu에서 통과한다. Real CEF integration은 다음 큰 milestone이다.
 
 ## Start here
 
@@ -126,12 +126,12 @@ Initial verified workflow run:
 
 ## Immediate next work
 
-1. 사용자 원본 `Any.h`를 repository에 추가
-2. root CMake/project skeleton 생성
-3. Any/VariantList/VariantDict/binary/async core regression 작성
-4. Linux + Windows GitHub Actions에서 regression 통과
-5. public `nativeweb::WebView` API skeleton 작성
-6. Linux real CEF integration 시작
+1. request ID / pending-call / async Core 구현
+2. typed `execute<Result>()` 연결
+3. structured error / destroy-pending contract 테스트
+4. object registry / event primitive
+5. Linux real CEF bootstrap + integration
+6. JS ↔ C++ bridge를 real CEF에서 회귀 테스트
 
 ## Repository note
 

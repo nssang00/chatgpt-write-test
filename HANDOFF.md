@@ -171,7 +171,7 @@ VariantList = std::vector<Any>
 
 public `WebView::execute()` / binding API는 가능한 한 이 타입 체계를 유지한다.
 
-중요: 현재 저장소에는 실제 사용자 제공 `Any.h`가 아직 commit되어 있지 않다. 다음 세션에서 임의 구현으로 대체하지 말고, 원본 파일을 확보한 뒤 넣는다.
+현재 저장소의 `include/nativeweb/Any.h`는 사용자가 제공한 원본을 기준으로 한다. 현대 compiler 호환을 위해 legacy MSVC `type_info` typedef를 조건부 처리하고 `<stdexcept>`를 명시적으로 include했다. 또한 초보자 친화적인 `obj["key"]` / `list[0]` 사용이 GCC/MSVC에서 모호하지 않도록 `const char*` key와 `int` index overload를 추가했다.
 
 ## 9. Plugin 핵심 방향
 
@@ -295,12 +295,28 @@ ci/smoke/
   main.cpp
 ```
 
+### 추가로 완료된 Core/API baseline
+
+- root CMake project skeleton
+- 사용자 원본 기반 `include/nativeweb/Any.h`
+- `nativeweb::Binary` / `NativeWindowHandle` public types
+- Any / VariantList / VariantDict / nested value / binary / invalid-access regression
+- C++11 typed bind adapter: ordinary lambda -> `DynamicFunction(VariantList -> Any)`
+- `nativeweb::WebView` pImpl public API skeleton
+- public API compile regression
+- engine-independent internal `BrowserBackend` / listener contract
+- Windows + Ubuntu Core Regression success
+  - Run ID: `37610573658`
+  - Head SHA: `abf8a2c5908c1bff3ee3e8473de3a52242e7e6b7`
+
 ### 아직 완료되지 않은 것
 
-- NativeWeb Core source tree
-- 사용자 원본 Any.h commit
-- 실제 Any regression suite
-- public WebView API
+- actual `WebView::Impl` runtime implementation
+- typed `execute<Result>()` async adapter
+- pending request / request ID runtime
+- object registry
+- event runtime
+- structured error model
 - CEF Linux integration
 - WebView2 backend
 - Host adapters
@@ -313,13 +329,13 @@ ci/smoke/
 
 가장 먼저 해야 할 일:
 
-1. 사용자 제공 `Any.h` 원본을 저장소에 넣는다.
-2. root CMake/project skeleton을 만든다.
-3. `tests/core`에 Any/VariantList/VariantDict/binary/invalid-cast/async 회귀 테스트를 만든다.
-4. Linux/Windows GitHub Actions에서 core regression을 모두 통과시킨다.
-5. public `nativeweb::WebView` API skeleton과 compile-regression을 만든다.
-6. Browser backend interface를 정의한다.
-7. Linux real CEF backend를 붙이고 JS↔C++ integration test를 만든다.
+1. request ID / pending-call / async result Core를 만든다.
+2. typed `execute<Result>()`를 위 async Core에 연결한다.
+3. structured error와 destroy 시 pending call 종료 contract를 테스트한다.
+4. object registry/event primitive를 추가한다.
+5. Linux real CEF package/bootstrap 전략을 고정한다.
+6. `BrowserBackend`의 CEF 구현을 붙이고 create/load/destroy integration test를 만든다.
+7. JS↔C++ bridge의 request/response/Promise contract를 real CEF에서 통과시킨다.
 8. Windows WebView2 backend와 동일 contract test를 추가한다.
 9. Plugin C ABI와 C++ wrapper prototype을 만든다.
 
@@ -360,7 +376,7 @@ ci/smoke/
 ### 새 세션이 절대 추측하면 안 되는 것
 
 - CEF archive가 이미 추출/통합되었다고 가정하지 않는다.
-- Any.h API를 임의로 재구현하지 않는다.
+- Any.h를 새 Value type으로 임의 교체하지 않는다. 현재 committed Any.h를 기준으로 확장한다.
 - Linux CEF integration이 통과했다고 주장하지 않는다.
 - Windows WebView2 backend가 구현됐다고 가정하지 않는다.
 - placeholder 제품명/CLI 이름을 최종 브랜드로 간주하지 않는다.

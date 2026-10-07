@@ -4,20 +4,20 @@
 
 ## Phase 0 — Repository foundation
 
-상태: **in progress**
+상태: **complete**
 
 - [x] GitHub repository write/read validation
 - [x] Linux/Windows C++11 CMake/CTest smoke CI
 - [x] Architecture/handoff documentation
-- [ ] Root project/CMake skeleton
-- [ ] Canonical user `Any.h` import
-- [ ] Core regression workflow
+- [x] Root project/CMake skeleton
+- [x] Canonical user `Any.h` import
+- [x] Core regression workflow
 
 완료 기준: 새 세션이 저장소만 보고 개발을 이어갈 수 있고, core tests를 Windows/Linux에서 반복 실행할 수 있다.
 
 ## Phase 1 — Core value/async/runtime
 
-- [ ] Any/VariantList/VariantDict integration
+- [x] Any/VariantList/VariantDict integration
 - [ ] structured error model
 - [ ] binary type
 - [ ] async/future abstraction
@@ -31,14 +31,16 @@
 
 ## Phase 2 — Public WebView API skeleton
 
-- [ ] `nativeweb::WebView`
-- [ ] create/destroy
-- [ ] load/reload
-- [ ] bind
-- [ ] execute
-- [ ] emit/event
+- [x] `nativeweb::WebView` public pImpl shape
+- [x] create/destroy declarations
+- [x] load/reload declarations
+- [x] dynamic bind contract
+- [x] C++11 typed bind adapter
+- [ ] typed execute adapter
+- [x] emit declaration
 - [ ] capabilities
-- [ ] API compile regression on Windows/Linux
+- [x] API compile regression on Windows/Linux
+- [x] engine-independent BrowserBackend contract
 
 완료 기준: public API shape가 C++11에서 안정적으로 compile된다.
 

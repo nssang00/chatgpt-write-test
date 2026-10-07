@@ -50,7 +50,18 @@ Initial verified run:
 - Ubuntu: success
 - Windows: success
 
-현재 workflow는 platform/toolchain smoke test일 뿐 NativeWeb feature regression은 아직 아니다.
+Platform Smoke 외에 `.github/workflows/core-regression.yml`이 추가되었다.
+
+현재 검증된 NativeWeb Core/API regression:
+
+- Run ID: `37610573658`
+- Head SHA: `abf8a2c5908c1bff3ee3e8473de3a52242e7e6b7`
+- Ubuntu: build + CTest success
+- Windows: build + CTest success
+- Any/Variant containers/binary/invalid access
+- typed bind adapter
+- public WebView API compile contract
+- BrowserBackend compile contract
 
 ## Target CI topology
 
