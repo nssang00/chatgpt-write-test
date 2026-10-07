@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-import hashlib, json, math, os, pathlib, sys, urllib.request
+import hashlib, json, math, os, pathlib, sys, urllib.request, urllib.error
 
 API = "https://api.maptiler.com"
 OUT = pathlib.Path(os.environ.get("MAPTILER_OUT", "artifacts/maptiler-live"))
@@ -43,7 +43,7 @@ def main():
         write(OUT/name, data)
         print("recorded", name, len(data))
 
-    # Record a deterministic 2x2 neighborhood for each city/zoom.
+    # Record MapTiler-rendered reference screenshots when Static Maps is available.\n    screenshot_status={}\n    for city,(lat,lon) in CITIES.items():\n        for z in (12,15):\n            name=f\"{city}-z{z}.png\"\n            url=f\"{API}/maps/streets-v4/static/{lon},{lat},{z}/768x768.png?key={KEY}&attribution=false\"\n            try:\n                data=fetch(url)\n                write(OUT/\"screenshots\"/name,data)\n                screenshot_status[name]={\"ok\":True,\"bytes\":len(data)}\n                print(\"recorded screenshot\",name,len(data))\n            except urllib.error.HTTPError as e:\n                screenshot_status[name]={\"ok\":False,\"httpStatus\":e.code}\n                print(\"static screenshot unavailable\",name,e.code)\n    (OUT/\"screenshots\").mkdir(parents=True,exist_ok=True)\n    (OUT/\"screenshots\"/\"status.json\").write_text(json.dumps(screenshot_status,indent=2)+\"\\n\")\n\n    # Record a deterministic 2x2 neighborhood for each city/zoom.
     tile_count=0
     for city,(lat,lon) in CITIES.items():
         for z in ZOOMS:
@@ -64,7 +64,7 @@ def main():
     if leaked:
         raise SystemExit("credential leak detected: " + ", ".join(leaked))
 
-    manifest={"schema":1,"map":"streets-v4","tileset":"v4","cities":CITIES,"zooms":ZOOMS,"tiles":tile_count,"files":[]}
+    manifest={"schema":1,"map":"streets-v4","tileset":"v4","cities":CITIES,"zooms":ZOOMS,"tiles":tile_count,"screenshots":screenshot_status,"files":[]}
     for p in sorted(x for x in OUT.rglob("*") if x.is_file()):
         b=p.read_bytes()
         manifest["files"].append({"path":str(p.relative_to(OUT)),"bytes":len(b),"sha256":hashlib.sha256(b).hexdigest()})
