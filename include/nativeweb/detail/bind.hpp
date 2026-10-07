@@ -1,0 +1,150 @@
+#ifndef NATIVEWEB_DETAIL_BIND_HPP_INCLUDED
+#define NATIVEWEB_DETAIL_BIND_HPP_INCLUDED
+
+#include "nativeweb/any.hpp"
+
+#include <cstddef>
+#include <functional>
+#include <stdexcept>
+#include <tuple>
+#include <type_traits>
+
+namespace nativeweb {
+
+typedef std::function<Any(const VariantList&)> DynamicFunction;
+
+namespace detail {
+
+template <std::size_t... Indices>
+struct IndexSequence
+{
+};
+
+template <std::size_t N, std::size_t... Indices>
+struct MakeIndexSequence
+    : MakeIndexSequence<N - 1, N - 1, Indices...>
+{
+};
+
+template <std::size_t... Indices>
+struct MakeIndexSequence<0, Indices...>
+{
+    typedef IndexSequence<Indices...> Type;
+};
+
+template <typename Signature>
+struct FunctionTraits;
+
+template <typename Result, typename... Args>
+struct FunctionTraits<Result(Args...)>
+{
+    typedef Result ResultType;
+    typedef std::tuple<Args...> ArgsTuple;
+
+    enum
+    {
+        Arity = sizeof...(Args)
+    };
+
+    template <std::size_t Index>
+    struct Arg
+    {
+        typedef typename std::tuple_element<Index, ArgsTuple>::type Type;
+    };
+};
+
+template <typename Result, typename... Args>
+struct FunctionTraits<Result (*)(Args...)>
+    : FunctionTraits<Result(Args...)>
+{
+};
+
+template <typename Class, typename Result, typename... Args>
+struct FunctionTraits<Result (Class::*)(Args...)>
+    : FunctionTraits<Result(Args...)>
+{
+};
+
+template <typename Class, typename Result, typename... Args>
+struct FunctionTraits<Result (Class::*)(Args...) const>
+    : FunctionTraits<Result(Args...)>
+{
+};
+
+template <typename Result, typename... Args>
+struct FunctionTraits<std::function<Result(Args...)> >
+    : FunctionTraits<Result(Args...)>
+{
+};
+
+template <typename Callable>
+struct FunctionTraits
+    : FunctionTraits<decltype(&Callable::operator())>
+{
+};
+
+template <typename Arg>
+typename std::decay<Arg>::type readArgument(const Any& value)
+{
+    typedef typename std::decay<Arg>::type ValueType;
+    return AnyCast<ValueType>(value);
+}
+
+template <typename Callable, typename Traits, std::size_t... Indices>
+typename std::enable_if<
+    !std::is_void<typename Traits::ResultType>::value,
+    Any
+>::type
+invokeCallable(
+    Callable& callable,
+    const VariantList& args,
+    IndexSequence<Indices...>)
+{
+    return Any(callable(
+        readArgument<typename Traits::template Arg<Indices>::Type>(
+            args[Indices])...));
+}
+
+template <typename Callable, typename Traits, std::size_t... Indices>
+typename std::enable_if<
+    std::is_void<typename Traits::ResultType>::value,
+    Any
+>::type
+invokeCallable(
+    Callable& callable,
+    const VariantList& args,
+    IndexSequence<Indices...>)
+{
+    callable(
+        readArgument<typename Traits::template Arg<Indices>::Type>(
+            args[Indices])...);
+
+    return Any();
+}
+
+template <typename Callable>
+DynamicFunction makeDynamicFunction(Callable callable)
+{
+    typedef typename std::decay<Callable>::type StoredCallable;
+    typedef FunctionTraits<StoredCallable> Traits;
+    typedef typename MakeIndexSequence<Traits::Arity>::Type Indices;
+
+    return [callable](const VariantList& args) mutable -> Any
+    {
+        if (args.size() != static_cast<std::size_t>(Traits::Arity))
+        {
+            throw std::runtime_error(
+                "NativeWeb bind argument count mismatch");
+        }
+
+        return invokeCallable<Callable, Traits>(
+            callable,
+            args,
+            Indices());
+    };
+}
+
+} // namespace detail
+} // namespace nativeweb
+
+#endif

@@ -2,6 +2,7 @@
 #define NATIVEWEB_WEBVIEW_HPP_INCLUDED
 
 #include "nativeweb/any.hpp"
+#include "nativeweb/detail/bind.hpp"
 
 #include <future>
 #include <memory>
@@ -35,11 +36,9 @@ public:
     void load(const std::string& source);
     void reload();
 
-    // Dynamic primitive API. This is the stable foundation used by typed
-    // convenience adapters and migration-style invoke APIs.
-    typedef Any (*DynamicFunction)(const VariantList& args);
-
-    void bind(const std::string& method, DynamicFunction function);
+    // Dynamic primitive API. Typed bind below adapts ordinary C++ callables to
+    // this canonical Any/VariantList contract.
+    void bind(const std::string& method, const DynamicFunction& function);
 
     std::future<Any> execute(
         const std::string& method,
@@ -49,12 +48,17 @@ public:
         const std::string& event,
         const Any& payload = Any());
 
-    // Recommended typed API. The adapter implementation will map ordinary
-    // C++ callables/arguments to the dynamic Any contract without exposing
-    // browser-engine details.
     template <typename Callable>
-    void bind(const std::string& method, Callable callable);
+    void bind(const std::string& method, Callable callable)
+    {
+        const DynamicFunction dynamic =
+            detail::makeDynamicFunction(callable);
 
+        bind(method, dynamic);
+    }
+
+    // Typed execute remains part of the intended public shape. Its async
+    // adapter will be implemented together with the pending-call runtime.
     template <typename Result, typename... Args>
     std::future<Result> execute(
         const std::string& method,
