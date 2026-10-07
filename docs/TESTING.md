@@ -63,13 +63,16 @@ Platform Smoke 외에 `.github/workflows/core-regression.yml`이 추가되었다
 - public WebView API compile contract
 - BrowserBackend compile contract
 
-Latest expanded Core regression:
+Latest full verified baseline:
 
-- Run ID: `37611047113`
-- Head SHA: `ca8f80287193ce914f27d423229094a2d7f76f25`
-- Ubuntu: success
-- Windows: success
-- Adds structured error, request ID/pending-call resolve/reject/rejectAll, WebView-destroy rejection contract, opaque ObjectRegistry and lifetime regression
+- Head SHA: `2044db6aa4370d91091655512f07ba611357622b`
+- Core Regression run `37640758740`: Ubuntu + Windows success
+- Platform Smoke run `37640758806`: Ubuntu + Windows success
+- NativeWeb CEF Bridge run `37640758818`: Linux real CEF success
+
+Core coverage now includes Any/containers/binary, typed bind, typed async future casting, structured errors, request IDs/pending calls, event dispatcher, bridge messages/runtime, ObjectRegistry and public API compile contracts.
+
+Real CEF integration coverage now includes reload reconnect, JS→C++, C++→JS, objects, arrays, binary, events, Promise resolve/reject in both bridge directions where applicable, native exception mapping and missing-method rejection.
 
 ## Target CI topology
 
@@ -162,19 +165,21 @@ webview.destroy();
 
 Mock만으로 CEF backend 완료를 선언하지 않는다.
 
-CEF integration 완료 조건:
+CEF integration 완료 조건 및 현재 상태:
 
-- real CEF distribution 사용
-- CefExecuteProcess/CefInitialize
-- WebView create
-- local HTML load
-- JS -> C++
-- C++ -> JS
-- Promise resolve/reject
-- reload reconnect
-- destroy
-- multi-WebView
-- binary
+- [x] real CEF distribution 사용
+- [x] CefExecuteProcess/CefInitialize
+- [x] browser create
+- [x] local HTML load
+- [x] JS -> C++
+- [x] C++ -> JS
+- [x] JS-facing Promise resolve/reject
+- [x] JS-returned Promise -> C++ future resolve/reject
+- [x] reload reconnect
+- [x] binary
+- [x] events
+- [ ] destroy while bridge calls are pending (real browser)
+- [ ] multi-WebView isolation
 
 WebView2 backend가 추가되면 같은 browser contract suite를 재사용한다.
 

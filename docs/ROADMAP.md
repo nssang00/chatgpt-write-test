@@ -20,11 +20,11 @@
 - [x] Any/VariantList/VariantDict integration
 - [x] structured error model
 - [x] binary type
-- [ ] async/future abstraction
+- [x] async/future abstraction
 - [x] request IDs
 - [x] pending request registry
 - [x] object registry
-- [ ] event primitive
+- [x] event primitive
 - [ ] permissions/capability skeleton
 
 완료 기준: browser 없이 core contracts를 unit test할 수 있다.
@@ -36,7 +36,7 @@
 - [x] load/reload declarations
 - [x] dynamic bind contract
 - [x] C++11 typed bind adapter
-- [ ] typed execute adapter
+- [x] typed execute adapter
 - [x] emit declaration
 - [ ] capabilities
 - [x] API compile regression on Windows/Linux
@@ -52,17 +52,20 @@ Selected CEF:
 144.0.36+g78619fd+chromium-144.0.7559.264
 ```
 
-- [ ] CEF package acquisition/install strategy
-- [ ] multi-process bootstrap
-- [ ] BrowserBackend implementation
-- [ ] renderer bridge injection
-- [ ] request/response transport
-- [ ] Any <-> CEF value conversion
-- [ ] events
-- [ ] reload reconnect
-- [ ] binary
+- [x] CEF package acquisition/install strategy
+- [x] multi-process bootstrap
+- [x] BrowserBackend implementation
+- [x] renderer bridge injection
+- [x] request/response transport
+- [x] Any <-> CEF value conversion
+- [x] events
+- [x] reload reconnect
+- [x] binary
 - [ ] multi-WebView
-- [ ] real GitHub Actions integration test
+- [x] C++ -> JS synchronous call
+- [x] C++ -> JS Promise result
+- [x] JS Promise rejection -> C++ Error
+- [x] real GitHub Actions integration test
 
 완료 기준: real CEF로 bridge baseline 전부 통과.
 

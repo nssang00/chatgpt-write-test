@@ -4,7 +4,7 @@
 
 NativeWeb은 기존 C/C++ application과 native SDK를 유지하면서 UI를 HTML/CSS/JavaScript로 만들 수 있게 하는 desktop runtime/platform을 목표로 한다.
 
-현재 저장소는 **초기 architecture + cross-platform CI bootstrap 단계**다.
+현재 저장소는 **Core runtime + Linux real CEF bridge integration 단계**다. Windows/Linux Core CI와 pinned CEF 144의 실제 browser-process/renderer-process bridge가 GitHub Actions에서 동작한다.
 
 ## Why
 
@@ -108,7 +108,9 @@ Initial verified workflow run:
 - Run ID: `37597876713`
 - Head SHA: `c253803db28f0047128a4723a2e82862a26f7bf7`
 
-현재 Any 기반 Core regression과 public WebView/BrowserBackend compile contract도 Windows/Ubuntu에서 통과한다. Real CEF integration은 다음 큰 milestone이다.
+Any 기반 Core regression과 public API contract가 Windows/Ubuntu에서 통과하며, Linux에서는 pinned CEF 144로 실제 JS↔C++ bridge까지 통과한다. 현재 검증에는 object/array/binary, reload, events, C++ exception→Promise reject, C++→JS sync/async Promise 및 JS Promise reject→C++ Error가 포함된다.
+
+Latest full verified head: `2044db6aa4370d91091655512f07ba611357622b`.
 
 ## Start here
 
@@ -126,12 +128,14 @@ Initial verified workflow run:
 
 ## Immediate next work
 
-1. typed `execute<Result>()` async conversion 전략 확정
-2. event primitive + bridge message envelope
-3. Linux real CEF bootstrap + integration
-4. JS ↔ C++ request/response/Promise bridge
-5. binary/reload/multi-WebView real integration regression
-6. Windows WebView2/CEF contract 확대
+1. public `WebView::Impl` orchestration을 Core/BrowserBackend에 연결
+2. `engine=auto` / CEF / WebView2 최소 selection contract와 capabilities
+3. real CEF multi-WebView isolation regression
+4. real-browser destroy/pending-call regression
+5. native object registry -> JS Proxy bridge
+6. Windows WebView2 및 Windows CEF 동일 contract 확대
+7. Win32/MFC/WinForms thin host adapters
+8. stable C ABI plugin prototype
 
 ## Repository note
 
