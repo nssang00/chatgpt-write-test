@@ -32,11 +32,15 @@ void compileBeginnerContract(nativeweb::NativeWindowHandle parent)
     std::future<Any> dynamicResult =
         webview.execute("ui.calculate", args);
 
+    std::future<int> typedResult =
+        webview.execute<int>("ui.calculate", 3, 4);
+
     webview.emit("app.ready", Any(true));
     webview.reload();
     webview.destroy();
 
     (void)dynamicResult;
+    (void)typedResult;
 }
 
 } // namespace
