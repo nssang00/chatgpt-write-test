@@ -1,4 +1,5 @@
 #include "core/native_object_runtime.hpp"
+#include "nativeweb/error.hpp"
 
 #include <iostream>
 #include <memory>
