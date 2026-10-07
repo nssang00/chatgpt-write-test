@@ -46,9 +46,12 @@ void testStructuredRoundTrip()
         nativeweb::detail::anyToJson(
             Any(root));
 
+    const Any decodedValue =
+        nativeweb::detail::jsonToAny(json);
+
     const VariantDict& decoded =
         AnyCast<const VariantDict&>(
-            nativeweb::detail::jsonToAny(json));
+            decodedValue);
 
     CHECK(
         AnyCast<std::string>(
