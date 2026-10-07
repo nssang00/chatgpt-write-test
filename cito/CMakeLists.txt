@@ -18,4 +18,12 @@ if(BUILD_TESTING)
   add_executable(cito_wire_tests tests/wire_test.cpp)
   target_link_libraries(cito_wire_tests PRIVATE cito)
   add_test(NAME cito_wire_tests COMMAND cito_wire_tests)
+
+  add_executable(cito_interest_tests tests/interest_test.cpp)
+  target_link_libraries(cito_interest_tests PRIVATE cito)
+  add_test(NAME cito_interest_tests COMMAND cito_interest_tests)
+
+  add_executable(cito_interest_scale_tests tests/interest_scale_test.cpp)
+  target_link_libraries(cito_interest_scale_tests PRIVATE cito)
+  add_test(NAME cito_interest_scale_tests COMMAND cito_interest_scale_tests)
 endif()
