@@ -3,6 +3,7 @@
 
 #include "nativeweb/any.hpp"
 #include "nativeweb/detail/bind.hpp"
+#include "nativeweb/detail/async.hpp"
 #include "nativeweb/types.hpp"
 
 #include <future>
@@ -54,12 +55,17 @@ public:
         bind(method, dynamic);
     }
 
-    // Typed execute remains part of the intended public shape. Its async
-    // adapter will be implemented together with the pending-call runtime.
     template <typename Result, typename... Args>
     std::future<Result> execute(
         const std::string& method,
-        const Args&... args);
+        const Args&... args)
+    {
+        VariantList packed;
+        detail::appendArguments(packed, args...);
+
+        return detail::castFuture<Result>(
+            execute(method, packed));
+    }
 
 private:
     class Impl;

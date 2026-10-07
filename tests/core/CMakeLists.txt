@@ -87,3 +87,29 @@ add_test(
     NAME core.object_registry
     COMMAND nativeweb_object_registry_regression
 )
+
+add_executable(nativeweb_async_adapter_regression
+    async_adapter_regression.cpp
+)
+target_link_libraries(nativeweb_async_adapter_regression PRIVATE NativeWeb::Core)
+set_target_properties(nativeweb_async_adapter_regression PROPERTIES
+    CXX_STANDARD 11 CXX_STANDARD_REQUIRED YES CXX_EXTENSIONS NO)
+add_test(NAME core.async_adapter COMMAND nativeweb_async_adapter_regression)
+
+add_executable(nativeweb_event_dispatcher_regression
+    event_dispatcher_regression.cpp
+)
+target_link_libraries(nativeweb_event_dispatcher_regression PRIVATE NativeWeb::Core)
+target_include_directories(nativeweb_event_dispatcher_regression PRIVATE ${PROJECT_SOURCE_DIR}/src)
+set_target_properties(nativeweb_event_dispatcher_regression PROPERTIES
+    CXX_STANDARD 11 CXX_STANDARD_REQUIRED YES CXX_EXTENSIONS NO)
+add_test(NAME core.event_dispatcher COMMAND nativeweb_event_dispatcher_regression)
+
+add_executable(nativeweb_bridge_message_regression
+    bridge_message_regression.cpp
+)
+target_link_libraries(nativeweb_bridge_message_regression PRIVATE NativeWeb::Core)
+target_include_directories(nativeweb_bridge_message_regression PRIVATE ${PROJECT_SOURCE_DIR}/src)
+set_target_properties(nativeweb_bridge_message_regression PROPERTIES
+    CXX_STANDARD 11 CXX_STANDARD_REQUIRED YES CXX_EXTENSIONS NO)
+add_test(NAME core.bridge_message COMMAND nativeweb_bridge_message_regression)

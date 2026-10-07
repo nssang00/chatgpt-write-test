@@ -3,6 +3,7 @@
 
 #include "nativeweb/any.hpp"
 #include "nativeweb/error.hpp"
+#include "nativeweb/detail/request_id.hpp"
 
 #include <atomic>
 #include <cstddef>
@@ -15,8 +16,6 @@
 
 namespace nativeweb {
 namespace detail {
-
-typedef std::uint64_t RequestId;
 
 class PendingCall
 {
