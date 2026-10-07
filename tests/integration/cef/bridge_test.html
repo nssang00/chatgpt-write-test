@@ -7,21 +7,122 @@
 <body>
 <script>
 (async function () {
-  try {
-    const result = await native.invoke("math.add", 3, 4);
+  async function fail(message) {
+    try {
+      await native.invoke("test.fail", String(message));
+    } catch (_) {
+    }
+  }
 
+  try {
+    if (!location.search.includes("reloaded=1")) {
+      const beforeReload = await native.invoke("math.add", 1, 2);
+      if (beforeReload !== 3) {
+        await fail("pre-reload math.add returned " + String(beforeReload));
+        return;
+      }
+
+      location.replace(location.href + "?reloaded=1");
+      return;
+    }
+
+    const result = await native.invoke("math.add", 3, 4);
     if (result !== 7) {
-      native.invoke(
-        "test.fail",
-        "math.add returned " + String(result)
+      await fail("math.add returned " + String(result));
+      return;
+    }
+
+    const objectResult = await native.invoke(
+      "echo.object",
+      {
+        name: "camera",
+        retry: true,
+        nested: { count: 2 }
+      }
+    );
+
+    if (
+      !objectResult ||
+      objectResult.name !== "camera" ||
+      objectResult.retry !== true ||
+      !objectResult.nested ||
+      objectResult.nested.count !== 2
+    ) {
+      await fail("object round-trip failed");
+      return;
+    }
+
+    const arrayResult = await native.invoke(
+      "echo.array",
+      [1, "two", true, [3, 4]]
+    );
+
+    if (
+      !Array.isArray(arrayResult) ||
+      arrayResult.length !== 4 ||
+      arrayResult[0] !== 1 ||
+      arrayResult[1] !== "two" ||
+      arrayResult[2] !== true ||
+      !Array.isArray(arrayResult[3]) ||
+      arrayResult[3][1] !== 4
+    ) {
+      await fail("array round-trip failed");
+      return;
+    }
+
+    const binaryResult = await native.invoke("test.binary");
+
+    if (!(binaryResult instanceof ArrayBuffer)) {
+      await fail(
+        "binary result is not ArrayBuffer: " +
+        Object.prototype.toString.call(binaryResult)
       );
       return;
     }
 
-    native.invoke("test.done", result);
+    const bytes = new Uint8Array(binaryResult);
+    if (
+      bytes.length !== 3 ||
+      bytes[0] !== 0 ||
+      bytes[1] !== 127 ||
+      bytes[2] !== 255
+    ) {
+      await fail("binary round-trip failed");
+      return;
+    }
+
+    let nativeExceptionRejected = false;
+    try {
+      await native.invoke("test.throw");
+    } catch (error) {
+      const text = String(error);
+      nativeExceptionRejected =
+        text.includes("native_exception") &&
+        text.includes("expected native exception");
+    }
+
+    if (!nativeExceptionRejected) {
+      await fail("native exception did not reject Promise correctly");
+      return;
+    }
+
+    let missingMethodRejected = false;
+    try {
+      await native.invoke("missing.method");
+    } catch (error) {
+      missingMethodRejected =
+        String(error).includes("method_not_found");
+    }
+
+    if (!missingMethodRejected) {
+      await fail("missing method did not reject Promise correctly");
+      return;
+    }
+
+    await native.invoke("test.done", result);
   } catch (error) {
     if (window.native && native.invoke) {
-      native.invoke("test.fail", String(error));
+      await fail(error && error.stack ? error.stack : String(error));
     }
   }
 })();

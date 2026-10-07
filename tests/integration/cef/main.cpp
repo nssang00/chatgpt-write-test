@@ -6,6 +6,7 @@
 #include "include/cef_command_line.h"
 
 #include <iostream>
+#include <stdexcept>
 #include <string>
 
 namespace {
@@ -24,6 +25,39 @@ public:
             nativeweb::detail::makeDynamicFunction(
                 [](int a, int b) {
                     return a + b;
+                }));
+
+        runtime_.bind(
+            "echo.object",
+            nativeweb::detail::makeDynamicFunction(
+                [](const VariantDict& value) {
+                    return value;
+                }));
+
+        runtime_.bind(
+            "echo.array",
+            nativeweb::detail::makeDynamicFunction(
+                [](const VariantList& value) {
+                    return value;
+                }));
+
+        runtime_.bind(
+            "test.binary",
+            nativeweb::detail::makeDynamicFunction(
+                []() {
+                    nativeweb::Binary bytes;
+                    bytes.push_back(0);
+                    bytes.push_back(127);
+                    bytes.push_back(255);
+                    return bytes;
+                }));
+
+        runtime_.bind(
+            "test.throw",
+            nativeweb::detail::makeDynamicFunction(
+                []() -> int {
+                    throw std::runtime_error(
+                        "expected native exception");
                 }));
 
         runtime_.bind(
