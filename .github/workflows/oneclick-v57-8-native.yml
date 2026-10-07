@@ -21,7 +21,7 @@ jobs:
     env:
       CEF_VERSION: 154.0.28+g564dd6c+chromium-154.0.8037.58
       CEF_PLATFORM: windows64
-      PAYLOAD_SHA256: 933337738751cd8aabe7b540d81503014b6b3759f1887c10138748b5cb2e9562
+      PAYLOAD_SHA256: cf7bdda6ea6c9540d17b1c72a9474dfdd6fbd1b7ff91b0f5f70f510b58b89e9b
 
     steps:
       - name: Checkout
@@ -157,6 +157,7 @@ jobs:
         if: ${{ always() }}
         shell: pwsh
         run: |
+          New-Item -ItemType Directory -Force -Path results | Out-Null
           $names = @('CompanyWebViewCefSubprocess','CompanyWebViewCefInitSmoke','CompanyWebViewCefNativeRefreshControl')
           $left = @()
           foreach ($name in $names) { $left += @(Get-Process $name -ErrorAction SilentlyContinue) }
