@@ -25,4 +25,12 @@ if [[ ! "${expected_sha1}" =~ ^[0-9a-fA-F]{40}$ ]]; then
 fi
 
 echo "CEF SHA1    : ${expected_sha1}"
+
+if [[ "${expected_sha1}" != "${CEF_SHA1}" ]]; then
+  echo "Pinned CEF SHA1 does not match remote artifact" >&2
+  echo "pinned: ${CEF_SHA1}" >&2
+  echo "remote: ${expected_sha1}" >&2
+  exit 1
+fi
+
 echo "CEF artifact probe: PASS"
