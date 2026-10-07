@@ -76,6 +76,101 @@ void sendCallError(
     frame->SendProcessMessage(PID_BROWSER, response);
 }
 
+void sendCallSuccess(
+    CefRefPtr<CefFrame> frame,
+    const std::string& id,
+    CefRefPtr<CefValue> value)
+{
+    CefRefPtr<CefProcessMessage> response =
+        CefProcessMessage::Create("nativeweb.call.response");
+
+    CefRefPtr<CefListValue> args =
+        response->GetArgumentList();
+
+    args->SetString(0, id);
+    args->SetBool(1, true);
+    args->SetValue(2, value);
+
+    frame->SendProcessMessage(PID_BROWSER, response);
+}
+
+std::string promiseRejectionMessage(
+    CefRefPtr<CefV8Value> value)
+{
+    if (!value)
+        return "JavaScript Promise rejected";
+
+    if (value->IsString())
+        return value->GetStringValue().ToString();
+
+    if (value->IsObject() && value->HasValue("message"))
+    {
+        CefRefPtr<CefV8Value> message =
+            value->GetValue("message");
+
+        if (message && message->IsString())
+            return message->GetStringValue().ToString();
+    }
+
+    return "JavaScript Promise rejected";
+}
+
+class CallPromiseHandler : public CefV8Handler
+{
+public:
+    CallPromiseHandler(
+        CefRefPtr<CefFrame> frame,
+        const std::string& id,
+        bool success)
+        : frame_(frame),
+          id_(id),
+          success_(success)
+    {
+    }
+
+    bool Execute(
+        const CefString& name,
+        CefRefPtr<CefV8Value> object,
+        const CefV8ValueList& arguments,
+        CefRefPtr<CefV8Value>& retval,
+        CefString& exception) override
+    {
+        if (success_)
+        {
+            CefRefPtr<CefV8Value> value =
+                arguments.empty()
+                    ? CefV8Value::CreateNull()
+                    : arguments[0];
+
+            sendCallSuccess(
+                frame_,
+                id_,
+                v8ToCefValue(value));
+        }
+        else
+        {
+            sendCallError(
+                frame_,
+                id_,
+                "js_promise_rejected",
+                promiseRejectionMessage(
+                    arguments.empty()
+                        ? nullptr
+                        : arguments[0]));
+        }
+
+        retval = CefV8Value::CreateUndefined();
+        return true;
+    }
+
+private:
+    CefRefPtr<CefFrame> frame_;
+    std::string id_;
+    bool success_;
+
+    IMPLEMENT_REFCOUNTING(CallPromiseHandler);
+};
+
 } // namespace
 
 class CefRendererApp::InvokeHandler : public CefV8Handler
@@ -417,24 +512,69 @@ bool CefRendererApp::OnProcessMessageReceived(
             return true;
         }
 
+        if (result->IsPromise())
+        {
+            CefRefPtr<CefV8Value> thenFunction =
+                result->GetValue("then");
+
+            if (!thenFunction ||
+                !thenFunction->IsFunction())
+            {
+                context->Exit();
+                sendCallError(
+                    frame,
+                    id,
+                    "js_promise_invalid",
+                    "JavaScript Promise has no callable then()");
+                return true;
+            }
+
+            CefV8ValueList thenArguments;
+            thenArguments.push_back(
+                CefV8Value::CreateFunction(
+                    "__nativewebResolve",
+                    new CallPromiseHandler(
+                        frame,
+                        id,
+                        true)));
+
+            thenArguments.push_back(
+                CefV8Value::CreateFunction(
+                    "__nativewebReject",
+                    new CallPromiseHandler(
+                        frame,
+                        id,
+                        false)));
+
+            CefRefPtr<CefV8Value> chained =
+                thenFunction->ExecuteFunction(
+                    result,
+                    thenArguments);
+
+            if (!chained)
+            {
+                context->Exit();
+                sendCallError(
+                    frame,
+                    id,
+                    "js_promise_attach_failed",
+                    "Failed to attach NativeWeb Promise handlers");
+                return true;
+            }
+
+            context->Exit();
+            return true;
+        }
+
         CefRefPtr<CefValue> cefResult =
             v8ToCefValue(result);
 
         context->Exit();
 
-        CefRefPtr<CefProcessMessage> response =
-            CefProcessMessage::Create("nativeweb.call.response");
-
-        CefRefPtr<CefListValue> responseArgs =
-            response->GetArgumentList();
-
-        responseArgs->SetString(0, id);
-        responseArgs->SetBool(1, true);
-        responseArgs->SetValue(2, cefResult);
-
-        frame->SendProcessMessage(
-            PID_BROWSER,
-            response);
+        sendCallSuccess(
+            frame,
+            id,
+            cefResult);
 
         return true;
     }

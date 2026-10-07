@@ -22,9 +22,12 @@ public:
           finished_(false),
           jsFinished_(false),
           cppToJsStarted_(false),
-          cppToJsFinished_(false),
-          cppToJsSuccess_(false),
-          cppCallId_(0)
+          cppSyncFinished_(false),
+          cppAsyncFinished_(false),
+          cppSyncSuccess_(false),
+          cppAsyncSuccess_(false),
+          cppSyncCallId_(0),
+          cppAsyncCallId_(0)
     {
         runtime_.bind(
             "math.add",
@@ -141,17 +144,31 @@ public:
             args.push_back(Any(6));
             args.push_back(Any(7));
 
-            nativeweb::detail::OutboundCall call =
+            nativeweb::detail::OutboundCall syncCall =
                 runtime_.call(
                     "ui.multiply",
                     args);
 
-            cppCallId_ = call.id;
-            cppToJsResult_ = std::move(call.result);
+            cppSyncCallId_ = syncCall.id;
+            cppSyncResult_ =
+                std::move(syncCall.result);
+
+            nativeweb::detail::OutboundCall asyncCall =
+                runtime_.call(
+                    "ui.multiplyAsync",
+                    args);
+
+            cppAsyncCallId_ = asyncCall.id;
+            cppAsyncResult_ =
+                std::move(asyncCall.result);
+
             cppToJsStarted_ = true;
 
             backend_->postBridgeMessage(
-                call.message);
+                syncCall.message);
+
+            backend_->postBridgeMessage(
+                asyncCall.message);
         }
     }
 
@@ -166,30 +183,50 @@ public:
             backend_->postBridgeMessage(response);
 
         if (cppToJsStarted_ &&
-            !cppToJsFinished_ &&
             (parsed.type ==
                  nativeweb::detail::BridgeMessageType::Response ||
              parsed.type ==
-                 nativeweb::detail::BridgeMessageType::Error) &&
-            parsed.requestId == cppCallId_)
+                 nativeweb::detail::BridgeMessageType::Error))
         {
-            try
+            if (!cppSyncFinished_ &&
+                parsed.requestId == cppSyncCallId_)
             {
-                const Any value =
-                    cppToJsResult_.get();
+                try
+                {
+                    cppSyncSuccess_ =
+                        AnyCast<int>(
+                            cppSyncResult_.get()) == 42;
+                }
+                catch (const std::exception& error)
+                {
+                    failure_ =
+                        std::string("C++ to sync JS call failed: ") +
+                        error.what();
+                    cppSyncSuccess_ = false;
+                }
 
-                cppToJsSuccess_ =
-                    AnyCast<int>(value) == 42;
+                cppSyncFinished_ = true;
             }
-            catch (const std::exception& error)
+
+            if (!cppAsyncFinished_ &&
+                parsed.requestId == cppAsyncCallId_)
             {
-                failure_ =
-                    std::string("C++ to JS call failed: ") +
-                    error.what();
-                cppToJsSuccess_ = false;
-            }
+                try
+                {
+                    cppAsyncSuccess_ =
+                        AnyCast<int>(
+                            cppAsyncResult_.get()) == 42;
+                }
+                catch (const std::exception& error)
+                {
+                    failure_ =
+                        std::string("C++ to async JS call failed: ") +
+                        error.what();
+                    cppAsyncSuccess_ = false;
+                }
 
-            cppToJsFinished_ = true;
+                cppAsyncFinished_ = true;
+            }
         }
 
         if (!failure_.empty())
@@ -198,14 +235,18 @@ public:
             finished_ = true;
         }
         else if (jsFinished_ &&
-                 cppToJsFinished_)
+                 cppSyncFinished_ &&
+                 cppAsyncFinished_)
         {
-            success_ = cppToJsSuccess_;
+            success_ =
+                cppSyncSuccess_ &&
+                cppAsyncSuccess_;
+
             finished_ = true;
 
             if (!success_)
                 failure_ =
-                    "C++ to JS multiply returned an unexpected result";
+                    "C++ to JavaScript regression returned an unexpected result";
         }
 
         if (finished_ && backend_)
@@ -231,10 +272,14 @@ private:
     bool finished_;
     bool jsFinished_;
     bool cppToJsStarted_;
-    bool cppToJsFinished_;
-    bool cppToJsSuccess_;
-    nativeweb::detail::RequestId cppCallId_;
-    std::future<Any> cppToJsResult_;
+    bool cppSyncFinished_;
+    bool cppAsyncFinished_;
+    bool cppSyncSuccess_;
+    bool cppAsyncSuccess_;
+    nativeweb::detail::RequestId cppSyncCallId_;
+    nativeweb::detail::RequestId cppAsyncCallId_;
+    std::future<Any> cppSyncResult_;
+    std::future<Any> cppAsyncResult_;
     std::string failure_;
 };
 

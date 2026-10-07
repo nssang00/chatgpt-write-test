@@ -9,6 +9,11 @@
 window.ui = {
   multiply(a, b) {
     return a * b;
+  },
+
+  async multiplyAsync(a, b) {
+    await Promise.resolve();
+    return a * b;
   }
 };
 
