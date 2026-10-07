@@ -1,56 +1,138 @@
-<p align="center">
-  <img src="./assets/chatgpt-github-demo.svg" alt="ChatGPT GitHub Integration Lab" width="100%" />
-</p>
+# NativeWeb
 
-# ChatGPT GitHub Integration Lab
+> **Modern Web UI for native applications.**
 
-이 저장소는 **ChatGPT ↔ GitHub 연동 기능을 직접 검증하기 위한 테스트 공간**입니다.
+NativeWeb은 기존 C/C++ application과 native SDK를 유지하면서 UI를 HTML/CSS/JavaScript로 만들 수 있게 하는 desktop runtime/platform을 목표로 한다.
 
-현재까지 실제로 확인한 기능을 이 저장소에서 계속 실험하고 기록합니다.
+현재 저장소는 **초기 architecture + cross-platform CI bootstrap 단계**다.
 
-## ✅ Verified capabilities
+## Why
 
-| Capability | Status | Notes |
-|---|---:|---|
-| Repository 읽기 | ✅ | 파일 및 메타데이터 조회 |
-| 파일 생성 | ✅ | 새 파일 작성 가능 |
-| 파일 수정 | ✅ | 기존 파일 업데이트 가능 |
-| 파일 삭제 | ✅ | 기존 파일 삭제 가능 |
-| Commit 생성 | ✅ | GitHub Contents API 기반 커밋 |
-| Push에 해당하는 원격 반영 | ✅ | 기본 브랜치에 직접 반영 가능 |
-| Branch 생성 | ✅ | 새 브랜치 생성 가능 |
-| Issue 조회 | ✅ | 열린 이슈 검색/조회 가능 |
-| Issue 생성/수정 | ✅ | 제목, 본문, 상태 등 변경 가능 |
-| PR 생성/수정 | ✅ | Pull Request 생성 및 메타데이터 수정 가능 |
-| Repository 생성 | ❌ | 현재 연결 기능에서는 미지원 |
-| Repository About 수정 | ❌ | description / homepage / topics 변경 액션 미지원 |
+기존 native 자산을 Web UI에 연결하기 위해 불필요한 중간 wrapper/runtime을 강요하지 않는 것이 핵심이다.
 
-## 🧪 Demo artifacts
+```text
+Typical Electron native path
 
-- `chatgpt-push-demo-2026-10-07.txt`  
-  ChatGPT가 직접 생성하고 원격 저장소에 반영한 테스트 파일
-- `assets/chatgpt-github-demo.svg`  
-  저장소 랜딩 페이지용 배너
+Web UI
+  -> Electron IPC
+  -> Node.js
+  -> N-API / native addon
+  -> C/C++ SDK
 
-## 🎯 Purpose
 
-이 저장소의 목적은 단순합니다.
+NativeWeb target
 
-> “ChatGPT가 GitHub에서 실제로 어디까지 읽고, 쓰고, 관리할 수 있는가?”
+Web UI
+  -> NativeWeb Bridge
+  -> C/C++ SDK
+```
 
-기능을 하나씩 실제 저장소에 적용해보면서 검증합니다.
+Python, Node.js, .NET, Rust, Go, Java 등이 더 자연스러운 경우에는 plugin 또는 sidecar로 함께 사용할 수 있다.
 
-## 🛠 Next experiments
+## Developer experience
 
-- 브랜치 생성 후 파일 변경
-- Pull Request 생성
-- Issue에 댓글 작성
-- 라벨 및 담당자 변경
-- PR 리뷰 및 머지 가능 범위 확인
-- GitHub Actions 조회 및 재실행 가능 범위 확인
+초보자의 기본 경로는 단순해야 한다.
 
----
+```cpp
+nativeweb::WebView webview;
+webview.create(parentHandle, "index.html");
 
-<p align="center">
-  Built as a live capability test for ChatGPT + GitHub integration.
-</p>
+webview.bind("math.add", [](int a, int b) {
+    return a + b;
+});
+```
+
+```js
+const result = await native.math.add(3, 4);
+```
+
+전문가는 필요할 때만 engine, permissions, session, plugin ABI, transport 같은 고급 기능으로 내려간다.
+
+## Core principles
+
+- **Simple things must be simple.**
+- **Advanced things must be possible.**
+- **Advanced features must not leak into the beginner experience.**
+- Existing native code should not have to be rewritten just to get a modern Web UI.
+- Public C++ baseline: **C++11**
+- Feature completion = implementation + test + regression pass
+
+## Browser engines
+
+기본은 `auto`.
+
+목표 backend:
+
+- **CEF** — managed/fixed Chromium, Linux first-class, Windows supported
+- **WebView2** — Windows system WebView option
+
+Public code는 engine과 무관하게 `nativeweb::WebView`를 사용한다.
+
+## Host layer
+
+NativeWeb은 기존 GUI framework를 대체하지 않는다.
+
+지원 목표:
+
+- Win32
+- MFC
+- WinForms
+- WPF
+- Qt
+- GTK
+
+각 Host는 **기존 wizard/sample 프로젝트에 WebView control/widget 몇 파일을 추가하는 수준**을 유지한다.
+
+## Native plugins
+
+핵심 장기 기능:
+
+> **Build a DLL/SO. Drop it into the app. Call it from the Web.**
+
+ROS2 pluginlib와 비슷한 사용 경험을 목표로 하되, NativeWeb에서는 shared library가 곧 Web API namespace로 연결된다.
+
+Developer-facing API는 C++답게 만들고, binary boundary는 stable C ABI를 사용한다.
+
+## Current verified status
+
+GitHub Actions에서 C++11 CMake/CTest smoke environment를 실제 검증했다.
+
+| Environment | Status |
+|---|---:|
+| Ubuntu latest | ✅ |
+| Windows latest | ✅ |
+
+Initial verified workflow run:
+
+- Workflow: `Platform Smoke`
+- Run ID: `37597876713`
+- Head SHA: `c253803db28f0047128a4723a2e82862a26f7bf7`
+
+현재는 platform smoke 단계이며 real NativeWeb Core/CEF regression은 아직 구현 전이다.
+
+## Start here
+
+새 세션이나 새 개발자는 **반드시 [HANDOFF.md](HANDOFF.md)부터 읽는다.**
+
+문서:
+
+- [Session handoff / current status](HANDOFF.md)
+- [Architecture](docs/ARCHITECTURE.md)
+- [Architecture decisions](docs/DECISIONS.md)
+- [Testing and CI](docs/TESTING.md)
+- [Roadmap](docs/ROADMAP.md)
+- [Target project structure](docs/PROJECT_STRUCTURE.md)
+- [Contribution rules](CONTRIBUTING.md)
+
+## Immediate next work
+
+1. 사용자 원본 `Any.h`를 repository에 추가
+2. root CMake/project skeleton 생성
+3. Any/VariantList/VariantDict/binary/async core regression 작성
+4. Linux + Windows GitHub Actions에서 regression 통과
+5. public `nativeweb::WebView` API skeleton 작성
+6. Linux real CEF integration 시작
+
+## Repository note
+
+이 저장소는 처음에는 ChatGPT ↔ GitHub 연결 기능 검증용으로 만들어졌기 때문에 과거 integration demo artifact가 일부 남아 있다. 현재부터는 NativeWeb 개발과 handoff 가능한 source-of-truth repository로 사용한다.
