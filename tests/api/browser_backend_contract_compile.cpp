@@ -42,6 +42,18 @@ public:
         return "test";
     }
 
+    virtual nativeweb::Engine engine() const
+    {
+        return nativeweb::Engine::Cef;
+    }
+
+    virtual nativeweb::Capabilities capabilities() const
+    {
+        return nativeweb::Capabilities(
+            static_cast<std::uint64_t>(
+                nativeweb::Capability::Events));
+    }
+
     virtual void setListener(
         nativeweb::detail::BrowserBackendListener* listener)
     {

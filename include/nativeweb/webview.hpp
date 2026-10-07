@@ -27,9 +27,15 @@ public:
     // Beginner path: create a WebView with the framework-selected engine
     // (engine=auto policy is resolved internally).
     void create(NativeWindowHandle parent, const std::string& source);
+    void create(
+        NativeWindowHandle parent,
+        const std::string& source,
+        const WebViewOptions& options);
     void destroy();
 
     bool isCreated() const;
+    Engine engine() const;
+    Capabilities capabilities() const;
 
     void load(const std::string& source);
     void reload();

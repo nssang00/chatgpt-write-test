@@ -1,6 +1,7 @@
 #include "browser/cef/cef_backend.hpp"
 
 #include "browser/cef/cef_value_converter.hpp"
+#include "browser/common/backend_registry.hpp"
 #include "core/bridge_message.hpp"
 #include "include/cef_process_message.h"
 #include "include/cef_render_handler.h"
@@ -138,6 +139,20 @@ CefBackend::~CefBackend()
 const char* CefBackend::engineName() const
 {
     return "cef";
+}
+
+Engine CefBackend::engine() const
+{
+    return Engine::Cef;
+}
+
+Capabilities CefBackend::capabilities() const
+{
+    return Capabilities(
+        static_cast<std::uint64_t>(Capability::Binary) |
+        static_cast<std::uint64_t>(Capability::Events) |
+        static_cast<std::uint64_t>(Capability::AsyncJavaScript) |
+        static_cast<std::uint64_t>(Capability::Windowless));
 }
 
 void CefBackend::setListener(
@@ -413,6 +428,17 @@ void CefBackend::postBridgeMessage(const Any& message)
     browser_->GetMainFrame()->SendProcessMessage(
         PID_RENDERER,
         cefMessage);
+}
+
+void registerCefBackendFactory()
+{
+    registerBrowserBackendFactory(
+        Engine::Cef,
+        []() -> std::unique_ptr<BrowserBackend>
+        {
+            return std::unique_ptr<BrowserBackend>(
+                new CefBackend());
+        });
 }
 
 } // namespace detail

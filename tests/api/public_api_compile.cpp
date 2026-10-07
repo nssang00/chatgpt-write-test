@@ -16,7 +16,16 @@ void compileBeginnerContract(nativeweb::NativeWindowHandle parent)
 {
     nativeweb::WebView webview;
 
-    webview.create(parent, "index.html");
+    nativeweb::WebViewOptions options;
+    options.engine = nativeweb::Engine::Auto;
+
+    webview.create(parent, "index.html", options);
+
+    const nativeweb::Engine engine = webview.engine();
+    const nativeweb::Capabilities capabilities =
+        webview.capabilities();
+    const bool hasBinary =
+        capabilities.supports(nativeweb::Capability::Binary);
     webview.load("index.html");
 
     webview.bind("math.dynamicAdd", &dynamicAdd);
@@ -40,6 +49,8 @@ void compileBeginnerContract(nativeweb::NativeWindowHandle parent)
     webview.destroy();
 
     (void)dynamicResult;
+    (void)engine;
+    (void)hasBinary;
     (void)typedResult;
 }
 

@@ -10,6 +10,8 @@ add_library(nativeweb_core STATIC
     src/core/event_dispatcher.cpp
     src/core/bridge_message.cpp
     src/core/bridge_runtime.cpp
+    src/browser/common/backend_registry.cpp
+    src/webview.cpp
 )
 add_library(NativeWeb::Core ALIAS nativeweb_core)
 

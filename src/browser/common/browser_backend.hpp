@@ -46,6 +46,8 @@ public:
     }
 
     virtual const char* engineName() const = 0;
+    virtual Engine engine() const = 0;
+    virtual Capabilities capabilities() const = 0;
 
     virtual void setListener(BrowserBackendListener* listener) = 0;
 

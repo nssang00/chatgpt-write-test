@@ -15,6 +15,8 @@ public:
     ~CefBackend() override;
 
     const char* engineName() const override;
+    Engine engine() const override;
+    Capabilities capabilities() const override;
 
     void setListener(BrowserBackendListener* listener) override;
 
@@ -43,6 +45,8 @@ private:
     CefRefPtr<Client> client_;
     CefRefPtr<CefBrowser> browser_;
 };
+
+void registerCefBackendFactory();
 
 } // namespace detail
 } // namespace nativeweb
