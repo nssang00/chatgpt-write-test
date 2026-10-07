@@ -97,7 +97,7 @@ void CefRendererApp::OnContextCreated(
 {
     CefRefPtr<CefV8Value> global = context->GetGlobal();
     CefRefPtr<CefV8Value> native =
-        CefV8Value::CreateObject(0, 0);
+        CefV8Value::CreateObject(nullptr, nullptr);
 
     CefRefPtr<CefV8Value> invoke =
         CefV8Value::CreateFunction(

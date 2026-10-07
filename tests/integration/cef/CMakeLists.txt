@@ -63,6 +63,10 @@ target_include_directories(nativeweb_cef_backend
 
 SET_LIBRARY_TARGET_PROPERTIES(nativeweb_cef_backend)
 
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+  target_compile_options(nativeweb_cef_backend PRIVATE -frtti -fexceptions)
+endif()
+
 target_link_libraries(nativeweb_cef_backend
   PUBLIC
     nativeweb_core_for_cef
@@ -86,6 +90,10 @@ target_include_directories(${TARGET}
 )
 
 SET_EXECUTABLE_TARGET_PROPERTIES(${TARGET})
+
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+  target_compile_options(${TARGET} PRIVATE -frtti -fexceptions)
+endif()
 
 target_link_libraries(${TARGET}
   PRIVATE

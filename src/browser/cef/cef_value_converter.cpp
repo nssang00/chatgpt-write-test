@@ -110,6 +110,9 @@ Any cefValueToAny(CefRefPtr<CefValue> value)
 
     case VTYPE_LIST:
         return cefListToAny(value->GetList());
+
+    case VTYPE_NUM_VALUES:
+        break;
     }
 
     throw std::runtime_error("Unsupported CEF value type");
@@ -322,7 +325,7 @@ CefRefPtr<CefV8Value> cefValueToV8(CefRefPtr<CefValue> value)
         CefRefPtr<CefDictionaryValue> dict =
             value->GetDictionary();
         CefRefPtr<CefV8Value> object =
-            CefV8Value::CreateObject(0, 0);
+            CefV8Value::CreateObject(nullptr, nullptr);
 
         CefDictionaryValue::KeyList keys;
         if (dict)
@@ -341,6 +344,9 @@ CefRefPtr<CefV8Value> cefValueToV8(CefRefPtr<CefValue> value)
 
         return object;
     }
+
+    case VTYPE_NUM_VALUES:
+        break;
     }
 
     return CefV8Value::CreateNull();
