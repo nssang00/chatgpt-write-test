@@ -6,6 +6,7 @@ option(NATIVEWEB_BUILD_TESTS "Build NativeWeb regression tests" ON)
 
 add_library(nativeweb_core STATIC
     src/core/pending_call_registry.cpp
+    src/core/object_registry.cpp
 )
 add_library(NativeWeb::Core ALIAS nativeweb_core)
 
