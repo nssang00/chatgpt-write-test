@@ -55,8 +55,9 @@ ctx.publish("drone_17", Position{...});
 
 ## Testing hierarchy
 
-1. Current session: algorithms, codec/type logic, unit tests, same-process behavior, simulations, benchmarks where possible.
-2. Same-host behavior: multiple OS processes when SHM is introduced.
-3. Independent network nodes: multiple Linux containers/network namespaces in GitHub Actions.
-4. Network fault testing: Linux namespaces + `tc/netem` when reliability is introduced.
-5. Windows Actions only for Windows-specific behavior and cross-platform compatibility.
+1. Current session: algorithms, codec/type logic, unit tests, same-process behavior, simulations, sanitizers, and benchmarks where possible.
+2. Same-host SHM: multiple real OS processes on one host/runner.
+3. Independent Linux network nodes: Linux network namespaces + veth + bridge on one GitHub Actions Ubuntu runner.
+4. Network fault testing: namespace-local `tc/netem` for loss, delay, reordering, link down/up, and recovery.
+5. Windows Actions only for Windows-specific implementation and cross-platform compatibility.
+6. Physical multi-machine tests are reserved for later real-network performance validation.
