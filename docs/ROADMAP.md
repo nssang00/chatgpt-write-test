@@ -18,12 +18,12 @@
 ## Phase 1 — Core value/async/runtime
 
 - [x] Any/VariantList/VariantDict integration
-- [ ] structured error model
-- [ ] binary type
+- [x] structured error model
+- [x] binary type
 - [ ] async/future abstraction
-- [ ] request IDs
-- [ ] pending request registry
-- [ ] object registry
+- [x] request IDs
+- [x] pending request registry
+- [x] object registry
 - [ ] event primitive
 - [ ] permissions/capability skeleton
 

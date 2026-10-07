@@ -305,18 +305,23 @@ ci/smoke/
 - `nativeweb::WebView` pImpl public API skeleton
 - public API compile regression
 - engine-independent internal `BrowserBackend` / listener contract
+- structured `nativeweb::Error(code, message)`
+- monotonic request IDs + thread-safe PendingCallRegistry
+- resolve/reject/rejectAll contract using `std::promise/std::future`
+- destroy contract baseline: `webview_destroyed` rejection for every pending call
+- thread-safe ObjectRegistry: `shared_ptr<T> -> opaque ObjectId -> typed lookup/release`
+- registry-owned native object lifetime; raw pointer is never the JS contract
 - Windows + Ubuntu Core Regression success
-  - Run ID: `37610573658`
-  - Head SHA: `abf8a2c5908c1bff3ee3e8473de3a52242e7e6b7`
+  - Latest feature run ID: `37611047113`
+  - Head SHA: `ca8f80287193ce914f27d423229094a2d7f76f25`
+  - Result: success on both OSes
 
 ### 아직 완료되지 않은 것
 
 - actual `WebView::Impl` runtime implementation
 - typed `execute<Result>()` async adapter
-- pending request / request ID runtime
-- object registry
 - event runtime
-- structured error model
+- bridge request/response/event envelope
 - CEF Linux integration
 - WebView2 backend
 - Host adapters
@@ -329,14 +334,14 @@ ci/smoke/
 
 가장 먼저 해야 할 일:
 
-1. request ID / pending-call / async result Core를 만든다.
-2. typed `execute<Result>()`를 위 async Core에 연결한다.
-3. structured error와 destroy 시 pending call 종료 contract를 테스트한다.
-4. object registry/event primitive를 추가한다.
-5. Linux real CEF package/bootstrap 전략을 고정한다.
-6. `BrowserBackend`의 CEF 구현을 붙이고 create/load/destroy integration test를 만든다.
-7. JS↔C++ bridge의 request/response/Promise contract를 real CEF에서 통과시킨다.
-8. Windows WebView2 backend와 동일 contract test를 추가한다.
+1. typed `execute<Result>()`의 async conversion 전략을 고정하고 pending-call Core에 연결한다.
+2. event primitive와 bridge request/response/error/event envelope를 만든다.
+3. Linux real CEF package/bootstrap 전략을 고정한다.
+4. `BrowserBackend`의 CEF 구현을 붙이고 create/load/destroy integration test를 만든다.
+5. JS↔C++ bridge의 request/response/Promise contract를 real CEF에서 통과시킨다.
+6. binary → Uint8Array와 reload/multi-WebView regression을 추가한다.
+7. Windows WebView2 backend와 동일 contract test를 추가한다.
+8. thin Host adapters(MFC/WinForms 포함)를 시작한다.
 9. Plugin C ABI와 C++ wrapper prototype을 만든다.
 
 세부 단계는 [docs/ROADMAP.md](docs/ROADMAP.md)를 따른다.

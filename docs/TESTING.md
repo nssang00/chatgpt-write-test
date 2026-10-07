@@ -63,6 +63,14 @@ Platform Smoke 외에 `.github/workflows/core-regression.yml`이 추가되었다
 - public WebView API compile contract
 - BrowserBackend compile contract
 
+Latest expanded Core regression:
+
+- Run ID: `37611047113`
+- Head SHA: `ca8f80287193ce914f27d423229094a2d7f76f25`
+- Ubuntu: success
+- Windows: success
+- Adds structured error, request ID/pending-call resolve/reject/rejectAll, WebView-destroy rejection contract, opaque ObjectRegistry and lifetime regression
+
 ## Target CI topology
 
 ```text

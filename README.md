@@ -126,12 +126,12 @@ Initial verified workflow run:
 
 ## Immediate next work
 
-1. request ID / pending-call / async Core 구현
-2. typed `execute<Result>()` 연결
-3. structured error / destroy-pending contract 테스트
-4. object registry / event primitive
-5. Linux real CEF bootstrap + integration
-6. JS ↔ C++ bridge를 real CEF에서 회귀 테스트
+1. typed `execute<Result>()` async conversion 전략 확정
+2. event primitive + bridge message envelope
+3. Linux real CEF bootstrap + integration
+4. JS ↔ C++ request/response/Promise bridge
+5. binary/reload/multi-WebView real integration regression
+6. Windows WebView2/CEF contract 확대
 
 ## Repository note
 
