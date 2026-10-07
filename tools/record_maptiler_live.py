@@ -43,7 +43,24 @@ def main():
         write(OUT/name, data)
         print("recorded", name, len(data))
 
-    # Record MapTiler-rendered reference screenshots when Static Maps is available.\n    screenshot_status={}\n    for city,(lat,lon) in CITIES.items():\n        for z in (12,15):\n            name=f\"{city}-z{z}.png\"\n            url=f\"{API}/maps/streets-v4/static/{lon},{lat},{z}/768x768.png?key={KEY}&attribution=false\"\n            try:\n                data=fetch(url)\n                write(OUT/\"screenshots\"/name,data)\n                screenshot_status[name]={\"ok\":True,\"bytes\":len(data)}\n                print(\"recorded screenshot\",name,len(data))\n            except urllib.error.HTTPError as e:\n                screenshot_status[name]={\"ok\":False,\"httpStatus\":e.code}\n                print(\"static screenshot unavailable\",name,e.code)\n    (OUT/\"screenshots\").mkdir(parents=True,exist_ok=True)\n    (OUT/\"screenshots\"/\"status.json\").write_text(json.dumps(screenshot_status,indent=2)+\"\\n\")\n\n    # Record a deterministic 2x2 neighborhood for each city/zoom.
+    # Record MapTiler-rendered reference screenshots when Static Maps is available.
+    screenshot_status={}
+    for city,(lat,lon) in CITIES.items():
+        for z in (12,15):
+            name=f"{city}-z{z}.png"
+            url=f"{API}/maps/streets-v4/static/{lon},{lat},{z}/768x768.png?key={KEY}&attribution=false"
+            try:
+                data=fetch(url)
+                write(OUT/"screenshots"/name,data)
+                screenshot_status[name]={"ok":True,"bytes":len(data)}
+                print("recorded screenshot",name,len(data))
+            except urllib.error.HTTPError as e:
+                screenshot_status[name]={"ok":False,"httpStatus":e.code}
+                print("static screenshot unavailable",name,e.code)
+    (OUT/"screenshots").mkdir(parents=True,exist_ok=True)
+    (OUT/"screenshots"/"status.json").write_text(json.dumps(screenshot_status,indent=2)+"\n")
+
+    # Record a deterministic 2x2 neighborhood for each city/zoom.
     tile_count=0
     for city,(lat,lon) in CITIES.items():
         for z in ZOOMS:
