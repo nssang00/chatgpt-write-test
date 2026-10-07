@@ -182,8 +182,8 @@ void CefBackend::create(
             client_,
             params.source,
             settings,
-            0,
-            0);
+            nullptr,
+            nullptr);
 
     if (!started)
         throw std::runtime_error("CefBrowserHost::CreateBrowser failed");
@@ -228,7 +228,7 @@ void CefBackend::onAfterCreated(
 void CefBackend::onBeforeClose(
     CefRefPtr<CefBrowser> browser)
 {
-    browser_ = 0;
+    browser_ = nullptr;
 
     if (listener_)
         listener_->onBrowserClosed();
