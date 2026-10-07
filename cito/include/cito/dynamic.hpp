@@ -57,6 +57,10 @@ public:
         return values_[find_index(field_name)].has_value();
     }
 
+    const std::optional<DynamicValue>& value_at(std::size_t index) const {
+        return values_.at(index);
+    }
+
     class FieldProxy {
     public:
         FieldProxy(DynamicData& owner, std::string name) : owner_(owner), name_(std::move(name)) {}
