@@ -5,6 +5,7 @@
 #include "include/cef_app.h"
 #include "include/cef_command_line.h"
 
+#include <future>
 #include <iostream>
 #include <stdexcept>
 #include <string>
@@ -18,7 +19,12 @@ public:
     IntegrationListener()
         : backend_(0),
           success_(false),
-          finished_(false)
+          finished_(false),
+          jsFinished_(false),
+          cppToJsStarted_(false),
+          cppToJsFinished_(false),
+          cppToJsSuccess_(false),
+          cppCallId_(0)
     {
         runtime_.bind(
             "math.add",
@@ -79,9 +85,12 @@ public:
             "test.done",
             nativeweb::detail::makeDynamicFunction(
                 [this](int result) {
-                    success_ = (result == 7);
-                    finished_ = true;
-                    return success_;
+                    jsFinished_ = (result == 7);
+
+                    if (!jsFinished_)
+                        failure_ = "JavaScript-side regression failed";
+
+                    return jsFinished_;
                 }));
 
         runtime_.bind(
@@ -90,6 +99,7 @@ public:
                 [this](const std::string& message) {
                     failure_ = message;
                     success_ = false;
+                    jsFinished_ = true;
                     finished_ = true;
                     return false;
                 }));
@@ -122,11 +132,32 @@ public:
     void onLoadFinished(const std::string& source) override
     {
         std::cout << "load-finish: " << source << std::endl;
+
+        if (backend_ &&
+            !cppToJsStarted_ &&
+            source.find("reloaded=1") != std::string::npos)
+        {
+            VariantList args;
+            args.push_back(Any(6));
+            args.push_back(Any(7));
+
+            nativeweb::detail::OutboundCall call =
+                runtime_.call(
+                    "ui.multiply",
+                    args);
+
+            cppCallId_ = call.id;
+            cppToJsResult_ = std::move(call.result);
+            cppToJsStarted_ = true;
+
+            backend_->postBridgeMessage(
+                call.message);
+        }
     }
 
     void onBridgeMessage(const Any& message) override
     {
-        const nativeweb::detail::BridgeMessage request =
+        const nativeweb::detail::BridgeMessage parsed =
             nativeweb::detail::parseBridgeMessage(message);
 
         const Any response = runtime_.receive(message);
@@ -134,11 +165,58 @@ public:
         if (backend_ && !response.empty())
             backend_->postBridgeMessage(response);
 
+        if (cppToJsStarted_ &&
+            !cppToJsFinished_ &&
+            (parsed.type ==
+                 nativeweb::detail::BridgeMessageType::Response ||
+             parsed.type ==
+                 nativeweb::detail::BridgeMessageType::Error) &&
+            parsed.requestId == cppCallId_)
+        {
+            try
+            {
+                const Any value =
+                    cppToJsResult_.get();
+
+                cppToJsSuccess_ =
+                    AnyCast<int>(value) == 42;
+            }
+            catch (const std::exception& error)
+            {
+                failure_ =
+                    std::string("C++ to JS call failed: ") +
+                    error.what();
+                cppToJsSuccess_ = false;
+            }
+
+            cppToJsFinished_ = true;
+        }
+
+        if (!failure_.empty())
+        {
+            success_ = false;
+            finished_ = true;
+        }
+        else if (jsFinished_ &&
+                 cppToJsFinished_)
+        {
+            success_ = cppToJsSuccess_;
+            finished_ = true;
+
+            if (!success_)
+                failure_ =
+                    "C++ to JS multiply returned an unexpected result";
+        }
+
         if (finished_ && backend_)
             backend_->destroy();
 
-        std::cout << "bridge-method: "
-                  << request.method << std::endl;
+        if (parsed.type ==
+            nativeweb::detail::BridgeMessageType::Request)
+        {
+            std::cout << "bridge-method: "
+                      << parsed.method << std::endl;
+        }
     }
 
     void onBrowserClosed() override
@@ -151,6 +229,12 @@ private:
     nativeweb::detail::BridgeRuntime runtime_;
     bool success_;
     bool finished_;
+    bool jsFinished_;
+    bool cppToJsStarted_;
+    bool cppToJsFinished_;
+    bool cppToJsSuccess_;
+    nativeweb::detail::RequestId cppCallId_;
+    std::future<Any> cppToJsResult_;
     std::string failure_;
 };
 

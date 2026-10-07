@@ -252,11 +252,43 @@ bool CefBackend::onProcessMessage(
     CefRefPtr<CefFrame> frame,
     CefRefPtr<CefProcessMessage> message)
 {
-    if (message->GetName() != "nativeweb.request")
-        return false;
+    const CefString messageName =
+        message->GetName();
 
     CefRefPtr<CefListValue> list =
         message->GetArgumentList();
+
+    if (messageName == "nativeweb.call.response")
+    {
+        const RequestId requestId =
+            stringToId(list->GetString(0).ToString());
+
+        if (listener_)
+        {
+            if (list->GetBool(1))
+            {
+                listener_->onBridgeMessage(
+                    makeResponseMessage(
+                        requestId,
+                        cefValueToAny(
+                            list->GetValue(2))));
+            }
+            else
+            {
+                listener_->onBridgeMessage(
+                    makeErrorMessage(
+                        requestId,
+                        Error(
+                            list->GetString(2).ToString(),
+                            list->GetString(3).ToString())));
+            }
+        }
+
+        return true;
+    }
+
+    if (messageName != "nativeweb.request")
+        return false;
 
     const RequestId requestId =
         stringToId(list->GetString(0).ToString());
@@ -296,6 +328,43 @@ void CefBackend::postBridgeMessage(const Any& message)
 
     const BridgeMessage parsed =
         parseBridgeMessage(message);
+
+    if (parsed.type == BridgeMessageType::Request)
+    {
+        CefRefPtr<CefProcessMessage> callMessage =
+            CefProcessMessage::Create("nativeweb.call");
+
+        CefRefPtr<CefListValue> callArgs =
+            callMessage->GetArgumentList();
+
+        callArgs->SetString(
+            0,
+            idToString(parsed.requestId));
+
+        callArgs->SetString(1, parsed.method);
+
+        CefRefPtr<CefListValue> cefArguments =
+            CefListValue::Create();
+
+        cefArguments->SetSize(parsed.args.size());
+
+        for (std::size_t i = 0;
+             i < parsed.args.size();
+             ++i)
+        {
+            cefArguments->SetValue(
+                i,
+                anyToCefValue(parsed.args[i]));
+        }
+
+        callArgs->SetList(2, cefArguments);
+
+        browser_->GetMainFrame()->SendProcessMessage(
+            PID_RENDERER,
+            callMessage);
+
+        return;
+    }
 
     if (parsed.type == BridgeMessageType::Event)
     {

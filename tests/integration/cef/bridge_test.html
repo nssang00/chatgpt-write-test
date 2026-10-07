@@ -6,6 +6,12 @@
 </head>
 <body>
 <script>
+window.ui = {
+  multiply(a, b) {
+    return a * b;
+  }
+};
+
 (async function () {
   async function fail(message) {
     try {

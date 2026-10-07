@@ -9,6 +9,75 @@
 namespace nativeweb {
 namespace detail {
 
+namespace {
+
+bool resolveDottedFunction(
+    CefRefPtr<CefV8Context> context,
+    const std::string& method,
+    CefRefPtr<CefV8Value>& receiver,
+    CefRefPtr<CefV8Value>& function)
+{
+    if (!context || method.empty())
+        return false;
+
+    CefRefPtr<CefV8Value> current = context->GetGlobal();
+    std::size_t start = 0;
+
+    while (start < method.size())
+    {
+        const std::size_t dot = method.find('.', start);
+        const std::string part =
+            method.substr(
+                start,
+                dot == std::string::npos
+                    ? std::string::npos
+                    : dot - start);
+
+        if (part.empty() || !current || !current->IsObject())
+            return false;
+
+        CefRefPtr<CefV8Value> next =
+            current->GetValue(part);
+
+        if (dot == std::string::npos)
+        {
+            if (!next || !next->IsFunction())
+                return false;
+
+            receiver = current;
+            function = next;
+            return true;
+        }
+
+        current = next;
+        start = dot + 1;
+    }
+
+    return false;
+}
+
+void sendCallError(
+    CefRefPtr<CefFrame> frame,
+    const std::string& id,
+    const std::string& code,
+    const std::string& message)
+{
+    CefRefPtr<CefProcessMessage> response =
+        CefProcessMessage::Create("nativeweb.call.response");
+
+    CefRefPtr<CefListValue> args =
+        response->GetArgumentList();
+
+    args->SetString(0, id);
+    args->SetBool(1, false);
+    args->SetString(2, code);
+    args->SetString(3, message);
+
+    frame->SendProcessMessage(PID_BROWSER, response);
+}
+
+} // namespace
+
 class CefRendererApp::InvokeHandler : public CefV8Handler
 {
 public:
@@ -277,6 +346,98 @@ bool CefRendererApp::OnProcessMessageReceived(
 
     CefRefPtr<CefListValue> args =
         message->GetArgumentList();
+
+    if (name == "nativeweb.call")
+    {
+        const std::string id =
+            args->GetString(0).ToString();
+
+        const std::string method =
+            args->GetString(1).ToString();
+
+        CefRefPtr<CefListValue> cefArguments =
+            args->GetList(2);
+
+        CefRefPtr<CefV8Context> context =
+            frame ? frame->GetV8Context() : nullptr;
+
+        if (!context || !context->Enter())
+        {
+            sendCallError(
+                frame,
+                id,
+                "js_context_unavailable",
+                "JavaScript context is unavailable");
+            return true;
+        }
+
+        CefRefPtr<CefV8Value> receiver;
+        CefRefPtr<CefV8Value> function;
+
+        if (!resolveDottedFunction(
+                context,
+                method,
+                receiver,
+                function))
+        {
+            context->Exit();
+            sendCallError(
+                frame,
+                id,
+                "js_method_not_found",
+                "JavaScript method not found: " + method);
+            return true;
+        }
+
+        CefV8ValueList callArguments;
+        const std::size_t count =
+            cefArguments ? cefArguments->GetSize() : 0;
+        callArguments.reserve(count);
+
+        for (std::size_t i = 0; i < count; ++i)
+        {
+            callArguments.push_back(
+                cefValueToV8(
+                    cefArguments->GetValue(i)));
+        }
+
+        CefRefPtr<CefV8Value> result =
+            function->ExecuteFunction(
+                receiver,
+                callArguments);
+
+        if (!result)
+        {
+            context->Exit();
+            sendCallError(
+                frame,
+                id,
+                "js_exception",
+                "JavaScript method execution failed: " + method);
+            return true;
+        }
+
+        CefRefPtr<CefValue> cefResult =
+            v8ToCefValue(result);
+
+        context->Exit();
+
+        CefRefPtr<CefProcessMessage> response =
+            CefProcessMessage::Create("nativeweb.call.response");
+
+        CefRefPtr<CefListValue> responseArgs =
+            response->GetArgumentList();
+
+        responseArgs->SetString(0, id);
+        responseArgs->SetBool(1, true);
+        responseArgs->SetValue(2, cefResult);
+
+        frame->SendProcessMessage(
+            PID_BROWSER,
+            response);
+
+        return true;
+    }
 
     if (name == "nativeweb.event")
     {
