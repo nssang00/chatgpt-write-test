@@ -24,35 +24,30 @@ public:
             DynamicFunction(
                 [this](const VariantList& args) -> Any
                 {
-                    if (args.size() < 2)
+                    if (args.size() < 3)
                     {
                         throw Error(
                             "invalid_native_object_call",
-                            "Native object call requires id and method");
+                            "Native object call requires id, type and method");
                     }
 
                     const std::string idText =
                         AnyCast<std::string>(args[0]);
 
-                    const std::string method =
+                    const std::string typeName =
                         AnyCast<std::string>(args[1]);
+
+                    const std::string method =
+                        AnyCast<std::string>(args[2]);
 
                     NativeObjectHandle handle =
                         parseObjectHandle(
                             idText,
-                            args.size() >= 3 &&
-                            args[2].type() ==
-                                typeid(std::string)
-                                ? AnyCast<std::string>(args[2])
-                                : std::string());
+                            typeName);
 
                     VariantList methodArgs;
 
-                    const std::size_t firstArg =
-                        args.size() >= 3 &&
-                        args[2].type() == typeid(std::string)
-                            ? 3
-                            : 2;
+                    const std::size_t firstArg = 3;
 
                     for (std::size_t i = firstArg;
                          i < args.size();
