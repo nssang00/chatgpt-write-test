@@ -1,0 +1,30 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>NativeWeb CEF Bridge Test</title>
+</head>
+<body>
+<script>
+(async function () {
+  try {
+    const result = await native.invoke("math.add", 3, 4);
+
+    if (result !== 7) {
+      native.invoke(
+        "test.fail",
+        "math.add returned " + String(result)
+      );
+      return;
+    }
+
+    native.invoke("test.done", result);
+  } catch (error) {
+    if (window.native && native.invoke) {
+      native.invoke("test.fail", String(error));
+    }
+  }
+})();
+</script>
+</body>
+</html>
