@@ -14,6 +14,7 @@ get_filename_component(
 
 list(APPEND CMAKE_MODULE_PATH "${CEF_ROOT}/cmake")
 find_package(CEF REQUIRED)
+find_package(Threads REQUIRED)
 
 add_subdirectory(
   "${CEF_LIBCEF_DLL_WRAPPER_PATH}"
@@ -34,6 +35,7 @@ add_library(nativeweb_core_for_cef STATIC
   "${NATIVEWEB_ROOT}/src/core/bridge_message.cpp"
   "${NATIVEWEB_ROOT}/src/core/json_codec.cpp"
   "${NATIVEWEB_ROOT}/src/core/bridge_runtime.cpp"
+  "${NATIVEWEB_ROOT}/src/core/worker_pool.cpp"
   "${NATIVEWEB_ROOT}/src/browser/common/backend_registry.cpp"
   "${NATIVEWEB_ROOT}/src/webview.cpp"
 )
@@ -49,6 +51,11 @@ set_target_properties(nativeweb_core_for_cef PROPERTIES
   CXX_STANDARD 11
   CXX_STANDARD_REQUIRED YES
   CXX_EXTENSIONS NO
+)
+
+target_link_libraries(nativeweb_core_for_cef
+  PUBLIC
+    Threads::Threads
 )
 
 add_library(nativeweb_cef_backend STATIC
