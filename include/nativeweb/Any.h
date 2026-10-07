@@ -8,6 +8,7 @@
 // applied here:
 //   - include <stdexcept> explicitly for std::runtime_error
 //   - restrict the legacy global type_info compatibility typedef to old MSVC
+//   - add const char* dictionary-key overloads so obj["key"] is unambiguous
 
 #include <memory>//std::shared_ptr
 #include <iostream>
@@ -153,6 +154,16 @@ public:
 			throw std::runtime_error("type()==VariantDict required : " + std::string(type().name()));
 
 		return (static_cast<Any::Holder< VariantDict >*>(_content.get())->_held)[key];
+	}
+
+	Any& operator [](const char* key)
+	{
+		return (*this)[std::string(key)];
+	}
+
+	const Any& operator [](const char* key) const
+	{
+		return (*this)[std::string(key)];
 	}
 
 private:
