@@ -69,17 +69,32 @@ jobs:
             --target nativeweb_cef_bridge_integration \
             --parallel 2
 
+      - name: Verify CEF runtime layout
+        shell: bash
+        run: |
+          test -x cef-nativeweb-build/bin/nativeweb_cef_bridge_integration
+          test -f cef-nativeweb-build/bin/libcef.so
+          test -f cef-nativeweb-build/bin/icudtl.dat
+          test -d cef-nativeweb-build/bin/locales
+
+          echo "CEF runtime layout:"
+          find cef-nativeweb-build/bin -maxdepth 2 -type f | sort | sed -n '1,120p'
+
       - name: Run real JS to C++ Promise bridge
         shell: bash
         run: |
           TEST_HTML="$(realpath tests/integration/cef/bridge_test.html)"
           TEST_URL="file://$TEST_HTML"
+          RUNTIME_DIR="$(realpath cef-nativeweb-build/bin)"
 
           set +e
-          timeout 30s xvfb-run -a \
-            cef-nativeweb-build/bin/nativeweb_cef_bridge_integration \
-            --no-sandbox \
-            --url="$TEST_URL"
+          (
+            cd "$RUNTIME_DIR"
+            timeout 30s xvfb-run -a \
+              ./nativeweb_cef_bridge_integration \
+              --no-sandbox \
+              --url="$TEST_URL"
+          )
           rc=$?
           set -e
 
