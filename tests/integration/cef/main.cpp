@@ -21,7 +21,8 @@ public:
           success_(false),
           cppCallsStarted_(false),
           cppCallsEvaluated_(false),
-          cppCallsSuccess_(false)
+          cppCallsSuccess_(false),
+          pendingDestroyStarted_(false)
     {
         webview_.bind(
             "math.add",
@@ -81,6 +82,99 @@ public:
             });
 
         webview_.bind(
+            "test.beginPendingDestroy",
+            [this]() {
+                if (!pendingDestroyStarted_)
+                {
+                    pendingDestroyResult_ =
+                        webview_.execute<int>(
+                            "ui.neverResolve");
+
+                    pendingDestroyStarted_ = true;
+                }
+
+                return true;
+            });
+
+        webview_.bind(
+            "test.destroyWithPending",
+            [this]() {
+                if (!pendingDestroyStarted_)
+                {
+                    failure_ =
+                        "Pending-destroy call was not started";
+                    success_ = false;
+                    webview_.destroy();
+                    return false;
+                }
+
+                webview_.destroy();
+
+                const std::future_status status =
+                    pendingDestroyResult_.wait_for(
+                        std::chrono::seconds(2));
+
+                bool rejected = false;
+
+                if (status == std::future_status::ready)
+                {
+                    try
+                    {
+                        (void)pendingDestroyResult_.get();
+
+                        if (failure_.empty())
+                        {
+                            failure_ =
+                                "Pending JS call resolved "
+                                "during WebView destroy";
+                        }
+                    }
+                    catch (const nativeweb::Error& error)
+                    {
+                        rejected =
+                            error.code() ==
+                            "webview_destroyed";
+
+                        if (!rejected &&
+                            failure_.empty())
+                        {
+                            failure_ =
+                                std::string(
+                                    "Unexpected pending-call "
+                                    "destroy error: ") +
+                                error.code() +
+                                ": " +
+                                error.what();
+                        }
+                    }
+                    catch (const std::exception& error)
+                    {
+                        if (failure_.empty())
+                        {
+                            failure_ =
+                                std::string(
+                                    "Unexpected pending-call "
+                                    "destroy exception: ") +
+                                error.what();
+                        }
+                    }
+                }
+                else if (failure_.empty())
+                {
+                    failure_ =
+                        "Pending C++->JS future did not "
+                        "finish after WebView destroy";
+                }
+
+                success_ =
+                    success_ &&
+                    rejected &&
+                    failure_.empty();
+
+                return rejected;
+            });
+
+        webview_.bind(
             "test.done",
             [this](int result) {
                 const VariantDict status =
@@ -106,7 +200,6 @@ public:
                         "an unexpected result";
                 }
 
-                webview_.destroy();
                 return success_;
             });
 
@@ -299,9 +392,11 @@ private:
     bool cppCallsStarted_;
     bool cppCallsEvaluated_;
     bool cppCallsSuccess_;
+    bool pendingDestroyStarted_;
     std::future<int> cppSyncResult_;
     std::future<int> cppAsyncResult_;
     std::future<int> cppRejectResult_;
+    std::future<int> pendingDestroyResult_;
     std::string failure_;
 };
 

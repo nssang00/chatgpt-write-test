@@ -19,6 +19,11 @@ window.ui = {
   async rejectAsync() {
     await Promise.resolve();
     throw new Error("expected js rejection");
+  },
+
+  neverResolve() {
+    window.__nativewebPendingStarted = true;
+    return new Promise(() => {});
   }
 };
 
@@ -189,7 +194,38 @@ window.ui = {
       return;
     }
 
-    await native.invoke("test.done", result);
+    const done =
+      await native.invoke("test.done", result);
+
+    if (done !== true) {
+      await fail("pre-destroy checks did not complete");
+      return;
+    }
+
+    window.__nativewebPendingStarted = false;
+
+    await native.invoke("test.beginPendingDestroy");
+
+    for (let attempt = 0; attempt < 100; ++attempt) {
+      if (window.__nativewebPendingStarted === true) {
+        break;
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+
+    if (window.__nativewebPendingStarted !== true) {
+      await fail("pending JS Promise was never entered");
+      return;
+    }
+
+    try {
+      await native.invoke("test.destroyWithPending");
+    } catch (_) {
+      // Closing the WebView may prevent this final JS-side Promise
+      // from observing the native callback result. The C++ side is
+      // the authority for this regression.
+    }
   } catch (error) {
     if (window.native && native.invoke) {
       await fail(error && error.stack ? error.stack : String(error));
