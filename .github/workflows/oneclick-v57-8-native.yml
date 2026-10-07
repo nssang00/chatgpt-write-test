@@ -40,9 +40,16 @@ jobs:
           "payloadSha256=$hash" | Tee-Object -FilePath "$env:GITHUB_WORKSPACE\payload-sha256.txt"
           if ($hash -ne $env:PAYLOAD_SHA256) { throw "Payload SHA-256 mismatch. Expected $env:PAYLOAD_SHA256, got $hash" }
           $source = Join-Path $env:GITHUB_WORKSPACE 'ci-source'
-          New-Item -ItemType Directory -Force -Path $source | Out-Null
-          tar.exe -xJf $archive -C $source
-          if ($LASTEXITCODE -ne 0) { throw "tar extraction failed: $LASTEXITCODE" }
+          $unpack = Join-Path $env:RUNNER_TEMP 'v578-payload-unpack'
+          New-Item -ItemType Directory -Force -Path $source,$unpack | Out-Null
+          $seven = 'C:\\Program Files\\7-Zip\\7z.exe'
+          if (-not (Test-Path $seven)) { throw "7-Zip not found: $seven" }
+          & $seven x $archive "-o$unpack" -y | Out-Host
+          if ($LASTEXITCODE -ne 0) { throw "payload xz extraction failed: $LASTEXITCODE" }
+          $tarFile = Get-ChildItem $unpack -Filter '*.tar' | Select-Object -First 1
+          if (-not $tarFile) { throw 'payload xz extraction did not produce a tar file.' }
+          & $seven x $tarFile.FullName "-o$source" -y | Out-Host
+          if ($LASTEXITCODE -ne 0) { throw "payload tar extraction failed: $LASTEXITCODE" }
           $config = Get-Content (Join-Path $source 'config.json') -Raw | ConvertFrom-Json
           if ($config.harnessVersion -ne '57.8.0') { throw "Unexpected harness version: $($config.harnessVersion)" }
           "harnessVersion=$($config.harnessVersion)" | Tee-Object -FilePath "$env:GITHUB_WORKSPACE\harness-version.txt"
