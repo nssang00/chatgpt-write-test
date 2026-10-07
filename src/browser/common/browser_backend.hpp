@@ -58,8 +58,10 @@ public:
     virtual void load(const std::string& source) = 0;
     virtual void reload() = 0;
 
-    // Core -> renderer structured message transport. No raw-JavaScript string
-    // concatenation is part of this contract.
+    // Core -> renderer structured message transport. This method may be called
+    // from a NativeWeb worker thread; each backend must marshal to its required
+    // browser/engine thread internally. No raw-JavaScript string concatenation
+    // is part of this contract.
     virtual void postBridgeMessage(const Any& message) = 0;
 };
 

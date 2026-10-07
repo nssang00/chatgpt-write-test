@@ -60,6 +60,10 @@ private:
 
 std::size_t defaultWorkerThreadCount();
 
+// Process-wide default executor used by WebView bridge requests.
+// Individual WebViews do not create their own native thread pools.
+WorkerPool& defaultWorkerPool();
+
 } // namespace detail
 } // namespace nativeweb
 

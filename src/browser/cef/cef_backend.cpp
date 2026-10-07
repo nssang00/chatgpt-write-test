@@ -5,8 +5,10 @@
 #include "core/bridge_message.hpp"
 #include "include/cef_process_message.h"
 #include "include/cef_render_handler.h"
+#include "include/cef_task.h"
 
 #include <cstdint>
+#include <functional>
 #include <sstream>
 #include <stdexcept>
 
@@ -32,6 +34,137 @@ RequestId stringToId(const std::string& value)
         throw std::runtime_error("Invalid CEF NativeWeb request id");
 
     return id;
+}
+
+class FunctionTask : public CefTask
+{
+public:
+    explicit FunctionTask(
+        const std::function<void()>& function)
+        : function_(function)
+    {
+    }
+
+    void Execute() override
+    {
+        if (function_)
+            function_();
+    }
+
+private:
+    std::function<void()> function_;
+
+    IMPLEMENT_REFCOUNTING(FunctionTask);
+};
+
+void runOnCefUi(
+    const std::function<void()>& function)
+{
+    if (CefCurrentlyOn(TID_UI))
+    {
+        function();
+        return;
+    }
+
+    CefPostTask(
+        TID_UI,
+        new FunctionTask(function));
+}
+
+void sendBridgeMessageToBrowser(
+    CefRefPtr<CefBrowser> browser,
+    const Any& message)
+{
+    if (!browser)
+        return;
+
+    const BridgeMessage parsed =
+        parseBridgeMessage(message);
+
+    if (parsed.type == BridgeMessageType::Request)
+    {
+        CefRefPtr<CefProcessMessage> callMessage =
+            CefProcessMessage::Create("nativeweb.call");
+
+        CefRefPtr<CefListValue> callArgs =
+            callMessage->GetArgumentList();
+
+        callArgs->SetString(
+            0,
+            idToString(parsed.requestId));
+
+        callArgs->SetString(1, parsed.method);
+
+        CefRefPtr<CefListValue> cefArguments =
+            CefListValue::Create();
+
+        cefArguments->SetSize(parsed.args.size());
+
+        for (std::size_t i = 0;
+             i < parsed.args.size();
+             ++i)
+        {
+            cefArguments->SetValue(
+                i,
+                anyToCefValue(parsed.args[i]));
+        }
+
+        callArgs->SetList(2, cefArguments);
+
+        browser->GetMainFrame()->SendProcessMessage(
+            PID_RENDERER,
+            callMessage);
+
+        return;
+    }
+
+    if (parsed.type == BridgeMessageType::Event)
+    {
+        CefRefPtr<CefProcessMessage> eventMessage =
+            CefProcessMessage::Create("nativeweb.event");
+
+        CefRefPtr<CefListValue> eventArgs =
+            eventMessage->GetArgumentList();
+
+        eventArgs->SetString(0, parsed.eventName);
+        eventArgs->SetValue(1, anyToCefValue(parsed.value));
+
+        browser->GetMainFrame()->SendProcessMessage(
+            PID_RENDERER,
+            eventMessage);
+
+        return;
+    }
+
+    if (parsed.type != BridgeMessageType::Response &&
+        parsed.type != BridgeMessageType::Error)
+    {
+        return;
+    }
+
+    CefRefPtr<CefProcessMessage> cefMessage =
+        CefProcessMessage::Create("nativeweb.response");
+
+    CefRefPtr<CefListValue> args =
+        cefMessage->GetArgumentList();
+
+    args->SetString(0, idToString(parsed.requestId));
+
+    if (parsed.type == BridgeMessageType::Response)
+    {
+        args->SetBool(1, true);
+        args->SetValue(2, anyToCefValue(parsed.value));
+    }
+    else
+    {
+        args->SetBool(1, false);
+        args->SetString(2, parsed.errorCode);
+        args->SetString(3, parsed.errorMessage);
+    }
+
+    browser->GetMainFrame()->SendProcessMessage(
+        PID_RENDERER,
+        cefMessage);
 }
 
 } // namespace
@@ -206,8 +339,15 @@ void CefBackend::create(
 
 void CefBackend::destroy()
 {
-    if (browser_)
-        browser_->GetHost()->CloseBrowser(true);
+    CefRefPtr<CefBrowser> browser = browser_;
+
+    if (!browser)
+        return;
+
+    runOnCefUi(
+        [browser]() {
+            browser->GetHost()->CloseBrowser(true);
+        });
 }
 
 bool CefBackend::isCreated() const
@@ -217,18 +357,28 @@ bool CefBackend::isCreated() const
 
 void CefBackend::load(const std::string& source)
 {
-    if (!browser_)
+    CefRefPtr<CefBrowser> browser = browser_;
+
+    if (!browser)
         throw std::runtime_error("CEF browser is not created");
 
-    browser_->GetMainFrame()->LoadURL(source);
+    runOnCefUi(
+        [browser, source]() {
+            browser->GetMainFrame()->LoadURL(source);
+        });
 }
 
 void CefBackend::reload()
 {
-    if (!browser_)
+    CefRefPtr<CefBrowser> browser = browser_;
+
+    if (!browser)
         throw std::runtime_error("CEF browser is not created");
 
-    browser_->Reload();
+    runOnCefUi(
+        [browser]() {
+            browser->Reload();
+        });
 }
 
 void CefBackend::onAfterCreated(
@@ -338,96 +488,17 @@ bool CefBackend::onProcessMessage(
 
 void CefBackend::postBridgeMessage(const Any& message)
 {
-    if (!browser_)
+    CefRefPtr<CefBrowser> browser = browser_;
+
+    if (!browser)
         return;
 
-    const BridgeMessage parsed =
-        parseBridgeMessage(message);
-
-    if (parsed.type == BridgeMessageType::Request)
-    {
-        CefRefPtr<CefProcessMessage> callMessage =
-            CefProcessMessage::Create("nativeweb.call");
-
-        CefRefPtr<CefListValue> callArgs =
-            callMessage->GetArgumentList();
-
-        callArgs->SetString(
-            0,
-            idToString(parsed.requestId));
-
-        callArgs->SetString(1, parsed.method);
-
-        CefRefPtr<CefListValue> cefArguments =
-            CefListValue::Create();
-
-        cefArguments->SetSize(parsed.args.size());
-
-        for (std::size_t i = 0;
-             i < parsed.args.size();
-             ++i)
-        {
-            cefArguments->SetValue(
-                i,
-                anyToCefValue(parsed.args[i]));
-        }
-
-        callArgs->SetList(2, cefArguments);
-
-        browser_->GetMainFrame()->SendProcessMessage(
-            PID_RENDERER,
-            callMessage);
-
-        return;
-    }
-
-    if (parsed.type == BridgeMessageType::Event)
-    {
-        CefRefPtr<CefProcessMessage> eventMessage =
-            CefProcessMessage::Create("nativeweb.event");
-
-        CefRefPtr<CefListValue> eventArgs =
-            eventMessage->GetArgumentList();
-
-        eventArgs->SetString(0, parsed.eventName);
-        eventArgs->SetValue(1, anyToCefValue(parsed.value));
-
-        browser_->GetMainFrame()->SendProcessMessage(
-            PID_RENDERER,
-            eventMessage);
-
-        return;
-    }
-
-    if (parsed.type != BridgeMessageType::Response &&
-        parsed.type != BridgeMessageType::Error)
-    {
-        return;
-    }
-
-    CefRefPtr<CefProcessMessage> cefMessage =
-        CefProcessMessage::Create("nativeweb.response");
-
-    CefRefPtr<CefListValue> args =
-        cefMessage->GetArgumentList();
-
-    args->SetString(0, idToString(parsed.requestId));
-
-    if (parsed.type == BridgeMessageType::Response)
-    {
-        args->SetBool(1, true);
-        args->SetValue(2, anyToCefValue(parsed.value));
-    }
-    else
-    {
-        args->SetBool(1, false);
-        args->SetString(2, parsed.errorCode);
-        args->SetString(3, parsed.errorMessage);
-    }
-
-    browser_->GetMainFrame()->SendProcessMessage(
-        PID_RENDERER,
-        cefMessage);
+    runOnCefUi(
+        [browser, message]() {
+            sendBridgeMessageToBrowser(
+                browser,
+                message);
+        });
 }
 
 void registerCefBackendFactory()

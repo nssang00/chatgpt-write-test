@@ -5,12 +5,14 @@
 #include "nativeweb/error.hpp"
 #include "nativeweb/webview.hpp"
 
+#include <atomic>
 #include <chrono>
 #include <future>
 #include <iostream>
 #include <memory>
 #include <stdexcept>
 #include <string>
+#include <thread>
 
 namespace {
 
@@ -33,7 +35,10 @@ public:
           cppCallsStarted_(false),
           cppCallsEvaluated_(false),
           cppCallsSuccess_(false),
-          pendingDestroyStarted_(false)
+          pendingDestroyStarted_(false),
+          browserThreadKnown_(false),
+          activeConcurrentCalls_(0),
+          maxConcurrentCalls_(0)
     {
         webview_.bind(
             "math.add",
@@ -105,6 +110,45 @@ public:
             [](const nativeweb::NativeObjectHandle& handle) {
                 return handle.valid() &&
                     handle.type == "Camera";
+            });
+
+        webview_.bind(
+            "test.isWorkerThread",
+            [this]() {
+                return
+                    browserThreadKnown_.load() &&
+                    std::this_thread::get_id() !=
+                        browserThreadId_;
+            });
+
+        webview_.bind(
+            "test.concurrentProbe",
+            [this](int value) {
+                const int active =
+                    activeConcurrentCalls_.fetch_add(1) + 1;
+
+                int observed =
+                    maxConcurrentCalls_.load();
+
+                while (
+                    active > observed &&
+                    !maxConcurrentCalls_.compare_exchange_weak(
+                        observed,
+                        active))
+                {
+                }
+
+                std::this_thread::sleep_for(
+                    std::chrono::milliseconds(80));
+
+                activeConcurrentCalls_.fetch_sub(1);
+                return value;
+            });
+
+        webview_.bind(
+            "test.maxConcurrency",
+            [this]() {
+                return maxConcurrentCalls_.load();
             });
 
         webview_.bind(
@@ -267,6 +311,13 @@ public:
     const std::string& failure() const
     {
         return failure_;
+    }
+
+    void onCreated() override
+    {
+        browserThreadId_ =
+            std::this_thread::get_id();
+        browserThreadKnown_.store(true);
     }
 
     void onLoadStarted(
@@ -444,6 +495,11 @@ private:
     std::future<int> cppRejectResult_;
     std::future<int> pendingDestroyResult_;
     std::string failure_;
+
+    std::thread::id browserThreadId_;
+    std::atomic<bool> browserThreadKnown_;
+    std::atomic<int> activeConcurrentCalls_;
+    std::atomic<int> maxConcurrentCalls_;
 };
 
 std::string getUrl(int argc, char* argv[])

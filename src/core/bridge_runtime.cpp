@@ -1,13 +1,62 @@
 #include "core/bridge_runtime.hpp"
 
 #include "nativeweb/error.hpp"
+#include "core/worker_pool.hpp"
 
 #include <exception>
 
 namespace nativeweb {
 namespace detail {
 
+namespace {
+
+Any invokeBoundRequest(
+    RequestId requestId,
+    const std::string& method,
+    const VariantList& args,
+    const DynamicFunction& function)
+{
+    if (!function)
+    {
+        return makeErrorMessage(
+            requestId,
+            Error(
+                "method_not_found",
+                "NativeWeb method not found: " + method));
+    }
+
+    try
+    {
+        return makeResponseMessage(
+            requestId,
+            function(args));
+    }
+    catch (const Error& error)
+    {
+        return makeErrorMessage(
+            requestId,
+            error);
+    }
+    catch (const std::exception& error)
+    {
+        return makeErrorMessage(
+            requestId,
+            Error("native_exception", error.what()));
+    }
+    catch (...)
+    {
+        return makeErrorMessage(
+            requestId,
+            Error(
+                "native_exception",
+                "Unknown native exception"));
+    }
+}
+
+} // namespace
+
 BridgeRuntime::BridgeRuntime()
+    : asyncState_(new AsyncDispatchState())
 {
 }
 
@@ -102,43 +151,92 @@ Any BridgeRuntime::receive(const Any& message)
         return Any();
     }
 
+    return invokeBoundRequest(
+        parsed.requestId,
+        parsed.method,
+        parsed.args,
+        findMethod(parsed.method));
+}
+
+void BridgeRuntime::receiveAsync(
+    const Any& message,
+    const BridgeResponseCallback& completion)
+{
+    const BridgeMessage parsed =
+        parseBridgeMessage(message);
+
+    if (parsed.type != BridgeMessageType::Request)
+    {
+        (void)receive(message);
+        return;
+    }
+
+    const std::shared_ptr<AsyncDispatchState> state =
+        asyncState_;
+
+    if (!state || !state->active.load())
+    {
+        if (completion)
+        {
+            completion(
+                makeErrorMessage(
+                    parsed.requestId,
+                    Error(
+                        "runtime_stopped",
+                        "NativeWeb runtime is shutting down")));
+        }
+        return;
+    }
+
     const DynamicFunction function =
         findMethod(parsed.method);
 
     if (!function)
     {
-        return makeErrorMessage(
-            parsed.requestId,
-            Error(
-                "method_not_found",
-                "NativeWeb method not found: " + parsed.method));
+        if (completion)
+        {
+            completion(
+                makeErrorMessage(
+                    parsed.requestId,
+                    Error(
+                        "method_not_found",
+                        "NativeWeb method not found: " +
+                            parsed.method)));
+        }
+        return;
     }
 
-    try
+    const bool queued =
+        defaultWorkerPool().post(
+            [state,
+             completion,
+             function,
+             parsed]() {
+                if (!state->active.load())
+                    return;
+
+                const Any response =
+                    invokeBoundRequest(
+                        parsed.requestId,
+                        parsed.method,
+                        parsed.args,
+                        function);
+
+                if (state->active.load() &&
+                    completion)
+                {
+                    completion(response);
+                }
+            });
+
+    if (!queued && completion)
     {
-        return makeResponseMessage(
-            parsed.requestId,
-            function(parsed.args));
-    }
-    catch (const Error& error)
-    {
-        return makeErrorMessage(
-            parsed.requestId,
-            error);
-    }
-    catch (const std::exception& error)
-    {
-        return makeErrorMessage(
-            parsed.requestId,
-            Error("native_exception", error.what()));
-    }
-    catch (...)
-    {
-        return makeErrorMessage(
-            parsed.requestId,
-            Error(
-                "native_exception",
-                "Unknown native exception"));
+        completion(
+            makeErrorMessage(
+                parsed.requestId,
+                Error(
+                    "queue_overloaded",
+                    "NativeWeb worker queue is full or stopped")));
     }
 }
 
@@ -151,6 +249,9 @@ Any BridgeRuntime::eventMessage(
 
 void BridgeRuntime::shutdown()
 {
+    if (asyncState_)
+        asyncState_->active.store(false);
+
     pending_.rejectAll(
         Error(
             "webview_destroyed",

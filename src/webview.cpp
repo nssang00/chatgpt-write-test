@@ -6,6 +6,7 @@
 #include "nativeweb/error.hpp"
 
 #include <cstdint>
+#include <mutex>
 #include <sstream>
 #include <utility>
 
@@ -14,9 +15,22 @@ namespace nativeweb {
 class WebView::Impl :
     public detail::BrowserBackendListener
 {
+private:
+    struct ResponseSinkState
+    {
+        explicit ResponseSinkState(Impl* valueOwner)
+            : owner(valueOwner)
+        {
+        }
+
+        std::mutex mutex;
+        Impl* owner;
+    };
+
 public:
     Impl()
-        : listener_(0),
+        : responseSink_(new ResponseSinkState(this)),
+          listener_(0),
           resolvedEngine_(Engine::Auto)
     {
         runtime_.bind(
@@ -131,6 +145,7 @@ public:
 
     void destroy()
     {
+        detachResponseSink();
         objects_.clear();
         runtime_.shutdown();
 
@@ -140,6 +155,7 @@ public:
 
     void shutdown()
     {
+        detachResponseSink();
         objects_.clear();
         runtime_.shutdown();
 
@@ -270,14 +286,29 @@ public:
 
     void onBridgeMessage(const Any& message) override
     {
-        const Any response = runtime_.receive(message);
+        const std::shared_ptr<ResponseSinkState> sink =
+            responseSink_;
 
-        if (!response.empty() && backend_)
-            backend_->postBridgeMessage(response);
+        runtime_.receiveAsync(
+            message,
+            [sink](const Any& response) {
+                if (!sink || response.empty())
+                    return;
+
+                std::lock_guard<std::mutex> lock(
+                    sink->mutex);
+
+                Impl* owner = sink->owner;
+
+                if (owner && owner->backend_)
+                    owner->backend_->postBridgeMessage(
+                        response);
+            });
     }
 
     void onBrowserClosed() override
     {
+        detachResponseSink();
         runtime_.shutdown();
 
         if (listener_)
@@ -285,6 +316,17 @@ public:
     }
 
 private:
+    void detachResponseSink()
+    {
+        if (!responseSink_)
+            return;
+
+        std::lock_guard<std::mutex> lock(
+            responseSink_->mutex);
+
+        responseSink_->owner = 0;
+    }
+
     static NativeObjectHandle parseObjectHandle(
         const std::string& idText,
         const std::string& typeName)
@@ -315,6 +357,7 @@ private:
         return backend_.get();
     }
 
+    std::shared_ptr<ResponseSinkState> responseSink_;
     detail::BridgeRuntime runtime_;
     detail::NativeObjectRuntime objects_;
     std::unique_ptr<detail::BrowserBackend> backend_;

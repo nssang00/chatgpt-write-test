@@ -2,8 +2,11 @@
 #include "core/bridge_message.hpp"
 #include "nativeweb/webview.hpp"
 
+#include <chrono>
+#include <condition_variable>
 #include <iostream>
 #include <memory>
+#include <mutex>
 #include <string>
 
 namespace {
@@ -93,7 +96,37 @@ public:
 
     void postBridgeMessage(const Any& message) override
     {
-        lastMessage_ = message;
+        {
+            std::lock_guard<std::mutex> lock(messageMutex_);
+            lastMessage_ = message;
+            ++messageVersion_;
+        }
+
+        messageCondition_.notify_all();
+    }
+
+    std::size_t messageVersion() const
+    {
+        std::lock_guard<std::mutex> lock(messageMutex_);
+        return messageVersion_;
+    }
+
+    Any waitForMessageAfter(std::size_t previousVersion)
+    {
+        std::unique_lock<std::mutex> lock(messageMutex_);
+
+        const bool changed =
+            messageCondition_.wait_for(
+                lock,
+                std::chrono::seconds(3),
+                [this, previousVersion]() {
+                    return messageVersion_ > previousVersion;
+                });
+
+        if (!changed)
+            return Any();
+
+        return lastMessage_;
     }
 
     void deliver(const Any& message)
@@ -105,9 +138,13 @@ public:
     static FakeBackend* instance;
 
     bool reloaded_ = false;
-    Any lastMessage_;
 
 private:
+    mutable std::mutex messageMutex_;
+    std::condition_variable messageCondition_;
+    std::size_t messageVersion_ = 0;
+    Any lastMessage_;
+
     nativeweb::detail::BrowserBackendListener* listener_;
     bool created_;
     std::string source_;
@@ -176,15 +213,24 @@ void testPublicOrchestration()
     requestArgs.push_back(Any(3));
     requestArgs.push_back(Any(4));
 
+    const std::size_t inboundVersion =
+        FakeBackend::instance->messageVersion();
+
     FakeBackend::instance->deliver(
         nativeweb::detail::makeRequestMessage(
             77,
             "math.add",
             requestArgs));
 
+    const Any inboundMessage =
+        FakeBackend::instance->waitForMessageAfter(
+            inboundVersion);
+
+    CHECK(!inboundMessage.empty());
+
     const nativeweb::detail::BridgeMessage response =
         nativeweb::detail::parseBridgeMessage(
-            FakeBackend::instance->lastMessage_);
+            inboundMessage);
 
     CHECK(
         response.type ==
@@ -192,12 +238,21 @@ void testPublicOrchestration()
     CHECK(response.requestId == 77);
     CHECK(AnyCast<int>(response.value) == 7);
 
+    const std::size_t outboundVersion =
+        FakeBackend::instance->messageVersion();
+
     std::future<int> outbound =
         webview.execute<int>("ui.answer", 21, 2);
 
+    const Any outboundMessage =
+        FakeBackend::instance->waitForMessageAfter(
+            outboundVersion);
+
+    CHECK(!outboundMessage.empty());
+
     const nativeweb::detail::BridgeMessage outboundRequest =
         nativeweb::detail::parseBridgeMessage(
-            FakeBackend::instance->lastMessage_);
+            outboundMessage);
 
     CHECK(
         outboundRequest.type ==
@@ -211,10 +266,20 @@ void testPublicOrchestration()
 
     CHECK(outbound.get() == 42);
 
+    const std::size_t eventVersion =
+        FakeBackend::instance->messageVersion();
+
     webview.emit("app.ready", Any(true));
+
+    const Any eventMessage =
+        FakeBackend::instance->waitForMessageAfter(
+            eventVersion);
+
+    CHECK(!eventMessage.empty());
+
     const nativeweb::detail::BridgeMessage event =
         nativeweb::detail::parseBridgeMessage(
-            FakeBackend::instance->lastMessage_);
+            eventMessage);
     CHECK(
         event.type ==
         nativeweb::detail::BridgeMessageType::Event);

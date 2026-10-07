@@ -61,6 +61,39 @@ window.ui = {
       return;
     }
 
+    const workerThread =
+      await xytron.test.isWorkerThread();
+
+    if (workerThread !== true) {
+      await fail("native call did not execute on a worker thread");
+      return;
+    }
+
+    const concurrentValues = await Promise.all([
+      xytron.test.concurrentProbe(1),
+      xytron.test.concurrentProbe(2),
+      xytron.test.concurrentProbe(3),
+      xytron.test.concurrentProbe(4)
+    ]);
+
+    if (
+      concurrentValues.join(",") !== "1,2,3,4"
+    ) {
+      await fail("concurrent native call results were corrupted");
+      return;
+    }
+
+    const maxConcurrency =
+      await xytron.test.maxConcurrency();
+
+    if (maxConcurrency < 2) {
+      await fail(
+        "native calls did not overlap; max concurrency=" +
+        String(maxConcurrency)
+      );
+      return;
+    }
+
     const objectResult = await xytron.echo.object({
       name: "camera",
       retry: true,

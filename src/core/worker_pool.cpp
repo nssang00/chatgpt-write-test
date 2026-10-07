@@ -181,5 +181,16 @@ void WorkerPool::workerLoop()
     }
 }
 
+WorkerPool& defaultWorkerPool()
+{
+    // A bounded process-wide queue prevents an accidental JavaScript request
+    // storm from growing memory without limit. Public tuning comes later.
+    static WorkerPool pool(
+        defaultWorkerThreadCount(),
+        4096);
+
+    return pool;
+}
+
 } // namespace detail
 } // namespace nativeweb

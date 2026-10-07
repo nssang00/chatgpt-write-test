@@ -6,13 +6,18 @@
 #include "core/pending_call_registry.hpp"
 #include "nativeweb/detail/bind.hpp"
 
+#include <atomic>
 #include <future>
+#include <functional>
 #include <map>
+#include <memory>
 #include <mutex>
 #include <string>
 
 namespace nativeweb {
 namespace detail {
+
+typedef std::function<void(const Any&)> BridgeResponseCallback;
 
 class OutboundCall
 {
@@ -82,6 +87,13 @@ public:
     // Response/Error/Event -> consumes it and returns empty Any.
     Any receive(const Any& message);
 
+    // Incoming native requests are dispatched through the process-wide worker
+    // pool. Response/Error/Event envelopes remain cheap synchronous routing.
+    // Completion for a Request may execute on a worker thread.
+    void receiveAsync(
+        const Any& message,
+        const BridgeResponseCallback& completion);
+
     Any eventMessage(
         const std::string& eventName,
         const Any& payload) const;
@@ -92,6 +104,16 @@ public:
     std::size_t methodCount() const;
 
 private:
+    struct AsyncDispatchState
+    {
+        AsyncDispatchState()
+            : active(true)
+        {
+        }
+
+        std::atomic<bool> active;
+    };
+
     DynamicFunction findMethod(const std::string& method) const;
 
     mutable std::mutex methodMutex_;
@@ -99,6 +121,7 @@ private:
 
     PendingCallRegistry pending_;
     EventDispatcher events_;
+    std::shared_ptr<AsyncDispatchState> asyncState_;
 };
 
 } // namespace detail

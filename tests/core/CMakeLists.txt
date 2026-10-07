@@ -223,3 +223,29 @@ add_test(
     NAME core.worker_pool
     COMMAND nativeweb_worker_pool_regression
 )
+
+
+add_executable(nativeweb_bridge_async_regression
+    bridge_async_regression.cpp
+)
+
+target_link_libraries(nativeweb_bridge_async_regression
+    PRIVATE
+        NativeWeb::Core
+)
+
+target_include_directories(nativeweb_bridge_async_regression
+    PRIVATE
+        ${PROJECT_SOURCE_DIR}/src
+)
+
+set_target_properties(nativeweb_bridge_async_regression PROPERTIES
+    CXX_STANDARD 11
+    CXX_STANDARD_REQUIRED YES
+    CXX_EXTENSIONS NO
+)
+
+add_test(
+    NAME core.bridge_async
+    COMMAND nativeweb_bridge_async_regression
+)
