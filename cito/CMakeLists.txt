@@ -10,4 +10,8 @@ if(BUILD_TESTING)
   add_executable(cito_context_tests tests/context_test.cpp)
   target_link_libraries(cito_context_tests PRIVATE cito)
   add_test(NAME cito_context_tests COMMAND cito_context_tests)
+
+  add_executable(cito_type_tests tests/type_test.cpp)
+  target_link_libraries(cito_type_tests PRIVATE cito)
+  add_test(NAME cito_type_tests COMMAND cito_type_tests)
 endif()
