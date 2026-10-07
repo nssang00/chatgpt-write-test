@@ -4,6 +4,8 @@ project(NativeWeb LANGUAGES CXX)
 
 option(NATIVEWEB_BUILD_TESTS "Build NativeWeb regression tests" ON)
 
+find_package(Threads REQUIRED)
+
 add_library(nativeweb_core STATIC
     src/core/pending_call_registry.cpp
     src/core/object_registry.cpp
@@ -12,6 +14,7 @@ add_library(nativeweb_core STATIC
     src/core/bridge_message.cpp
     src/core/json_codec.cpp
     src/core/bridge_runtime.cpp
+    src/core/worker_pool.cpp
     src/browser/common/backend_registry.cpp
     src/webview.cpp
 )
@@ -24,6 +27,8 @@ target_include_directories(nativeweb_core
     PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
+
+target_link_libraries(nativeweb_core PUBLIC Threads::Threads)
 
 target_compile_features(nativeweb_core PUBLIC cxx_std_11)
 
