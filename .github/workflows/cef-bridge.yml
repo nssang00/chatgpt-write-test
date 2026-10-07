@@ -5,7 +5,9 @@ on:
     branches: [main]
     paths:
       - "src/browser/cef/**"
+      - "src/browser/common/**"
       - "src/core/**"
+      - "src/webview.cpp"
       - "include/nativeweb/**"
       - "tests/integration/cef/**"
       - ".github/workflows/cef-bridge.yml"
