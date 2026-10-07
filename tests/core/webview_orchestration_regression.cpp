@@ -126,11 +126,36 @@ void registerFake()
         });
 }
 
+class PublicListener : public nativeweb::WebViewListener
+{
+public:
+    PublicListener()
+        : created(false),
+          closed(false)
+    {
+    }
+
+    void onCreated() override
+    {
+        created = true;
+    }
+
+    void onClosed() override
+    {
+        closed = true;
+    }
+
+    bool created;
+    bool closed;
+};
+
 void testPublicOrchestration()
 {
     registerFake();
 
     nativeweb::WebView webview;
+    PublicListener listener;
+    webview.setListener(&listener);
     webview.bind("math.add", [](int a, int b) {
         return a + b;
     });
@@ -140,6 +165,7 @@ void testPublicOrchestration()
     webview.create(0, "index.html", options);
 
     CHECK(webview.isCreated());
+    CHECK(listener.created);
     CHECK(webview.engine() == nativeweb::Engine::Cef);
     CHECK(webview.capabilities().supports(
         nativeweb::Capability::Binary));
@@ -200,6 +226,7 @@ void testPublicOrchestration()
 
     webview.destroy();
     CHECK(!webview.isCreated());
+    CHECK(listener.closed);
 }
 
 } // namespace

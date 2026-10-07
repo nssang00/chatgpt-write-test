@@ -12,6 +12,30 @@
 
 namespace nativeweb {
 
+class WebViewListener
+{
+public:
+    virtual ~WebViewListener()
+    {
+    }
+
+    virtual void onCreated()
+    {
+    }
+
+    virtual void onLoadStarted(const std::string&)
+    {
+    }
+
+    virtual void onLoadFinished(const std::string&)
+    {
+    }
+
+    virtual void onClosed()
+    {
+    }
+};
+
 class WebView
 {
 public:
@@ -32,6 +56,8 @@ public:
         const std::string& source,
         const WebViewOptions& options);
     void destroy();
+
+    void setListener(WebViewListener* listener);
 
     bool isCreated() const;
     Engine engine() const;

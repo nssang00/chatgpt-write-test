@@ -5,6 +5,18 @@
 
 namespace {
 
+class CompileListener : public nativeweb::WebViewListener
+{
+public:
+    void onCreated() override
+    {
+    }
+
+    void onClosed() override
+    {
+    }
+};
+
 Any dynamicAdd(const VariantList& args)
 {
     const int a = AnyCast<int>(args[0]);
@@ -15,6 +27,8 @@ Any dynamicAdd(const VariantList& args)
 void compileBeginnerContract(nativeweb::NativeWindowHandle parent)
 {
     nativeweb::WebView webview;
+    CompileListener listener;
+    webview.setListener(&listener);
 
     nativeweb::WebViewOptions options;
     options.engine = nativeweb::Engine::Auto;

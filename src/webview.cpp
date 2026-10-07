@@ -13,7 +13,8 @@ class WebView::Impl :
 {
 public:
     Impl()
-        : resolvedEngine_(Engine::Auto)
+        : listener_(0),
+          resolvedEngine_(Engine::Auto)
     {
     }
 
@@ -81,6 +82,11 @@ public:
         resolvedEngine_ = Engine::Auto;
     }
 
+    void setListener(WebViewListener* listener)
+    {
+        listener_ = listener;
+    }
+
     bool isCreated() const
     {
         return backend_ && backend_->isCreated();
@@ -141,14 +147,20 @@ public:
 
     void onBrowserCreated() override
     {
+        if (listener_)
+            listener_->onCreated();
     }
 
-    void onLoadStarted(const std::string&) override
+    void onLoadStarted(const std::string& source) override
     {
+        if (listener_)
+            listener_->onLoadStarted(source);
     }
 
-    void onLoadFinished(const std::string&) override
+    void onLoadFinished(const std::string& source) override
     {
+        if (listener_)
+            listener_->onLoadFinished(source);
     }
 
     void onBridgeMessage(const Any& message) override
@@ -162,6 +174,9 @@ public:
     void onBrowserClosed() override
     {
         runtime_.shutdown();
+
+        if (listener_)
+            listener_->onClosed();
     }
 
 private:
@@ -179,6 +194,7 @@ private:
 
     detail::BridgeRuntime runtime_;
     std::unique_ptr<detail::BrowserBackend> backend_;
+    WebViewListener* listener_;
     Engine resolvedEngine_;
 };
 
@@ -229,6 +245,11 @@ void WebView::create(
 void WebView::destroy()
 {
     impl_->destroy();
+}
+
+void WebView::setListener(WebViewListener* listener)
+{
+    impl_->setListener(listener);
 }
 
 bool WebView::isCreated() const

@@ -160,6 +160,35 @@ window.ui = {
       return;
     }
 
+    await native.invoke("test.beginCppCalls");
+
+    let cppStatus = null;
+    for (let attempt = 0; attempt < 100; ++attempt) {
+      cppStatus = await native.invoke("test.cppCallsStatus");
+
+      if (cppStatus && cppStatus.done) {
+        break;
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+
+    if (
+      !cppStatus ||
+      cppStatus.done !== true ||
+      cppStatus.success !== true
+    ) {
+      await fail(
+        "C++ to JavaScript calls failed: " +
+        String(
+          cppStatus && cppStatus.message
+            ? cppStatus.message
+            : "timeout"
+        )
+      );
+      return;
+    }
+
     await native.invoke("test.done", result);
   } catch (error) {
     if (window.native && native.invoke) {
