@@ -124,3 +124,50 @@ COPY_FILES(
   "${CEF_RESOURCE_DIR}"
   "${CEF_TARGET_OUT_DIR}"
 )
+
+
+set(MULTI_TARGET nativeweb_cef_multi_webview_integration)
+
+add_executable(${MULTI_TARGET}
+  multi_webview.cpp
+)
+
+target_include_directories(${MULTI_TARGET}
+  PRIVATE
+    "${NATIVEWEB_ROOT}/include"
+    "${NATIVEWEB_ROOT}/src"
+    "${CEF_ROOT}"
+)
+
+SET_EXECUTABLE_TARGET_PROPERTIES(${MULTI_TARGET})
+
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+  target_compile_options(${MULTI_TARGET} PRIVATE -frtti -fexceptions)
+endif()
+
+target_link_libraries(${MULTI_TARGET}
+  PRIVATE
+    nativeweb_cef_backend
+    nativeweb_core_for_cef
+    libcef_lib
+    libcef_dll_wrapper
+    ${CEF_STANDARD_LIBS}
+)
+
+set_target_properties(${MULTI_TARGET} PROPERTIES
+  RUNTIME_OUTPUT_DIRECTORY "${CEF_TARGET_OUT_DIR}"
+)
+
+COPY_FILES(
+  "${MULTI_TARGET}"
+  "${CEF_BINARY_FILES}"
+  "${CEF_BINARY_DIR}"
+  "${CEF_TARGET_OUT_DIR}"
+)
+
+COPY_FILES(
+  "${MULTI_TARGET}"
+  "${CEF_RESOURCE_FILES}"
+  "${CEF_RESOURCE_DIR}"
+  "${CEF_TARGET_OUT_DIR}"
+)

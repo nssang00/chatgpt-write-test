@@ -79,6 +79,7 @@ private:
         CefRefPtr<CefV8Context> context;
         CefRefPtr<CefV8Value> callback;
         std::string eventName;
+        int browserId;
     };
 
     class InvokeHandler;

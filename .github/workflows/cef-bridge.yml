@@ -73,10 +73,16 @@ jobs:
             --target nativeweb_cef_bridge_integration \
             --parallel 2
 
+          cmake --build cef-nativeweb-build \
+            --config Release \
+            --target nativeweb_cef_multi_webview_integration \
+            --parallel 2
+
       - name: Verify CEF runtime layout
         shell: bash
         run: |
           test -x cef-nativeweb-build/bin/nativeweb_cef_bridge_integration
+          test -x cef-nativeweb-build/bin/nativeweb_cef_multi_webview_integration
           test -f cef-nativeweb-build/bin/libcef.so
           test -f cef-nativeweb-build/bin/icudtl.dat
           test -d cef-nativeweb-build/bin/locales
@@ -104,6 +110,32 @@ jobs:
 
           if [[ "$rc" -eq 124 ]]; then
             echo "NativeWeb CEF bridge timed out" >&2
+            exit 1
+          fi
+
+          exit "$rc"
+
+
+      - name: Run real multi-WebView isolation regression
+        shell: bash
+        run: |
+          TEST_HTML="$(realpath tests/integration/cef/multi_webview_test.html)"
+          TEST_URL="file://$TEST_HTML"
+          RUNTIME_DIR="$(realpath cef-nativeweb-build/bin)"
+
+          set +e
+          (
+            cd "$RUNTIME_DIR"
+            timeout 30s xvfb-run -a \
+              ./nativeweb_cef_multi_webview_integration \
+              --no-sandbox \
+              --url="$TEST_URL"
+          )
+          rc=$?
+          set -e
+
+          if [[ "$rc" -eq 124 ]]; then
+            echo "NativeWeb CEF multi-WebView test timed out" >&2
             exit 1
           fi
 

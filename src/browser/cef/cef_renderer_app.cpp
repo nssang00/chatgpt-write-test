@@ -421,6 +421,12 @@ std::string CefRendererApp::subscribeEvent(
     subscription.callback = callback;
     subscription.eventName = eventName.ToString();
 
+    CefRefPtr<CefBrowser> browser =
+        context ? context->GetBrowser() : nullptr;
+
+    subscription.browserId =
+        browser ? browser->GetIdentifier() : -1;
+
     subscriptions_[id] = subscription;
     return id;
 }
@@ -594,8 +600,13 @@ bool CefRendererApp::OnProcessMessageReceived(
              it != subscriptions_.end();
              ++it)
         {
-            if (it->second.eventName == eventName)
+            if (it->second.eventName == eventName &&
+                browser &&
+                it->second.browserId ==
+                    browser->GetIdentifier())
+            {
                 callbacks.push_back(it->second);
+            }
         }
 
         for (std::size_t i = 0; i < callbacks.size(); ++i)
