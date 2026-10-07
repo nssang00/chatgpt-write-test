@@ -4,6 +4,7 @@
 #include "core/bridge_runtime.hpp"
 #include "include/cef_app.h"
 #include "include/cef_command_line.h"
+#include "nativeweb/error.hpp"
 
 #include <future>
 #include <iostream>
@@ -24,10 +25,13 @@ public:
           cppToJsStarted_(false),
           cppSyncFinished_(false),
           cppAsyncFinished_(false),
+          cppRejectFinished_(false),
           cppSyncSuccess_(false),
           cppAsyncSuccess_(false),
+          cppRejectSuccess_(false),
           cppSyncCallId_(0),
-          cppAsyncCallId_(0)
+          cppAsyncCallId_(0),
+          cppRejectCallId_(0)
     {
         runtime_.bind(
             "math.add",
@@ -162,6 +166,15 @@ public:
             cppAsyncResult_ =
                 std::move(asyncCall.result);
 
+            nativeweb::detail::OutboundCall rejectCall =
+                runtime_.call(
+                    "ui.rejectAsync",
+                    VariantList());
+
+            cppRejectCallId_ = rejectCall.id;
+            cppRejectResult_ =
+                std::move(rejectCall.result);
+
             cppToJsStarted_ = true;
 
             backend_->postBridgeMessage(
@@ -169,6 +182,9 @@ public:
 
             backend_->postBridgeMessage(
                 asyncCall.message);
+
+            backend_->postBridgeMessage(
+                rejectCall.message);
         }
     }
 
@@ -227,6 +243,46 @@ public:
 
                 cppAsyncFinished_ = true;
             }
+
+            if (!cppRejectFinished_ &&
+                parsed.requestId == cppRejectCallId_)
+            {
+                try
+                {
+                    (void)cppRejectResult_.get();
+                    cppRejectSuccess_ = false;
+                    failure_ =
+                        "Rejected JavaScript Promise resolved unexpectedly";
+                }
+                catch (const nativeweb::Error& error)
+                {
+                    cppRejectSuccess_ =
+                        error.code() == "js_promise_rejected" &&
+                        std::string(error.what()).find(
+                            "expected js rejection") !=
+                            std::string::npos;
+
+                    if (!cppRejectSuccess_)
+                    {
+                        failure_ =
+                            std::string(
+                                "Unexpected JavaScript rejection mapping: ") +
+                            error.code() +
+                            ": " +
+                            error.what();
+                    }
+                }
+                catch (const std::exception& error)
+                {
+                    cppRejectSuccess_ = false;
+                    failure_ =
+                        std::string(
+                            "Unexpected C++ exception for JS rejection: ") +
+                        error.what();
+                }
+
+                cppRejectFinished_ = true;
+            }
         }
 
         if (!failure_.empty())
@@ -236,11 +292,13 @@ public:
         }
         else if (jsFinished_ &&
                  cppSyncFinished_ &&
-                 cppAsyncFinished_)
+                 cppAsyncFinished_ &&
+                 cppRejectFinished_)
         {
             success_ =
                 cppSyncSuccess_ &&
-                cppAsyncSuccess_;
+                cppAsyncSuccess_ &&
+                cppRejectSuccess_;
 
             finished_ = true;
 
@@ -274,12 +332,16 @@ private:
     bool cppToJsStarted_;
     bool cppSyncFinished_;
     bool cppAsyncFinished_;
+    bool cppRejectFinished_;
     bool cppSyncSuccess_;
     bool cppAsyncSuccess_;
+    bool cppRejectSuccess_;
     nativeweb::detail::RequestId cppSyncCallId_;
     nativeweb::detail::RequestId cppAsyncCallId_;
+    nativeweb::detail::RequestId cppRejectCallId_;
     std::future<Any> cppSyncResult_;
     std::future<Any> cppAsyncResult_;
+    std::future<Any> cppRejectResult_;
     std::string failure_;
 };
 

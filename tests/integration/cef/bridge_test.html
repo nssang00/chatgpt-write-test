@@ -14,6 +14,11 @@ window.ui = {
   async multiplyAsync(a, b) {
     await Promise.resolve();
     return a * b;
+  },
+
+  async rejectAsync() {
+    await Promise.resolve();
+    throw new Error("expected js rejection");
   }
 };
 
