@@ -112,6 +112,8 @@ A host demand summary changes externally only when a unique `Scope + Resource + 
 
 Remote discovery is intentionally two-stage: versioned host summaries maintain `DemandKey -> candidate host` state, and direct endpoint details are exchanged only for matching demand. Stale summary versions and recently retired coordinator incarnations are ignored to prevent control-plane pull storms.
 
+Same-process delivery follows the same demand-index principle: `Context` indexes callbacks by exact type and opaque resource rather than scanning unrelated handlers.
+
 See `LATENCY_GUARDS.md` for the concrete hot-path invariants.
 
 ## Type direction
