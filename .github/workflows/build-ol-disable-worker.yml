@@ -56,5 +56,10 @@ jobs:
             openlayers/build/ol
             openlayers/build/identity.json
             openlayers/build/identity.txt
+            openlayers/node_modules/pbf
+            openlayers/node_modules/earcut
+            openlayers/node_modules/rbush
+            openlayers/node_modules/quickselect
+            openlayers/node_modules/ieee754
           if-no-files-found: error
           retention-days: 14
