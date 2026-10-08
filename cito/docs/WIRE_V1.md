@@ -41,9 +41,10 @@ Field names remain schema/tooling metadata and are not included in the data reco
 ## Important non-final details
 
 - TypeId and SchemaHash algorithms are prototype-only and are not yet cross-platform wire contracts.
-- Only scalar/string DynamicData is encoded today.
+- Scalar, string, and enum DynamicData values are encoded today.
 - Required/optional semantics are intentionally minimal.
-- Arrays, sequences, nested structs, enums, unknown-field preservation, generated/static type codecs, and zero-copy views are not implemented yet.
+- Generated/static scalar-string-enum codecs now share this wire through DynamicData.
+- Arrays, sequences, nested structs, unknown-field preservation, and zero-copy views are not implemented yet.
 - Compact or delimited fast paths are deferred until this tagged representation is benchmarked and the type model is stable.
 
 The intended long-term rule remains: simple/evolvable by default, with faster representations added only when they provide measured value and without changing the application API.
