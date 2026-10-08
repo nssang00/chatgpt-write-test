@@ -9,6 +9,7 @@ int main() {
     cito::DemandSummaryAnnouncement announcement{
         7,
         47000,
+        750,
         {11, 9, 2}};
 
     const auto announcement_bytes =
@@ -27,6 +28,9 @@ int main() {
     assert(
         announcement_roundtrip.stamp ==
         announcement.stamp);
+    assert(
+        announcement_roundtrip.lease_ms ==
+        750);
 
     cito::DemandSnapshotRequest request{
         7,
@@ -72,16 +76,23 @@ int main() {
 
     const cito::RouteRequest route_request{
         7,
+        11,
         keys[0]};
 
-    assert(
+    const auto route_request_roundtrip =
         cito::decode_route_request(
             cito::encode_route_request(
-                route_request)).key ==
+                route_request));
+    assert(
+        route_request_roundtrip.key ==
         keys[0]);
+    assert(
+        route_request_roundtrip.incarnation ==
+        11);
 
     const cito::RouteBatch routes{
         7,
+        11,
         keys[0],
         {
             {91, 48001},
@@ -92,6 +103,9 @@ int main() {
             cito::encode_route_batch(
                 routes));
 
+    assert(
+        route_roundtrip.incarnation ==
+        11);
     assert(
         route_roundtrip.endpoints.size() ==
         2);
