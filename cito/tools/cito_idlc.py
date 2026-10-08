@@ -234,6 +234,72 @@ def generate_cpp(schema,source_name='schema.idl'):
             '};',
             ''
         ]
+
+        required_count = sum(1 for f in s.fields if not f.optional)
+        out += [
+            f'template <> struct StaticCodec<{s.cpp_name}> {{',
+            '    static constexpr bool direct = true;',
+            f'    static void encode_into(std::vector<std::uint8_t>& out, const {s.cpp_name}& value) {{',
+            f'        const auto& schema = static_type_ref<{s.cpp_name}>();',
+            f'        std::uint32_t field_count = {required_count};'
+        ]
+        for f in s.fields:
+            if f.optional:
+                out.append(f'        if (value.{f.name}) ++field_count;')
+        out.append('        static_detail::write_header(out, schema, field_count);')
+        for index, f in enumerate(s.fields):
+            if f.optional:
+                out.append(
+                    f'        if (value.{f.name}) static_detail::encode_field('
+                    f'out, schema.fields()[{index}], *value.{f.name});')
+            else:
+                out.append(
+                    f'        static_detail::encode_field('
+                    f'out, schema.fields()[{index}], value.{f.name});')
+        out += [
+            '    }',
+            f'    static std::vector<std::uint8_t> encode(const {s.cpp_name}& value) {{',
+            '        std::vector<std::uint8_t> out;',
+            '        out.reserve(128);',
+            '        encode_into(out, value);',
+            '        return out;',
+            '    }',
+            f'    static {s.cpp_name} decode(std::span<const std::uint8_t> bytes) {{',
+            f'        const auto& schema = static_type_ref<{s.cpp_name}>();',
+            '        const auto header = static_detail::begin_decode(schema, bytes);',
+            f'        {s.cpp_name} value{{}};',
+            f'        std::array<bool, {len(s.fields)}> seen{{}};',
+            '        std::size_t pos = 24;',
+            '        for (std::uint32_t i = 0; i < header.field_count; ++i) {',
+            '            const auto encoded = static_detail::read_field(bytes, pos);',
+            '            switch (encoded.id) {'
+        ]
+        for index, f in enumerate(s.fields):
+            cpp = cpp_type(f.type_ref)
+            out += [
+                f'                case {f.field_id}:',
+                f'                    static_detail::accept_field(encoded, schema.fields()[{index}], seen[{index}]);',
+                f'                    value.{f.name} = static_detail::decode_value<{cpp}>(',
+                f'                        schema.fields()[{index}].type, encoded.payload);',
+                '                    break;'
+            ]
+        out += [
+            '                default:',
+            '                    break;',
+            '            }',
+            '        }',
+            '        static_detail::finish_decode(bytes, pos);'
+        ]
+        for index, f in enumerate(s.fields):
+            if not f.optional:
+                out.append(
+                    f'        static_detail::require_present(seen[{index}], "{f.name}");')
+        out += [
+            '        return value;',
+            '    }',
+            '};',
+            ''
+        ]
     return '\n'.join(out+['} // namespace cito',''])
 
 def main(argv=None):
