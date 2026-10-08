@@ -186,24 +186,54 @@ def generate_cpp(schema,source_name='schema.idl'):
     out+=['namespace cito {']
     for e in schema.enums:
         out += [f'template <> struct StaticEnum<{e.cpp_name}> {{','    static EnumType type() {',f'        auto b = EnumBuilder("{e.canonical_name}");',*[f'        b.value({v.value}, "{v.name}");' for v in e.values],'        return b.build();','    }','};','']
-    for s in schema.structs:
-        ok=all(dyn_ok(f.type_ref,kinds) for f in s.fields); out += [f'template <> struct StaticType<{s.cpp_name}> {{',f'    static constexpr bool dynamic_supported = {str(ok).lower()};','    static Type type() {',f'        auto b = TypeBuilder("{s.canonical_name}");']
+    for s in ordered:
+        out += [
+            f'template <> struct StaticType<{s.cpp_name}> {{',
+            '    static Type type() {',
+            f'        auto b = TypeBuilder("{s.canonical_name}");'
+        ]
         for f in s.fields:
-            out.append(f'        b.member({f.field_id}, "{f.name}", {spec_expr(f.type_ref,kinds)});')
-            if f.optional: out.append('        b.optional();')
-        out += ['        return b.build();','    }']
-        if ok:
-            out += [f'    static DynamicData to_dynamic(const {s.cpp_name}& value) {{','        DynamicData data(type());']
-            for f in s.fields:
-                enum=f.type_ref.kind=='named' and kinds.get(f.type_ref.name)=='enum'; a=f'value.{f.name}'; val=f'static_cast<std::int32_t>({a})' if enum else a
-                if f.optional: val=f'static_cast<std::int32_t>(*{a})' if enum else f'*{a}'; out.append(f'        if ({a}) data.set("{f.name}", {val});')
-                else: out.append(f'        data.set("{f.name}", {val});')
-            out += ['        return data;','    }',f'    static {s.cpp_name} from_dynamic(const DynamicData& data) {{',f'        {s.cpp_name} value{{}};']
-            for f in s.fields:
-                t=cpp_type(f.type_ref); enum=f.type_ref.kind=='named' and kinds.get(f.type_ref.name)=='enum'; get=f'static_cast<{t}>(data.get<std::int32_t>("{f.name}"))' if enum else f'data.get<{t}>("{f.name}")'
-                out.append(f'        if (data.has("{f.name}")) value.{f.name} = {get};' if f.optional else f'        value.{f.name} = {get};')
-            out += ['        return value;','    }']
-        out += ['};','']
+            out.append(
+                f'        b.member({f.field_id}, "{f.name}", {spec_expr(f.type_ref,kinds)});')
+            if f.optional:
+                out.append('        b.optional();')
+        out += [
+            '        return b.build();',
+            '    }',
+            f'    static DynamicData to_dynamic(const {s.cpp_name}& value) {{',
+            '        DynamicData data(type());'
+        ]
+        for f in s.fields:
+            if f.optional:
+                out.append(
+                    f'        if (value.{f.name}) data.set_value("{f.name}", '
+                    f'cito::to_dynamic_value(*value.{f.name}));')
+            else:
+                out.append(
+                    f'        data.set_value("{f.name}", '
+                    f'cito::to_dynamic_value(value.{f.name}));')
+        out += [
+            '        return data;',
+            '    }',
+            f'    static {s.cpp_name} from_dynamic(const DynamicData& data) {{',
+            f'        {s.cpp_name} value{{}};'
+        ]
+        for f in s.fields:
+            cpp = cpp_type(f.type_ref)
+            if f.optional:
+                out.append(
+                    f'        if (data.has("{f.name}")) value.{f.name} = '
+                    f'cito::from_dynamic_value<{cpp}>(data.value("{f.name}"));')
+            else:
+                out.append(
+                    f'        value.{f.name} = '
+                    f'cito::from_dynamic_value<{cpp}>(data.value("{f.name}"));')
+        out += [
+            '        return value;',
+            '    }',
+            '};',
+            ''
+        ]
     return '\n'.join(out+['} // namespace cito',''])
 
 def main(argv=None):
