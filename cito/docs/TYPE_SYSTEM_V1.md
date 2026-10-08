@@ -79,13 +79,20 @@ Nested struct/enum references carry their logical TypeId and SchemaHash so a par
 - The final TypeId/SchemaHash algorithm and width are not frozen.
 - Current DynamicData/wire codec still supports only scalar/string payloads. Enum/struct/array/sequence codec support is deliberately deferred to the next codec phase and is explicitly rejected rather than silently mis-encoded.
 
+## IDL/static status
+
+The first IDL compiler slice is now implemented. The supported subset is documented in `IDL_V1.md`.
+
+Generated scalar/string/enum structs reconstruct the same canonical TypeId/SchemaHash as the equivalent manual TypeBuilder definition and can round-trip through DynamicData and the tagged wire codec.
+
+Generated nested struct/array/sequence types already expose the correct canonical metadata, while their DynamicData/wire payload support remains deliberately deferred.
+
 ## Next type work
 
-1. define the OMG IDL v1 subset that maps exactly onto this model
-2. implement IDL -> canonical model parsing/generation
-3. add complex DynamicData values
-4. add tagged wire support for enum/nested/array/sequence
-5. prove generated/static <-> DynamicData interoperability
+1. add complex DynamicData values for nested struct/array/sequence
+2. add tagged wire support for nested struct/array/sequence
+3. prove generated/static <-> DynamicData interoperability for those complex values
+4. add IDL typedef or additional constructs only when a real use case requires them
 
 ## Still deferred until a concrete need
 
