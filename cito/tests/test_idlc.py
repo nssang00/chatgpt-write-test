@@ -43,6 +43,10 @@ class IdlcTests(unittest.TestCase):
         self.assertIn('TypeBuilder("acme.Telemetry")', cpp)
         self.assertIn('cito::types::array(cito::types::scalar<float>(), 4)', cpp)
         self.assertIn('cito::types::sequence(cito::types::string(64), 20)', cpp)
+        self.assertIn('template <> struct StaticCodec<acme::Telemetry>', cpp)
+        self.assertIn('static constexpr bool direct = true;', cpp)
+        self.assertIn('static_detail::encode_field(', cpp)
+        self.assertIn('static_detail::read_field(bytes, pos)', cpp)
 
     def test_requires_explicit_field_id(self):
         with self.assertRaisesRegex(mod.IdlError, "requires explicit @id"):
