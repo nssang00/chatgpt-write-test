@@ -18,7 +18,7 @@ int main() {
     assert(type.schema_hash() != 0);
     assert(type.fields().size() == 4);
     assert(type.find("timestamp")->optional);
-    assert(type.find("frame")->bound == 16);
+    assert(type.find("frame")->type.bound == 16);
 
     const auto same = cito::TypeBuilder("acme.navigation.Position")
         .member<double>(1, "x")
