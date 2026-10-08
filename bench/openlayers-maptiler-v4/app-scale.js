@@ -104,7 +104,7 @@ const map = new Map({
   })
 });
 
-async function waitIdle(timeoutMs = 20000) {
+async function waitIdle(timeoutMs = 2500) {
   const start = performance.now();
   while (performance.now() - start < timeoutMs) {
     if (stats.pending === 0 && performance.now() - stats.lastEvent > 350) break;
