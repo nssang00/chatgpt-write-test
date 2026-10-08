@@ -9,13 +9,12 @@ const root = dirname(fileURLToPath(import.meta.url));
 const resultsDir = join(root, 'results');
 await mkdir(resultsDir, {recursive: true});
 
-const layerCounts = [1, 5, 10, 20, 30, 40, 50];
+const layerCounts = [1, 10, 50];
 const featureCounts = [10000, 50000, 100000];
 const route = [
   [126.9780, 37.5665, 13],
   [127.0276, 37.4979, 14],
-  [126.9237, 37.5563, 14],
-  [127.1058, 37.5145, 13]
+  [126.9237, 37.5563, 14]
 ];
 
 const mean = (a) => a.length ? a.reduce((x, y) => x + y, 0) / a.length : NaN;
