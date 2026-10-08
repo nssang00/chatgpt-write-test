@@ -26,6 +26,7 @@ if(BUILD_TESTING)
   cito_add_test(cito_runtime_tests tests/runtime_test.cpp "unit;regression")
   cito_add_test(cito_demand_router_tests tests/demand_router_test.cpp "unit;regression")
   cito_add_test(cito_type_model_tests tests/type_model_test.cpp "unit;regression")
+  cito_add_test(cito_dynamic_complex_tests tests/dynamic_complex_test.cpp "unit;regression")
 
   cito_add_test(cito_public_api_smoke tests/public_api_smoke.cpp "smoke;regression")
   cito_add_test(cito_interest_scale_tests tests/interest_scale_test.cpp "smoke;regression")
