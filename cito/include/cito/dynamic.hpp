@@ -34,11 +34,11 @@ public:
         const auto index = find_index(field_name);
         const auto& field = type_.fields()[index];
         DynamicValue normalized = normalize(std::forward<T>(value));
-        if (!matches(field.kind, normalized)) {
+        if (!matches(field.type.kind, normalized)) {
             throw std::invalid_argument("DynamicData value type does not match Cito field type");
         }
-        if (field.kind == TypeKind::String && field.bound != 0 &&
-            std::get<std::string>(normalized).size() > field.bound) {
+        if (field.type.kind == TypeKind::String && field.type.bound != 0 &&
+            std::get<std::string>(normalized).size() > field.type.bound) {
             throw std::length_error("DynamicData string exceeds Cito bound");
         }
         values_[index] = std::move(normalized);
@@ -102,6 +102,11 @@ private:
             case TypeKind::Float32: return std::holds_alternative<float>(value);
             case TypeKind::Float64: return std::holds_alternative<double>(value);
             case TypeKind::String: return std::holds_alternative<std::string>(value);
+            case TypeKind::Enum:
+            case TypeKind::Struct:
+            case TypeKind::Array:
+            case TypeKind::Sequence:
+                return false;
         }
         return false;
     }
