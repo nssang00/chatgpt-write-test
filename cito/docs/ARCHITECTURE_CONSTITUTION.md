@@ -19,6 +19,7 @@ Cito is a lightweight typed messaging runtime that lets applications publish and
 11. C++ is the initial core implementation language; cross-language boundaries use a stable C ABI.
 12. Gateway/integration layers (DDS, ROS 2, MAVLink, legacy protocols) stay outside the native core.
 13. Current-session/local verification comes first. GitHub Actions is used when independent network nodes, OS-specific behavior, or unavailable environments are required.
+14. Every development phase requires unit tests, cumulative regression tests, and a minimal smoke test before it is considered complete.
 
 ## Public API baseline
 
@@ -55,9 +56,11 @@ ctx.publish("drone_17", Position{...});
 
 ## Testing hierarchy
 
-1. Current session: algorithms, codec/type logic, unit tests, same-process behavior, simulations, sanitizers, and benchmarks where possible.
+1. Current session: algorithms, codec/type logic, unit tests, regression tests, same-process smoke tests, simulations, sanitizers, and benchmarks where possible.
 2. Same-host SHM: multiple real OS processes on one host/runner.
 3. Independent Linux network nodes: Linux network namespaces + veth + bridge on one GitHub Actions Ubuntu runner.
 4. Network fault testing: namespace-local `tc/netem` for loss, delay, reordering, link down/up, and recovery.
 5. Windows Actions only for Windows-specific implementation and cross-platform compatibility.
 6. Physical multi-machine tests are reserved for later real-network performance validation.
+
+Detailed test gates are defined in `TESTING.md`.
