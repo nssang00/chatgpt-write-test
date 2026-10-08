@@ -43,10 +43,12 @@ Field names remain schema/tooling metadata and are not included in the data reco
 - TypeId and SchemaHash algorithms are prototype-only and are not yet cross-platform wire contracts.
 - Scalar, string, enum, nested struct, fixed array, and sequence DynamicData values are encoded today.
 - Required/optional semantics are intentionally minimal.
-- Generated/static complex types share this wire through DynamicData.
+- IDL-generated static types now have a direct generated codec and do not require DynamicData on the normal encode/decode hot path.
+- DynamicData remains the tooling/simulation/reference codec, and regression tests require direct-static output to be byte-for-byte identical to it.
 - Nested structs recursively use the same Cito tagged envelope, so their fields keep the same FieldId-based evolution rules.
 - Array/sequence payloads currently use count + per-element length + element payload framing. This is a correctness/evolution baseline, not a frozen performance format.
-- Unknown-field preservation and zero-copy views are not implemented yet.
+- Unknown fields are skipped during compatible decode; preservation/re-emission of unknown fields is not implemented yet.
+- Nested/container decoding uses non-owning byte spans internally, and the transport packet layer exposes a zero-copy payload view.
 - Compact or delimited fast paths are deferred until this tagged representation is benchmarked and the type model is stable.
 
 The intended long-term rule remains: simple/evolvable by default, with faster representations added only when they provide measured value and without changing the application API.
