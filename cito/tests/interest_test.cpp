@@ -34,6 +34,28 @@ int main() {
     assert(host.version() == 3);
     assert(!host.contains(position));
 
+    cito::RemoteSummaryTracker summaries;
+    const cito::DemandSummaryStamp first_stamp{
+        1001,
+        host.version(),
+        host.unique_interest_count()};
+
+    assert(summaries.needs_snapshot(9, first_stamp));
+    summaries.mark_applied(9, first_stamp);
+    assert(!summaries.needs_snapshot(9, first_stamp));
+
+    auto changed_stamp = first_stamp;
+    ++changed_stamp.version;
+    assert(summaries.needs_snapshot(9, changed_stamp));
+
+    const cito::DemandSummaryStamp restarted{
+        1002,
+        0,
+        0};
+    assert(summaries.needs_snapshot(9, restarted));
+    summaries.mark_applied(9, restarted);
+    assert(!summaries.needs_snapshot(9, restarted));
+
     cito::InterestIndex index;
     assert(index.add(position, 10));
     assert(!index.add(position, 10));
