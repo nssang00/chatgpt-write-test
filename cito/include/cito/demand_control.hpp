@@ -17,6 +17,7 @@ inline constexpr std::uint16_t kMaxRouteBatch = 64;
 struct DemandSummaryAnnouncement {
     CoordinatorId coordinator{};
     std::uint16_t control_port{};
+    std::uint32_t lease_ms{};
     DemandSummaryStamp stamp{};
 };
 
@@ -37,6 +38,7 @@ struct DemandSnapshotBatch {
 
 struct RouteRequest {
     CoordinatorId coordinator{};
+    std::uint64_t incarnation{};
     InterestKey key{};
 };
 
@@ -47,6 +49,7 @@ struct RouteEndpoint {
 
 struct RouteBatch {
     CoordinatorId coordinator{};
+    std::uint64_t incarnation{};
     InterestKey key{};
     std::vector<RouteEndpoint> endpoints;
 };
@@ -200,13 +203,18 @@ inline void check_magic(
 inline std::vector<std::uint8_t>
 encode_summary_announcement(
     const DemandSummaryAnnouncement& message) {
+    if (message.lease_ms == 0) {
+        throw std::invalid_argument(
+            "Cito demand control: zero summary lease");
+    }
+
     std::vector<std::uint8_t> out;
-    out.reserve(36);
+    out.reserve(40);
 
     demand_control_detail::write_magic(
         out,
         'S',
-        '1');
+        '2');
     demand_control_detail::write_u16(
         out,
         message.control_port);
@@ -223,6 +231,9 @@ encode_summary_announcement(
     demand_control_detail::write_u32(
         out,
         message.stamp.key_count);
+    demand_control_detail::write_u32(
+        out,
+        message.lease_ms);
     return out;
 }
 
@@ -232,10 +243,10 @@ decode_summary_announcement(
     demand_control_detail::check_magic(
         bytes,
         'S',
-        '1',
-        36);
+        '2',
+        40);
 
-    if (bytes.size() != 36) {
+    if (bytes.size() != 40) {
         throw std::runtime_error(
             "Cito demand control: invalid announcement length");
     }
@@ -265,6 +276,16 @@ decode_summary_announcement(
         demand_control_detail::read_u32(
             bytes,
             pos);
+    message.lease_ms =
+        demand_control_detail::read_u32(
+            bytes,
+            pos);
+
+    if (message.lease_ms == 0) {
+        throw std::runtime_error(
+            "Cito demand control: zero summary lease");
+    }
+
     return message;
 }
 
@@ -527,15 +548,18 @@ inline std::vector<std::uint8_t>
 encode_route_request(
     const RouteRequest& message) {
     std::vector<std::uint8_t> out;
-    out.reserve(36);
+    out.reserve(44);
 
     demand_control_detail::write_magic(
         out,
         'R',
-        '1');
+        '3');
     demand_control_detail::write_u64(
         out,
         message.coordinator);
+    demand_control_detail::write_u64(
+        out,
+        message.incarnation);
     demand_control_detail::write_key(
         out,
         message.key);
@@ -547,10 +571,10 @@ inline RouteRequest decode_route_request(
     demand_control_detail::check_magic(
         bytes,
         'R',
-        '1',
-        36);
+        '3',
+        44);
 
-    if (bytes.size() != 36) {
+    if (bytes.size() != 44) {
         throw std::runtime_error(
             "Cito demand control: invalid route request length");
     }
@@ -558,6 +582,10 @@ inline RouteRequest decode_route_request(
     std::size_t pos = 4;
     RouteRequest message;
     message.coordinator =
+        demand_control_detail::read_u64(
+            bytes,
+            pos);
+    message.incarnation =
         demand_control_detail::read_u64(
             bytes,
             pos);
@@ -579,16 +607,19 @@ encode_route_batch(
 
     std::vector<std::uint8_t> out;
     out.reserve(
-        40 +
+        48 +
         message.endpoints.size() * 12);
 
     demand_control_detail::write_magic(
         out,
         'R',
-        '2');
+        '4');
     demand_control_detail::write_u64(
         out,
         message.coordinator);
+    demand_control_detail::write_u64(
+        out,
+        message.incarnation);
     demand_control_detail::write_key(
         out,
         message.key);
@@ -621,12 +652,16 @@ inline RouteBatch decode_route_batch(
     demand_control_detail::check_magic(
         bytes,
         'R',
-        '2',
-        40);
+        '4',
+        48);
 
     std::size_t pos = 4;
     RouteBatch message;
     message.coordinator =
+        demand_control_detail::read_u64(
+            bytes,
+            pos);
+    message.incarnation =
         demand_control_detail::read_u64(
             bytes,
             pos);
@@ -645,7 +680,7 @@ inline RouteBatch decode_route_batch(
 
     if (count > kMaxRouteBatch ||
         bytes.size() !=
-            40 +
+            48 +
                 static_cast<std::size_t>(
                     count) *
                     12) {
