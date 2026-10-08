@@ -62,3 +62,22 @@ Unit tests verify:
 Smoke tests verify the complete loop -> worker -> loop completion path.
 
 The runtime prototype is still internal under `cito/detail`. It is intentionally not yet exposed through the public API while `Context::run()` semantics are being stabilized.
+
+
+## BestEffort locality fast path
+
+The internal BestEffort delivery prototype separates object-native local delivery from encoded transports:
+
+```text
+matching targets
+     |
+     +-- same process -> callback(object), no serialization
+     |
+     +-- same host ---\
+     |                 +-> lazy encode exactly once -> SHM
+     +-- remote ------/                         \----> UDP
+```
+
+SHM and UDP currently share the same canonical Cito wire representation, so a mixed fan-out does not need one serialization per transport or destination. If a future transport requires a genuinely different representation, each required representation may be produced at most once per publish.
+
+This is internal runtime policy; it does not add transport parameters to `Context::publish()`.
