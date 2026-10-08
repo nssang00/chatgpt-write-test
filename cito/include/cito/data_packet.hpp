@@ -3,6 +3,7 @@
 #include <cito/interest.hpp>
 
 #include <cstdint>
+#include <span>
 #include <stdexcept>
 #include <vector>
 
@@ -11,6 +12,11 @@ namespace cito {
 struct DataPacket {
     InterestKey key{};
     std::vector<std::uint8_t> payload;
+};
+
+struct DataPacketView {
+    InterestKey key{};
+    std::span<const std::uint8_t> payload;
 };
 
 namespace data_detail {
@@ -28,7 +34,7 @@ inline void write_u64(std::vector<std::uint8_t>& out, std::uint64_t v) {
 }
 
 inline std::uint32_t read_u32(
-    const std::vector<std::uint8_t>& bytes,
+    std::span<const std::uint8_t> bytes,
     std::size_t& pos) {
     if (pos + 4 > bytes.size()) {
         throw std::runtime_error("Cito data: truncated u32");
@@ -42,7 +48,7 @@ inline std::uint32_t read_u32(
 }
 
 inline std::uint64_t read_u64(
-    const std::vector<std::uint8_t>& bytes,
+    std::span<const std::uint8_t> bytes,
     std::size_t& pos) {
     if (pos + 8 > bytes.size()) {
         throw std::runtime_error("Cito data: truncated u64");
@@ -63,7 +69,10 @@ inline std::vector<std::uint8_t> encode_data_packet(
         throw std::length_error("Cito data: payload too large");
     }
 
-    std::vector<std::uint8_t> out{'C', 'T', 'D', '1'};
+    std::vector<std::uint8_t> out;
+    out.reserve(32 + packet.payload.size());
+    out.insert(out.end(), {'C', 'T', 'D', '1'});
+
     data_detail::write_u64(out, packet.key.scope);
     data_detail::write_u64(out, packet.key.resource);
     data_detail::write_u64(out, packet.key.type);
@@ -77,8 +86,8 @@ inline std::vector<std::uint8_t> encode_data_packet(
     return out;
 }
 
-inline DataPacket decode_data_packet(
-    const std::vector<std::uint8_t>& bytes) {
+inline DataPacketView decode_data_packet_view(
+    std::span<const std::uint8_t> bytes) {
     if (bytes.size() < 32 ||
         bytes[0] != 'C' ||
         bytes[1] != 'T' ||
@@ -88,7 +97,7 @@ inline DataPacket decode_data_packet(
     }
 
     std::size_t pos = 4;
-    DataPacket packet;
+    DataPacketView packet;
     packet.key.scope = data_detail::read_u64(bytes, pos);
     packet.key.resource = data_detail::read_u64(bytes, pos);
     packet.key.type = data_detail::read_u64(bytes, pos);
@@ -98,10 +107,20 @@ inline DataPacket decode_data_packet(
         throw std::runtime_error("Cito data: payload length mismatch");
     }
 
-    packet.payload.assign(
-        bytes.begin() + static_cast<std::ptrdiff_t>(pos),
-        bytes.end());
+    packet.payload = bytes.subspan(pos, size);
     return packet;
+}
+
+inline DataPacket decode_data_packet(
+    const std::vector<std::uint8_t>& bytes) {
+    const auto view = decode_data_packet_view(
+        std::span<const std::uint8_t>(bytes.data(), bytes.size()));
+
+    return DataPacket{
+        view.key,
+        std::vector<std::uint8_t>(
+            view.payload.begin(),
+            view.payload.end())};
 }
 
 } // namespace cito
