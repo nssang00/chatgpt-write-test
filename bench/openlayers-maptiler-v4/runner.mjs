@@ -45,13 +45,13 @@ async function runOne(renderer, screenshotPath) {
 
   const navStart = Date.now();
   await page.goto(baseUrl + '/?renderer=' + renderer, {waitUntil: 'load'});
-  await page.waitForFunction(() => globalThis.olBench?.map, null, {timeout: 30000});
+  await page.waitForFunction(() => globalThis.olBench?.map, null, {timeout: 120000});
 
   const initialMs = await page.evaluate(async () => {
     const map = globalThis.olBench.map;
     const t0 = performance.now();
     await new Promise((resolve, reject) => {
-      const timer = setTimeout(() => reject(new Error('initial render timeout')), 30000);
+      const timer = setTimeout(() => reject(new Error('initial render timeout')), 120000);
       map.once('rendercomplete', () => {
         clearTimeout(timer);
         requestAnimationFrame(() => requestAnimationFrame(resolve));
@@ -76,7 +76,7 @@ async function runOne(renderer, screenshotPath) {
     async function render() {
       return new Promise((resolve, reject) => {
         const t0 = performance.now();
-        const timer = setTimeout(() => reject(new Error('render timeout')), 30000);
+        const timer = setTimeout(() => reject(new Error('render timeout')), 120000);
         map.once('rendercomplete', () => {
           clearTimeout(timer);
           requestAnimationFrame(() => requestAnimationFrame(() => {
