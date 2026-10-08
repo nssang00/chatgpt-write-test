@@ -27,6 +27,8 @@ void testArgumentPacking()
 }
 
 
+} // namespace
+
 int main()
 {
     testArgumentPacking();
