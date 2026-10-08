@@ -57,3 +57,38 @@ Use Windows GitHub Actions only for Windows-specific behavior and cross-platform
 ## Promotion rule
 
 A feature reaches GitHub Actions only after its algorithmic/unit behavior is tested locally where possible. Network Actions are added when the feature first requires independent network namespaces; Windows Actions are added when the feature first has Windows-specific implementation or wire-compatibility risk.
+
+
+## Current namespace regression topology
+
+The Linux Actions workflow now runs two discovery/data smokes on the same three isolated namespaces:
+
+```text
+cito-pub  10.201.0.11
+cito-pos  10.201.0.12  DemandKey type=Position
+cito-bat  10.201.0.13  DemandKey type=Battery
+```
+
+The legacy exact-key advertisement smoke remains for regression coverage.
+
+The newer two-stage smoke requires:
+
+```text
+publisher:
+  summary_pulls=2
+  route_requests=1
+  discovered=1
+  sent=1
+
+Position host:
+  snapshot_requests=1
+  route_requests=1
+  receives data
+
+Battery host:
+  snapshot_requests=1
+  route_requests=0
+  receives no data
+```
+
+This specifically verifies that host-summary discovery does not turn the coordinator into a mandatory data broker and that detailed route discovery is limited to hosts whose exact DemandKey overlaps the publisher.
