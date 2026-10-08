@@ -10,7 +10,7 @@ const resultsDir = join(root, 'results');
 await mkdir(resultsDir, {recursive: true});
 
 const layerCounts = [1, 5, 10, 20, 30, 40, 50];
-const featureCounts = [10000, 50000, 100000, 200000, 500000];
+const featureCounts = [10000, 50000, 100000, 200000];
 const route = [
   [126.9780, 37.5665, 13],
   [127.0276, 37.4979, 14],
@@ -174,7 +174,7 @@ async function runFeatures(baseUrl, renderer, featureCount, screenshot = false) 
     await cdp.send('HeapProfiler.collectGarbage');
     const before = metricMap((await cdp.send('Performance.getMetrics')).metrics);
 
-    const durations = await page.evaluate(() => globalThis.olFeatureBench.renderLoop(12));
+    const durations = await page.evaluate(() => globalThis.olFeatureBench.renderLoop(6));
 
     const after = metricMap((await cdp.send('Performance.getMetrics')).metrics);
     await cdp.send('HeapProfiler.collectGarbage');
