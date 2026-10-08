@@ -6,7 +6,7 @@ on:
     branches:
       - ci/oneclick-v58-0
     paths:
-      - '.github/workflows/oneclick-v57-9-native.yml'
+      - '.github/workflows/oneclick-v58-0-release.yml'\n      - 'ci/v58-release/**'
       - 'ci/v57.8-native/**'
 
 permissions:
