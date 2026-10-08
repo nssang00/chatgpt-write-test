@@ -28,7 +28,14 @@ int main() {
         std::get<cito::DynamicListPtr>(dynamic.value("tags"));
     assert(tags->values.size() == 2);
 
+    static_assert(cito::StaticCodec<acme::Pose>::direct);
+    static_assert(cito::StaticCodec<acme::Telemetry>::direct);
+
     const auto bytes = cito::encode(value);
+    const auto reference_bytes =
+        cito::wire::encode(cito::to_dynamic(value));
+    assert(bytes == reference_bytes);
+
     const auto roundtrip = cito::decode<acme::Telemetry>(bytes);
 
     assert(roundtrip.pose.x == value.pose.x);
