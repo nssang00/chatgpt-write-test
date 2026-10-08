@@ -104,6 +104,8 @@ publisher --------------------------> subscriber
 
 same-host data path:
 publisher ------------ SHM --------> subscriber
+
+The SHM prototype is publisher-owned, one-writer/many-readers, bounded, and reader-nonblocking. Reader progress is not stored as shared writer-owned flow-control state; a slow reader drops overwritten samples rather than stalling the publisher.
 ```
 
 The coordinator may later provide an optional host-ingress fan-out optimization when many local subscribers would otherwise cause redundant remote unicast. That optimization must be selected internally and must not become a mandatory hop.
@@ -114,7 +116,7 @@ Remote discovery is intentionally two-stage: versioned host summaries maintain `
 
 Same-process delivery follows the same demand-index principle: `Context` indexes callbacks by exact type and opaque resource rather than scanning unrelated handlers.
 
-See `LATENCY_GUARDS.md` for the concrete hot-path invariants.
+See `LATENCY_GUARDS.md` for the concrete hot-path invariants and `SHM_V1.md` for the same-host ring contract.
 
 ## Type direction
 
