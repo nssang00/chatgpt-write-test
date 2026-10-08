@@ -115,6 +115,6 @@ For every P-stage:
 
 - `unit`: focused component/rule tests
 - `smoke`: minimal realistic flows and scale sanity checks
-- `regression`: all stable tests that must continue passing
+- `latency`: deterministic structural guards against known latency regressions\n- `regression`: all stable tests that must continue passing
 
 Tests may carry more than one label. In particular, accepted unit and smoke tests normally also belong to `regression`.
