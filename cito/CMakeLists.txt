@@ -62,7 +62,7 @@ if(BUILD_TESTING)
   target_include_directories(cito_idl_static_smoke PRIVATE ${GENERATED_DIR})
   target_compile_options(cito_idl_static_smoke PRIVATE -Wall -Wextra -Wpedantic)
   add_test(NAME cito_idl_static_smoke COMMAND cito_idl_static_smoke)
-  set_tests_properties(cito_idl_static_smoke PROPERTIES LABELS "smoke;regression")
+  set_tests_properties(cito_idl_static_smoke PROPERTIES LABELS "smoke;latency;regression")
 
   add_executable(cito_idl_complex_smoke
     tests/idl_complex_smoke.cpp
@@ -71,7 +71,7 @@ if(BUILD_TESTING)
   target_include_directories(cito_idl_complex_smoke PRIVATE ${GENERATED_DIR})
   target_compile_options(cito_idl_complex_smoke PRIVATE -Wall -Wextra -Wpedantic)
   add_test(NAME cito_idl_complex_smoke COMMAND cito_idl_complex_smoke)
-  set_tests_properties(cito_idl_complex_smoke PROPERTIES LABELS "smoke;regression")
+  set_tests_properties(cito_idl_complex_smoke PROPERTIES LABELS "smoke;latency;regression")
 
   if(UNIX AND NOT APPLE)
     add_executable(cito_udp_node tests/net/udp_node.cpp)
