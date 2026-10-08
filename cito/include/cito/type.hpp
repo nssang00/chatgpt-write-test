@@ -13,6 +13,8 @@
 
 namespace cito {
 
+class Type;
+
 enum class TypeKind : std::uint8_t {
     Bool,
     Int32,
@@ -36,6 +38,7 @@ struct TypeSpec {
     std::uint64_t referenced_schema_hash{0};
     std::string referenced_name;
     std::shared_ptr<const TypeSpec> element;
+    std::shared_ptr<const Type> referenced_type;
 };
 
 struct Field {
@@ -168,6 +171,7 @@ inline TypeSpec structure(const Type& type) {
     spec.referenced_type_id = type.type_id();
     spec.referenced_schema_hash = type.schema_hash();
     spec.referenced_name = type.name();
+    spec.referenced_type = std::make_shared<Type>(type);
     return spec;
 }
 
