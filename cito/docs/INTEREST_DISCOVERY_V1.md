@@ -41,7 +41,7 @@ version
 key_count
 ```
 
-`incarnation` changes when a coordinator restarts, so a reset version number can never be mistaken for an already-applied old state. A peer pulls the exact snapshot only when this stamp differs from its cached stamp. Exact hash sets are the v1 representation. Bloom/Cuckoo summaries remain optional future compression if measurement justifies them.
+`incarnation` changes when a coordinator restarts, so a reset version number can never be mistaken for an already-applied old state. A peer pulls the exact snapshot only when this stamp represents newer or inconsistent state. Lower versions from the same incarnation are treated as stale and ignored. After a restart, recently retired incarnations are remembered in a small bounded cache so delayed UDP/gossip advertisements from the old process do not trigger repeated snapshot pulls. Exact hash sets are the v1 representation. Bloom/Cuckoo summaries remain optional future compression if measurement justifies them.
 
 ## Destination index
 
@@ -51,7 +51,22 @@ The prototype index maps:
 InterestKey -> set<DestinationId>
 ```
 
-A publisher lookup does not expose or scan the full host list; it receives only the destination set stored for that demand key.
+Cito now separates two indexes:
+
+```text
+RemoteDemandIndex
+DemandKey -> candidate CoordinatorId set
+        |
+        | only for matching hosts
+        v
+direct route detail exchange
+        |
+        v
+InterestIndex
+DemandKey -> direct DestinationId set
+```
+
+A publisher therefore does not scan the full host list. Host summaries narrow discovery to candidate hosts, while the data hot path uses only direct destination entries. The coordinator remains control-plane-first and is not made a mandatory data relay.
 
 ## Publish fast path
 
@@ -86,6 +101,10 @@ The prototype tests cover:
 - encode-once fan-out
 - unrelated-interest exclusion
 - 10,000 virtual hosts / 40,000 interest edges scale smoke
+- stale lower-version summary advertisements are ignored
+- coordinator restart changes incarnation and triggers one new snapshot
+- delayed retired-incarnation advertisements do not trigger pull storms
+- exact host snapshots update an inverse DemandKey -> candidate-host index
 
 The scale smoke intentionally makes no absolute latency/throughput claim. It validates bounded state shape and that the lookup API is demand-key based rather than total-node based.
 
