@@ -1,6 +1,7 @@
 #include <cito/discovery.hpp>
 
 #include <cassert>
+#include <cstdint>
 
 int main() {
     cito::InterestAdvertisement add;
@@ -24,10 +25,18 @@ int main() {
 
     assert(leases.observe(add, 1000));
     assert(index.lookup(add.key).contains(7));
+    assert(leases.size() == 1);
+    assert(leases.scheduled_expiry_count() == 1);
 
-    assert(!leases.observe(add, 1200));
-    assert(leases.expire(1499) == 0);
-    assert(leases.expire(1700) == 1);
+    // Repeated refreshes replace the old expiry instead of growing a stale queue.
+    for (std::uint64_t now = 1100; now <= 1500; now += 100) {
+        assert(!leases.observe(add, now));
+        assert(leases.size() == 1);
+        assert(leases.scheduled_expiry_count() == 1);
+    }
+
+    assert(leases.expire(1999) == 0);
+    assert(leases.expire(2000) == 1);
     assert(index.lookup(add.key).empty());
 
     leases.observe(add, 2000);
@@ -36,6 +45,7 @@ int main() {
     remove.lease_ms = 0;
     assert(leases.observe(remove, 2100));
     assert(index.lookup(add.key).empty());
+    assert(leases.scheduled_expiry_count() == 0);
 
     auto truncated = bytes;
     truncated.pop_back();
