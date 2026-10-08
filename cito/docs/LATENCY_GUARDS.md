@@ -142,8 +142,10 @@ generated C++ messages converted through DynamicData require field-name lookup, 
 Guard:
 
 - DynamicData remains the tooling/simulation/reference compatibility path
-- generated/static types must gain a direct generated codec before Cito makes production latency claims
-- wire compatibility between direct static and DynamicData codecs must be regression-tested
+- IDL-generated types use a generated direct `StaticCodec<T>` on the normal encode/decode path
+- DynamicData remains available as the tooling/simulation/reference path, but is bypassed by generated production messages
+- direct static output must be byte-for-byte identical to the DynamicData reference wire
+- nested structs/arrays/sequences are recursively encoded into the same output buffer without per-field/per-element temporary byte vectors
 
 ## Deterministic latency regression suite
 
@@ -154,6 +156,7 @@ Guard:
 - no-interest publish performs zero encoding/sends
 - fan-out encodes once
 - packet decode view aliases the receive buffer
+- generated Position and complex Telemetry codecs declare a direct static path and match the DynamicData reference bytes
 
 Timing benchmarks and p99 measurements are recorded separately so noisy CI timing does not create false failures.
 
