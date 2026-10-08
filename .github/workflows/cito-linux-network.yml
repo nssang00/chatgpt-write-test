@@ -8,9 +8,13 @@ on:
       - ".github/workflows/cito-linux-network.yml"
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   namespace-smoke:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
 
     steps:
       - name: Checkout
@@ -34,7 +38,23 @@ jobs:
         run: |
           ctest --test-dir build-cito -L unit --output-on-failure
           ctest --test-dir build-cito -L smoke --output-on-failure
+          ctest --test-dir build-cito -L latency --output-on-failure
           ctest --test-dir build-cito -L regression --output-on-failure
+
+      - name: Sanitizer configure
+        run: |
+          cmake -S cito -B build-cito-sanitize -G Ninja \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DCMAKE_CXX_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer"
+
+      - name: Sanitizer build
+        run: cmake --build build-cito-sanitize -j2
+
+      - name: Sanitizer regression
+        env:
+          ASAN_OPTIONS: detect_leaks=1
+          UBSAN_OPTIONS: print_stacktrace=1
+        run: ctest --test-dir build-cito-sanitize -L regression --output-on-failure
 
       - name: Three-node network namespace smoke
         shell: bash
