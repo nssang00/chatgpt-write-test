@@ -155,7 +155,23 @@ Guard:
 - queue-full behavior is explicit
 - slow readers must not block unrelated readers
 
-### 11. Dynamic/reflection path on the production static hot path
+### 11. Reliability overhead on BestEffort / unbounded recovery
+
+Risk:
+
+every stream pays ACK/history/retransmit cost even when reliability is not requested, or reliable history grows with runtime duration/receiver lag.
+
+Guard:
+
+- BestEffort remains the default and does not allocate sender reliability history
+- Reliable sender history is constructed only for reliable streams
+- history is bounded by fixed sample count and maximum payload size
+- slot payload capacity is preallocated when the reliable history is created
+- normal healthy delivery sends no ACK
+- loss creates a bounded 64-bit selective NACK window
+- requests older than retained history become GAP instead of growing history or blocking the writer
+
+### 12. Dynamic/reflection path on the production static hot path
 
 Risk:
 
@@ -169,7 +185,7 @@ Guard:
 - direct static output must be byte-for-byte identical to the DynamicData reference wire
 - nested structs/arrays/sequences are recursively encoded into the same output buffer without per-field/per-element temporary byte vectors
 
-### 12. Local callback scan cost
+### 13. Local callback scan cost
 
 Risk:
 
@@ -205,6 +221,9 @@ Guard:
 - SHM writer progress is independent of reader progress
 - slow SHM readers report overwritten sequences instead of blocking the writer
 - two independent SHM reader processes consume the same publisher ring without shared reader state
+- BestEffort creates no reliability history/ACK work
+- Reliable sender history stays fixed-capacity and preallocated
+- normal in-order reliable traffic produces no NACK; only detected loss creates recovery control
 
 Timing benchmarks and p99 measurements are recorded separately so noisy CI timing does not create false failures.
 
