@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "benchmark": "node focused-benchmark.mjs"
+    "benchmark": "node stress-benchmark.mjs"
   },
   "dependencies": {
     "esbuild": "0.25.10",
