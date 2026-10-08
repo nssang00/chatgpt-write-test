@@ -119,6 +119,8 @@ inline DynamicValue decode_value(TypeKind kind, const std::vector<std::uint8_t>&
         case TypeKind::String:
             return std::string(reinterpret_cast<const char*>(in.data() + pos), len);
         case TypeKind::Enum:
+            expect(4);
+            return static_cast<std::int32_t>(read_u32(in, p));
         case TypeKind::Struct:
         case TypeKind::Array:
         case TypeKind::Sequence:
