@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "benchmark": "node benchmark.mjs"
+    "benchmark": "node multilayer.mjs"
   },
   "dependencies": {
     "esbuild": "0.25.10",
