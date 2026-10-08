@@ -110,6 +110,8 @@ The coordinator may later provide an optional host-ingress fan-out optimization 
 
 A host demand summary changes externally only when a unique `Scope + Resource + Type` key appears for the first time or disappears after its last local subscriber.
 
+Remote discovery is intentionally two-stage: versioned host summaries maintain `DemandKey -> candidate host` state, and direct endpoint details are exchanged only for matching demand. Stale summary versions and recently retired coordinator incarnations are ignored to prevent control-plane pull storms.
+
 See `LATENCY_GUARDS.md` for the concrete hot-path invariants.
 
 ## Type direction
