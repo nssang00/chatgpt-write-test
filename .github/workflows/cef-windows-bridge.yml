@@ -33,7 +33,7 @@ jobs:
           path: |
             ${{ env.CEF_WIN_CACHE_DIR }}
             ${{ env.CEF_WIN_EXTRACT_DIR }}
-          key: cef-windows64-144.0.36-g78619fd-runtime-v1
+          key: cef-windows64-144.0.36-g78619fd-runtime-v2
           restore-keys: |
             cef-windows64-144.0.36-g78619fd
 

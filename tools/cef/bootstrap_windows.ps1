@@ -9,6 +9,7 @@ $CefVersion = "144.0.36+g78619fd+chromium-144.0.7559.264"
 $CefPlatform = "windows64"
 $BaseUrl = "https://cef-builds.spotifycdn.com"
 $Archive = "cef_binary_${CefVersion}_${CefPlatform}_minimal.tar.bz2"
+$ExpectedSha1 = "ce9d951914e79f179e224f3ba9d55d9363696efe"
 
 if ([string]::IsNullOrWhiteSpace($CacheDir)) {
     $CacheDir = Join-Path (Get-Location) ".cache\cef\windows\archive"
@@ -22,9 +23,7 @@ New-Item -ItemType Directory -Force -Path $CacheDir | Out-Null
 New-Item -ItemType Directory -Force -Path $ExtractDir | Out-Null
 
 $ArchivePath = Join-Path $CacheDir $Archive
-$ShaPath = "$ArchivePath.sha1"
 $Url = "$BaseUrl/$Archive"
-$ShaUrl = "$Url.sha1"
 $RootName = $Archive.Substring(0, $Archive.Length - ".tar.bz2".Length)
 $CefRoot = Join-Path $ExtractDir $RootName
 
@@ -37,17 +36,13 @@ if (-not (Test-Path $ArchivePath)) {
     Write-Host "Using cached archive: $ArchivePath"
 }
 
-curl.exe -L --fail --retry 4 --retry-delay 3 $ShaUrl -o $ShaPath
-if ($LASTEXITCODE -ne 0) { throw "CEF SHA1 sidecar download failed" }
-
-$Expected = ((Get-Content -Raw $ShaPath).Trim() -split "\s+")[0].ToLowerInvariant()
 $Actual = (Get-FileHash -Path $ArchivePath -Algorithm SHA1).Hash.ToLowerInvariant()
 
 Write-Host "CEF Windows archive SHA1: $Actual"
 
-if ($Actual -ne $Expected) {
+if ($Actual -ne $ExpectedSha1) {
     Remove-Item -Force $ArchivePath
-    throw "CEF SHA1 mismatch. Expected $Expected, actual $Actual"
+    throw "CEF SHA1 mismatch. Expected $ExpectedSha1, actual $Actual"
 }
 
 if (-not (Test-Path (Join-Path $CefRoot "CMakeLists.txt"))) {

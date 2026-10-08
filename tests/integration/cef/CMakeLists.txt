@@ -12,9 +12,17 @@ get_filename_component(
   ABSOLUTE
 )
 
+# Normalize command-line paths before CEF's CMake modules propagate them into
+# nested try_compile projects. Raw Windows backslashes such as D:\a\... can
+# otherwise be parsed as CMake escape sequences (for example \a).
+file(TO_CMAKE_PATH "${CEF_ROOT}" CEF_ROOT)
 list(APPEND CMAKE_MODULE_PATH "${CEF_ROOT}/cmake")
+
 find_package(CEF REQUIRED)
-find_package(Threads REQUIRED)
+
+if(NOT WIN32)
+  find_package(Threads REQUIRED)
+endif()
 
 add_subdirectory(
   "${CEF_LIBCEF_DLL_WRAPPER_PATH}"
@@ -53,10 +61,12 @@ set_target_properties(nativeweb_core_for_cef PROPERTIES
   CXX_EXTENSIONS NO
 )
 
-target_link_libraries(nativeweb_core_for_cef
-  PUBLIC
-    Threads::Threads
-)
+if(NOT WIN32)
+  target_link_libraries(nativeweb_core_for_cef
+    PUBLIC
+      Threads::Threads
+  )
+endif()
 
 add_library(nativeweb_cef_backend STATIC
   "${NATIVEWEB_ROOT}/src/browser/cef/cef_value_converter.cpp"
