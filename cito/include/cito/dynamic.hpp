@@ -102,7 +102,7 @@ private:
             case TypeKind::Float32: return std::holds_alternative<float>(value);
             case TypeKind::Float64: return std::holds_alternative<double>(value);
             case TypeKind::String: return std::holds_alternative<std::string>(value);
-            case TypeKind::Enum:
+            case TypeKind::Enum: return std::holds_alternative<std::int32_t>(value);
             case TypeKind::Struct:
             case TypeKind::Array:
             case TypeKind::Sequence:
