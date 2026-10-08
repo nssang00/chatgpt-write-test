@@ -27,23 +27,47 @@ ctx.on<Position>(handler);
 ctx.publish(Position{...});
 ```
 
-Advanced users opt in explicitly:
+Advanced users opt in explicitly.
+
+Scalar shorthand remains small:
 
 ```cpp
-#include <cito/dynamic.hpp>
-
-auto type = cito::TypeBuilder("acme.navigation.Position")
+auto position = cito::TypeBuilder("acme.navigation.Position")
     .member<double>(1, "x")
     .member<double>(2, "y")
     .member<std::string>(3, "frame").bound(16)
     .build();
+```
 
-cito::DynamicData data(type);
-data["x"] = 1.0;
-data.set("y", 2.0);
+Complex type expressions are explicit so nested bounds are unambiguous:
+
+```cpp
+auto telemetry = cito::TypeBuilder("acme.Telemetry")
+    .member(1, "pose", cito::types::structure(position))
+    .member(2, "coefficients",
+        cito::types::array(cito::types::scalar<float>(), 4))
+    .member(3, "tags",
+        cito::types::sequence(cito::types::string(64), 20))
+    .build();
 ```
 
 The advanced API must not add runtime or conceptual cost to users that do not include or use it.
+
+## Canonical model now represented
+
+The prototype canonical model can describe:
+
+- primitive scalar values
+- bounded/unbounded strings
+- enums
+- nested structs
+- fixed arrays
+- bounded/unbounded sequences
+- nested container element types
+- optional fields
+- stable explicit FieldIds
+
+Nested struct/enum references carry their logical TypeId and SchemaHash so a parent SchemaHash changes when a referenced schema changes.
 
 ## Current prototype rules
 
@@ -51,15 +75,22 @@ The advanced API must not add runtime or conceptual cost to users that do not in
 - Schema identity changes when fields or relevant field properties change.
 - Field IDs are explicit, non-zero, and unique within a struct.
 - Field names are metadata/tooling names, not intended to be transmitted on every data message.
-- Unknown/evolution semantics and final wire hashes are not yet frozen.
-- `bound()` currently demonstrates bounded string metadata only; arrays, sequences, nested structs, and their unambiguous fluent syntax are intentionally deferred until the canonical model is reviewed.
+- Container syntax is explicit: `array(element, extent)`, `sequence(element, bound)`, and `string(bound)`.
+- The final TypeId/SchemaHash algorithm and width are not frozen.
+- Current DynamicData/wire codec still supports only scalar/string payloads. Enum/struct/array/sequence codec support is deliberately deferred to the next codec phase and is explicitly rejected rather than silently mis-encoded.
 
-## Deferred until measured/needed
+## Next type work
+
+1. define the OMG IDL v1 subset that maps exactly onto this model
+2. implement IDL -> canonical model parsing/generation
+3. add complex DynamicData values
+4. add tagged wire support for enum/nested/array/sequence
+5. prove generated/static <-> DynamicData interoperability
+
+## Still deferred until a concrete need
 
 - DDS-style keys/instances
 - arbitrary annotations
-- complex assignability rules
-- arrays/sequences/nested builders
-- final hash algorithm and hash width
-- dynamic-to-generated wire interoperability
-- compact/delimited/tagged encoding selection
+- full XTypes assignability
+- final hash contract
+- compact/delimited fast representations
