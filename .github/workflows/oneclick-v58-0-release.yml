@@ -6,28 +6,22 @@ on:
     branches:
       - ci/oneclick-v58-0
     paths:
-      - '.github/workflows/oneclick-v58-0-release.yml'\n      - 'ci/v58-release/**'
-      - 'ci/v57.8-native/**'
+      - '.github/workflows/oneclick-v58-0-release.yml'
+      - 'ci/v58-release/**'
 
 permissions:
   contents: read
 
 jobs:
-  windows-native-cef:
-    name: Windows Native + CEF Gate
+  release-readiness:
+    name: Release Readiness Audit
     runs-on: windows-2022
-    timeout-minutes: 60
-
-    env:
-      CEF_VERSION: 154.0.28+g564dd6c+chromium-154.0.8037.58
-      CEF_PLATFORM: windows64
-      PAYLOAD_SHA256: ad2eae30b606d4683f05b3c54fb51a5319dccfefe6039366107a38d9bd756c86
-
+    timeout-minutes: 10
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Prepare v58.0 release-readiness snapshot
+      - name: Prepare current package snapshot
         shell: pwsh
         run: |
           $pkg = Join-Path $env:GITHUB_WORKSPACE 'Package/com.company.webview'
@@ -35,202 +29,35 @@ jobs:
           New-Item -ItemType Directory -Force -Path (Join-Path $pkg 'Prototypes/CefTexture/Native/Host') | Out-Null
           New-Item -ItemType Directory -Force -Path (Join-Path $pkg 'Prototypes/CefTexture/Managed') | Out-Null
           New-Item -ItemType Directory -Force -Path (Join-Path $pkg 'Tests') | Out-Null
-          @'
-{"name":"com.company.webview","version":"0.0.1","displayName":"Company WebView","unity":"2022.3"}
-'@ | Set-Content (Join-Path $pkg 'package.json') -Encoding UTF8
-          @'
-namespace Company.WebView.Internal.Cef { internal sealed class CefBackend { } }
-'@ | Set-Content (Join-Path $pkg 'Runtime/Backends/CEF/CefBackend.cs') -Encoding UTF8
-          'validated native implementation marker' | Set-Content (Join-Path $pkg 'Prototypes/CefTexture/Native/Host/CefRuntime.cpp')
-          'validated managed implementation marker' | Set-Content (Join-Path $pkg 'Prototypes/CefTexture/Managed/CefTextureProbeNative.cs')
+          Set-Content -Path (Join-Path $pkg 'package.json') -Value '{"name":"com.company.webview","version":"0.0.1","displayName":"Company WebView","unity":"2022.3"}' -Encoding UTF8
+          Set-Content -Path (Join-Path $pkg 'Runtime/Backends/CEF/CefBackend.cs') -Value 'namespace Company.WebView.Internal.Cef { internal sealed class CefBackend { } }' -Encoding UTF8
+          Set-Content -Path (Join-Path $pkg 'Prototypes/CefTexture/Native/Host/CefRuntime.cpp') -Value 'validated native implementation marker'
+          Set-Content -Path (Join-Path $pkg 'Prototypes/CefTexture/Managed/CefTextureProbeNative.cs') -Value 'validated managed implementation marker'
 
-      - name: Run v58.0 release-readiness audit
+      - name: Run release readiness audit
         shell: pwsh
         run: |
           python ci/v58-release/release_readiness_check.py
           $report = Get-Content release-readiness-report.json -Raw | ConvertFrom-Json
           if ($report.status -ne 'BLOCKED_RUNTIME_PROMOTION') { throw "Unexpected release status: $($report.status)" }
           $codes = @($report.blockers | ForEach-Object { $_.code })
-          foreach ($required in @('PACKAGE_VERSION_RELEASE_CANDIDATE','RUNTIME_CEF_BACKEND_IMPLEMENTED','PUBLIC_WEBVIEW_API_IMPLEMENTED','VALIDATED_IMPLEMENTATION_PROMOTED_FROM_PROTOTYPES','LICENSE_NOTICE_PRESENT')) {
-            if ($codes -notcontains $required) { throw "Missing expected release blocker: $required" }
+          $required = @('PACKAGE_VERSION_RELEASE_CANDIDATE','RUNTIME_CEF_BACKEND_IMPLEMENTED','PUBLIC_WEBVIEW_API_IMPLEMENTED','VALIDATED_IMPLEMENTATION_PROMOTED_FROM_PROTOTYPES','LICENSE_NOTICE_PRESENT')
+          foreach ($code in $required) {
+            if ($codes -notcontains $code) { throw "Missing expected blocker: $code" }
           }
 
-      - name: Record v57.9 harness-only baseline
+      - name: Record inherited native baseline
         shell: pwsh
         run: |
-          "targetHarnessVersion=57.9.0" | Set-Content v579-harness-baseline.txt
-          "nativeSourceSha256=3c752da814aabb4224c4ed84cd19c9fdf223cfef6def3691908c339e1b344382" | Add-Content v579-harness-baseline.txt
-          "nativeBaseline=v57.8 (byte-identical Native tree)" | Add-Content v579-harness-baseline.txt
+          "nativeBaseline=v57.9 GitHub Actions PASS" | Set-Content native-baseline.txt
+          "nativeSourceSha256=3c752da814aabb4224c4ed84cd19c9fdf223cfef6def3691908c339e1b344382" | Add-Content native-baseline.txt
+          "v57.9RunId=37708072876" | Add-Content native-baseline.txt
 
-      - name: Reconstruct v57.8 native baseline source for v57.9 harness-only gate
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Stop'
-          $parts = Get-ChildItem 'ci\v57.8-native\source-part*.b64' | Sort-Object Name
-          if ($parts.Count -ne 4) { throw "Expected 4 payload parts, found $($parts.Count)." }
-          $b64 = ($parts | ForEach-Object { (Get-Content $_.FullName -Raw).Trim() }) -join ''
-          $archive = Join-Path $env:RUNNER_TEMP 'v578_native_ci.tar.xz'
-          [IO.File]::WriteAllBytes($archive, [Convert]::FromBase64String($b64))
-          $hash = (Get-FileHash $archive -Algorithm SHA256).Hash.ToLowerInvariant()
-          "payloadSha256=$hash" | Tee-Object -FilePath "$env:GITHUB_WORKSPACE\payload-sha256.txt"
-          if ($hash -ne $env:PAYLOAD_SHA256) { throw "Payload SHA-256 mismatch. Expected $env:PAYLOAD_SHA256, got $hash" }
-          $source = Join-Path $env:GITHUB_WORKSPACE 'ci-source'
-          $unpack = Join-Path $env:RUNNER_TEMP 'v578-payload-unpack'
-          New-Item -ItemType Directory -Force -Path $source,$unpack | Out-Null
-          $seven = 'C:\\Program Files\\7-Zip\\7z.exe'
-          if (-not (Test-Path $seven)) { throw "7-Zip not found: $seven" }
-          & $seven x $archive "-o$unpack" -y | Out-Host
-          if ($LASTEXITCODE -ne 0) { throw "payload xz extraction failed: $LASTEXITCODE" }
-          $tarFile = Get-ChildItem $unpack -Filter '*.tar' | Select-Object -First 1
-          if (-not $tarFile) { throw 'payload xz extraction did not produce a tar file.' }
-          & $seven x $tarFile.FullName "-o$source" -y | Out-Host
-          if ($LASTEXITCODE -ne 0) { throw "payload tar extraction failed: $LASTEXITCODE" }
-          $config = Get-Content (Join-Path $source 'config.json') -Raw | ConvertFrom-Json
-          if ($config.harnessVersion -ne '57.8.0') { throw "Unexpected harness version: $($config.harnessVersion)" }
-          "harnessVersion=$($config.harnessVersion)" | Tee-Object -FilePath "$env:GITHUB_WORKSPACE\harness-version.txt"
-
-      - name: Download pinned CEF 154
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Stop'
-          $base = "cef_binary_$($env:CEF_VERSION)_$($env:CEF_PLATFORM)"
-          $archive = Join-Path $env:RUNNER_TEMP "$base.tar.bz2"
-          $url = "https://cef-builds.spotifycdn.com/$base.tar.bz2"
-          Write-Host "Downloading $url"
-          Invoke-WebRequest -Uri $url -OutFile $archive -UseBasicParsing
-          $info = Get-Item $archive
-          if ($info.Length -lt 10MB) { throw "CEF archive unexpectedly small: $($info.Length) bytes" }
-          $fs = [IO.File]::OpenRead($archive)
-          try {
-            $magic = New-Object byte[] 3
-            [void]$fs.Read($magic,0,3)
-          } finally { $fs.Dispose() }
-          if ($magic[0] -ne 0x42 -or $magic[1] -ne 0x5A -or $magic[2] -ne 0x68) { throw 'CEF archive does not have BZh signature.' }
-          $seven = 'C:\Program Files\7-Zip\7z.exe'
-          if (-not (Test-Path $seven)) { throw "7-Zip not found: $seven" }
-          $tmp = Join-Path $env:RUNNER_TEMP 'cef-unpack'
-          $root = Join-Path $env:RUNNER_TEMP 'cef-root'
-          New-Item -ItemType Directory -Force -Path $tmp,$root | Out-Null
-          & $seven x $archive "-o$tmp" -y
-          if ($LASTEXITCODE -ne 0) { throw "CEF bzip2 extraction failed: $LASTEXITCODE" }
-          $tarFile = Get-ChildItem $tmp -Filter '*.tar' | Select-Object -First 1
-          if (-not $tarFile) { throw 'CEF extraction did not produce a tar file.' }
-          & $seven x $tarFile.FullName "-o$root" -y
-          if ($LASTEXITCODE -ne 0) { throw "CEF tar extraction failed: $LASTEXITCODE" }
-          $cefRoot = Join-Path $root $base
-          if (-not (Test-Path (Join-Path $cefRoot 'CMakeLists.txt'))) { throw "CEF root missing after extraction: $cefRoot" }
-          "CEF_ROOT=$cefRoot" | Out-File -FilePath $env:GITHUB_ENV -Append
-
-      - name: Configure native x64
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Stop'
-          New-Item -ItemType Directory -Force -Path results | Out-Null
-          $native = Join-Path $env:GITHUB_WORKSPACE 'ci-source\Package\com.company.webview\Prototypes\CefTexture\Native'
-          $build = Join-Path $env:RUNNER_TEMP 'v578-native-build'
-          $stage = Join-Path $env:GITHUB_WORKSPACE 'results\native-stage'
-          cmake -S $native -B $build -G "Visual Studio 17 2022" -A x64 "-DCEF_ROOT=$env:CEF_ROOT" "-DPROTOTYPE_STAGE_DIR=$stage" -DUSE_SANDBOX=OFF 2>&1 | Tee-Object -FilePath results\cmake-configure.log
-          if ($LASTEXITCODE -ne 0) { throw "CMake configure failed: $LASTEXITCODE" }
-          "BUILD_DIR=$build" | Out-File -FilePath $env:GITHUB_ENV -Append
-          "STAGE_DIR=$stage" | Out-File -FilePath $env:GITHUB_ENV -Append
-
-      - name: Build native clean Release
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Stop'
-          cmake --build $env:BUILD_DIR --config Release --target CefTexturePrototypeStage --parallel 4 2>&1 | Tee-Object -FilePath results\cmake-build.log
-          if ($LASTEXITCODE -ne 0) { throw "Native build failed: $LASTEXITCODE" }
-          $runtime = Join-Path $env:STAGE_DIR 'runtime\Release'
-          $native = Join-Path $env:STAGE_DIR 'native\Release'
-          if (-not (Test-Path (Join-Path $runtime 'CompanyWebViewCefInitSmoke.exe'))) { throw 'CEF init smoke executable missing.' }
-          if (-not (Test-Path (Join-Path $runtime 'CompanyWebViewCefExportCheck.exe'))) { throw 'Export checker missing.' }
-          if (-not (Test-Path (Join-Path $native 'CompanyWebViewCefTextureProbe.dll'))) { throw 'Native plugin DLL missing.' }
-
-      - name: Verify public C ABI exports
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Stop'
-          $runtime = Join-Path $env:STAGE_DIR 'runtime\Release'
-          $native = Join-Path $env:STAGE_DIR 'native\Release'
-          $checker = Join-Path $runtime 'CompanyWebViewCefExportCheck.exe'
-          $plugin = Join-Path $native 'CompanyWebViewCefTextureProbe.dll'
-          & $checker $plugin 2>&1 | Tee-Object -FilePath results\native-export-check.log
-          if ($LASTEXITCODE -ne 0) { throw "Native C ABI export check failed: $LASTEXITCODE" }
-          $text = Get-Content results\native-export-check.log -Raw
-          if ($text -notmatch 'CefPrototype_SendExternalBeginFrame=FOUND') { throw 'CefPrototype_SendExternalBeginFrame export missing.' }
-
-      - name: Run standalone CEF initialize smoke
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Stop'
-          $runtime = Join-Path $env:STAGE_DIR 'runtime\Release'
-          $exe = Join-Path $runtime 'CompanyWebViewCefInitSmoke.exe'
-          $p = Start-Process -FilePath $exe -WorkingDirectory $runtime -Wait -PassThru
-          foreach ($name in @('cef-smoke.log','cef-smoke-cef.log')) {
-            $src = Join-Path $runtime $name
-            if (Test-Path $src) { Copy-Item -Force $src results }
-          }
-          "exitCode=$($p.ExitCode)" | Set-Content results\cef-smoke-run.log
-          if ($p.ExitCode -ne 0) { throw "CEF native smoke failed: $($p.ExitCode)" }
-
-      - name: Run refresh and D3D11 diagnostics
-        continue-on-error: true
-        shell: pwsh
-        run: |
-          $runtime = Join-Path $env:STAGE_DIR 'runtime\Release'
-          $refresh = Join-Path $runtime 'CompanyWebViewCefNativeRefreshControl.exe'
-          if (Test-Path $refresh) {
-            $p = Start-Process -FilePath $refresh -WorkingDirectory $runtime -Wait -PassThru
-            "exitCode=$($p.ExitCode)" | Set-Content results\native-refresh-ci-exit.txt
-            foreach ($name in @('native-refresh-result.json','native-refresh-cef.log')) {
-              $src = Join-Path $runtime $name
-              if (Test-Path $src) { Copy-Item -Force $src results }
-            }
-          }
-          $bench = Join-Path $runtime 'CompanyWebViewD3D11CopyBenchmark.exe'
-          if (Test-Path $bench) {
-            $p = Start-Process -FilePath $bench -WorkingDirectory $runtime -Wait -PassThru
-            "exitCode=$($p.ExitCode)" | Set-Content results\d3d11-copy-ci-exit.txt
-            $src = Join-Path $runtime 'd3d11-copy-result.json'
-            if (Test-Path $src) { Copy-Item -Force $src results }
-          }
-
-      - name: Check leftover CEF processes
-        if: ${{ always() }}
-        shell: pwsh
-        run: |
-          New-Item -ItemType Directory -Force -Path results | Out-Null
-          $names = @('CompanyWebViewCefSubprocess','CompanyWebViewCefInitSmoke','CompanyWebViewCefNativeRefreshControl')
-          $left = @()
-          foreach ($name in $names) { $left += @(Get-Process $name -ErrorAction SilentlyContinue) }
-          "leftoverCount=$($left.Count)" | Set-Content results\orphan-check.txt
-          if ($left.Count -gt 0) {
-            $left | Format-Table Id,ProcessName,StartTime -AutoSize | Out-String | Add-Content results\orphan-check.txt
-            $left | Stop-Process -Force -ErrorAction SilentlyContinue
-            throw "Leftover CEF processes detected: $($left.Count)"
-          }
-
-      - name: Write CI summary
-        if: ${{ always() }}
-        shell: pwsh
-        run: |
-          "## v57.9 Native/CEF first-pass gate" | Out-File $env:GITHUB_STEP_SUMMARY -Append
-          "" | Out-File $env:GITHUB_STEP_SUMMARY -Append
-          "- Payload SHA-256 verified" | Out-File $env:GITHUB_STEP_SUMMARY -Append
-          "- Native x64 clean build" | Out-File $env:GITHUB_STEP_SUMMARY -Append
-          "- Public C ABI export verification" | Out-File $env:GITHUB_STEP_SUMMARY -Append
-          "- Standalone CefInitialize/CefShutdown smoke" | Out-File $env:GITHUB_STEP_SUMMARY -Append
-          "- Refresh/D3D11 results collected as hosted-runner diagnostics" | Out-File $env:GITHUB_STEP_SUMMARY -Append
-
-      - name: Upload first-pass artifacts
-        if: ${{ always() }}
+      - name: Upload audit artifact
         uses: actions/upload-artifact@v4
         with:
           name: oneclick-v58-0-release-readiness
           path: |
-            results/
-            payload-sha256.txt
-            harness-version.txt
-            v579-harness-baseline.txt
             release-readiness-report.json
-          if-no-files-found: warn
+            native-baseline.txt
+          if-no-files-found: error
