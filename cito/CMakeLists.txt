@@ -28,7 +28,7 @@ if(BUILD_TESTING)
   cito_add_test(cito_type_model_tests tests/type_model_test.cpp "unit;regression")
   cito_add_test(cito_dynamic_complex_tests tests/dynamic_complex_test.cpp "unit;regression")
   cito_add_test(cito_discovery_tests tests/discovery_test.cpp "unit;regression")
-  cito_add_test(cito_data_packet_tests tests/data_packet_test.cpp "unit;regression")
+  cito_add_test(cito_data_packet_tests tests/data_packet_test.cpp "unit;regression")\n  cito_add_test(cito_latency_guard_tests tests/latency_guard_test.cpp "unit;latency;regression")
 
   cito_add_test(cito_public_api_smoke tests/public_api_smoke.cpp "smoke;regression")
   cito_add_test(cito_interest_scale_tests tests/interest_scale_test.cpp "smoke;regression")
