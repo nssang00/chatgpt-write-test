@@ -109,11 +109,25 @@ writer process
 
 Both readers must receive 100 samples with zero drops while using their own read-only SHM mappings.
 
+A second multi-process smoke uses the IDL-generated `Position` type. The writer uses the generated direct `StaticCodec<Position>`, places the resulting canonical Cito wire bytes in SHM, and two reader processes decode those bytes back into generated `Position` values. This proves that SHM is only a transport substitution; type identity and wire compatibility do not change.
+
 This test intentionally does not use network namespaces because SHM is a same-host transport.
+
+## Internal transport selection
+
+The first internal locality selector is deliberately trivial and not public API:
+
+```text
+same process -> direct callback
+same host    -> shared memory
+remote       -> UDP
+```
+
+The application continues to call `publish()`. QUIC and future transport policy can extend the internal selector without creating a second application programming model.
 
 ## Deferred
 
-- Context/runtime automatic same-host transport selection
+- Context/runtime automatic wiring of discovered same-host endpoints to SHM rings
 - generated/static wire payload integration
 - publisher generation/name registry and crash cleanup
 - notification primitive (eventfd/futex) instead of polling
