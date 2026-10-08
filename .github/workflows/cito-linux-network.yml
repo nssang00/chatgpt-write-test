@@ -1,0 +1,107 @@
+name: Cito Linux Network
+
+on:
+  push:
+    branches: [cito-dev]
+    paths:
+      - "cito/**"
+      - ".github/workflows/cito-linux-network.yml"
+  workflow_dispatch:
+
+jobs:
+  namespace-smoke:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Environment
+        run: |
+          uname -a
+          cmake --version
+          c++ --version
+          ip -V
+          tc -V
+
+      - name: Configure
+        run: cmake -S cito -B build-cito -G Ninja -DCMAKE_BUILD_TYPE=Debug
+
+      - name: Build
+        run: cmake --build build-cito -j2
+
+      - name: Local unit smoke regression
+        run: |
+          ctest --test-dir build-cito -L unit --output-on-failure
+          ctest --test-dir build-cito -L smoke --output-on-failure
+          ctest --test-dir build-cito -L regression --output-on-failure
+
+      - name: Three-node network namespace smoke
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          cleanup() {
+            sudo ip netns del cito-pub 2>/dev/null || true
+            sudo ip netns del cito-pos 2>/dev/null || true
+            sudo ip netns del cito-bat 2>/dev/null || true
+            sudo ip link del br-cito 2>/dev/null || true
+          }
+          trap cleanup EXIT
+          cleanup
+
+          sudo ip link add br-cito type bridge
+          sudo ip addr add 10.201.0.1/24 dev br-cito
+          sudo ip link set br-cito up
+
+          add_node() {
+            local ns="$1"
+            local host_veth="$2"
+            local ns_veth="$3"
+            local address="$4"
+
+            sudo ip netns add "$ns"
+            sudo ip link add "$host_veth" type veth peer name "$ns_veth"
+            sudo ip link set "$host_veth" master br-cito
+            sudo ip link set "$host_veth" up
+            sudo ip link set "$ns_veth" netns "$ns"
+
+            sudo ip netns exec "$ns" ip link set lo up
+            sudo ip netns exec "$ns" ip link set "$ns_veth" name eth0
+            sudo ip netns exec "$ns" ip addr add "$address"/24 dev eth0
+            sudo ip netns exec "$ns" ip link set eth0 up
+          }
+
+          add_node cito-pub veth-pub veth-pub-ns 10.201.0.11
+          add_node cito-pos veth-pos veth-pos-ns 10.201.0.12
+          add_node cito-bat veth-bat veth-bat-ns 10.201.0.13
+
+          sudo ip netns exec cito-pub ping -c 1 -W 1 10.201.0.12
+          sudo ip netns exec cito-pub ping -c 1 -W 1 10.201.0.13
+
+          BIN="$GITHUB_WORKSPACE/build-cito/cito_udp_node"
+
+          sudo ip netns exec cito-pub "$BIN"             publisher 100 47000 1 1600             >publisher.log 2>&1 &
+          PUB_PID=$!
+
+          sleep 0.2
+
+          sudo ip netns exec cito-pos "$BIN"             subscriber 12 100 48012 47000 10.201.0.255 1             >position.log 2>&1 &
+          POS_PID=$!
+
+          sudo ip netns exec cito-bat "$BIN"             subscriber 13 200 48013 47000 10.201.0.255 0             >battery.log 2>&1 &
+          BAT_PID=$!
+
+          status=0
+          wait "$PUB_PID" || status=1
+          wait "$POS_PID" || status=1
+          wait "$BAT_PID" || status=1
+
+          echo "=== publisher ==="
+          cat publisher.log
+          echo "=== position subscriber ==="
+          cat position.log
+          echo "=== unrelated battery subscriber ==="
+          cat battery.log
+
+          exit "$status"
