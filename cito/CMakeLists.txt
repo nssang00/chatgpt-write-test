@@ -81,6 +81,22 @@ if(BUILD_TESTING)
   set_tests_properties(cito_idl_complex_smoke PROPERTIES LABELS "smoke;latency;regression")
 
   if(UNIX AND NOT APPLE)
+    cito_add_test(cito_shm_ring_tests tests/shm_ring_test.cpp "unit;latency;regression")
+    target_link_libraries(cito_shm_ring_tests PRIVATE rt)
+
+    add_executable(cito_shm_node tests/net/shm_node.cpp)
+    target_link_libraries(cito_shm_node PRIVATE cito rt)
+    target_compile_options(cito_shm_node PRIVATE -Wall -Wextra -Wpedantic)
+
+    add_test(
+      NAME cito_shm_multiprocess_smoke
+      COMMAND bash
+              ${CMAKE_CURRENT_SOURCE_DIR}/tests/run_shm_smoke.sh
+              $<TARGET_FILE:cito_shm_node>)
+    set_tests_properties(
+      cito_shm_multiprocess_smoke
+      PROPERTIES LABELS "smoke;latency;regression")
+
     add_executable(cito_udp_node tests/net/udp_node.cpp)
     target_link_libraries(cito_udp_node PRIVATE cito)
     target_compile_options(cito_udp_node PRIVATE -Wall -Wextra -Wpedantic)
