@@ -1,4 +1,4 @@
-name: OneClick v58.0 Release Readiness Gate
+name: OneClick v58.0 Release Readiness Gate\n# audit-path-fix: location-independent
 
 on:
   workflow_dispatch:
