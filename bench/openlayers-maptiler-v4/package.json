@@ -1,0 +1,13 @@
+{
+  "name": "openlayers-maptiler-v4-benchmark",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "benchmark": "node benchmark.mjs"
+  },
+  "dependencies": {
+    "esbuild": "0.25.10",
+    "ol": "10.10.0",
+    "playwright": "1.55.0"
+  }
+}
