@@ -77,21 +77,19 @@ Nested struct/enum references carry their logical TypeId and SchemaHash so a par
 - Field names are metadata/tooling names, not intended to be transmitted on every data message.
 - Container syntax is explicit: `array(element, extent)`, `sequence(element, bound)`, and `string(bound)`.
 - The final TypeId/SchemaHash algorithm and width are not frozen.
-- Current DynamicData/wire codec still supports only scalar/string payloads. Enum/struct/array/sequence codec support is deliberately deferred to the next codec phase and is explicitly rejected rather than silently mis-encoded.
+- DynamicData now represents scalar/string/enum values plus nested structs and recursive array/sequence values. Bounds and fixed extents are validated before values enter the wire path.
 
 ## IDL/static status
 
 The first IDL compiler slice is now implemented. The supported subset is documented in `IDL_V1.md`.
 
-Generated scalar/string/enum structs reconstruct the same canonical TypeId/SchemaHash as the equivalent manual TypeBuilder definition and can round-trip through DynamicData and the tagged wire codec.
-
-Generated nested struct/array/sequence types already expose the correct canonical metadata, while their DynamicData/wire payload support remains deliberately deferred.
+Generated types reconstruct the same canonical TypeId/SchemaHash as the equivalent manual TypeBuilder definition. Scalar, enum, nested struct, fixed array, sequence, and optional values now round-trip through DynamicData and the tagged wire codec.
 
 ## Next type work
 
-1. add complex DynamicData values for nested struct/array/sequence
-2. add tagged wire support for nested struct/array/sequence
-3. prove generated/static <-> DynamicData interoperability for those complex values
+1. strengthen nested schema-evolution tests
+2. benchmark tagged complex encoding and identify measured fast-path opportunities
+3. add unknown-field preservation only if gateways/tooling require it
 4. add IDL typedef or additional constructs only when a real use case requires them
 
 ## Still deferred until a concrete need
