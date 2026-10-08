@@ -9,12 +9,29 @@ int main() {
     const cito::InterestKey other_scope{2, 17, 100};
 
     cito::HostInterests host;
+    assert(host.version() == 0);
+
     assert(host.add(position));
+    assert(host.version() == 1);
+
     assert(!host.add(position));
+    assert(host.version() == 1);
     assert(host.unique_interest_count() == 1);
+
+    assert(host.add(battery));
+    assert(host.version() == 2);
+
+    const auto snapshot = host.snapshot();
+    assert(snapshot.size() == 2);
+    assert(snapshot[0] == position);
+    assert(snapshot[1] == battery);
+
     assert(!host.remove(position));
+    assert(host.version() == 2);
     assert(host.contains(position));
+
     assert(host.remove(position));
+    assert(host.version() == 3);
     assert(!host.contains(position));
 
     cito::InterestIndex index;
