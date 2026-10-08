@@ -14,6 +14,50 @@ using ResourceId = std::uint64_t;
 using TypeId = std::uint64_t;
 using DestinationId = std::uint64_t;
 
+using CoordinatorId = std::uint64_t;
+
+struct DemandSummaryStamp {
+    std::uint64_t incarnation{};
+    std::uint64_t version{};
+    std::size_t key_count{};
+
+    friend bool operator==(
+        const DemandSummaryStamp&,
+        const DemandSummaryStamp&) = default;
+};
+
+class RemoteSummaryTracker {
+public:
+    bool needs_snapshot(
+        CoordinatorId coordinator,
+        const DemandSummaryStamp& advertised) const {
+        const auto it = applied_.find(coordinator);
+        return it == applied_.end() ||
+            !(it->second == advertised);
+    }
+
+    void mark_applied(
+        CoordinatorId coordinator,
+        DemandSummaryStamp stamp) {
+        applied_.insert_or_assign(
+            coordinator,
+            std::move(stamp));
+    }
+
+    bool forget(CoordinatorId coordinator) {
+        return applied_.erase(coordinator) != 0;
+    }
+
+    std::size_t size() const noexcept {
+        return applied_.size();
+    }
+
+private:
+    std::unordered_map<
+        CoordinatorId,
+        DemandSummaryStamp> applied_;
+};
+
 struct InterestKey {
     ScopeId scope{};
     ResourceId resource{};
