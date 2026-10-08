@@ -46,7 +46,7 @@ jobs:
           ctest --test-dir build-cito -L regression --output-on-failure
 
       - name: Same-host SHM multi-process smoke
-        run: ctest --test-dir build-cito -R cito_shm_multiprocess_smoke -V --output-on-failure
+        run: ctest --test-dir build-cito -R "cito_shm_.*_smoke" -V --output-on-failure
 
       - name: Sanitizer configure
         run: |
