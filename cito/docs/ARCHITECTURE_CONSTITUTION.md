@@ -106,6 +106,8 @@ same-host data path:
 publisher ------------ SHM --------> subscriber
 
 The SHM prototype is publisher-owned, one-writer/many-readers, bounded, and reader-nonblocking. Reader progress is not stored as shared writer-owned flow-control state; a slow reader drops overwritten samples rather than stalling the publisher.
+
+Transport selection is internal and locality-first: same-process delivery uses direct callbacks, same-host cross-process delivery prefers SHM, and remote LAN delivery uses UDP. This choice must never require a different user-facing publish API.
 ```
 
 The coordinator may later provide an optional host-ingress fan-out optimization when many local subscribers would otherwise cause redundant remote unicast. That optimization must be selected internally and must not become a mandatory hop.
