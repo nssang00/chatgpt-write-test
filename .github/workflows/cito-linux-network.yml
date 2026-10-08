@@ -45,6 +45,9 @@ jobs:
           ctest --test-dir build-cito -L latency --output-on-failure
           ctest --test-dir build-cito -L regression --output-on-failure
 
+      - name: Same-host SHM multi-process smoke
+        run: ctest --test-dir build-cito -R cito_shm_multiprocess_smoke -V --output-on-failure
+
       - name: Sanitizer configure
         run: |
           cmake -S cito -B build-cito-sanitize -G Ninja \
