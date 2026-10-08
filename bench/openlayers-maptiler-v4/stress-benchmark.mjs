@@ -97,7 +97,11 @@ async function run(renderer) {
     const gc = metricsToMap((await cdp.send('Performance.getMetrics')).metrics);
 
     const screenshot = join(resultsDir, 'stress-' + renderer + '.png');
-    await page.screenshot({path: screenshot});
+    try {
+      await page.screenshot({path: screenshot, timeout: 5000});
+    } catch (error) {
+      errors.push('screenshot: ' + String(error?.message || error));
+    }
 
     const canvasInfo = await page.evaluate(() => {
       const canvas = document.createElement('canvas');
