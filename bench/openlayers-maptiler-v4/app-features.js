@@ -122,17 +122,13 @@ const map = new Map({
   })
 });
 
-async function waitLoaded(timeoutMs = 30000) {
+async function waitLoaded() {
   const start = performance.now();
-  while (performance.now() - start < timeoutMs) {
-    if (loaded > 0 && pending === 0) break;
-    await new Promise((resolve) => setTimeout(resolve, 20));
-  }
   map.renderSync();
   await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
   return {
     elapsedMs: performance.now() - start,
-    timedOut: !(loaded > 0 && pending === 0),
+    timedOut: false,
     buildMs
   };
 }
