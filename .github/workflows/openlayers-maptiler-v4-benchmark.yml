@@ -1,0 +1,66 @@
+name: OpenLayers MapTiler v4 Benchmark
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - benchmark/openlayers-maptiler-v4-2026-10-08
+    paths:
+      - 'bench/openlayers-maptiler-v4/**'
+      - '.github/workflows/openlayers-maptiler-v4-benchmark.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    env:
+      MAPTILER_KEY: ${{ secrets.MAPTILER_KEY }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Verify MapTiler key
+        shell: bash
+        run: |
+          if [ -z "$MAPTILER_KEY" ]; then
+            echo "::error::Repository secret MAPTILER_KEY is missing or unavailable."
+            exit 1
+          fi
+          echo "MAPTILER_KEY is available to this workflow."
+
+      - name: Install dependencies
+        working-directory: bench/openlayers-maptiler-v4
+        run: npm install
+
+      - name: Install Chromium
+        working-directory: bench/openlayers-maptiler-v4
+        run: npx playwright install --with-deps chromium
+
+      - name: Run benchmark
+        working-directory: bench/openlayers-maptiler-v4
+        run: npm run benchmark
+
+      - name: Publish summary
+        if: always()
+        shell: bash
+        run: |
+          if [ -f bench/openlayers-maptiler-v4/results/report.md ]; then
+            cat bench/openlayers-maptiler-v4/results/report.md >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: openlayers-maptiler-v4-benchmark
+          path: bench/openlayers-maptiler-v4/results/
+          if-no-files-found: warn
