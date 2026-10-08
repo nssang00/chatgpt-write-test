@@ -4,6 +4,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <map>
 #include <stdexcept>
 #include <unordered_map>
 #include <vector>
@@ -152,6 +153,14 @@ struct LeaseKeyHash {
 };
 
 class InterestLeaseTable {
+private:
+    using ExpiryMap = std::multimap<std::uint64_t, LeaseKey>;
+
+    struct LeaseEntry {
+        std::uint64_t expires_at{};
+        ExpiryMap::iterator expiry_it;
+    };
+
 public:
     explicit InterestLeaseTable(InterestIndex& index) : index_(index) {}
 
@@ -162,36 +171,67 @@ public:
             advertisement.key,
             advertisement.destination};
 
+        auto existing = leases_.find(lease_key);
+
         if (advertisement.op == InterestOp::Remove) {
-            const auto erased = leases_.erase(lease_key);
+            if (existing == leases_.end()) {
+                index_.remove(
+                    advertisement.key,
+                    advertisement.destination);
+                return false;
+            }
+
+            expiries_.erase(existing->second.expiry_it);
+            leases_.erase(existing);
             index_.remove(
                 advertisement.key,
                 advertisement.destination);
-            return erased != 0;
+            return true;
         }
 
-        const auto [_, inserted] = leases_.insert_or_assign(
+        const auto expires_at = now_ms + advertisement.lease_ms;
+
+        if (existing != leases_.end()) {
+            expiries_.erase(existing->second.expiry_it);
+            const auto expiry_it =
+                expiries_.emplace(expires_at, lease_key);
+            existing->second = LeaseEntry{expires_at, expiry_it};
+            index_.add(
+                advertisement.key,
+                advertisement.destination);
+            return false;
+        }
+
+        const auto expiry_it =
+            expiries_.emplace(expires_at, lease_key);
+        leases_.emplace(
             lease_key,
-            now_ms + advertisement.lease_ms);
+            LeaseEntry{expires_at, expiry_it});
         index_.add(
             advertisement.key,
             advertisement.destination);
-        return inserted;
+        return true;
     }
 
     std::size_t expire(std::uint64_t now_ms) {
         std::size_t expired = 0;
 
-        for (auto it = leases_.begin(); it != leases_.end();) {
-            if (it->second <= now_ms) {
+        while (!expiries_.empty() &&
+               expiries_.begin()->first <= now_ms) {
+            auto expiry_it = expiries_.begin();
+            const auto lease_key = expiry_it->second;
+            auto lease_it = leases_.find(lease_key);
+
+            if (lease_it != leases_.end() &&
+                lease_it->second.expiry_it == expiry_it) {
                 index_.remove(
-                    it->first.interest,
-                    it->first.destination);
-                it = leases_.erase(it);
+                    lease_key.interest,
+                    lease_key.destination);
+                leases_.erase(lease_it);
                 ++expired;
-            } else {
-                ++it;
             }
+
+            expiries_.erase(expiry_it);
         }
 
         return expired;
@@ -201,12 +241,17 @@ public:
         return leases_.size();
     }
 
+    std::size_t scheduled_expiry_count() const noexcept {
+        return expiries_.size();
+    }
+
 private:
     InterestIndex& index_;
     std::unordered_map<
         LeaseKey,
-        std::uint64_t,
+        LeaseEntry,
         LeaseKeyHash> leases_;
+    ExpiryMap expiries_;
 };
 
 } // namespace cito
