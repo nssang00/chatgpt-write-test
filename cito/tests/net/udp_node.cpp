@@ -6,11 +6,11 @@
 #include <sys/socket.h>
 #include <unistd.h>
 
-#include <chrono>
+#include <algorithm>\n#include <chrono>
 #include <cstdint>
 #include <cstring>
 #include <iostream>
-#include <string>
+#include <string>\n#include <string_view>
 #include <unordered_map>
 #include <vector>
 
@@ -162,11 +162,14 @@ int subscriber(int argc, char** argv) {
             }
 
             try {
-                const auto data = cito::decode_data_packet(bytes);
+                const auto data = cito::decode_data_packet_view(bytes);
+                constexpr std::string_view expected = "hello";
                 if (data.key == key &&
-                    std::string(
+                    data.payload.size() == expected.size() &&
+                    std::equal(
                         data.payload.begin(),
-                        data.payload.end()) == "hello") {
+                        data.payload.end(),
+                        expected.begin())) {
                     ::close(advertisement_fd);
                     ::close(data_fd);
 
