@@ -38,7 +38,30 @@ GAP(first, last)
 - requests older than retained KEEP_LAST history become GAP
 - future/malformed NACK requests do not grow state
 
-Wire packets and multicast NACK suppression are deliberately deferred until the local state machine is stable.
+The first wire framing is now defined for the prototype. Multicast NACK suppression and fragmentation remain deferred.
+
+## Reliable stream identity
+
+Reliability state is scoped by:
+
+```text
+DemandKey (Scope + Resource + Type)
+        +
+opaque StreamId
+```
+
+`StreamId` identifies one publisher stream/generation. It must change when that publisher stream is recreated so two publishers of the same DemandKey never share a sequence space.
+
+The prototype frames are:
+
+```text
+CRD1 DATA       DemandKey + StreamId + seq + payload_length + payload
+CRH1 HEARTBEAT  DemandKey + StreamId + first_available + last_published
+CRN1 NACK       DemandKey + StreamId + base + 64-bit bitmap
+CRG1 GAP        DemandKey + StreamId + first + last
+```
+
+DATA decode exposes a non-owning payload span, avoiding another transport-frame payload copy before the type decoder.
 
 ## Bounded sender history
 
@@ -88,9 +111,9 @@ All tests are local because the algorithm does not require independent network n
 
 ## Next reliability steps
 
-1. define bounded UDP control packets for DATA / HEARTBEAT / NACK / GAP
-2. add NACK suppression/random delay for multicast
-3. add retransmit pacing/token-bucket bounds
-4. run Linux namespace tests with `tc/netem` loss/reorder/delay
+1. add NACK suppression/random delay for multicast
+2. add retransmit pacing/token-bucket bounds
+3. run Linux namespace tests with `tc/netem` loss/reorder/delay
+4. add payload fragmentation only after MTU/GSO strategy is measured
 5. keep QUIC streams separate: do not add this retransmission layer on top of QUIC reliable streams
 6. add a separate bounded ACK/retry policy only if important discrete-message use cases require it

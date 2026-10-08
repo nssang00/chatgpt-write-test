@@ -1,4 +1,5 @@
 #include <cito/detail/reliability.hpp>
+#include <cito/detail/reliable_packet.hpp>
 
 #include <array>
 #include <cassert>
@@ -43,9 +44,18 @@ int main() {
     assert(
         nack->bitmap == 0x1);
 
+    const cito::InterestKey key{
+        7, 17, 100};
+    constexpr StreamId stream = 99;
+
+    const auto nack_frame =
+        decode_nack_frame(
+            encode_nack_frame(
+                {key, stream, *nack}));
+
     const auto plan =
         sender.plan_recovery(
-            *nack);
+            nack_frame.nack);
 
     assert(
         plan.actions.size() ==
@@ -58,7 +68,29 @@ int main() {
         3);
     assert(sender.payload(3));
 
-    receiver.on_data(3);
+    const auto recovered_payload =
+        sender.payload(3);
+    assert(recovered_payload);
+
+    const auto recovered_data =
+        decode_reliable_data_view(
+            encode_reliable_data(
+                {key,
+                 stream,
+                 3,
+                 *recovered_payload}));
+
+    assert(
+        recovered_data.key == key);
+    assert(
+        recovered_data.stream ==
+        stream);
+    assert(
+        recovered_data.sequence ==
+        3);
+
+    receiver.on_data(
+        recovered_data.sequence);
 
     assert(
         receiver.next_expected() ==
@@ -75,8 +107,15 @@ int main() {
             sequence);
     }
 
+    const auto heartbeat_frame =
+        decode_heartbeat_frame(
+            encode_heartbeat_frame(
+                {key,
+                 stream,
+                 sender.heartbeat()}));
+
     tail_receiver.on_heartbeat(
-        sender.heartbeat());
+        heartbeat_frame.heartbeat);
 
     const auto tail_nack =
         tail_receiver.make_nack();
@@ -141,9 +180,16 @@ int main() {
         late_plan.actions[0].last ==
         2);
 
+    const auto gap_frame =
+        decode_gap_frame(
+            encode_gap_frame(
+                {key,
+                 stream,
+                 Gap{1, 2}}));
+
     assert(
         late_receiver.on_gap(
-            Gap{1, 2}));
+            gap_frame.gap));
 
     late_receiver.on_data(3);
     late_receiver.on_data(4);

@@ -38,6 +38,7 @@ if(BUILD_TESTING)
   cito_add_test(cito_transport_selector_tests tests/transport_selector_test.cpp "unit;latency;regression")
   cito_add_test(cito_best_effort_delivery_tests tests/best_effort_delivery_test.cpp "unit;latency;regression")
   cito_add_test(cito_reliability_tests tests/reliability_test.cpp "unit;latency;regression")
+  cito_add_test(cito_reliable_packet_tests tests/reliable_packet_test.cpp "unit;latency;regression")
 
   cito_add_test(cito_public_api_smoke tests/public_api_smoke.cpp "smoke;regression")
   cito_add_test(cito_interest_scale_tests tests/interest_scale_test.cpp "smoke;regression")
