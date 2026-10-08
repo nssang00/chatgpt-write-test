@@ -495,6 +495,16 @@ int main(
         return 2;
     }
 
+    if (!nativeweb::detail::isWebView2RuntimeAvailable())
+    {
+        std::cerr
+            << "WebView2 Runtime is not available"
+            << std::endl;
+        DestroyWindow(firstWindow);
+        DestroyWindow(secondWindow);
+        return 5;
+    }
+
     nativeweb::detail::
         registerWebView2BackendFactory();
 

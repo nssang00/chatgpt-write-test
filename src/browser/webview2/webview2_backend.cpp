@@ -896,8 +896,31 @@ std::string WebView2Backend::wideToUtf8(
     return output;
 }
 
+bool isWebView2RuntimeAvailable()
+{
+    LPWSTR version = 0;
+
+    const HRESULT result =
+        GetAvailableCoreWebView2BrowserVersionString(
+            0,
+            &version);
+
+    const bool available =
+        SUCCEEDED(result) &&
+        version &&
+        *version;
+
+    if (version)
+        CoTaskMemFree(version);
+
+    return available;
+}
+
 void registerWebView2BackendFactory()
 {
+    if (!isWebView2RuntimeAvailable())
+        return;
+
     registerBrowserBackendFactory(
         Engine::WebView2,
         []()

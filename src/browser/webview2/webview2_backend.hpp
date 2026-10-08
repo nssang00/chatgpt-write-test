@@ -111,6 +111,7 @@ private:
     bool navigationCompletedRegistered_;
 };
 
+bool isWebView2RuntimeAvailable();
 void registerWebView2BackendFactory();
 
 } // namespace detail
