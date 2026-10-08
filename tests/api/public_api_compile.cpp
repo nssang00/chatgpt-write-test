@@ -23,6 +23,26 @@ struct CompileDevice
     int value;
 };
 
+struct CompileRootService
+{
+    explicit CompileRootService(int value)
+        : base(value)
+    {
+    }
+
+    int add(int value)
+    {
+        return base + value;
+    }
+
+    int sub(int value) const
+    {
+        return base - value;
+    }
+
+    int base;
+};
+
 Any dynamicAdd(const VariantList& args)
 {
     const int a = AnyCast<int>(args[0]);
@@ -53,6 +73,20 @@ void compileBeginnerContract(nativeweb::NativeWindowHandle parent)
     webview.bind("math.add", [](int a, int b) {
         return a + b;
     });
+
+    webview.bind(
+        "rootRaw",
+        new CompileRootService(40))
+        .method("add", &CompileRootService::add)
+        .method("sub", &CompileRootService::sub);
+
+    std::shared_ptr<CompileRootService> rootShared(
+        new CompileRootService(50));
+
+    webview.bind(
+        "rootShared",
+        rootShared)
+        .method("add", &CompileRootService::add);
 
     VariantList args;
     args.push_back(Any(3));

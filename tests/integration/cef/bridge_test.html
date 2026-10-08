@@ -53,6 +53,39 @@ window.ui = {
       return;
     }
 
+    const appleAdd =
+      await xytron.apple.add(1, 2);
+
+    if (appleAdd !== 13) {
+      await fail(
+        "root object apple.add failed: " +
+        String(appleAdd)
+      );
+      return;
+    }
+
+    const appleSub =
+      await xytron.apple.sub(5, 3);
+
+    if (appleSub !== 12) {
+      await fail(
+        "root object apple.sub failed: " +
+        String(appleSub)
+      );
+      return;
+    }
+
+    const appleName =
+      await xytron.apple.name();
+
+    if (appleName !== "apple") {
+      await fail(
+        "root object apple.name failed: " +
+        String(appleName)
+      );
+      return;
+    }
+
     const primitiveResult =
       await xytron.invoke("math.add", 2, 5);
 

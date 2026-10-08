@@ -56,6 +56,17 @@ Getting Started에서는 direct API를 먼저 보여준다.
 
 C++ 객체는 JavaScript 객체처럼 사용할 수 있어야 한다.
 
+Root/singleton service의 현재 목표 C++ 형태:
+
+```cpp
+webview.bind("apple", new Apple())
+    .method("add", &Apple::add)
+    .method("sub", &Apple::sub);
+```
+
+raw-pointer convenience overload는 ownership을 NativeWeb으로 즉시 이전한다.
+명시적 ownership을 원하는 코드는 `std::shared_ptr<T>` overload를 사용한다.
+
 목표 UX:
 
 ```cpp

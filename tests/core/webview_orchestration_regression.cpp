@@ -152,6 +152,26 @@ private:
 
 FakeBackend* FakeBackend::instance = 0;
 
+struct RootCalculator
+{
+    explicit RootCalculator(int value)
+        : base(value)
+    {
+    }
+
+    int add(int value)
+    {
+        return base + value;
+    }
+
+    int sub(int value) const
+    {
+        return base - value;
+    }
+
+    int base;
+};
+
 void registerFake()
 {
     nativeweb::detail::registerBrowserBackendFactory(
@@ -197,6 +217,16 @@ void testPublicOrchestration()
         return a + b;
     });
 
+    webview.bind(
+        "apple",
+        new RootCalculator(40))
+        .method(
+            "add",
+            &RootCalculator::add)
+        .method(
+            "sub",
+            &RootCalculator::sub);
+
     nativeweb::WebViewOptions options;
     options.engine = nativeweb::Engine::Cef;
     webview.create(0, "index.html", options);
@@ -237,6 +267,53 @@ void testPublicOrchestration()
         nativeweb::detail::BridgeMessageType::Response);
     CHECK(response.requestId == 77);
     CHECK(AnyCast<int>(response.value) == 7);
+
+    VariantList objectArgs;
+    objectArgs.push_back(Any(2));
+
+    const std::size_t objectVersion =
+        FakeBackend::instance->messageVersion();
+
+    FakeBackend::instance->deliver(
+        nativeweb::detail::makeRequestMessage(
+            78,
+            "apple.add",
+            objectArgs));
+
+    const Any objectMessage =
+        FakeBackend::instance->waitForMessageAfter(
+            objectVersion);
+
+    CHECK(!objectMessage.empty());
+
+    const nativeweb::detail::BridgeMessage objectResponse =
+        nativeweb::detail::parseBridgeMessage(
+            objectMessage);
+
+    CHECK(objectResponse.requestId == 78u);
+    CHECK(AnyCast<int>(objectResponse.value) == 42);
+
+    VariantList constArgs;
+    constArgs.push_back(Any(3));
+
+    const std::size_t constVersion =
+        FakeBackend::instance->messageVersion();
+
+    FakeBackend::instance->deliver(
+        nativeweb::detail::makeRequestMessage(
+            79,
+            "apple.sub",
+            constArgs));
+
+    const Any constMessage =
+        FakeBackend::instance->waitForMessageAfter(
+            constVersion);
+
+    const nativeweb::detail::BridgeMessage constResponse =
+        nativeweb::detail::parseBridgeMessage(
+            constMessage);
+
+    CHECK(AnyCast<int>(constResponse.value) == 37);
 
     const std::size_t outboundVersion =
         FakeBackend::instance->messageVersion();

@@ -16,6 +16,31 @@
 
 namespace {
 
+struct Apple
+{
+    explicit Apple(int value)
+        : base(value)
+    {
+    }
+
+    int add(int a, int b)
+    {
+        return base + a + b;
+    }
+
+    int sub(int a, int b) const
+    {
+        return base + a - b;
+    }
+
+    std::string name() const
+    {
+        return "apple";
+    }
+
+    int base;
+};
+
 struct Camera
 {
     explicit Camera(int value)
@@ -45,6 +70,19 @@ public:
             [](int a, int b) {
                 return a + b;
             });
+
+        webview_.bind(
+            "apple",
+            new Apple(10))
+            .method(
+                "add",
+                &Apple::add)
+            .method(
+                "sub",
+                &Apple::sub)
+            .method(
+                "name",
+                &Apple::name);
 
         webview_.bind(
             "echo.object",

@@ -5,6 +5,7 @@
 
 #include <cstddef>
 #include <functional>
+#include <memory>
 #include <stdexcept>
 #include <tuple>
 #include <type_traits>
@@ -120,6 +121,76 @@ invokeCallable(
             args[Indices])...);
 
     return Any();
+}
+
+template <typename Class, typename Result, typename... Args>
+class BoundMemberFunction
+{
+public:
+    typedef Result (Class::*Method)(Args...);
+
+    BoundMemberFunction(
+        const std::shared_ptr<Class>& object,
+        Method method)
+        : object_(object),
+          method_(method)
+    {
+    }
+
+    Result operator()(Args... args)
+    {
+        return ((*object_).*method_)(args...);
+    }
+
+private:
+    std::shared_ptr<Class> object_;
+    Method method_;
+};
+
+template <typename Class, typename Result, typename... Args>
+class BoundConstMemberFunction
+{
+public:
+    typedef Result (Class::*Method)(Args...) const;
+
+    BoundConstMemberFunction(
+        const std::shared_ptr<Class>& object,
+        Method method)
+        : object_(object),
+          method_(method)
+    {
+    }
+
+    Result operator()(Args... args) const
+    {
+        return ((*object_).*method_)(args...);
+    }
+
+private:
+    std::shared_ptr<Class> object_;
+    Method method_;
+};
+
+template <typename Class, typename Result, typename... Args>
+BoundMemberFunction<Class, Result, Args...>
+bindMember(
+    const std::shared_ptr<Class>& object,
+    Result (Class::*method)(Args...))
+{
+    return BoundMemberFunction<Class, Result, Args...>(
+        object,
+        method);
+}
+
+template <typename Class, typename Result, typename... Args>
+BoundConstMemberFunction<Class, Result, Args...>
+bindMember(
+    const std::shared_ptr<Class>& object,
+    Result (Class::*method)(Args...) const)
+{
+    return BoundConstMemberFunction<Class, Result, Args...>(
+        object,
+        method);
 }
 
 template <typename Callable>
