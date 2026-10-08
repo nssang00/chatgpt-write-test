@@ -78,15 +78,34 @@ The prototype tests cover:
 
 The scale smoke intentionally makes no absolute latency/throughput claim. It validates bounded state shape and that the lookup API is demand-key based rather than total-node based.
 
+## LAN advertisement prototype
+
+The first LAN control packet now carries:
+
+```text
+ADD / REMOVE
+DestinationId
+data UDP port
+lease duration
+ScopeId
+ResourceId
+TypeId
+```
+
+Repeated ADD packets refresh the lease without duplicating the destination in the InterestIndex. REMOVE withdraws immediately, and expired leases remove stale destinations.
+
+The advertisement deliberately does not carry the sender IP address. The UDP receive path learns the source address from the network packet itself, while the advertisement supplies the data port and demand identity.
+
+The first network smoke uses two different subscriptions and one publisher. The publisher must discover both interests but select only the destination whose exact `Scope + Resource + Type` matches the published data.
+
 ## Deferred
 
-- LAN advertisement protocol
-- TTL/lease and stale destination cleanup
+- production LAN advertisement transport policy (broadcast vs multicast vs future adaptive choice)
+- startup/reconnect storm control
 - startup/reconnect storm control
 - multicast vs unicast discovery transport
 - rendezvous/directory mode
 - wildcard/pattern resources
 - security/authentication of advertisements
-- real network namespace integration
 
 Those will be added after the local model and wire/type rules are stable enough to justify inter-node transport tests.
