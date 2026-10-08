@@ -1,7 +1,9 @@
+#include <cito/coordinator_lifecycle.hpp>
 #include <cito/data_packet.hpp>
 #include <cito/demand_control.hpp>
 #include <cito/demand_summary.hpp>
 #include <cito/interest.hpp>
+#include <cito/remote_routes.hpp>
 
 #include <arpa/inet.h>
 #include <poll.h>
@@ -22,6 +24,14 @@
 namespace {
 
 using Clock = std::chrono::steady_clock;
+
+std::uint64_t now_ms() {
+    return static_cast<std::uint64_t>(
+        std::chrono::duration_cast<
+            std::chrono::milliseconds>(
+            Clock::now().time_since_epoch())
+            .count());
+}
 
 int make_udp() {
     const int fd = ::socket(AF_INET, SOCK_DGRAM, 0);
@@ -172,6 +182,7 @@ int subscriber(int argc, char** argv) {
     const cito::DemandSummaryAnnouncement announcement{
         node,
         control_port,
+        600,
         stamp};
     const auto announce_bytes =
         cito::encode_summary_announcement(
@@ -267,12 +278,15 @@ int subscriber(int argc, char** argv) {
                     bytes[0] == 'C' &&
                     bytes[1] == 'T' &&
                     bytes[2] == 'R' &&
-                    bytes[3] == '1') {
+                    bytes[3] == '3') {
                     const auto request =
                         cito::decode_route_request(
                             bytes);
 
-                    if (request.coordinator != node) {
+                    if (
+                        request.coordinator != node ||
+                        request.incarnation !=
+                            stamp.incarnation) {
                         continue;
                     }
 
@@ -281,6 +295,7 @@ int subscriber(int argc, char** argv) {
                     if (request.key == key) {
                         const cito::RouteBatch routes{
                             node,
+                            stamp.incarnation,
                             key,
                             {{node, data_port}}};
 
@@ -407,7 +422,8 @@ int publisher(int argc, char** argv) {
 
     cito::RemoteSummaryTracker tracker;
     cito::RemoteDemandIndex hosts;
-    cito::InterestIndex direct;
+    cito::RemoteRouteIndex direct;
+    cito::CoordinatorLeaseTable leases;
 
     std::unordered_map<
         cito::CoordinatorId,
@@ -415,14 +431,32 @@ int publisher(int argc, char** argv) {
     std::unordered_map<
         cito::CoordinatorId,
         PendingSnapshot> pending;
-    std::unordered_set<
-        cito::CoordinatorId> route_requested;
+    std::unordered_map<
+        cito::CoordinatorId,
+        std::uint64_t> route_requested;
     std::unordered_map<
         cito::DestinationId,
         sockaddr_in> endpoints;
 
     std::size_t snapshot_pulls = 0;
     std::size_t route_requests = 0;
+    std::size_t expired_hosts = 0;
+    std::size_t restarts = 0;
+    std::size_t stale_control = 0;
+
+    auto cleanup_host =
+        [&](cito::CoordinatorId id) {
+            hosts.remove_host(id);
+            tracker.forget(id);
+            pending.erase(id);
+            route_requested.erase(id);
+            controls.erase(id);
+
+            for (const auto destination :
+                 direct.remove_coordinator(id)) {
+                endpoints.erase(destination);
+            }
+        };
 
     auto request_snapshot =
         [&](cito::CoordinatorId id,
@@ -451,8 +485,16 @@ int publisher(int argc, char** argv) {
         };
 
     auto request_route =
-        [&](cito::CoordinatorId id) {
-            if (!route_requested.insert(id).second) {
+        [&](cito::CoordinatorId id,
+            std::uint64_t incarnation) {
+            const auto requested =
+                route_requested.find(id);
+
+            if (
+                requested !=
+                    route_requested.end() &&
+                requested->second ==
+                    incarnation) {
                 return true;
             }
 
@@ -463,11 +505,14 @@ int publisher(int argc, char** argv) {
                 return false;
             }
 
+            route_requested[id] =
+                incarnation;
             ++route_requests;
+
             return send_bytes(
                 fd,
                 cito::encode_route_request(
-                    {id, target}),
+                    {id, incarnation, target}),
                 it->second);
         };
 
@@ -492,154 +537,214 @@ int publisher(int argc, char** argv) {
             return 41;
         }
 
-        if (!(descriptor.revents & POLLIN)) {
-            continue;
-        }
+        if (
+            result > 0 &&
+            (descriptor.revents & POLLIN)) {
+            sockaddr_in from{};
+            const auto bytes =
+                receive_bytes(
+                    fd,
+                    &from);
 
-        sockaddr_in from{};
-        const auto bytes =
-            receive_bytes(
-                fd,
-                &from);
-
-        if (bytes.size() < 4) {
-            continue;
-        }
-
-        try {
-            if (
-                bytes[0] == 'C' &&
-                bytes[1] == 'T' &&
-                bytes[2] == 'S' &&
-                bytes[3] == '1') {
-                const auto announcement =
-                    cito::decode_summary_announcement(
-                        bytes);
-
-                from.sin_port =
-                    htons(
-                        announcement.control_port);
-                controls[
-                    announcement.coordinator] =
-                    from;
-
-                if (
-                    tracker.needs_snapshot(
-                        announcement.coordinator,
-                        announcement.stamp) &&
-                    pending.find(
-                        announcement.coordinator) ==
-                        pending.end()) {
-                    pending[
-                        announcement.coordinator] =
-                        PendingSnapshot{
-                            announcement.stamp,
-                            {},
-                            0};
-
-                    if (!request_snapshot(
-                            announcement.coordinator,
-                            announcement.stamp,
-                            0)) {
-                        return 42;
-                    }
-                }
-            } else if (
-                bytes[0] == 'C' &&
-                bytes[1] == 'T' &&
-                bytes[2] == 'B' &&
-                bytes[3] == '1') {
-                const auto batch =
-                    cito::decode_snapshot_batch(
-                        bytes);
-
-                auto it =
-                    pending.find(
-                        batch.coordinator);
-
-                if (it == pending.end()) {
-                    continue;
-                }
-
-                auto& state = it->second;
-
-                if (
-                    batch.stamp != state.stamp ||
-                    batch.offset !=
-                        state.next_offset) {
-                    continue;
-                }
-
-                state.keys.insert(
-                    state.keys.end(),
-                    batch.keys.begin(),
-                    batch.keys.end());
-                state.next_offset +=
-                    static_cast<std::uint32_t>(
-                        batch.keys.size());
-
-                if (
-                    state.next_offset <
-                    state.stamp.key_count) {
-                    if (!request_snapshot(
-                            batch.coordinator,
-                            state.stamp,
-                            state.next_offset)) {
-                        return 43;
-                    }
-                } else {
-                    hosts.apply_snapshot(
-                        batch.coordinator,
-                        state.stamp,
-                        state.keys);
-                    tracker.mark_applied(
-                        batch.coordinator,
-                        state.stamp);
-                    pending.erase(it);
-
+            if (bytes.size() >= 4) {
+                try {
                     if (
-                        hosts.lookup_hosts(target)
-                            .contains(
-                                batch.coordinator)) {
-                        if (!request_route(
-                                batch.coordinator)) {
-                            return 44;
+                        bytes[0] == 'C' &&
+                        bytes[1] == 'T' &&
+                        bytes[2] == 'S' &&
+                        bytes[3] == '2') {
+                        const auto announcement =
+                            cito::decode_summary_announcement(
+                                bytes);
+
+                        const auto observation =
+                            leases.observe(
+                                announcement.coordinator,
+                                announcement.stamp.incarnation,
+                                announcement.lease_ms,
+                                now_ms());
+
+                        if (
+                            observation ==
+                            cito::CoordinatorLeaseObservation::
+                                Stale) {
+                            ++stale_control;
+                            continue;
                         }
+
+                        if (
+                            observation ==
+                            cito::CoordinatorLeaseObservation::
+                                Restarted) {
+                            ++restarts;
+                            cleanup_host(
+                                announcement.coordinator);
+                        }
+
+                        from.sin_port =
+                            htons(
+                                announcement.control_port);
+                        controls[
+                            announcement.coordinator] =
+                            from;
+
+                        if (
+                            tracker.needs_snapshot(
+                                announcement.coordinator,
+                                announcement.stamp) &&
+                            pending.find(
+                                announcement.coordinator) ==
+                                pending.end()) {
+                            pending[
+                                announcement.coordinator] =
+                                PendingSnapshot{
+                                    announcement.stamp,
+                                    {},
+                                    0};
+
+                            if (!request_snapshot(
+                                    announcement.coordinator,
+                                    announcement.stamp,
+                                    0)) {
+                                return 42;
+                            }
+                        }
+                    } else if (
+                        bytes[0] == 'C' &&
+                        bytes[1] == 'T' &&
+                        bytes[2] == 'B' &&
+                        bytes[3] == '1') {
+                        const auto batch =
+                            cito::decode_snapshot_batch(
+                                bytes);
+
+                        if (!leases.is_current(
+                                batch.coordinator,
+                                batch.stamp.incarnation)) {
+                            ++stale_control;
+                            continue;
+                        }
+
+                        auto it =
+                            pending.find(
+                                batch.coordinator);
+
+                        if (it ==
+                            pending.end()) {
+                            continue;
+                        }
+
+                        auto& state =
+                            it->second;
+
+                        if (
+                            batch.stamp !=
+                                state.stamp ||
+                            batch.offset !=
+                                state.next_offset) {
+                            continue;
+                        }
+
+                        state.keys.insert(
+                            state.keys.end(),
+                            batch.keys.begin(),
+                            batch.keys.end());
+                        state.next_offset +=
+                            static_cast<std::uint32_t>(
+                                batch.keys.size());
+
+                        if (
+                            state.next_offset <
+                            state.stamp.key_count) {
+                            if (!request_snapshot(
+                                    batch.coordinator,
+                                    state.stamp,
+                                    state.next_offset)) {
+                                return 43;
+                            }
+                        } else {
+                            hosts.apply_snapshot(
+                                batch.coordinator,
+                                state.stamp,
+                                state.keys);
+                            tracker.mark_applied(
+                                batch.coordinator,
+                                state.stamp);
+                            pending.erase(it);
+
+                            if (
+                                hosts.lookup_hosts(
+                                    target)
+                                    .contains(
+                                        batch.coordinator)) {
+                                if (!request_route(
+                                        batch.coordinator,
+                                        batch.stamp
+                                            .incarnation)) {
+                                    return 44;
+                                }
+                            }
+                        }
+                    } else if (
+                        bytes[0] == 'C' &&
+                        bytes[1] == 'T' &&
+                        bytes[2] == 'R' &&
+                        bytes[3] == '4') {
+                        const auto route_batch =
+                            cito::decode_route_batch(
+                                bytes);
+
+                        if (
+                            !leases.is_current(
+                                route_batch.coordinator,
+                                route_batch.incarnation) ||
+                            !(route_batch.key ==
+                                target)) {
+                            ++stale_control;
+                            continue;
+                        }
+
+                        std::vector<
+                            cito::DestinationId> ids;
+                        ids.reserve(
+                            route_batch.endpoints
+                                .size());
+
+                        for (const auto& endpoint :
+                             route_batch.endpoints) {
+                            ids.push_back(
+                                endpoint.destination);
+
+                            auto address = from;
+                            address.sin_port =
+                                htons(
+                                    endpoint.data_port);
+                            endpoints[
+                                endpoint.destination] =
+                                address;
+                        }
+
+                        direct.replace(
+                            route_batch.coordinator,
+                            route_batch.key,
+                            ids);
                     }
-                }
-            } else if (
-                bytes[0] == 'C' &&
-                bytes[1] == 'T' &&
-                bytes[2] == 'R' &&
-                bytes[3] == '2') {
-                const auto routes =
-                    cito::decode_route_batch(
-                        bytes);
-
-                if (!(routes.key == target)) {
-                    continue;
-                }
-
-                for (const auto& endpoint :
-                     routes.endpoints) {
-                    direct.add(
-                        routes.key,
-                        endpoint.destination);
-
-                    auto address = from;
-                    address.sin_port =
-                        htons(endpoint.data_port);
-                    endpoints[
-                        endpoint.destination] =
-                        address;
+                } catch (
+                    const std::exception& error) {
+                    std::cerr
+                        << "bad control: "
+                        << error.what()
+                        << "\n";
+                    return 45;
                 }
             }
-        } catch (const std::exception& error) {
-            std::cerr
-                << "bad control: "
-                << error.what()
-                << "\n";
-            return 45;
+        }
+
+        for (const auto coordinator :
+             leases.expire(now_ms())) {
+            cleanup_host(
+                coordinator);
+            ++expired_hosts;
         }
     }
 
@@ -660,12 +765,16 @@ int publisher(int argc, char** argv) {
 
     const cito::DataPacket packet{
         target,
-        {'h', 'e', 'l', 'l', 'o'}};
+        std::vector<std::uint8_t>{
+            'h', 'e', 'l', 'l', 'o'}};
+
     const auto payload =
         cito::encode_data_packet(packet);
 
-    for (const auto id : destinations) {
-        const auto it = endpoints.find(id);
+    for (const auto id :
+         destinations) {
+        const auto it =
+            endpoints.find(id);
 
         if (it == endpoints.end()) {
             return 47;
@@ -688,6 +797,12 @@ int publisher(int argc, char** argv) {
         << destinations.size()
         << " sent="
         << destinations.size()
+        << " expired_hosts="
+        << expired_hosts
+        << " restarts="
+        << restarts
+        << " stale_control="
+        << stale_control
         << "\n";
     return 0;
 }
