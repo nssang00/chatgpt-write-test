@@ -1,10 +1,10 @@
-name: OneClick v58.0 Native + Release Audit Gate
+name: OneClick v58.1 Native + Release Audit Capture Gate
 
 on:
   workflow_dispatch:
   push:
     branches:
-      - ci/oneclick-v58-0
+      - ci/oneclick-v58-1
     paths:
       - '.github/workflows/oneclick-v57-9-native.yml'
       - 'ci/v57.8-native/**'
@@ -28,7 +28,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Verify v58.0 release audit policy
+      - name: Verify v58.1 release audit policy
         shell: pwsh
         run: |
           $audit = Get-Content ci/v58-release/release_readiness_check.py -Raw
@@ -36,7 +36,7 @@ jobs:
             if ($audit -notlike "*$token*") { throw "Missing release audit policy token: $token" }
           }
 
-      - name: Record v57.9 harness-only baseline
+      - name: Record inherited validated native baseline
         shell: pwsh
         run: |
           "targetHarnessVersion=57.9.0" | Set-Content v579-harness-baseline.txt
