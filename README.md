@@ -4,7 +4,7 @@
 
 NativeWeb은 기존 C/C++ application과 native SDK를 유지하면서 UI를 HTML/CSS/JavaScript로 만들 수 있게 하는 desktop runtime/platform을 목표로 한다.
 
-현재 저장소는 **Core runtime + Linux real CEF bridge integration 단계**다. Windows/Linux Core CI와 pinned CEF 144의 실제 browser-process/renderer-process bridge가 GitHub Actions에서 동작한다.
+현재 저장소는 **Core runtime + Linux CEF + Windows WebView2 real browser integration 단계**다. Windows/Linux Core CI, pinned CEF 144의 실제 browser-process/renderer-process bridge, Windows WebView2 bridge가 GitHub Actions에서 동작한다.
 
 ## Why
 
@@ -113,13 +113,14 @@ Initial verified workflow run:
 - Run ID: `37597876713`
 - Head SHA: `c253803db28f0047128a4723a2e82862a26f7bf7`
 
-Any 기반 Core regression과 public API contract가 Windows/Ubuntu에서 통과하며, Linux에서는 pinned CEF 144로 public `WebView` API를 통한 실제 JS↔C++ bridge까지 통과한다. 현재 검증에는 `xytron.foo()` direct facade, `xytron.invoke()` compatibility, worker-pool 기반 JS→C++ 병렬 실행, RequestId 기반 typed C++ future, root C++ object binding, object/array/binary, reload, events, Promise/error mapping, multi-WebView isolation, destroy-pending, native object Proxy lifecycle가 포함된다.
+Any 기반 Core regression과 public API contract가 Windows/Ubuntu에서 통과한다. Linux CEF와 Windows WebView2 모두 public `WebView` API를 통한 실제 JS↔C++ bridge를 검증한다. 현재 공통 검증에는 `xytron.foo()` direct facade, `xytron.invoke()` compatibility, worker-pool 기반 JS→C++ 병렬 실행, RequestId 기반 typed C++ future, root C++ object binding, object/array/binary, reload, events, Promise/error mapping, multi-WebView isolation, destroy-pending, native object Proxy lifecycle가 포함된다.
 
-Latest full verified feature head: `a0f5390990c941b7153db6849fda142b9694e4f0`.
+Latest full verified feature head: `aaa22a5f4e53923836a300a4213a8308cdeab213`.
 
-- Core Regression: `37764512413` — Ubuntu/Windows success
-- NativeWeb CEF Bridge: `37764512272` — real Linux CEF success
-- Platform Smoke: `37764512261` — Ubuntu/Windows success
+- Core Regression: `37787721138` — Ubuntu/Windows success
+- NativeWeb WebView2 Bridge: `37787721031` — real Windows WebView2 single/multi-view success
+- Platform Smoke: `37787721167` — Ubuntu/Windows success
+- Latest Linux CEF verified baseline remains green from the preceding CEF feature runs.
 
 ## Start here
 
@@ -137,9 +138,9 @@ Latest full verified feature head: `a0f5390990c941b7153db6849fda142b9694e4f0`.
 
 ## Immediate next work
 
-1. Windows WebView2 backend + 동일 browser contract
-2. Windows CEF backend + engine-switch regression
-3. security permission/capability policy
+1. Windows CEF backend + engine-switch regression
+2. security permission/capability policy
+3. WebView2/CEF common browser-contract fixture 정리
 4. root/class binding metadata/codegen 방향 확장
 5. TransferBuffer / SharedBuffer advanced binary transport
 6. Win32/MFC/WinForms thin host adapters

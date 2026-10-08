@@ -426,11 +426,53 @@ Platform Smoke:        37764512261  SUCCESS
 
 첫 real CEF vertical-slice success는 run `37637283494`, head `d1e9e823f2f7e3ed06c0fd93b32270f3922085b5`였다.
 
+### Windows real WebView2 baseline
+
+Pinned WebView2 SDK:
+
+```text
+Microsoft.Web.WebView2 1.0.4258.31
+```
+
+실제로 완료/검증된 항목:
+
+- Win32 parent HWND -> WebView2 controller
+- document-created bridge injection
+- WebMessage JSON -> canonical Any/bridge envelope
+- `xytron.foo()` direct facade
+- `xytron.invoke()` primitive compatibility
+- object/array/binary conversion
+- JS -> C++ worker-pool execution + concurrent overlap
+- C++ -> JS sync function / async Promise / Promise rejection
+- events
+- reload reconnect
+- native object Proxy lifecycle
+- root C++ object binding
+- pending C++ future rejection on WebView destroy
+- real two-WebView isolation
+- `Engine::Auto` resolves WebView2 on Windows when the real runtime is available
+- factory registration is gated by actual Evergreen Runtime availability
+
+Latest verified WebView2 baseline:
+
+```text
+Feature head: aaaa22a5f4e53923836a300a4213a8308cdeab213
+```
+
+Note: the SHA above is corrected below in the canonical run block.
+
+```text
+Feature head: aaa22a5f4e53923836a300a4213a8308cdeab213
+NativeWeb WebView2 Bridge: 37787721031 SUCCESS
+Core Regression:            37787721138 SUCCESS
+Platform Smoke:             37787721167 SUCCESS
+```
+
 ### 아직 완료되지 않은 것
 
 - security permission/capability policy
 - larger binary/shared-memory transport
-- Windows WebView2 backend
+- Windows CEF backend
 - Windows CEF backend
 - Host adapters
 - plugin runtime
@@ -442,9 +484,9 @@ Platform Smoke:        37764512261  SUCCESS
 
 가장 먼저 해야 할 일:
 
-1. 최신 Core/CEF Regression이 green인 상태를 항상 유지한다.
-2. Windows WebView2 backend에 현재 Linux CEF browser contract suite를 재사용한다.
-3. Windows CEF backend를 같은 public contract에 연결한다.
+1. 최신 Core/CEF/WebView2 Regression이 green인 상태를 항상 유지한다.
+2. Windows CEF backend를 현재 CEF/WebView2 public browser contract에 연결한다.
+3. Windows에서 WebView2/CEF engine-switch regression을 추가한다.
 4. security permission/capability policy skeleton을 추가한다.
 5. root object binding을 class metadata/TS definition generation으로 확장하되 C++11 기본 API는 단순하게 유지한다.
 6. TransferBuffer / SharedBuffer를 기본 Binary와 분리된 advanced API로 추가한다.
@@ -490,7 +532,8 @@ Platform Smoke:        37764512261  SUCCESS
 - CEF archive가 이미 추출/통합되었다고 가정하지 않는다.
 - Any.h를 새 Value type으로 임의 교체하지 않는다. 현재 committed Any.h를 기준으로 확장한다.
 - Linux CEF integration, public WebView orchestration, multi-WebView, destroy-pending, native object Proxy vertical slice는 실제로 통과했다.
-- Windows WebView2 backend가 구현됐다고 가정하지 않는다.
+- Windows WebView2 backend도 real GitHub Actions에서 동일 bridge HTML과 multi-WebView isolation을 실제 통과했다.
+- Windows CEF backend가 구현됐다고 가정하지 않는다.
 - placeholder 제품명/CLI 이름을 최종 브랜드로 간주하지 않는다.
 
 ## 16. 작업 종료 시 handoff 갱신 규칙

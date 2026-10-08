@@ -95,9 +95,10 @@ Selected CEF:
 
 ### WebView2
 
-- [ ] WebView2 backend
-- [ ] auto detection
-- [ ] WebView2 integration contract tests
+- [x] WebView2 backend
+- [x] runtime-aware auto detection
+- [x] WebView2 integration contract tests
+- [x] WebView2 multi-WebView isolation
 
 ### CEF Windows
 

@@ -63,12 +63,14 @@ Platform Smoke 외에 `.github/workflows/core-regression.yml`이 추가되었다
 - public WebView API compile contract
 - BrowserBackend compile contract
 
-Latest full verified feature baseline:
+Latest full verified Windows WebView2 feature baseline:
 
-- Head SHA: `a0f5390990c941b7153db6849fda142b9694e4f0`
-- Core Regression run `37764512413`: Ubuntu + Windows success
-- Platform Smoke run `37764512261`: Ubuntu + Windows success
-- NativeWeb CEF Bridge run `37764512272`: Linux real CEF success
+- Head SHA: `aaa22a5f4e53923836a300a4213a8308cdeab213`
+- Core Regression run `37787721138`: Ubuntu + Windows success
+- Platform Smoke run `37787721167`: Ubuntu + Windows success
+- NativeWeb WebView2 Bridge run `37787721031`: Windows real WebView2 single-view + multi-WebView success
+
+Latest Linux CEF feature baseline remains separately verified by the CEF workflow.
 
 Core coverage now includes Any/containers/binary, typed bind, RequestId-correlated typed pending futures without per-call `std::async`, structured errors, worker pool/task queue, concurrent async bridge routing, event dispatcher, bridge messages/runtime, ObjectRegistry, NativeObjectRuntime, root object binding, WebView orchestration/engine selection and public API compile contracts.
 
@@ -314,3 +316,26 @@ await xytron.apple.add(1, 2);
 - Transfer: explicit ownership transfer/detach semantics
 - Shared: explicit shared lifetime/release semantics
 - 크기 기반 내부 최적화가 기본 Binary의 observable semantics를 변경하지 않는지 검증
+
+
+## WebView2 integration
+
+Windows WebView2는 mock 완료로 간주하지 않는다.
+
+현재 real Windows runner 검증:
+
+- pinned Microsoft.Web.WebView2 SDK bootstrap
+- actual Evergreen Runtime availability check
+- hidden Win32 host HWND + real WebView2 controller
+- `Engine::Auto` -> WebView2
+- same `bridge_test.html` contract used by Linux CEF
+- JS -> C++ / C++ -> JS
+- Promise resolve/reject
+- worker-pool concurrency
+- root object/native object
+- objects/arrays/binary/events
+- reload
+- destroy with pending C++ future
+- two-WebView request/event/future isolation
+
+Latest run: `37787721031`.
