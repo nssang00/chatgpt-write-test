@@ -61,6 +61,17 @@ set_target_properties(nativeweb_core_for_cef PROPERTIES
   CXX_EXTENSIONS NO
 )
 
+# CEF's Windows targets use the static MSVC runtime. nativeweb_core_for_cef is
+# our own integration target and does not pass through CEF's target-property
+# macros, so match its CRT explicitly to avoid /MD + /MT linker conflicts.
+if(MSVC)
+  set_property(
+    TARGET nativeweb_core_for_cef
+    PROPERTY MSVC_RUNTIME_LIBRARY
+      "MultiThreaded$<$<CONFIG:Debug>:Debug>"
+  )
+endif()
+
 if(NOT WIN32)
   target_link_libraries(nativeweb_core_for_cef
     PUBLIC
