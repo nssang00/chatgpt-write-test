@@ -35,6 +35,7 @@ if(BUILD_TESTING)
   cito_add_test(cito_demand_control_tests tests/demand_control_test.cpp "unit;latency;regression")
   cito_add_test(cito_coordinator_lifecycle_tests tests/coordinator_lifecycle_test.cpp "unit;latency;regression")
   cito_add_test(cito_remote_routes_tests tests/remote_routes_test.cpp "unit;latency;regression")
+  cito_add_test(cito_transport_selector_tests tests/transport_selector_test.cpp "unit;latency;regression")
 
   cito_add_test(cito_public_api_smoke tests/public_api_smoke.cpp "smoke;regression")
   cito_add_test(cito_interest_scale_tests tests/interest_scale_test.cpp "smoke;regression")
@@ -95,6 +96,22 @@ if(BUILD_TESTING)
               $<TARGET_FILE:cito_shm_node>)
     set_tests_properties(
       cito_shm_multiprocess_smoke
+      PROPERTIES LABELS "smoke;latency;regression")
+
+    add_executable(cito_shm_typed_node
+      tests/net/shm_typed_node.cpp
+      ${GENERATED_DIR}/position.hpp)
+    target_link_libraries(cito_shm_typed_node PRIVATE cito rt)
+    target_include_directories(cito_shm_typed_node PRIVATE ${GENERATED_DIR})
+    target_compile_options(cito_shm_typed_node PRIVATE -Wall -Wextra -Wpedantic)
+
+    add_test(
+      NAME cito_shm_typed_smoke
+      COMMAND bash
+              ${CMAKE_CURRENT_SOURCE_DIR}/tests/run_shm_typed_smoke.sh
+              $<TARGET_FILE:cito_shm_typed_node>)
+    set_tests_properties(
+      cito_shm_typed_smoke
       PROPERTIES LABELS "smoke;latency;regression")
 
     add_executable(cito_udp_node tests/net/udp_node.cpp)
