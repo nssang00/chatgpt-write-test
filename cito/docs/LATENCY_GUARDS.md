@@ -23,6 +23,9 @@ Guard:
 - local duplicate subscriptions do not change the outward summary
 - the host summary version changes only on unique DemandKey `0 -> 1` and `1 -> 0` transitions
 - discovery backends are replaceable; SWIM, LAN multicast, rendezvous, and static peers are mechanisms, not the Cito programming model
+- lower-version advertisements from the same coordinator incarnation are ignored instead of triggering snapshot pulls
+- recently retired coordinator incarnations are suppressed so delayed packets cannot create pull storms
+- exact remote snapshots maintain an inverse DemandKey -> candidate-host index; publish does not scan all known hosts
 
 ### 2. Mandatory data relay through a host agent
 
@@ -157,6 +160,8 @@ Guard:
 - fan-out encodes once
 - packet decode view aliases the receive buffer
 - generated Position and complex Telemetry codecs declare a direct static path and match the DynamicData reference bytes
+- stale summary versions and recently retired incarnations do not trigger snapshot pulls
+- remote demand snapshot updates preserve exact candidate-host lookup
 
 Timing benchmarks and p99 measurements are recorded separately so noisy CI timing does not create false failures.
 
