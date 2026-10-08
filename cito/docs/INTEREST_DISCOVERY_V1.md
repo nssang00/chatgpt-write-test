@@ -32,7 +32,16 @@ local subscriber C --/
 
 Only the local count transition `0 -> 1` changes the outward demand summary, and only `1 -> 0` removes it. Duplicate local subscribers therefore cause no external summary churn.
 
-`HostInterests` now maintains a monotonically increasing summary version and can produce a deterministic exact-key snapshot. The intended control protocol advertises the version cheaply; a peer pulls the exact snapshot only when its cached version differs. Exact hash sets are the v1 representation. Bloom/Cuckoo summaries remain optional future compression if measurement justifies them.
+`HostInterests` now maintains a monotonically increasing summary version and can produce a deterministic exact-key snapshot. A remote cache is identified by a summary stamp:
+
+```text
+CoordinatorId
+incarnation
+version
+key_count
+```
+
+`incarnation` changes when a coordinator restarts, so a reset version number can never be mistaken for an already-applied old state. A peer pulls the exact snapshot only when this stamp differs from its cached stamp. Exact hash sets are the v1 representation. Bloom/Cuckoo summaries remain optional future compression if measurement justifies them.
 
 ## Destination index
 
@@ -122,7 +131,7 @@ The first network smoke uses two different subscriptions and one publisher. The 
 ## Deferred
 
 - production LAN advertisement transport policy (broadcast vs multicast vs future adaptive choice)
-- startup/reconnect storm control
+- version announcement + exact snapshot pull/batch packet format
 - startup/reconnect storm control
 - multicast vs unicast discovery transport
 - rendezvous/directory mode
