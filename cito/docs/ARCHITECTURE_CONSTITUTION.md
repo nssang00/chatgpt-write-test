@@ -4,6 +4,14 @@
 
 Cito is a lightweight typed messaging runtime that lets applications publish and receive data without requiring users to manage peers, ports, transport selection, discovery machinery, or serialization calls.
 
+## Three core product pillars
+
+1. **Easy API** — the normal user should think in `Context`, `on`, `publish`, and `run`, not participants, endpoints, sockets, discovery protocols, or serializers.
+2. **Demand-indexed discovery and delivery** — conceptually like using a GIS index instead of checking every road or destination: publishing asks the demand index for only the destinations that need `Scope + Resource + Type`, then sends only there.
+3. **Single event-loop ownership + bounded worker pool** — like libuv/Chromium-style runtime architecture: one loop thread owns I/O and mutable runtime state; CPU-heavy or blocking work is offloaded only when needed, and completion returns to the loop.
+
+The GIS comparison is an architectural analogy, not a geographic data model. Cito resources remain opaque identifiers.
+
 ## Non-negotiable principles
 
 1. **Simple first. Powerful when needed. Complexity stays optional.**
@@ -12,14 +20,17 @@ Cito is a lightweight typed messaging runtime that lets applications publish and
 4. Scale changes runtime internals, not application API.
 5. Discover demand, not every node or endpoint.
 6. Do no unnecessary work: no interested destination means no serialization, buffer allocation, or network send.
-7. Users do not pay runtime cost for features they do not use.
-8. All queues, histories, retries, and shared resources are bounded.
-9. Transport semantics are uniform while mechanisms remain free to specialize: local/SHM, UDP, QUIC, or future transports.
-10. A failed or slow application must not stop unrelated applications.
-11. C++ is the initial core implementation language; cross-language boundaries use a stable C ABI.
-12. Gateway/integration layers (DDS, ROS 2, MAVLink, legacy protocols) stay outside the native core.
-13. Current-session/local verification comes first. GitHub Actions is used when independent network nodes, OS-specific behavior, or unavailable environments are required.
-14. Every development phase requires unit tests, cumulative regression tests, and a minimal smoke test before it is considered complete.
+7. When destinations exist, encode each required representation once and reuse it across matching destinations.
+8. Users do not pay runtime cost for features they do not use.
+9. Runtime mutable network/discovery state is single-owner on one event-loop thread by default.
+10. Worker threads are bounded, lazy, and reserved for work that should not block the event loop.
+11. All queues, histories, retries, and shared resources are bounded.
+12. Transport semantics are uniform while mechanisms remain free to specialize: local/SHM, UDP, QUIC, or future transports.
+13. A failed or slow application must not stop unrelated applications.
+14. C++ is the initial core implementation language; cross-language boundaries use a stable C ABI.
+15. Gateway/integration layers (DDS, ROS 2, MAVLink, legacy protocols) stay outside the native core.
+16. Current-session/local verification comes first. GitHub Actions is used when independent network nodes, OS-specific behavior, or unavailable environments are required.
+17. Every development phase requires unit tests, cumulative regression tests, and a minimal smoke test before it is considered complete.
 
 ## Public API baseline
 
@@ -44,6 +55,31 @@ ctx.publish("drone_17", Position{...});
 ```
 
 `Resource` is an opaque UTF-8 identifier in v1. Cito assigns no hierarchy or REST-style semantics to its contents.
+
+## Runtime execution invariant
+
+The intended runtime flow is:
+
+```text
+socket / timer / SHM event
+        |
+        v
+single event-loop thread
+        |
+        +-- discovery / interest state
+        +-- routing decision
+        +-- small fast-path work
+        |
+        +-- heavy or blocking work? --> bounded worker pool
+                                      |
+                                      v
+                               completion posted
+                                      |
+                                      v
+                              event-loop thread
+```
+
+The worker pool is not a second owner of discovery or transport state. It performs isolated work and posts results back.
 
 ## Type direction
 
