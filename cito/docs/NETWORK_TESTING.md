@@ -92,3 +92,33 @@ Battery host:
 ```
 
 This specifically verifies that host-summary discovery does not turn the coordinator into a mandatory data broker and that detailed route discovery is limited to hosts whose exact DemandKey overlaps the publisher.
+
+
+## Coordinator lifecycle namespace regression
+
+The versioned-summary smoke now also validates failure cleanup:
+
+```text
+publisher discovers Position coordinator
+        |
+        +-- pulls summary
+        +-- requests direct route
+        +-- route becomes usable
+        |
+Position coordinator stops announcing
+        |
+        v
+lease expires
+        |
+        +-- RemoteDemandIndex host removed
+        +-- pending/control state removed
+        +-- coordinator-owned direct routes removed
+        +-- endpoint metadata removed
+        |
+        v
+publisher final destination count = 0
+```
+
+Route detail packets carry the coordinator incarnation. Delayed route responses from a retired incarnation are ignored instead of restoring stale routes after restart.
+
+This is a correctness smoke, not a production failure-detection latency benchmark. The lease values are intentionally short for CI.
