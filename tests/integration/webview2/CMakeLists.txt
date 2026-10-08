@@ -128,3 +128,39 @@ set_target_properties(
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
     RUNTIME_OUTPUT_DIRECTORY_RELEASE "${CMAKE_BINARY_DIR}/bin"
 )
+
+
+add_executable(nativeweb_webview2_multi_webview_integration
+  multi_webview.cpp
+)
+
+target_include_directories(nativeweb_webview2_multi_webview_integration
+  PRIVATE
+    "${NATIVEWEB_ROOT}/include"
+    "${NATIVEWEB_ROOT}/src"
+    "${WEBVIEW2_INCLUDE_DIR}"
+)
+
+target_compile_features(nativeweb_webview2_multi_webview_integration PUBLIC cxx_std_11)
+
+target_compile_definitions(nativeweb_webview2_multi_webview_integration
+  PRIVATE
+    UNICODE
+    _UNICODE
+    WIN32_LEAN_AND_MEAN
+    NOMINMAX
+)
+
+target_link_libraries(nativeweb_webview2_multi_webview_integration
+  PRIVATE
+    nativeweb_webview2_backend
+    nativeweb_core_for_webview2
+    user32
+)
+
+set_target_properties(
+  nativeweb_webview2_multi_webview_integration
+  PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE "${CMAKE_BINARY_DIR}/bin"
+)

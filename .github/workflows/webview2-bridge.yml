@@ -61,7 +61,11 @@ jobs:
 
       - name: Build NativeWeb WebView2 integration
         shell: pwsh
-        run: cmake --build webview2-nativeweb-build --config Release --target nativeweb_webview2_bridge_integration --parallel 2
+        run: |
+          cmake --build webview2-nativeweb-build --config Release --target nativeweb_webview2_bridge_integration --parallel 2
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cmake --build webview2-nativeweb-build --config Release --target nativeweb_webview2_multi_webview_integration --parallel 2
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Run real WebView2 bridge contract
         shell: pwsh
@@ -71,6 +75,20 @@ jobs:
           $html = (Resolve-Path "tests/integration/cef/bridge_test.html").Path.Replace("\", "/")
           $url = "file:///$html"
           $exe = (Resolve-Path "webview2-nativeweb-build/bin/nativeweb_webview2_bridge_integration.exe").Path
+          Write-Host "Running: $exe"
+          Write-Host "URL: $url"
+          & $exe "--url=$url"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+
+      - name: Run real WebView2 multi-WebView isolation
+        shell: pwsh
+        timeout-minutes: 5
+        run: |
+          $ErrorActionPreference = "Stop"
+          $html = (Resolve-Path "tests/integration/cef/multi_webview_test.html").Path.Replace("\", "/")
+          $url = "file:///$html"
+          $exe = (Resolve-Path "webview2-nativeweb-build/bin/nativeweb_webview2_multi_webview_integration.exe").Path
           Write-Host "Running: $exe"
           Write-Host "URL: $url"
           & $exe "--url=$url"
