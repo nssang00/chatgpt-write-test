@@ -25,6 +25,26 @@ ctx.publish("drone_17", position);
 
 In v1, a resource is an opaque UTF-8 identifier. Cito does not assign REST-style path or hierarchy semantics to it.
 
+## Testing contract
+
+Every development phase must pass:
+
+- unit tests
+- cumulative regression tests
+- a minimal smoke test
+
+before the phase is considered complete.
+
+Run:
+
+```bash
+ctest --test-dir build -L unit --output-on-failure
+ctest --test-dir build -L smoke --output-on-failure
+ctest --test-dir build -L regression --output-on-failure
+```
+
+See `docs/TESTING.md` for the local-first and GitHub Actions test policy.
+
 ## Current status
 
 P0 is intentionally same-process only. It validates the public mental model and lifecycle before discovery or transport code is added.
