@@ -23,10 +23,12 @@ int main() {
     const cito::DemandSummaryAnnouncement pos_announce{
         10,
         47010,
+        600,
         {1001, 1, 1}};
     const cito::DemandSummaryAnnouncement bat_announce{
         20,
         47020,
+        600,
         {2001, 1, 1}};
 
     assert(tracker.needs_snapshot(
@@ -83,6 +85,7 @@ int main() {
     // Only the matching host returns detailed direct endpoints.
     const cito::RouteBatch direct_routes{
         10,
+        pos_announce.stamp.incarnation,
         position,
         {{101, 48001}}};
     const auto routes =
