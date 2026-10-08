@@ -118,6 +118,11 @@ inline DynamicValue decode_value(TypeKind kind, const std::vector<std::uint8_t>&
             return std::bit_cast<double>(read_u64(in, p));
         case TypeKind::String:
             return std::string(reinterpret_cast<const char*>(in.data() + pos), len);
+        case TypeKind::Enum:
+        case TypeKind::Struct:
+        case TypeKind::Array:
+        case TypeKind::Sequence:
+            throw Error("Cito wire: complex type codec not implemented yet");
     }
     throw Error("Cito wire: unsupported type kind");
 }
@@ -153,7 +158,7 @@ inline std::vector<std::uint8_t> encode(const DynamicData& data) {
         const auto len = detail::encoded_size(*maybe);
         if (len > 0xffffffffu) throw Error("Cito wire: field too large");
         detail::write_u32(out, field.id);
-        detail::write_u8(out, static_cast<std::uint8_t>(field.kind));
+        detail::write_u8(out, static_cast<std::uint8_t>(field.type.kind));
         detail::write_u32(out, static_cast<std::uint32_t>(len));
         detail::append_value(out, *maybe);
     }
@@ -187,7 +192,7 @@ inline DynamicData decode(const Type& target, const std::vector<std::uint8_t>& b
         if (pos + len > bytes.size()) throw Error("Cito wire: truncated field payload");
 
         if (const auto* field = detail::find_by_id(target, field_id)) {
-            if (field->kind != encoded_kind) {
+            if (field->type.kind != encoded_kind) {
                 throw Error("Cito wire: incompatible field kind");
             }
             auto value = detail::decode_value(encoded_kind, bytes, pos, len);
