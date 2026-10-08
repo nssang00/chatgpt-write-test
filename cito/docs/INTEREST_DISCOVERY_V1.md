@@ -125,7 +125,41 @@ InterestIndex
 
 A small LAN may use multicast/broadcast, a larger deployment may use sampled gossip or a directory, and a static deployment may inject peers. The application still uses the same `publish/on` API.
 
-## LAN advertisement prototype
+## Versioned demand-control prototype
+
+The second control-plane prototype now models the intended two-stage flow:
+
+```text
+CTS1 summary announcement
+  CoordinatorId + control port
+  incarnation + version + key_count
+        |
+        | only when cached stamp is stale/new
+        v
+CTQ1 bounded snapshot request
+        |
+        v
+CTB1 exact DemandKey batch (max 32 keys)
+        |
+        v
+RemoteDemandIndex: DemandKey -> candidate hosts
+        |
+        | only for hosts matching the publish DemandKey
+        v
+CTR1 route request
+        |
+        v
+CTR2 direct endpoint batch
+        |
+        v
+InterestIndex: DemandKey -> direct destinations
+```
+
+Snapshot batching is deliberately bounded so one control datagram and one event-loop callback cannot grow with the host's entire subscription set. The current batch cap is 32 exact DemandKeys and stays below a conservative UDP payload size.
+
+The three-node network-namespace smoke proves that the publisher pulls both host summaries but requests route details only from the Position host. The unrelated Battery host reports zero route requests and receives no data.
+
+## Legacy exact-key LAN advertisement prototype
 
 The existing first LAN control packet carries exact-key ADD/REMOVE records:
 
@@ -143,7 +177,7 @@ Repeated ADD packets refresh the lease without duplicating the destination in th
 
 The advertisement deliberately does not carry the sender IP address. The UDP receive path learns the source address from the network packet itself, while the advertisement supplies the data port and demand identity.
 
-This packet format is a transport/correctness prototype, not the final scalable control plane. The next protocol revision should carry host summary versions and pull/batch exact DemandKey snapshots rather than periodically broadcasting every unique key.
+This exact-key ADD/REMOVE packet remains as an early correctness baseline. The versioned summary/pull/route prototype above is now the preferred scalable direction; the exact-key path stays in regression tests until the newer path covers lifecycle and fault recovery equally well.
 
 The first network smoke uses two different subscriptions and one publisher. The publisher must discover both interests but select only the destination whose exact `Scope + Resource + Type` matches the published data.
 
