@@ -542,13 +542,15 @@ private:
 
 std::string getUrl(int argc, char* argv[])
 {
-    CefRefPtr<CefCommandLine> commandLine =
-        CefCommandLine::CreateCommandLine();
+    const std::string prefix = "--url=";
 
-    commandLine->InitFromArgv(argc, argv);
+    for (int i = 1; i < argc; ++i)
+    {
+        const std::string value = argv[i];
 
-    if (commandLine->HasSwitch("url"))
-        return commandLine->GetSwitchValue("url").ToString();
+        if (value.compare(0, prefix.size(), prefix) == 0)
+            return value.substr(prefix.size());
+    }
 
     return "about:blank";
 }
@@ -557,7 +559,11 @@ std::string getUrl(int argc, char* argv[])
 
 int main(int argc, char* argv[])
 {
+#if defined(_WIN32)
+    CefMainArgs mainArgs(GetModuleHandleW(0));
+#else
     CefMainArgs mainArgs(argc, argv);
+#endif
 
     CefRefPtr<nativeweb::detail::CefRendererApp> app(
         new nativeweb::detail::CefRendererApp());
