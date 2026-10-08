@@ -73,8 +73,9 @@ N subscribers cause N serializations.
 
 Guard:
 
-- one required representation is encoded once
-- the payload is reused for all matching destinations
+- same-process object-native delivery does not invoke the wire encoder
+- one required wire representation is encoded lazily only when a SHM/UDP destination exists
+- the same encoded payload object is reused across matching SHM and UDP destinations
 - multiple representations are allowed only when transports/compatibility actually require them, and each representation is generated at most once per publish
 
 ### 5. Full lease-table scans on timers
@@ -189,7 +190,8 @@ Guard:
 - duplicate local subscriptions do not churn summary version
 - repeated lease refresh does not grow the expiry schedule
 - no-interest publish performs zero encoding/sends
-- fan-out encodes once
+- same-process-only fan-out encodes zero times
+- mixed SHM/UDP fan-out encodes once and reuses the same payload
 - packet decode view aliases the receive buffer
 - generated Position and complex Telemetry codecs declare a direct static path and match the DynamicData reference bytes
 - stale summary versions and recently retired incarnations do not trigger snapshot pulls
