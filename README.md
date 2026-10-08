@@ -40,10 +40,15 @@ webview.create(parentHandle, "index.html");
 webview.bind("math.add", [](int a, int b) {
     return a + b;
 });
+
+webview.bind("apple", new Apple())
+    .method("add", &Apple::add)
+    .method("sub", &Apple::sub);
 ```
 
 ```js
-const result = await native.math.add(3, 4);
+const result = await xytron.math.add(3, 4);
+const sum = await xytron.apple.add(10, 20);
 ```
 
 전문가는 필요할 때만 engine, permissions, session, plugin ABI, transport 같은 고급 기능으로 내려간다.
@@ -108,10 +113,13 @@ Initial verified workflow run:
 - Run ID: `37597876713`
 - Head SHA: `c253803db28f0047128a4723a2e82862a26f7bf7`
 
-Any 기반 Core regression과 public API contract가 Windows/Ubuntu에서 통과하며, Linux에서는 pinned CEF 144로 public `WebView` API를 통한 실제 JS↔C++ bridge까지 통과한다. 현재 검증에는 object/array/binary, reload, events, C++ exception→Promise reject, C++→JS sync/async Promise, JS Promise reject→C++ Error, multi-WebView isolation, destroy 중 pending Promise 종료, native object Proxy method/round-trip/dispose가 포함된다.
+Any 기반 Core regression과 public API contract가 Windows/Ubuntu에서 통과하며, Linux에서는 pinned CEF 144로 public `WebView` API를 통한 실제 JS↔C++ bridge까지 통과한다. 현재 검증에는 `xytron.foo()` direct facade, `xytron.invoke()` compatibility, worker-pool 기반 JS→C++ 병렬 실행, RequestId 기반 typed C++ future, root C++ object binding, object/array/binary, reload, events, Promise/error mapping, multi-WebView isolation, destroy-pending, native object Proxy lifecycle가 포함된다.
 
-Latest full verified feature head: `c4ac5666c640423b50bb6dfda285e75a0f618713`.
-Latest public API compile head: `fe6dfc5419c7c281a53d7628e938429229b79698`.
+Latest full verified feature head: `a0f5390990c941b7153db6849fda142b9694e4f0`.
+
+- Core Regression: `37764512413` — Ubuntu/Windows success
+- NativeWeb CEF Bridge: `37764512272` — real Linux CEF success
+- Platform Smoke: `37764512261` — Ubuntu/Windows success
 
 ## Start here
 
@@ -132,10 +140,10 @@ Latest public API compile head: `fe6dfc5419c7c281a53d7628e938429229b79698`.
 1. Windows WebView2 backend + 동일 browser contract
 2. Windows CEF backend + engine-switch regression
 3. security permission/capability policy
-4. Win32/MFC/WinForms thin host adapters
-5. stable C ABI plugin prototype
-6. native object typed/class binding DX 개선
-7. shared-memory large binary transport
+4. root/class binding metadata/codegen 방향 확장
+5. TransferBuffer / SharedBuffer advanced binary transport
+6. Win32/MFC/WinForms thin host adapters
+7. stable C ABI plugin prototype
 8. sidecar runtime prototype
 
 ## Repository note

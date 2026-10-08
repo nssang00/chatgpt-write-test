@@ -65,20 +65,14 @@ Platform Smoke 외에 `.github/workflows/core-regression.yml`이 추가되었다
 
 Latest full verified feature baseline:
 
-- Head SHA: `c4ac5666c640423b50bb6dfda285e75a0f618713`
-- Core Regression run `37646528511`: Ubuntu + Windows success
-- Platform Smoke run `37646528046`: Ubuntu + Windows success
-- NativeWeb CEF Bridge run `37646528043`: Linux real CEF success
+- Head SHA: `a0f5390990c941b7153db6849fda142b9694e4f0`
+- Core Regression run `37764512413`: Ubuntu + Windows success
+- Platform Smoke run `37764512261`: Ubuntu + Windows success
+- NativeWeb CEF Bridge run `37764512272`: Linux real CEF success
 
-Latest public API compile baseline:
+Core coverage now includes Any/containers/binary, typed bind, RequestId-correlated typed pending futures without per-call `std::async`, structured errors, worker pool/task queue, concurrent async bridge routing, event dispatcher, bridge messages/runtime, ObjectRegistry, NativeObjectRuntime, root object binding, WebView orchestration/engine selection and public API compile contracts.
 
-- Head SHA: `fe6dfc5419c7c281a53d7628e938429229b79698`
-- Core Regression run `37646977459`: Ubuntu + Windows success
-- Platform Smoke run `37646977368`: Ubuntu + Windows success
-
-Core coverage now includes Any/containers/binary, typed bind, typed async future casting, structured errors, request IDs/pending calls, event dispatcher, bridge messages/runtime, ObjectRegistry, NativeObjectRuntime, WebView orchestration/engine selection and public API compile contracts.
-
-Real CEF integration coverage now includes public WebView orchestration, reload reconnect, JS→C++, C++→JS, objects, arrays, binary, events, Promise resolve/reject in both bridge directions where applicable, native exception mapping, missing-method rejection, multi-WebView isolation, destroy-with-real-pending-Promise, and native object Proxy lifecycle/round-trip.
+Real CEF integration coverage now includes `xytron.foo()` direct calls, `xytron.invoke()` compatibility, worker-thread execution, concurrent `Promise.all()` overlap, root C++ object methods, public WebView orchestration, reload reconnect, JS→C++, C++→JS, objects, arrays, binary, events, Promise resolve/reject, native exception mapping, missing-method rejection, multi-WebView isolation, destroy-with-real-pending-Promise, and native object Proxy lifecycle/round-trip.
 
 ## Target CI topology
 
@@ -300,6 +294,17 @@ await xytron.invoke("math.add", 1, 2);
 ```
 
 direct facade는 dotted namespace, Promise rejection, native object return을 모두 동일 bridge contract로 사용해야 한다.
+
+또한 root/singleton C++ object binding은 real browser에서 검증한다.
+
+```cpp
+webview.bind("apple", new Apple())
+    .method("add", &Apple::add);
+```
+
+```js
+await xytron.apple.add(1, 2);
+```
 
 ## Binary semantics regression
 

@@ -101,7 +101,7 @@ Primitive / Electron migration:
 await xytron.invoke("getUser", 42);
 ```
 
-현재 real CEF implementation의 기존 `native.invoke` 경로는 regression compatibility로 유지하면서 `xytron.*` direct facade를 추가하는 방향이다.
+real CEF에서 `xytron.*` direct facade와 `xytron.invoke()` primitive compatibility가 모두 검증되어 있다. 내부 `native.*` raw bridge는 구현 detail/compatibility layer로 유지한다.
 
 
 
@@ -117,19 +117,31 @@ webview.bind("math.add", [](int a, int b) {
 ```
 
 ```js
-const result = await native.math.add(3, 4);
+const result = await xytron.math.add(3, 4);
 ```
 
-범용 migration API도 제공:
+Root C++ object:
 
-```js
-const result = await native.invoke("math.add", { a: 3, b: 4 });
+```cpp
+webview.bind("apple", new Apple())
+    .method("add", &Apple::add)
+    .method("sub", &Apple::sub);
 ```
 
-장기적으로 typed/object API:
+```js
+await xytron.apple.add(1, 2);
+```
+
+범용 migration/primitive API도 제공:
 
 ```js
-const camera = await native.camera.open("CAM-01");
+const result = await xytron.invoke("math.add", 3, 4);
+```
+
+Factory-returned native object:
+
+```js
+const camera = await xytron.camera.open("CAM-01");
 await camera.start();
 const frame = await camera.capture();
 ```
@@ -327,7 +339,7 @@ ci/smoke/
 - `nativeweb::Binary` / `NativeWindowHandle` public types
 - Any / VariantList / VariantDict / nested value / binary / invalid-access regression
 - C++11 typed bind adapter: ordinary lambda -> `DynamicFunction(VariantList -> Any)`
-- typed async adapter: `std::future<Any> -> std::future<Result>`
+- typed pending result: RequestId가 `std::promise<T>/std::future<T>`를 직접 resolve/reject하며 호출당 변환용 `std::async` thread를 만들지 않음
 - `nativeweb::WebView` pImpl public API shape 및 typed `execute<Result>()` adapter
 - public `WebView::Impl` orchestration: BridgeRuntime + BrowserBackend factory/registry
 - `Engine::Auto / Cef / WebView2` selection contract
@@ -345,6 +357,11 @@ ci/smoke/
 - EventDispatcher + subscribe/unsubscribe
 - structured bridge request/response/error/event envelope
 - BridgeRuntime method registry, outbound calls, inbound routing, events, shutdown
+- process-wide bounded WorkerPool/TaskQueue
+- JS -> C++ bound callable의 worker-pool 기본 실행 및 real concurrency 검증
+- `xytron.foo()` dotted direct facade + `xytron.invoke()` compatibility
+- root/singleton object binding: `webview.bind("apple", new Apple()).method(...)`
+- raw-pointer root binding은 ownership을 NativeWeb으로 이전하며 shared_ptr overload도 제공
 - Windows + Ubuntu Core Regression is green
 
 ### Linux real CEF baseline
@@ -388,21 +405,24 @@ Pinned CEF:
 - native object handle을 JS -> C++ 인자로 round-trip
 - `dispose()` -> native lifetime release
 - release 후 object method 호출 -> `native_object_not_found`
+- `xytron.math.add()` / nested dotted direct facade
+- `xytron.invoke()` primitive compatibility
+- JS -> C++ user callable이 CEF browser/UI thread가 아닌 worker pool에서 실행
+- `Promise.all()` native calls의 실제 병렬 overlap
+- C++ root object `apple` 등록 후 `xytron.apple.add/sub/name()` real CEF 호출
+- C++ -> JS typed future가 RequestId-correlated typed promise로 직접 완료
 
 Latest full verified feature baseline:
 
 ```text
-Feature head: c4ac5666c640423b50bb6dfda285e75a0f618713
+Feature head: a0f5390990c941b7153db6849fda142b9694e4f0
 
-NativeWeb CEF Bridge: 37646528043  SUCCESS
-Core Regression:       37646528511  SUCCESS
-Platform Smoke:        37646528046  SUCCESS
-
-Latest public API compile head:
-fe6dfc5419c7c281a53d7628e938429229b79698
-Core Regression:       37646977459  SUCCESS
-Platform Smoke:        37646977368  SUCCESS
+NativeWeb CEF Bridge: 37764512272  SUCCESS
+Core Regression:       37764512413  SUCCESS
+Platform Smoke:        37764512261  SUCCESS
 ```
+
+직전 CEF build failure `37698537108`의 원인은 worker-pool 도입 시 별도 CEF test target에 `worker_pool.cpp`와 `Threads::Threads`가 누락된 것이며, `9da113f12530dc41191258b7578405900c2f8cc3`에서 수정되어 이후 real CEF가 green이다.
 
 첫 real CEF vertical-slice success는 run `37637283494`, head `d1e9e823f2f7e3ed06c0fd93b32270f3922085b5`였다.
 
@@ -422,16 +442,14 @@ Platform Smoke:        37646977368  SUCCESS
 
 가장 먼저 해야 할 일:
 
-1. 최신 Core Regression failure가 없는 green baseline을 항상 유지한다.
-2. real CEF에 `xytron.foo()` / dotted namespace direct facade를 추가하고 `invoke()` compatibility를 함께 테스트한다.
-3. WorkerPool/TaskQueue Core를 테스트 우선으로 추가한다.
-4. JS -> C++ bound callable이 browser thread가 아닌 worker pool에서 실행되도록 연결하고 real CEF concurrency regression을 추가한다.
-5. C++ -> JS typed future path에서 호출당 불필요한 `std::async` thread가 생기지 않도록 pending-result 구조를 개선한다.
-6. root/singleton native object binding metadata API를 설계하고 `xytron.apple.add()`를 실제 테스트한다.
-7. Windows WebView2 backend에 동일 browser contract suite를 재사용한다.
-8. security permission/capability policy skeleton을 추가한다.
-9. TransferBuffer / SharedBuffer는 기본 Binary와 분리된 advanced API로 추가한다.
-10. Plugin stable C ABI + C++ wrapper prototype을 만든다.
+1. 최신 Core/CEF Regression이 green인 상태를 항상 유지한다.
+2. Windows WebView2 backend에 현재 Linux CEF browser contract suite를 재사용한다.
+3. Windows CEF backend를 같은 public contract에 연결한다.
+4. security permission/capability policy skeleton을 추가한다.
+5. root object binding을 class metadata/TS definition generation으로 확장하되 C++11 기본 API는 단순하게 유지한다.
+6. TransferBuffer / SharedBuffer를 기본 Binary와 분리된 advanced API로 추가한다.
+7. thin Host adapters를 Win32/MFC/WinForms 순으로 시작한다.
+8. Plugin stable C ABI + C++ wrapper prototype을 만든다.
 
 세부 단계는 [docs/ROADMAP.md](docs/ROADMAP.md)를 따른다.
 

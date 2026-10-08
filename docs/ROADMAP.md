@@ -51,14 +51,16 @@
 
 - [x] RequestId / pending future baseline
 - [x] structured request / response / error / event envelope
-- [ ] `xytron.foo()` direct JS facade
-- [ ] `xytron.invoke()` primitive compatibility test
-- [ ] runtime WorkerPool / TaskQueue
-- [ ] JS -> C++ default worker execution
-- [ ] concurrent/out-of-order JS call regression
-- [ ] remove per-call `std::async` from typed C++ -> JS future conversion
-- [ ] root/singleton native object binding metadata
-- [ ] Binary vs Transfer vs Shared public semantics
+- [x] `xytron.foo()` direct JS facade
+- [x] `xytron.invoke()` primitive compatibility test
+- [x] runtime WorkerPool / TaskQueue
+- [x] JS -> C++ default worker execution
+- [x] concurrent/out-of-order JS call regression
+- [x] remove per-call `std::async` from typed C++ -> JS future conversion
+- [x] root/singleton native object binding API baseline
+- [x] Binary vs Transfer vs Shared public semantics contract
+- [ ] TransferBuffer implementation
+- [ ] SharedBuffer implementation
 
 상세 계약: [API_CONTRACT.md](API_CONTRACT.md)
 
