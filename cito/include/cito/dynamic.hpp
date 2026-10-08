@@ -3,6 +3,7 @@
 #include <cito/type.hpp>
 
 #include <cstdint>
+#include <memory>
 #include <optional>
 #include <stdexcept>
 #include <string>
@@ -13,6 +14,12 @@
 
 namespace cito {
 
+class DynamicData;
+struct DynamicList;
+
+using DynamicStruct = std::shared_ptr<DynamicData>;
+using DynamicListPtr = std::shared_ptr<DynamicList>;
+
 using DynamicValue = std::variant<
     bool,
     std::int32_t,
@@ -21,7 +28,13 @@ using DynamicValue = std::variant<
     std::uint64_t,
     float,
     double,
-    std::string>;
+    std::string,
+    DynamicStruct,
+    DynamicListPtr>;
+
+struct DynamicList {
+    std::vector<DynamicValue> values;
+};
 
 class DynamicData {
 public:
@@ -31,26 +44,27 @@ public:
 
     template <class T>
     void set(const std::string& field_name, T&& value) {
+        set_value(field_name, normalize(std::forward<T>(value)));
+    }
+
+    void set_value(const std::string& field_name, DynamicValue value) {
         const auto index = find_index(field_name);
         const auto& field = type_.fields()[index];
-        DynamicValue normalized = normalize(std::forward<T>(value));
-        if (!matches(field.type.kind, normalized)) {
-            throw std::invalid_argument("DynamicData value type does not match Cito field type");
-        }
-        if (field.type.kind == TypeKind::String && field.type.bound != 0 &&
-            std::get<std::string>(normalized).size() > field.type.bound) {
-            throw std::length_error("DynamicData string exceeds Cito bound");
-        }
-        values_[index] = std::move(normalized);
+        validate(field.type, value);
+        values_[index] = std::move(value);
     }
 
     template <class T>
     const T& get(const std::string& field_name) const {
+        return std::get<T>(value(field_name));
+    }
+
+    const DynamicValue& value(const std::string& field_name) const {
         const auto index = find_index(field_name);
         if (!values_[index]) {
             throw std::logic_error("DynamicData field is not set");
         }
-        return std::get<T>(*values_[index]);
+        return *values_[index];
     }
 
     bool has(const std::string& field_name) const {
@@ -81,7 +95,85 @@ public:
         return FieldProxy(*this, std::move(field_name));
     }
 
+    static void validate(const TypeSpec& spec, const DynamicValue& value) {
+        switch (spec.kind) {
+            case TypeKind::Bool:
+                if (!std::holds_alternative<bool>(value)) mismatch();
+                return;
+            case TypeKind::Int32:
+            case TypeKind::Enum:
+                if (!std::holds_alternative<std::int32_t>(value)) mismatch();
+                return;
+            case TypeKind::UInt32:
+                if (!std::holds_alternative<std::uint32_t>(value)) mismatch();
+                return;
+            case TypeKind::Int64:
+                if (!std::holds_alternative<std::int64_t>(value)) mismatch();
+                return;
+            case TypeKind::UInt64:
+                if (!std::holds_alternative<std::uint64_t>(value)) mismatch();
+                return;
+            case TypeKind::Float32:
+                if (!std::holds_alternative<float>(value)) mismatch();
+                return;
+            case TypeKind::Float64:
+                if (!std::holds_alternative<double>(value)) mismatch();
+                return;
+            case TypeKind::String: {
+                if (!std::holds_alternative<std::string>(value)) mismatch();
+                const auto& text = std::get<std::string>(value);
+                if (spec.bound != 0 && text.size() > spec.bound) {
+                    throw std::length_error("DynamicData string exceeds Cito bound");
+                }
+                return;
+            }
+            case TypeKind::Struct: {
+                if (!std::holds_alternative<DynamicStruct>(value)) mismatch();
+                const auto& nested = std::get<DynamicStruct>(value);
+                if (!nested) {
+                    throw std::invalid_argument("DynamicData struct value is null");
+                }
+                if (spec.referenced_type_id != 0 &&
+                    nested->type().type_id() != spec.referenced_type_id) {
+                    throw std::invalid_argument(
+                        "DynamicData struct TypeId does not match Cito field type");
+                }
+                return;
+            }
+            case TypeKind::Array:
+            case TypeKind::Sequence: {
+                if (!std::holds_alternative<DynamicListPtr>(value)) mismatch();
+                const auto& list = std::get<DynamicListPtr>(value);
+                if (!list) {
+                    throw std::invalid_argument("DynamicData list value is null");
+                }
+                if (!spec.element) {
+                    throw std::logic_error("Cito container type has no element type");
+                }
+                if (spec.kind == TypeKind::Array && list->values.size() != spec.extent) {
+                    throw std::length_error(
+                        "DynamicData array extent does not match Cito type");
+                }
+                if (spec.kind == TypeKind::Sequence &&
+                    spec.bound != 0 &&
+                    list->values.size() > spec.bound) {
+                    throw std::length_error("DynamicData sequence exceeds Cito bound");
+                }
+                for (const auto& item : list->values) {
+                    validate(*spec.element, item);
+                }
+                return;
+            }
+        }
+        mismatch();
+    }
+
 private:
+    [[noreturn]] static void mismatch() {
+        throw std::invalid_argument(
+            "DynamicData value type does not match Cito field type");
+    }
+
     std::size_t find_index(const std::string& name) const {
         const auto& fields = type_.fields();
         for (std::size_t i = 0; i < fields.size(); ++i) {
@@ -92,27 +184,13 @@ private:
         throw std::out_of_range("Unknown Cito DynamicData field: " + name);
     }
 
-    static bool matches(TypeKind kind, const DynamicValue& value) noexcept {
-        switch (kind) {
-            case TypeKind::Bool: return std::holds_alternative<bool>(value);
-            case TypeKind::Int32: return std::holds_alternative<std::int32_t>(value);
-            case TypeKind::UInt32: return std::holds_alternative<std::uint32_t>(value);
-            case TypeKind::Int64: return std::holds_alternative<std::int64_t>(value);
-            case TypeKind::UInt64: return std::holds_alternative<std::uint64_t>(value);
-            case TypeKind::Float32: return std::holds_alternative<float>(value);
-            case TypeKind::Float64: return std::holds_alternative<double>(value);
-            case TypeKind::String: return std::holds_alternative<std::string>(value);
-            case TypeKind::Enum: return std::holds_alternative<std::int32_t>(value);
-            case TypeKind::Struct:
-            case TypeKind::Array:
-            case TypeKind::Sequence:
-                return false;
-        }
-        return false;
+    static DynamicValue normalize(const char* value) {
+        return std::string(value);
     }
 
-    static DynamicValue normalize(const char* value) { return std::string(value); }
-    static DynamicValue normalize(char* value) { return std::string(value); }
+    static DynamicValue normalize(char* value) {
+        return std::string(value);
+    }
 
     template <class T>
     static DynamicValue normalize(T&& value) {
