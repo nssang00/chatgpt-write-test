@@ -71,7 +71,7 @@ The generated metadata is equivalent to building the same canonical model manual
 
 ## Static / dynamic / wire interoperability
 
-For scalar, string, enum, and optional combinations the generated type currently supports:
+The generated type currently supports scalar, string, enum, optional, nested struct, fixed array, and sequence values through the same path:
 
 ```text
 generated C++ value
@@ -91,9 +91,7 @@ This proves that IDL is a frontend to the canonical type system rather than a se
 
 ## Complex types
 
-Nested structs, arrays, and sequences are generated as C++ types and produce canonical Cito type metadata today.
-
-Their DynamicData payload representation and wire codec are intentionally not implemented yet. Calling static DynamicData conversion for a generated complex type is rejected at compile time instead of silently using a different representation.
+Nested structs, arrays, and sequences now participate in generated static <-> DynamicData conversion and tagged wire round-trips. Container bounds and fixed extents are validated by the canonical TypeSpec before encoding.
 
 ## Not supported yet
 
@@ -106,6 +104,5 @@ Their DynamicData payload representation and wire codec are intentionally not im
 - full XTypes assignability/extensibility rules
 - absolute leading scoped names
 - constants and expressions beyond enum integer literals / positive bounds
-- complex DynamicData and wire encoding
 
 These should only be added when they solve a concrete Cito use case without leaking complexity into the normal `publish/on` API.
