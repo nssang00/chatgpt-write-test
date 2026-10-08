@@ -456,12 +456,6 @@ Microsoft.Web.WebView2 1.0.4258.31
 Latest verified WebView2 baseline:
 
 ```text
-Feature head: aaaa22a5f4e53923836a300a4213a8308cdeab213
-```
-
-Note: the SHA above is corrected below in the canonical run block.
-
-```text
 Feature head: aaa22a5f4e53923836a300a4213a8308cdeab213
 NativeWeb WebView2 Bridge: 37787721031 SUCCESS
 Core Regression:            37787721138 SUCCESS
