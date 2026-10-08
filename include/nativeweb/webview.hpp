@@ -4,6 +4,7 @@
 #include "nativeweb/any.hpp"
 #include "nativeweb/detail/bind.hpp"
 #include "nativeweb/detail/async.hpp"
+#include "nativeweb/detail/pending_result.hpp"
 #include "nativeweb/types.hpp"
 
 #include <future>
@@ -129,11 +130,26 @@ public:
         VariantList packed;
         detail::appendArguments(packed, args...);
 
-        return detail::castFuture<Result>(
-            execute(method, packed));
+        const std::shared_ptr<detail::PendingResult<Result> > pending(
+            new detail::PendingResult<Result>());
+
+        std::future<Result> result =
+            pending->future();
+
+        beginExecute(
+            method,
+            packed,
+            pending);
+
+        return result;
     }
 
 private:
+    void beginExecute(
+        const std::string& method,
+        const VariantList& args,
+        const std::shared_ptr<detail::PendingResultBase>& result);
+
     class Impl;
     std::unique_ptr<Impl> impl_;
 };

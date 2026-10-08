@@ -19,6 +19,21 @@ namespace detail {
 
 typedef std::function<void(const Any&)> BridgeResponseCallback;
 
+class OutboundRequest
+{
+public:
+    OutboundRequest(
+        RequestId valueId,
+        const Any& valueMessage)
+        : id(valueId),
+          message(valueMessage)
+    {
+    }
+
+    RequestId id;
+    Any message;
+};
+
 class OutboundCall
 {
 public:
@@ -75,6 +90,11 @@ public:
     OutboundCall call(
         const std::string& method,
         const VariantList& args);
+
+    OutboundRequest callWithPending(
+        const std::string& method,
+        const VariantList& args,
+        const std::shared_ptr<PendingResultBase>& result);
 
     EventSubscriptionId subscribe(
         const std::string& eventName,

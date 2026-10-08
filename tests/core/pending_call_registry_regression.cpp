@@ -1,6 +1,8 @@
 #include "core/pending_call_registry.hpp"
 
+#include <future>
 #include <iostream>
+#include <memory>
 #include <string>
 
 namespace {
@@ -111,6 +113,129 @@ void testRejectAllOnDestroyContract()
     CHECK(secondRejected);
 }
 
+void testTypedPendingResult()
+{
+    nativeweb::detail::PendingCallRegistry registry;
+
+    const std::shared_ptr<nativeweb::detail::PendingResult<int> > result(
+        new nativeweb::detail::PendingResult<int>());
+
+    std::future<int> future =
+        result->future();
+
+    const nativeweb::detail::RequestId id =
+        registry.add(result);
+
+    CHECK(registry.resolve(id, Any(42)));
+    CHECK(future.get() == 42);
+}
+
+void testVoidPendingResult()
+{
+    nativeweb::detail::PendingCallRegistry registry;
+
+    const std::shared_ptr<nativeweb::detail::PendingResult<void> > result(
+        new nativeweb::detail::PendingResult<void>());
+
+    std::future<void> future =
+        result->future();
+
+    const nativeweb::detail::RequestId id =
+        registry.add(result);
+
+    CHECK(registry.resolve(id, Any("ignored")));
+    future.get();
+    CHECK(true);
+}
+
+void testTypedResultMismatchIsStructuredError()
+{
+    nativeweb::detail::PendingCallRegistry registry;
+
+    const std::shared_ptr<nativeweb::detail::PendingResult<int> > result(
+        new nativeweb::detail::PendingResult<int>());
+
+    std::future<int> future =
+        result->future();
+
+    const nativeweb::detail::RequestId id =
+        registry.add(result);
+
+    CHECK(
+        registry.resolve(
+            id,
+            Any(std::string("not-an-int"))));
+
+    bool rejected = false;
+
+    try
+    {
+        (void)future.get();
+    }
+    catch (const nativeweb::Error& error)
+    {
+        rejected = true;
+        CHECK(
+            error.code() ==
+            "result_type_mismatch");
+    }
+
+    CHECK(rejected);
+}
+
+void testTypedRejectAll()
+{
+    nativeweb::detail::PendingCallRegistry registry;
+
+    const std::shared_ptr<nativeweb::detail::PendingResult<int> > first(
+        new nativeweb::detail::PendingResult<int>());
+
+    const std::shared_ptr<nativeweb::detail::PendingResult<std::string> > second(
+        new nativeweb::detail::PendingResult<std::string>());
+
+    std::future<int> firstFuture =
+        first->future();
+
+    std::future<std::string> secondFuture =
+        second->future();
+
+    (void)registry.add(first);
+    (void)registry.add(second);
+
+    registry.rejectAll(
+        nativeweb::Error(
+            "webview_destroyed",
+            "destroyed"));
+
+    bool firstRejected = false;
+    bool secondRejected = false;
+
+    try
+    {
+        (void)firstFuture.get();
+    }
+    catch (const nativeweb::Error& error)
+    {
+        firstRejected =
+            error.code() ==
+            "webview_destroyed";
+    }
+
+    try
+    {
+        (void)secondFuture.get();
+    }
+    catch (const nativeweb::Error& error)
+    {
+        secondRejected =
+            error.code() ==
+            "webview_destroyed";
+    }
+
+    CHECK(firstRejected);
+    CHECK(secondRejected);
+}
+
 void testUnknownId()
 {
     nativeweb::detail::PendingCallRegistry registry;
@@ -129,6 +254,10 @@ int main()
     testUniqueIds();
     testReject();
     testRejectAllOnDestroyContract();
+    testTypedPendingResult();
+    testVoidPendingResult();
+    testTypedResultMismatchIsStructuredError();
+    testTypedRejectAll();
     testUnknownId();
 
     if (failures != 0)

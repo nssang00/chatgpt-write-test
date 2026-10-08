@@ -145,6 +145,9 @@ RequestId -> pending promise/future
 
 Browser dispatch thread에서 Xytron future를 blocking wait하면 안 된다.
 
+Typed C++ futures are resolved directly by the RequestId-correlated pending state.
+`execute<T>()` must not create a helper thread per call merely to convert `Any` into `T`.
+
 ### Shutdown
 
 - C++ -> JS pending future는 WebView destroy 시 deterministic error로 종료한다.

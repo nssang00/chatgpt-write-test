@@ -247,15 +247,36 @@ public:
         const std::string& method,
         const VariantList& args)
     {
+        const std::shared_ptr<detail::PendingResult<Any> > pending(
+            new detail::PendingResult<Any>());
+
+        std::future<Any> result =
+            pending->future();
+
+        beginExecute(
+            method,
+            args,
+            pending);
+
+        return result;
+    }
+
+    void beginExecute(
+        const std::string& method,
+        const VariantList& args,
+        const std::shared_ptr<detail::PendingResultBase>& result)
+    {
         detail::BrowserBackend* backend =
             requireBackend();
 
-        detail::OutboundCall call =
-            runtime_.call(method, args);
+        const detail::OutboundRequest call =
+            runtime_.callWithPending(
+                method,
+                args,
+                result);
 
-        backend->postBridgeMessage(call.message);
-
-        return std::move(call.result);
+        backend->postBridgeMessage(
+            call.message);
     }
 
     void emit(
@@ -463,6 +484,17 @@ void WebView::emit(
     const Any& payload)
 {
     impl_->emit(event, payload);
+}
+
+void WebView::beginExecute(
+    const std::string& method,
+    const VariantList& args,
+    const std::shared_ptr<detail::PendingResultBase>& result)
+{
+    impl_->beginExecute(
+        method,
+        args,
+        result);
 }
 
 NativeObjectHandle WebView::addObject(

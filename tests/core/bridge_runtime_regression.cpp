@@ -1,6 +1,8 @@
 #include "core/bridge_runtime.hpp"
 
+#include <future>
 #include <iostream>
+#include <memory>
 #include <stdexcept>
 #include <string>
 
@@ -111,6 +113,33 @@ void testOutboundResolveReject()
     CHECK(threw);
 }
 
+void testTypedOutboundCall()
+{
+    nativeweb::detail::BridgeRuntime bridge;
+
+    const std::shared_ptr<nativeweb::detail::PendingResult<int> > pending(
+        new nativeweb::detail::PendingResult<int>());
+
+    std::future<int> result =
+        pending->future();
+
+    nativeweb::detail::OutboundRequest call =
+        bridge.callWithPending(
+            "ui.answer",
+            VariantList(),
+            pending);
+
+    CHECK(bridge.pendingCount() == 1u);
+
+    (void)bridge.receive(
+        nativeweb::detail::makeResponseMessage(
+            call.id,
+            Any(42)));
+
+    CHECK(bridge.pendingCount() == 0u);
+    CHECK(result.get() == 42);
+}
+
 void testEvents()
 {
     nativeweb::detail::BridgeRuntime bridge;
@@ -158,6 +187,7 @@ int main()
     testIncomingRequest();
     testMissingAndException();
     testOutboundResolveReject();
+    testTypedOutboundCall();
     testEvents();
     testShutdownRejectsPendingAndClearsState();
 

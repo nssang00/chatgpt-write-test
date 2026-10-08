@@ -4,9 +4,6 @@
 #include "nativeweb/any.hpp"
 
 #include <cstddef>
-#include <future>
-#include <memory>
-#include <utility>
 
 namespace nativeweb {
 namespace detail {
@@ -40,67 +37,6 @@ void appendArguments(
 {
     output.push_back(toAny(first));
     appendArguments(output, rest...);
-}
-
-template <typename Result>
-class FutureCaster
-{
-public:
-    explicit FutureCaster(std::future<Any>&& future)
-        : future_(std::move(future))
-    {
-    }
-
-    FutureCaster(FutureCaster&& other)
-        : future_(std::move(other.future_))
-    {
-    }
-
-    Result operator()()
-    {
-        Any value = future_.get();
-        return AnyCast<Result>(value);
-    }
-
-private:
-    FutureCaster(const FutureCaster&);
-    FutureCaster& operator=(const FutureCaster&);
-
-    std::future<Any> future_;
-};
-
-template <>
-class FutureCaster<void>
-{
-public:
-    explicit FutureCaster(std::future<Any>&& future)
-        : future_(std::move(future))
-    {
-    }
-
-    FutureCaster(FutureCaster&& other)
-        : future_(std::move(other.future_))
-    {
-    }
-
-    void operator()()
-    {
-        (void)future_.get();
-    }
-
-private:
-    FutureCaster(const FutureCaster&);
-    FutureCaster& operator=(const FutureCaster&);
-
-    std::future<Any> future_;
-};
-
-template <typename Result>
-std::future<Result> castFuture(std::future<Any>&& future)
-{
-    return std::async(
-        std::launch::async,
-        FutureCaster<Result>(std::move(future)));
 }
 
 } // namespace detail

@@ -4,6 +4,7 @@
 #include "nativeweb/any.hpp"
 #include "nativeweb/error.hpp"
 #include "nativeweb/detail/request_id.hpp"
+#include "nativeweb/detail/pending_result.hpp"
 
 #include <atomic>
 #include <cstddef>
@@ -59,6 +60,9 @@ public:
 
     PendingCall create();
 
+    RequestId add(
+        const std::shared_ptr<PendingResultBase>& result);
+
     bool resolve(RequestId id, const Any& value);
     bool reject(RequestId id, const Error& error);
 
@@ -67,12 +71,7 @@ public:
     std::size_t size() const;
 
 private:
-    struct State
-    {
-        std::promise<Any> promise;
-    };
-
-    typedef std::shared_ptr<State> StatePtr;
+    typedef std::shared_ptr<PendingResultBase> StatePtr;
 
     StatePtr take(RequestId id);
 

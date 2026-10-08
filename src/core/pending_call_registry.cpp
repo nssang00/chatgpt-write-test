@@ -12,16 +12,37 @@ PendingCallRegistry::PendingCallRegistry()
 
 PendingCall PendingCallRegistry::create()
 {
-    const RequestId id = nextId_.fetch_add(1);
-    const StatePtr state(new State());
-    std::future<Any> future = state->promise.get_future();
+    const std::shared_ptr<PendingResult<Any> > state(
+        new PendingResult<Any>());
+
+    std::future<Any> future =
+        state->future();
+
+    const RequestId id =
+        add(state);
+
+    return PendingCall(id, future);
+}
+
+RequestId PendingCallRegistry::add(
+    const std::shared_ptr<PendingResultBase>& result)
+{
+    if (!result)
+        throw std::invalid_argument(
+            "NativeWeb pending result cannot be null");
+
+    const RequestId id =
+        nextId_.fetch_add(1);
 
     {
         std::lock_guard<std::mutex> lock(mutex_);
-        pending_.insert(std::make_pair(id, state));
+        pending_.insert(
+            std::make_pair(
+                id,
+                result));
     }
 
-    return PendingCall(id, future);
+    return id;
 }
 
 PendingCallRegistry::StatePtr PendingCallRegistry::take(RequestId id)
@@ -43,7 +64,7 @@ bool PendingCallRegistry::resolve(RequestId id, const Any& value)
     if (!state)
         return false;
 
-    state->promise.set_value(value);
+    state->resolve(value);
     return true;
 }
 
@@ -53,7 +74,7 @@ bool PendingCallRegistry::reject(RequestId id, const Error& error)
     if (!state)
         return false;
 
-    state->promise.set_exception(std::make_exception_ptr(error));
+    state->reject(error);
     return true;
 }
 
@@ -78,7 +99,7 @@ void PendingCallRegistry::rejectAll(const Error& error)
 
     for (std::size_t i = 0; i < states.size(); ++i)
     {
-        states[i]->promise.set_exception(std::make_exception_ptr(error));
+        states[i]->reject(error);
     }
 }
 

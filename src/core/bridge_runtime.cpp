@@ -104,14 +104,35 @@ OutboundCall BridgeRuntime::call(
     const std::string& method,
     const VariantList& args)
 {
-    PendingCall call = pending_.create();
+    PendingCall call =
+        pending_.create();
+
     const Any message =
-        makeRequestMessage(call.id, method, args);
+        makeRequestMessage(
+            call.id,
+            method,
+            args);
 
     return OutboundCall(
         call.id,
         message,
         call.result);
+}
+
+OutboundRequest BridgeRuntime::callWithPending(
+    const std::string& method,
+    const VariantList& args,
+    const std::shared_ptr<PendingResultBase>& result)
+{
+    const RequestId id =
+        pending_.add(result);
+
+    return OutboundRequest(
+        id,
+        makeRequestMessage(
+            id,
+            method,
+            args));
 }
 
 EventSubscriptionId BridgeRuntime::subscribe(
