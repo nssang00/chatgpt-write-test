@@ -1,0 +1,60 @@
+name: Build OL Disable Worker
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [main]
+    paths:
+      - ".github/workflows/build-ol-disable-worker.yml"
+      - ".github/ol-disable-worker-trigger.txt"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout benchmark host
+        uses: actions/checkout@v4
+
+      - name: Checkout disable-worker OpenLayers
+        uses: actions/checkout@v4
+        with:
+          repository: nssang00/openlayers
+          ref: disable-worker
+          path: openlayers
+          fetch-depth: 1
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: openlayers/package-lock.json
+
+      - name: Install dependencies
+        working-directory: openlayers
+        run: npm ci
+
+      - name: Build package
+        working-directory: openlayers
+        run: npm run build-package
+
+      - name: Record build identity
+        shell: bash
+        run: |
+          node -e "const p=require('./openlayers/package.json'); console.log(JSON.stringify({version:p.version,branch:'disable-worker'},null,2))" > openlayers/build/identity.json
+          git -C openlayers rev-parse HEAD >> openlayers/build/identity.txt
+
+      - name: Upload built OL package
+        uses: actions/upload-artifact@v4
+        with:
+          name: ol-disable-worker-10.6.2-dev
+          path: |
+            openlayers/build/ol
+            openlayers/build/identity.json
+            openlayers/build/identity.txt
+          if-no-files-found: error
+          retention-days: 14
