@@ -5,8 +5,14 @@
 int main() {
     cito::DataPacket packet{{1, 2, 3}, {1, 2, 3, 4}};
     const auto bytes = cito::encode_data_packet(packet);
-    const auto decoded = cito::decode_data_packet(bytes);
 
+    const auto view = cito::decode_data_packet_view(bytes);
+    assert(view.key == packet.key);
+    assert(view.payload.size() == packet.payload.size());
+    assert(view.payload.data() == bytes.data() + 32);
+    assert(view.payload[2] == 3);
+
+    const auto decoded = cito::decode_data_packet(bytes);
     assert(decoded.key == packet.key);
     assert(decoded.payload == packet.payload);
 
@@ -15,7 +21,7 @@ int main() {
 
     bool failed = false;
     try {
-        (void)cito::decode_data_packet(truncated);
+        (void)cito::decode_data_packet_view(truncated);
     } catch (const std::runtime_error&) {
         failed = true;
     }
