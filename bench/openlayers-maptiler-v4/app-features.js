@@ -96,6 +96,15 @@ const style = [
   }
 ];
 
+let pending = 0;
+let loaded = 0;
+source.on('tileloadstart', () => pending++);
+source.on('tileloadend', () => {
+  pending = Math.max(0, pending - 1);
+  loaded++;
+});
+source.on('tileloaderror', () => pending = Math.max(0, pending - 1));
+
 const layer = renderer === 'webgl'
   ? new WebGLVectorTileLayer({source, style, disableHitDetection: true})
   : new VectorTileLayer({source, style});
@@ -112,15 +121,6 @@ const map = new Map({
     maxZoom: 0
   })
 });
-
-let pending = 0;
-let loaded = 0;
-source.on('tileloadstart', () => pending++);
-source.on('tileloadend', () => {
-  pending = Math.max(0, pending - 1);
-  loaded++;
-});
-source.on('tileloaderror', () => pending = Math.max(0, pending - 1));
 
 async function waitLoaded(timeoutMs = 30000) {
   const start = performance.now();
