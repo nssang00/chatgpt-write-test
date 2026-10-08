@@ -20,6 +20,7 @@ if(BUILD_TESTING)
   endfunction()
 
   cito_add_test(cito_context_tests tests/context_test.cpp "unit;regression")
+  cito_add_test(cito_context_index_tests tests/context_index_test.cpp "unit;latency;regression")
   cito_add_test(cito_type_tests tests/type_test.cpp "unit;regression")
   cito_add_test(cito_wire_tests tests/wire_test.cpp "unit;regression")
   cito_add_test(cito_interest_tests tests/interest_test.cpp "unit;regression")
