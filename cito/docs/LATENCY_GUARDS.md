@@ -150,6 +150,20 @@ Guard:
 - direct static output must be byte-for-byte identical to the DynamicData reference wire
 - nested structs/arrays/sequences are recursively encoded into the same output buffer without per-field/per-element temporary byte vectors
 
+### 11. Local callback scan cost
+
+Risk:
+
+A same-process publish scans every handler even when only one exact Resource+Type subscription can match.
+
+Guard:
+
+- Context stores handlers in an exact `type -> resource -> bucket` index
+- publish performs heterogeneous string lookup without constructing a new resource string
+- only the matching bucket is traversed
+- unsubscribe during callback is marked inactive and cleaned after dispatch, avoiding iterator invalidation
+- subscriptions use weak shared runtime state so destruction after Context teardown is safe
+
 ## Deterministic latency regression suite
 
 `ctest -L latency` guards structural properties rather than timing thresholds:
@@ -162,6 +176,9 @@ Guard:
 - generated Position and complex Telemetry codecs declare a direct static path and match the DynamicData reference bytes
 - stale summary versions and recently retired incarnations do not trigger snapshot pulls
 - remote demand snapshot updates preserve exact candidate-host lookup
+- bounded demand snapshot packets carry at most 32 DemandKeys per control datagram
+- route detail requests are sent only to candidate hosts whose exact DemandKey summary overlaps
+- same-process publish uses an exact Type+Resource handler bucket rather than scanning unrelated handlers
 
 Timing benchmarks and p99 measurements are recorded separately so noisy CI timing does not create false failures.
 
