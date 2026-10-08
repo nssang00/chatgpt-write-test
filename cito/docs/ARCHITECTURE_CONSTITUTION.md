@@ -31,6 +31,9 @@ The GIS comparison is an architectural analogy, not a geographic data model. Cit
 15. Gateway/integration layers (DDS, ROS 2, MAVLink, legacy protocols) stay outside the native core.
 16. Current-session/local verification comes first. GitHub Actions is used when independent network nodes, OS-specific behavior, or unavailable environments are required.
 17. Every development phase requires unit tests, cumulative regression tests, and a minimal smoke test before it is considered complete.
+18. The Host Coordinator is a control-plane aggregation/discovery component, not a mandatory data-plane broker.
+19. Discovery mechanisms are replaceable backends; Cito's stable model is the DemandKey and demand index, not SWIM/multicast/rendezvous themselves.
+20. Structural latency invariants are regression-tested; production static messages must eventually use a direct generated codec rather than DynamicData on the hot path.
 
 ## Public API baseline
 
@@ -80,6 +83,34 @@ single event-loop thread
 ```
 
 The worker pool is not a second owner of discovery or transport state. It performs isolated work and posts results back.
+
+## Control plane vs data plane
+
+The intended host-level topology is:
+
+```text
+local applications
+      |
+      | local registrations / interest counts
+      v
+Host Coordinator
+      |
+      | versioned DemandKey summary / discovery control
+      v
+remote coordinators
+
+normal data path:
+publisher --------------------------> subscriber
+
+same-host data path:
+publisher ------------ SHM --------> subscriber
+```
+
+The coordinator may later provide an optional host-ingress fan-out optimization when many local subscribers would otherwise cause redundant remote unicast. That optimization must be selected internally and must not become a mandatory hop.
+
+A host demand summary changes externally only when a unique `Scope + Resource + Type` key appears for the first time or disappears after its last local subscriber.
+
+See `LATENCY_GUARDS.md` for the concrete hot-path invariants.
 
 ## Type direction
 
