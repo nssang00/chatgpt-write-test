@@ -71,9 +71,22 @@ The generated metadata is equivalent to building the same canonical model manual
 
 ## Static / dynamic / wire interoperability
 
-The generated type currently supports scalar, string, enum, optional, nested struct, fixed array, and sequence values through the same path:
+Generated types have two intentionally compatible paths:
 
 ```text
+normal application hot path:
+
+generated C++ value
+      |
+      v
+generated StaticCodec<T>
+      |
+      v
+tagged Cito wire
+
+
+tooling / simulation / reference path:
+
 generated C++ value
       |
       v
@@ -81,13 +94,11 @@ DynamicData
       |
       v
 tagged Cito wire
-      |
-      +--> generated C++ value
-      |
-      +--> compatible older DynamicData schema
 ```
 
-This proves that IDL is a frontend to the canonical type system rather than a separate type system.
+The generated direct codec handles scalar, string, enum, optional, nested struct, fixed array, and sequence values without converting the production message through DynamicData.
+
+Regression smoke tests require the direct static bytes to be byte-for-byte identical to the DynamicData reference bytes. This keeps one wire/type system while allowing the normal generated path to avoid reflection, field-name lookup, variant trees, and shared-pointer allocation.
 
 ## Complex types
 
