@@ -26,6 +26,9 @@ Guard:
 - lower-version advertisements from the same coordinator incarnation are ignored instead of triggering snapshot pulls
 - recently retired coordinator incarnations are suppressed so delayed packets cannot create pull storms
 - exact remote snapshots maintain an inverse DemandKey -> candidate-host index; publish does not scan all known hosts
+- coordinator leases are expiration-indexed; one refresh replaces one timer entry
+- restart/expiry removes all candidate and direct-route state owned by that coordinator
+- route detail is incarnation-bound; delayed old route responses cannot restore stale destinations
 
 ### 2. Mandatory data relay through a host agent
 
@@ -178,6 +181,9 @@ Guard:
 - remote demand snapshot updates preserve exact candidate-host lookup
 - bounded demand snapshot packets carry at most 32 DemandKeys per control datagram
 - route detail requests are sent only to candidate hosts whose exact DemandKey summary overlaps
+- coordinator refresh keeps one scheduled expiry per live coordinator
+- restart/lease expiry removes coordinator-owned direct routes
+- route responses from a retired incarnation are rejected
 - same-process publish uses an exact Type+Resource handler bucket rather than scanning unrelated handlers
 
 Timing benchmarks and p99 measurements are recorded separately so noisy CI timing does not create false failures.
