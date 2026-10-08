@@ -33,6 +33,8 @@ if(BUILD_TESTING)
   cito_add_test(cito_latency_guard_tests tests/latency_guard_test.cpp "unit;latency;regression")
   cito_add_test(cito_demand_summary_tests tests/demand_summary_test.cpp "unit;latency;regression")
   cito_add_test(cito_demand_control_tests tests/demand_control_test.cpp "unit;latency;regression")
+  cito_add_test(cito_coordinator_lifecycle_tests tests/coordinator_lifecycle_test.cpp "unit;latency;regression")
+  cito_add_test(cito_remote_routes_tests tests/remote_routes_test.cpp "unit;latency;regression")
 
   cito_add_test(cito_public_api_smoke tests/public_api_smoke.cpp "smoke;regression")
   cito_add_test(cito_interest_scale_tests tests/interest_scale_test.cpp "smoke;regression")
@@ -41,6 +43,7 @@ if(BUILD_TESTING)
   cito_add_test(cito_type_model_smoke tests/type_model_smoke.cpp "smoke;regression")
   cito_add_test(cito_discovery_smoke tests/discovery_smoke.cpp "smoke;regression")
   cito_add_test(cito_demand_control_smoke tests/demand_control_smoke.cpp "smoke;latency;regression")
+  cito_add_test(cito_discovery_lifecycle_smoke tests/discovery_lifecycle_smoke.cpp "smoke;latency;regression")
 
   add_test(NAME cito_idlc_unit
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_idlc.py)
