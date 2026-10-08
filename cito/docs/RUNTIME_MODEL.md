@@ -40,6 +40,8 @@ The worker pool is:
 
 Candidate work includes sufficiently heavy serialization/compression, certificate/crypto operations, file-backed tooling, and adapters that would otherwise block the loop. Small messages should stay on the fast path when offload overhead would cost more than the work itself.
 
+The event loop must also avoid hidden O(N) housekeeping. Timer work such as lease expiration must use indexed due-work structures rather than periodically scanning every known peer/interest.
+
 ## Backpressure
 
 Both event and worker queues are bounded. A full queue is an explicit condition, not a reason to grow memory without limit or spawn more threads.
