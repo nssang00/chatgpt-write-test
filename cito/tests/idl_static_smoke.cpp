@@ -31,7 +31,13 @@ int main() {
     assert(generated_type.type_id() == manual_type.type_id());
     assert(generated_type.schema_hash() == manual_type.schema_hash());
 
+    static_assert(cito::StaticCodec<acme::navigation::Position>::direct);
+
     const auto bytes = cito::encode(p);
+    const auto reference_bytes =
+        cito::wire::encode(cito::to_dynamic(p));
+    assert(bytes == reference_bytes);
+
     const auto roundtrip = cito::decode<acme::navigation::Position>(bytes);
     assert(roundtrip.x == p.x);
     assert(roundtrip.y == p.y);
