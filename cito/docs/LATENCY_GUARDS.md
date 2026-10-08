@@ -114,7 +114,22 @@ Guard:
 - the view aliases the received byte buffer
 - an owning `DataPacket` decoder remains only as a convenience API
 
-### 8. Too many runtime threads and shared-state locks
+### 8. Same-host broker/reader coupling
+
+Risk:
+
+same-host messages still pass through a coordinator process, or a shared-memory writer waits for slow/dead readers through shared refcounts/cursors.
+
+Guard:
+
+- same-host data path uses a publisher-owned bounded ring
+- subscribers map the ring read-only
+- subscriber cursors remain process-local
+- writer does not inspect or wait for reader progress
+- overwritten data is reported as reader-local drops
+- no global SHM allocator, shared reference count, or reader mutex is introduced
+
+### 9. Too many runtime threads and shared-state locks
 
 Risk:
 
@@ -127,7 +142,7 @@ Guard:
 - workers perform isolated heavy/blocking work and post completion back
 - adding a dedicated subsystem thread requires measurement showing it is needed
 
-### 9. Unbounded queues and histories
+### 10. Unbounded queues and histories
 
 Risk:
 
@@ -139,7 +154,7 @@ Guard:
 - queue-full behavior is explicit
 - slow readers must not block unrelated readers
 
-### 10. Dynamic/reflection path on the production static hot path
+### 11. Dynamic/reflection path on the production static hot path
 
 Risk:
 
@@ -153,7 +168,7 @@ Guard:
 - direct static output must be byte-for-byte identical to the DynamicData reference wire
 - nested structs/arrays/sequences are recursively encoded into the same output buffer without per-field/per-element temporary byte vectors
 
-### 11. Local callback scan cost
+### 12. Local callback scan cost
 
 Risk:
 
@@ -185,6 +200,9 @@ Guard:
 - restart/lease expiry removes coordinator-owned direct routes
 - route responses from a retired incarnation are rejected
 - same-process publish uses an exact Type+Resource handler bucket rather than scanning unrelated handlers
+- SHM writer progress is independent of reader progress
+- slow SHM readers report overwritten sequences instead of blocking the writer
+- two independent SHM reader processes consume the same publisher ring without shared reader state
 
 Timing benchmarks and p99 measurements are recorded separately so noisy CI timing does not create false failures.
 
