@@ -168,4 +168,36 @@ jobs:
           grep -q "route_requests=0" \
             summary-battery.log || summary_status=1
 
-          exit "$summary_status"
+          if [[ "$summary_status" -ne 0 ]]; then
+            exit "$summary_status"
+          fi
+
+          # Discover a direct route, stop the source announcements, then
+          # verify the coordinator lease removes candidate + direct route.
+          sudo ip netns exec cito-pub "$SUMMARY_BIN" \
+            publisher 100 47200 0 1900 \
+            >lifecycle-publisher.log 2>&1 &
+          LIFECYCLE_PUB_PID=$!
+
+          sleep 0.2
+
+          sudo ip netns exec cito-pos "$SUMMARY_BIN" \
+            subscriber 12 100 48212 47212 47200 10.201.0.255 2 700 \
+            >lifecycle-source.log 2>&1 &
+          LIFECYCLE_SOURCE_PID=$!
+
+          lifecycle_status=0
+          wait "$LIFECYCLE_SOURCE_PID" || lifecycle_status=1
+          wait "$LIFECYCLE_PUB_PID" || lifecycle_status=1
+
+          echo "=== lifecycle publisher ==="
+          cat lifecycle-publisher.log
+          echo "=== expiring coordinator ==="
+          cat lifecycle-source.log
+
+          grep -q "discovered=0 sent=0 expired_hosts=1" \
+            lifecycle-publisher.log || lifecycle_status=1
+          grep -q "lease source ended" \
+            lifecycle-source.log || lifecycle_status=1
+
+          exit "$lifecycle_status"
