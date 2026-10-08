@@ -1,0 +1,136 @@
+name: Cito Network Smoke
+
+on:
+  push:
+    branches:
+      - cito-dev
+    paths:
+      - "cito/**"
+      - ".github/workflows/cito-network-smoke.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  linux-network-namespaces:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure
+        run: cmake -S cito -B build-cito -DCMAKE_BUILD_TYPE=Debug
+
+      - name: Build
+        run: cmake --build build-cito --parallel
+
+      - name: Unit tests
+        run: ctest --test-dir build-cito -L unit --output-on-failure
+
+      - name: Smoke tests
+        run: ctest --test-dir build-cito -L smoke --output-on-failure
+
+      - name: Latency invariant tests
+        run: ctest --test-dir build-cito -L latency --output-on-failure
+
+      - name: Regression tests
+        run: ctest --test-dir build-cito -L regression --output-on-failure
+
+      - name: Verify namespace capability
+        run: |
+          set -euo pipefail
+          ip -V
+          tc -V
+          sudo ip netns add cito-capability
+          sudo ip netns del cito-capability
+
+      - name: Three-node UDP discovery and selective delivery
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          cleanup() {
+            sudo ip netns del cito-a 2>/dev/null || true
+            sudo ip netns del cito-b 2>/dev/null || true
+            sudo ip netns del cito-c 2>/dev/null || true
+            sudo ip link del br-cito 2>/dev/null || true
+          }
+          trap cleanup EXIT
+
+          cleanup
+
+          sudo ip link add br-cito type bridge
+          sudo ip addr add 10.200.0.1/24 dev br-cito
+          sudo ip link set br-cito up
+
+          for ns in a b c; do
+            sudo ip netns add "cito-${ns}"
+            sudo ip link add "veth-${ns}" type veth peer name "peer-${ns}"
+            sudo ip link set "peer-${ns}" netns "cito-${ns}"
+            sudo ip link set "veth-${ns}" master br-cito
+            sudo ip link set "veth-${ns}" up
+            sudo ip netns exec "cito-${ns}" ip link set "peer-${ns}" name eth0
+            sudo ip netns exec "cito-${ns}" ip link set lo up
+            sudo ip netns exec "cito-${ns}" ip link set eth0 up
+          done
+
+          sudo ip netns exec cito-a ip addr add 10.200.0.11/24 dev eth0
+          sudo ip netns exec cito-b ip addr add 10.200.0.12/24 dev eth0
+          sudo ip netns exec cito-c ip addr add 10.200.0.13/24 dev eth0
+
+          sudo ip netns exec cito-b \
+            ./build-cito/cito_udp_node \
+            subscriber 11 100 48001 47000 10.200.0.255 1 \
+            >subscriber-position.log 2>&1 &
+          pid_position=$!
+
+          sudo ip netns exec cito-c \
+            ./build-cito/cito_udp_node \
+            subscriber 12 200 48002 47000 10.200.0.255 0 \
+            >subscriber-battery.log 2>&1 &
+          pid_battery=$!
+
+          sleep 0.25
+
+          set +e
+          sudo ip netns exec cito-a \
+            ./build-cito/cito_udp_node \
+            publisher 100 47000 1 900 \
+            >publisher.log 2>&1
+          publisher_rc=$?
+
+          wait "${pid_position}"
+          position_rc=$?
+
+          wait "${pid_battery}"
+          battery_rc=$?
+          set -e
+
+          echo "--- publisher ---"
+          cat publisher.log
+          echo "--- position subscriber ---"
+          cat subscriber-position.log
+          echo "--- unrelated battery subscriber ---"
+          cat subscriber-battery.log
+
+          test "${publisher_rc}" -eq 0
+          test "${position_rc}" -eq 0
+          test "${battery_rc}" -eq 0
+
+      - name: Sanitizer configure
+        run: |
+          cmake -S cito -B build-cito-sanitize \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DCMAKE_CXX_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer"
+
+      - name: Sanitizer build
+        run: cmake --build build-cito-sanitize --parallel
+
+      - name: Sanitizer regression
+        env:
+          ASAN_OPTIONS: detect_leaks=1
+          UBSAN_OPTIONS: print_stacktrace=1
+        run: ctest --test-dir build-cito-sanitize -L regression --output-on-failure
