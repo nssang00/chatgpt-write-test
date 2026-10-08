@@ -119,7 +119,7 @@ struct PendingSnapshot {
 };
 
 int subscriber(int argc, char** argv) {
-    if (argc != 9) {
+    if (argc != 9 && argc != 10) {
         std::cerr << "subscriber args\n";
         return 2;
     }
@@ -136,8 +136,16 @@ int subscriber(int argc, char** argv) {
         static_cast<std::uint16_t>(
             std::stoul(argv[6]));
     const std::string announce_ip = argv[7];
+    const int behavior =
+        std::stoi(argv[8]);
     const bool expect_data =
-        std::stoi(argv[8]) != 0;
+        behavior == 1;
+    const bool lease_source_only =
+        behavior == 2;
+    const auto lifetime_ms =
+        argc == 10
+            ? std::stoull(argv[9])
+            : 3500ull;
 
     const cito::InterestKey key{
         7,
@@ -195,7 +203,8 @@ int subscriber(int argc, char** argv) {
 
     while (
         Clock::now() - start <
-        std::chrono::milliseconds(3500)) {
+        std::chrono::milliseconds(
+            lifetime_ms)) {
         const auto now = Clock::now();
 
         if (now >= next_announce) {
@@ -341,7 +350,7 @@ int subscriber(int argc, char** argv) {
                         expected.begin())) {
                     if (!expect_data) {
                         std::cerr
-                            << "received unrelated data\n";
+                            << "received unexpected data\n";
                         return 29;
                     }
 
@@ -369,10 +378,29 @@ int subscriber(int argc, char** argv) {
         return 31;
     }
 
+    if (lease_source_only) {
+        if (
+            snapshot_requests == 0 ||
+            route_requests == 0) {
+            std::cerr
+                << "lease source was not discovered before exit\n";
+            return 32;
+        }
+
+        std::cout
+            << "lease source ended "
+            << "snapshot_requests="
+            << snapshot_requests
+            << " route_requests="
+            << route_requests
+            << "\n";
+        return 0;
+    }
+
     if (route_requests != 0) {
         std::cerr
             << "unrelated host received route request\n";
-        return 32;
+        return 33;
     }
 
     std::cout
