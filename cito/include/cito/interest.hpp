@@ -1,9 +1,11 @@
 #pragma once
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <unordered_map>
 #include <unordered_set>
+#include <vector>
 
 namespace cito {
 
@@ -39,10 +41,20 @@ struct InterestKeyHash {
 
 class HostInterests {
 public:
+    explicit HostInterests(std::size_t expected_unique = 0) {
+        if (expected_unique != 0) {
+            counts_.reserve(expected_unique);
+        }
+    }
+
     bool add(const InterestKey& key) {
         auto& count = counts_[key];
         ++count;
-        return count == 1;
+        if (count == 1) {
+            ++version_;
+            return true;
+        }
+        return false;
     }
 
     bool remove(const InterestKey& key) {
@@ -50,6 +62,7 @@ public:
         if (it == counts_.end()) return false;
         if (--it->second == 0) {
             counts_.erase(it);
+            ++version_;
             return true;
         }
         return false;
@@ -63,12 +76,46 @@ public:
         return counts_.size();
     }
 
+    std::uint64_t version() const noexcept {
+        return version_;
+    }
+
+    std::vector<InterestKey> snapshot() const {
+        std::vector<InterestKey> keys;
+        keys.reserve(counts_.size());
+        for (const auto& [key, count] : counts_) {
+            (void)count;
+            keys.push_back(key);
+        }
+
+        std::sort(
+            keys.begin(),
+            keys.end(),
+            [](const InterestKey& a, const InterestKey& b) {
+                if (a.scope != b.scope) return a.scope < b.scope;
+                if (a.resource != b.resource) return a.resource < b.resource;
+                return a.type < b.type;
+            });
+        return keys;
+    }
+
 private:
     std::unordered_map<InterestKey, std::size_t, InterestKeyHash> counts_;
+    std::uint64_t version_{0};
 };
 
 class InterestIndex {
 public:
+    explicit InterestIndex(std::size_t expected_keys = 0) {
+        if (expected_keys != 0) {
+            table_.reserve(expected_keys);
+        }
+    }
+
+    void reserve(std::size_t expected_keys) {
+        table_.reserve(expected_keys);
+    }
+
     bool add(const InterestKey& key, DestinationId destination) {
         auto& destinations = table_[key];
         const auto [_, inserted] = destinations.insert(destination);
