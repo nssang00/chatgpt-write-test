@@ -130,8 +130,8 @@ A small LAN may use multicast/broadcast, a larger deployment may use sampled gos
 The second control-plane prototype now models the intended two-stage flow:
 
 ```text
-CTS1 summary announcement
-  CoordinatorId + control port
+CTS2 summary announcement
+  CoordinatorId + control port + lease
   incarnation + version + key_count
         |
         | only when cached stamp is stale/new
@@ -146,10 +146,12 @@ RemoteDemandIndex: DemandKey -> candidate hosts
         |
         | only for hosts matching the publish DemandKey
         v
-CTR1 route request
+CTR3 route request
+  CoordinatorId + incarnation + DemandKey
         |
         v
-CTR2 direct endpoint batch
+CTR4 direct endpoint batch
+  CoordinatorId + incarnation + endpoints
         |
         v
 InterestIndex: DemandKey -> direct destinations
@@ -158,6 +160,10 @@ InterestIndex: DemandKey -> direct destinations
 Snapshot batching is deliberately bounded so one control datagram and one event-loop callback cannot grow with the host's entire subscription set. The current batch cap is 32 exact DemandKeys and stays below a conservative UDP payload size.
 
 The three-node network-namespace smoke proves that the publisher pulls both host summaries but requests route details only from the Position host. The unrelated Battery host reports zero route requests and receives no data.
+
+Coordinator announcements are leased. Refresh replaces the existing expiration entry instead of adding timer backlog. When a coordinator restarts with a new incarnation, all old candidate-host state and direct routes owned by that coordinator are removed before new detail is accepted. Route request/response packets carry the incarnation, so a delayed response from the retired process cannot repopulate stale direct routes.
+
+A second namespace smoke discovers a direct route, stops the coordinator announcements, waits past the lease, and requires the publisher's final direct-destination set to be empty.
 
 ## Legacy exact-key LAN advertisement prototype
 
@@ -184,8 +190,8 @@ The first network smoke uses two different subscriptions and one publisher. The 
 ## Deferred
 
 - production LAN advertisement transport policy (broadcast vs multicast vs future adaptive choice)
-- version announcement + exact snapshot pull/batch packet format
-- startup/reconnect storm control
+- startup/reconnect randomized jitter and rate limiting
+- pending snapshot/route request timeout and retry policy
 - multicast vs unicast discovery transport
 - rendezvous/directory mode
 - wildcard/pattern resources
