@@ -373,6 +373,16 @@ void CefRendererApp::OnContextCreated(
         "}"
         "return value;"
         "};"
+        "const transportInvoke=native.invokeRaw;"
+        "native.invokeRaw=(...args)=>transportInvoke(...args).then((value)=>{"
+        "if(value&&typeof value==='object'&&value.__nativeweb_error===true){"
+        "const error=new Error(String(value.code||'native_error')+': '+"
+        "String(value.message||'Native call failed'));"
+        "error.code=String(value.code||'native_error');"
+        "throw error;"
+        "}"
+        "return value;"
+        "});"
         "const invoke=(method,...args)=>"
         "native.invokeRaw(method,...args).then(wrap);"
         "native.invoke=invoke;"
@@ -739,29 +749,28 @@ bool CefRendererApp::OnProcessMessageReceived(
         const std::string errorMessage =
             args->GetString(3).ToString();
 
-#if defined(_WIN32)
-        std::cerr
-            << "cef-renderer-reject-before: id="
-            << id
-            << " code="
-            << code
-            << std::endl;
-#endif
+        CefRefPtr<CefV8Value> errorValue =
+            CefV8Value::CreateObject(
+                nullptr,
+                nullptr);
 
-        const bool rejected =
-            pending.promise->RejectPromise(
-                code + ": " + errorMessage);
+        errorValue->SetValue(
+            "__nativeweb_error",
+            CefV8Value::CreateBool(true),
+            V8_PROPERTY_ATTRIBUTE_READONLY);
 
-#if defined(_WIN32)
-        std::cerr
-            << "cef-renderer-reject-after: id="
-            << id
-            << " ok="
-            << (rejected ? "true" : "false")
-            << std::endl;
-#else
-        (void)rejected;
-#endif
+        errorValue->SetValue(
+            "code",
+            CefV8Value::CreateString(code),
+            V8_PROPERTY_ATTRIBUTE_READONLY);
+
+        errorValue->SetValue(
+            "message",
+            CefV8Value::CreateString(errorMessage),
+            V8_PROPERTY_ATTRIBUTE_READONLY);
+
+        pending.promise->ResolvePromise(
+            errorValue);
     }
 
     pending.context->Exit();
