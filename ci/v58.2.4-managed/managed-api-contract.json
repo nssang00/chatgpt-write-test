@@ -1,0 +1,12 @@
+{
+  "harnessVersion": "58.2.4",
+  "webViewRuntimeSha256": "f568ba150a2ab87b0bb6298f0364597a6c53e668774b8d74e24b19b2387b8134",
+  "requiredForwarders": [
+    "CefTextureSurface_GetGpuAdapterDiagnostics",
+    "CefTextureSurface_GetStats",
+    "CefTextureSurface_GetUnityTexture"
+  ],
+  "missing": [],
+  "callCount": 47,
+  "policy": "All WebViewRuntime method calls from product Runtime and UnityHarness must resolve to facade definitions."
+}
