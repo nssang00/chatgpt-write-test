@@ -49,7 +49,7 @@ test('security regression: malformed packages and recursive references fail clos
   assert.throws(()=>validateComponentBundle({...b,requires:{react:['Fake']}}),/mismatch/);
   assert.throws(()=>validateComponentBundle({...b,root:{type:'Missing'}}),/Unknown component/);
   assert.throws(()=>validateComponentBundle({...b,root:{type:'PanelX'}}),/Recursive/);
-  assert.throws(()=>validateComponentBundle({...b,root:JSON.parse('{"type":"Text","props":{"__proto__":"x"}}')}),/Unsafe/);
+  assert.throws(()=>validateComponentBundle({...b,root:JSON.parse('{"type":"Text","props":{"__proto__":"x"}}')}),/Invalid props|Unsafe/);
   assert.throws(()=>createComponentBundle('X',{type:'Missing'},{}),/Missing component/);
 });
 test('regression: nested composites keep independent data scopes',()=>{

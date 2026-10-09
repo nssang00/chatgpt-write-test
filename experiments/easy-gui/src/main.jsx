@@ -95,7 +95,8 @@ function Studio(){
       const text=await file.text();
       const obj=JSON.parse(text);
       if(obj.format===COMPONENT_FORMAT){
-        setRegistry(existing=>installComponentBundle(existing,obj));
+        const updated=installComponentBundle(registry,obj);
+        setRegistry(updated);
         const missing=obj.requires.react.filter(name=>!Object.hasOwn(codeRenderers,name));
         notice[missing.length?'warning':'success'](missing.length?
           '설치 완료. React 소스 등록이 필요합니다: '+missing.join(', '):
