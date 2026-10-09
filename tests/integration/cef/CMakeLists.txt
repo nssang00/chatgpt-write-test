@@ -114,6 +114,10 @@ add_executable(${TARGET}
   main.cpp
 )
 
+if(WIN32)
+  target_sources(${TARGET} PRIVATE nativeweb_cef_windows_manifest.rc)
+endif()
+
 target_include_directories(${TARGET}
   PRIVATE
     "${NATIVEWEB_ROOT}/include"
@@ -162,6 +166,10 @@ set(MULTI_TARGET nativeweb_cef_multi_webview_integration)
 add_executable(${MULTI_TARGET}
   multi_webview.cpp
 )
+
+if(WIN32)
+  target_sources(${MULTI_TARGET} PRIVATE nativeweb_cef_windows_manifest.rc)
+endif()
 
 target_include_directories(${MULTI_TARGET}
   PRIVATE
