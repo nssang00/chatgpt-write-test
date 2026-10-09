@@ -243,6 +243,33 @@ NATIVEWEB_PLUGIN_END()
 
 장기적으로 TypeScript definition 생성과 plugin inspect CLI를 제공한다.
 
+## 9.1 Callable / plugin 참고 구현 검토 결론
+
+상세: [docs/CALLABLE_PLUGIN_DESIGN.md](docs/CALLABLE_PLUGIN_DESIGN.md)
+
+검토한 계열:
+
+- PothosCore Callable / Plugin
+- ROS class_loader / pluginlib
+- Qt QLibrary / QPluginLoader
+- Boost.DLL
+- POCO SharedLibrary / ClassLoader
+
+채택 방향:
+
+- 현재 `bind()`, object `.method()`, `execute<T>()`, `xytron.foo()` API는 유지
+- 내부에 `Callable + SignatureMetadata` 도입
+- `Any`와 native object identity는 분리 유지
+- registration ownership을 내부 RAII token으로 추적
+- plugin callable/object/task가 PluginModule lifetime을 잡도록 설계
+- plugin binary boundary는 versioned stable C ABI
+- low-level SharedLibrary는 작고 dependency-free하게 유지
+- 초기 plugin unload는 보수적으로 운영하고 unsafe hot unload를 강제하지 않음
+- static-global registration은 stable ABI mechanism으로 사용하지 않음
+- plugin metadata를 TS generation / inspect / permissions에 재사용
+
+이 검토는 public beginner API 변경이 아니라 내부 foundation 강화다.
+
 ## 10. Electron / Tauri에서 가져갈 것
 
 가져갈 것:
@@ -466,9 +493,9 @@ Platform Smoke:             37787721167 SUCCESS
 
 - security permission/capability policy
 - larger binary/shared-memory transport
-- Windows CEF backend
-- Windows CEF backend
+- Windows CEF backend final runtime regression
 - Host adapters
+- Callable/signature metadata foundation
 - plugin runtime
 - sidecar runtime
 - CLI
@@ -478,14 +505,14 @@ Platform Smoke:             37787721167 SUCCESS
 
 가장 먼저 해야 할 일:
 
-1. 최신 Core/CEF/WebView2 Regression이 green인 상태를 항상 유지한다.
-2. Windows CEF backend를 현재 CEF/WebView2 public browser contract에 연결한다.
+1. 최신 Core/Linux CEF/WebView2 Regression이 green인 상태를 항상 유지한다.
+2. Windows CEF real runtime regression의 현재 exit-code failure를 재현/수정한다.
 3. Windows에서 WebView2/CEF engine-switch regression을 추가한다.
-4. security permission/capability policy skeleton을 추가한다.
-5. root object binding을 class metadata/TS definition generation으로 확장하되 C++11 기본 API는 단순하게 유지한다.
+4. `Callable + SignatureMetadata + RegistrationToken` foundation을 기존 public API 변경 없이 추가한다.
+5. security permission/capability policy skeleton을 추가한다.
 6. TransferBuffer / SharedBuffer를 기본 Binary와 분리된 advanced API로 추가한다.
 7. thin Host adapters를 Win32/MFC/WinForms 순으로 시작한다.
-8. Plugin stable C ABI + C++ wrapper prototype을 만든다.
+8. Callable foundation 위에 SharedLibrary + PluginModule + stable C ABI prototype을 만든다.
 
 세부 단계는 [docs/ROADMAP.md](docs/ROADMAP.md)를 따른다.
 

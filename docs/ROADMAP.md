@@ -64,6 +64,22 @@
 
 상세 계약: [API_CONTRACT.md](API_CONTRACT.md)
 
+## Phase 2.6 — Callable metadata foundation
+
+Plugin SDK와 TypeScript generation 전에 공통 callable metadata layer를 만든다.
+
+- [ ] `Callable` type-erasure
+- [ ] `SignatureMetadata` (argument count/types + result type)
+- [ ] existing free function/lambda bind parity
+- [ ] member + const-member parity
+- [ ] void / exception parity
+- [ ] explicit overload-selection escape hatch
+- [ ] current `bind()` public API unchanged
+- [ ] root object `.method()` public API unchanged
+- [ ] `RegistrationToken` / owner tracking
+
+상세 설계: [CALLABLE_PLUGIN_DESIGN.md](CALLABLE_PLUGIN_DESIGN.md)
+
 ## Phase 3 — Linux CEF backend
 
 Selected CEF:
@@ -162,17 +178,25 @@ Host layer가 application framework로 커지면 설계를 다시 검토한다.
 
 ## Phase 7 — Plugin SDK
 
-핵심 제품 차별화 단계.
+핵심 제품 차별화 단계. Phase 2.6 Callable metadata foundation을 재사용한다.
 
-- [ ] stable C ABI draft
+- [ ] small cross-platform SharedLibrary abstraction
+- [ ] PluginModule + registration ownership
+- [ ] stable versioned C ABI draft
+- [ ] embedded plugin descriptor (id/version/ABI/runtime/capabilities)
 - [ ] C++ wrapper
-- [ ] plugin macro/export
-- [ ] DLL/SO loader
-- [ ] embedded metadata
+- [ ] `NATIVEWEB_PLUGIN` macro/export convenience
 - [ ] plugin namespace registration
+- [ ] callable/module lifetime coupling
+- [ ] native object/module lifetime coupling
+- [ ] queued/running task/module lifetime coupling
+- [ ] conservative unload / plugin_busy policy
+- [ ] real DLL Windows regression
+- [ ] real SO Linux regression
 - [ ] object/event/binary support
 - [ ] ABI compatibility validation
 - [ ] TypeScript declaration generation
+- [ ] missing-dependency diagnostics
 - [ ] `xweb plugin new/build/inspect`
 
 장기:

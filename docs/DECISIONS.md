@@ -257,3 +257,52 @@ Runtime optimizations may be automatic only when they do not change observable o
 C++11 remains the Core/public baseline.
 
 `std::optional`, `std::variant`, `std::string_view` and similar newer-standard adapters may be offered conditionally without raising the Core baseline.
+
+
+## D-027: Callable metadata is internal foundation
+
+**Status: Accepted**
+
+현재 beginner-facing `bind()` API를 유지하면서 내부에 typed callable type-erasure와 signature metadata layer를 추가한다.
+
+metadata는 argument validation, error reporting, TypeScript generation, plugin inspection에 재사용한다.
+
+Pothos-style arbitrary runtime Object model을 bridge Any 전체로 확장하지 않는다. `Any` value world와 `NativeObjectHandle` object identity world를 분리한다.
+
+## D-028: Registration ownership is explicit internally
+
+**Status: Accepted**
+
+Binding/object/plugin registration은 owner와 lifetime을 추적할 수 있어야 한다.
+
+내부 `RegistrationToken` 또는 동등한 RAII registration handle을 두고, plugin module이 자신이 만든 registrations를 소유/정리한다.
+
+일반 사용자의 `webview.bind(...)`에는 이 복잡성을 노출하지 않는다.
+
+## D-029: Plugin code lifetime is tied to module lifetime
+
+**Status: Accepted**
+
+Plugin의 callable, native object, queued/running task 등 plugin code를 실행할 수 있는 entity는 `PluginModule` lifetime reference를 보유한다.
+
+live code/object가 있는 상태의 강제 DLL/SO unload는 허용하지 않는다.
+
+초기 기본값은 controlled shutdown 시 unload이며 hot unload는 advanced 기능이다.
+
+## D-030: Plugin UX is C++, binary boundary is stable C ABI
+
+**Status: Accepted**
+
+사용자는 C++ wrapper/macro로 plugin을 작성할 수 있다.
+
+실제 DLL/SO entry point는 versioned `extern "C"` stable ABI를 사용한다.
+
+Static constructor registration은 user convenience implementation detail로도 신중히 사용하며, plugin ABI 자체를 static-global side effect에 의존시키지 않는다.
+
+## D-031: SharedLibrary stays small and internal
+
+**Status: Accepted**
+
+Qt QLibrary, Boost.DLL, POCO SharedLibrary의 공통 low-level 역할을 참고해 OS library load/symbol/unload abstraction을 둔다.
+
+현재 Core에 Boost/Qt/POCO를 plugin loading을 위한 필수 dependency로 추가하지 않는다.

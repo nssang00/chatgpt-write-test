@@ -339,3 +339,47 @@ Windows WebView2는 mock 완료로 간주하지 않는다.
 - two-WebView request/event/future isolation
 
 Latest run: `37787721031`.
+
+
+## Callable metadata regression
+
+Callable refactor는 public API 변경으로 간주하지 않는다.
+
+최소 regression:
+
+- free function
+- lambda
+- mutable/stateful callable where supported
+- member function
+- const member function
+- void result
+- argument count mismatch
+- argument conversion failure
+- native exception -> structured error
+- signature argument count metadata
+- signature argument type metadata
+- return type metadata
+- explicit overloaded function selection
+- root object lifetime retained by bound method
+- existing `webview.bind(...)` source compatibility
+- existing `bind("apple", ...).method(...)` source compatibility
+- CEF/WebView2 browser contract unchanged
+
+## Plugin lifetime regression
+
+Plugin 완료 조건은 단순 DLL/SO load 성공이 아니다.
+
+최소 contract:
+
+- valid DLL/SO load
+- missing entry symbol rejection
+- ABI version mismatch rejection
+- duplicate plugin id/API registration rejection
+- registration removed with module teardown
+- bound callable keeps module alive while callable is reachable
+- native object keeps module alive while object is reachable
+- queued/running worker task keeps module alive until completion
+- unload rejects with `plugin_busy` (or final equivalent) while unsafe
+- controlled unload after calls/objects are released
+- plugin exception does not cross C ABI boundary
+- Windows DLL + Linux SO real integration
