@@ -62,8 +62,13 @@ export function validateBlueprint(input,definitions={}, {maxNodes=300,maxDepth=3
       const def=definitions[node.type];
       if(!def){errors.push('Unknown component: '+node.type);return;}
       if(ancestry.includes(node.type)){errors.push('Recursive component: '+[...ancestry,node.type].join(' > '));return;}
-      if(!isRecord(def)||!isRecord(def.root)){errors.push('Invalid component definition: '+node.type);return;}
-      visit(def.root,depth+1,[...ancestry,node.type]);
+      if(!isRecord(def)){errors.push('Invalid component definition: '+node.type);return;}
+      if(def.kind==='react'){
+        if(!isRecord(def.manifest))errors.push('Missing React component manifest: '+node.type);
+      }else{
+        if(!isRecord(def.root)){errors.push('Invalid component definition: '+node.type);return;}
+        visit(def.root,depth+1,[...ancestry,node.type]);
+      }
     }
     if(Array.isArray(node.children))for(const child of node.children)visit(child,depth+1,ancestry);
   };
@@ -76,7 +81,7 @@ export function expandBlueprint(input,definitions={},parentScope=''){
   const build=(node,scope)=>{
     const ownScope=scopedPath(scope,node.scope??'');
     const component=definitions[node.type];
-    if(component){
+    if(component?.kind!=='react' && component){
       const inner=build(component.root,ownScope);
       return {...inner,id:node.id??inner.id,instanceType:node.type,props:{...inner.props,...node.props},scope:inner.scope};
     }
