@@ -11,7 +11,8 @@
     "test:smoke": "node --test tests/smoke.test.mjs",
     "test:regression": "node --test tests/regression.test.mjs",
     "create": "node scripts/create.mjs",
-    "components": "node scripts/components.mjs"
+    "components": "node scripts/components.mjs",
+    "test:e2e": "playwright test"
   },
   "dependencies": {
     "react": "^19.1.1",
@@ -20,7 +21,8 @@
   },
   "devDependencies": {
     "vite": "^7.1.0",
-    "@vitejs/plugin-react": "^5.0.0"
+    "@vitejs/plugin-react": "^5.0.0",
+    "@playwright/test": "^1.55.0"
   },
   "engines": {
     "node": ">=20.19.0"
