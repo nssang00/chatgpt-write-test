@@ -1,10 +1,10 @@
-name: OneClick v58.1 Native + Release Audit Capture Gate
+name: OneClick v58.2 Runtime Promotion Gate
 
 on:
   workflow_dispatch:
   push:
     branches:
-      - ci/oneclick-v58-1
+      - ci/oneclick-v58-2
     paths:
       - '.github/workflows/oneclick-v57-9-native.yml'
       - 'ci/v57.8-native/**'
@@ -28,11 +28,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Verify v58.1 release audit policy
+      - name: Verify v58.2 runtime promotion policy
         shell: pwsh
         run: |
           $audit = Get-Content ci/v58-release/release_readiness_check.py -Raw
-          foreach ($token in @('BLOCKED_RUNTIME_PROMOTION','RUNTIME_CEF_BACKEND_IMPLEMENTED','PUBLIC_WEBVIEW_API_IMPLEMENTED','VALIDATED_IMPLEMENTATION_PROMOTED_FROM_PROTOTYPES','LICENSE_NOTICE_PRESENT')) {
+          foreach ($token in @('BLOCKED_RELEASE_METADATA','RUNTIME_CEF_BACKEND_IMPLEMENTED','PUBLIC_WEBVIEW_API_IMPLEMENTED','VALIDATED_IMPLEMENTATION_PROMOTED_FROM_PROTOTYPES','LICENSE_NOTICE_PRESENT')) {
             if ($audit -notlike "*$token*") { throw "Missing release audit policy token: $token" }
           }
 
@@ -69,6 +69,37 @@ jobs:
           $config = Get-Content (Join-Path $source 'config.json') -Raw | ConvertFrom-Json
           if ($config.harnessVersion -ne '57.8.0') { throw "Unexpected harness version: $($config.harnessVersion)" }
           "harnessVersion=$($config.harnessVersion)" | Tee-Object -FilePath "$env:GITHUB_WORKSPACE\harness-version.txt"
+
+      - name: Re-layout validated source as v58.2 Runtime promotion
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $source = Join-Path $env:GITHUB_WORKSPACE 'ci-source'
+          $pkg = Join-Path $source 'Package\com.company.webview'
+          $oldNative = Join-Path $pkg 'Prototypes\CefTexture\Native'
+          $runtimeNative = Join-Path $pkg 'Runtime\Backends\CEF\Native'
+          $validationSmoke = Join-Path $pkg 'Validation\CefTexture\NativeSmoke'
+          if (-not (Test-Path $oldNative)) { throw "Baseline native tree missing: $oldNative" }
+          New-Item -ItemType Directory -Force -Path (Split-Path $runtimeNative -Parent),(Split-Path $validationSmoke -Parent) | Out-Null
+          Move-Item -Path (Join-Path $oldNative 'Smoke') -Destination $validationSmoke
+          Move-Item -Path $oldNative -Destination $runtimeNative
+          $cmakePath = Join-Path $runtimeNative 'CMakeLists.txt'
+          $cmake = Get-Content $cmakePath -Raw
+          $cmake = $cmake.Replace('project(CompanyWebViewCefTexturePrototype LANGUAGES CXX)','project(CompanyWebViewCefRuntime LANGUAGES CXX)')
+          $cmake = $cmake.Replace('set(PROTOTYPE_STAGE_DIR "${CMAKE_BINARY_DIR}/stage" CACHE PATH "Prototype staging output")','set(WEBVIEW_STAGE_DIR "${CMAKE_BINARY_DIR}/stage" CACHE PATH "Runtime staging output")' + [Environment]::NewLine + 'set(WEBVIEW_VALIDATION_SMOKE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../../../Validation/CefTexture/NativeSmoke")')
+          $cmake = $cmake.Replace('Smoke/main.cpp','${WEBVIEW_VALIDATION_SMOKE_DIR}/main.cpp')
+          $cmake = $cmake.Replace('Smoke/export_check.cpp','${WEBVIEW_VALIDATION_SMOKE_DIR}/export_check.cpp')
+          $cmake = $cmake.Replace('Smoke/native_refresh_control.cpp','${WEBVIEW_VALIDATION_SMOKE_DIR}/native_refresh_control.cpp')
+          $cmake = $cmake.Replace('Smoke/d3d11_copy_benchmark.cpp','${WEBVIEW_VALIDATION_SMOKE_DIR}/d3d11_copy_benchmark.cpp')
+          $cmake = $cmake.Replace('Smoke/dxgi_adapter_probe.cpp','${WEBVIEW_VALIDATION_SMOKE_DIR}/dxgi_adapter_probe.cpp')
+          $cmake = $cmake.Replace('${PROTOTYPE_STAGE_DIR}','${WEBVIEW_STAGE_DIR}')
+          $cmake = $cmake.Replace('PROTOTYPE_NATIVE_STAGE','WEBVIEW_NATIVE_STAGE').Replace('PROTOTYPE_RUNTIME_STAGE','WEBVIEW_RUNTIME_STAGE')
+          $cmake = $cmake.Replace('CefTexturePrototypeStage','CefRuntimeStage')
+          Set-Content -Path $cmakePath -Value $cmake -Encoding UTF8
+          if (Test-Path (Join-Path $pkg 'Prototypes\CefTexture\Native')) { throw 'Prototype native tree still exists after promotion.' }
+          if (-not (Test-Path (Join-Path $runtimeNative 'Host\CefRuntime.cpp'))) { throw 'Promoted CefRuntime.cpp missing.' }
+          if (-not (Test-Path (Join-Path $validationSmoke 'export_check.cpp'))) { throw 'Validation smoke source missing after split.' }
+          "runtimePromotionLayout=PASS" | Set-Content "$env:GITHUB_WORKSPACE\runtime-promotion-layout.txt"
 
       - name: Download pinned CEF 154
         shell: pwsh
@@ -107,10 +138,10 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           New-Item -ItemType Directory -Force -Path results | Out-Null
-          $native = Join-Path $env:GITHUB_WORKSPACE 'ci-source\Package\com.company.webview\Prototypes\CefTexture\Native'
+          $native = Join-Path $env:GITHUB_WORKSPACE 'ci-source\Package\com.company.webview\Runtime\Backends\CEF\Native'
           $build = Join-Path $env:RUNNER_TEMP 'v578-native-build'
           $stage = Join-Path $env:GITHUB_WORKSPACE 'results\native-stage'
-          cmake -S $native -B $build -G "Visual Studio 17 2022" -A x64 "-DCEF_ROOT=$env:CEF_ROOT" "-DPROTOTYPE_STAGE_DIR=$stage" -DUSE_SANDBOX=OFF 2>&1 | Tee-Object -FilePath results\cmake-configure.log
+          cmake -S $native -B $build -G "Visual Studio 17 2022" -A x64 "-DCEF_ROOT=$env:CEF_ROOT" "-DWEBVIEW_STAGE_DIR=$stage" -DUSE_SANDBOX=OFF 2>&1 | Tee-Object -FilePath results\cmake-configure.log
           if ($LASTEXITCODE -ne 0) { throw "CMake configure failed: $LASTEXITCODE" }
           "BUILD_DIR=$build" | Out-File -FilePath $env:GITHUB_ENV -Append
           "STAGE_DIR=$stage" | Out-File -FilePath $env:GITHUB_ENV -Append
@@ -119,7 +150,7 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          cmake --build $env:BUILD_DIR --config Release --target CefTexturePrototypeStage --parallel 4 2>&1 | Tee-Object -FilePath results\cmake-build.log
+          cmake --build $env:BUILD_DIR --config Release --target CefRuntimeStage --parallel 4 2>&1 | Tee-Object -FilePath results\cmake-build.log
           if ($LASTEXITCODE -ne 0) { throw "Native build failed: $LASTEXITCODE" }
           $runtime = Join-Path $env:STAGE_DIR 'runtime\Release'
           $native = Join-Path $env:STAGE_DIR 'native\Release'
@@ -195,7 +226,7 @@ jobs:
         if: ${{ always() }}
         shell: pwsh
         run: |
-          "## v57.9 Native/CEF first-pass gate" | Out-File $env:GITHUB_STEP_SUMMARY -Append
+          "## v58.2 Runtime Promotion first-pass gate" | Out-File $env:GITHUB_STEP_SUMMARY -Append
           "" | Out-File $env:GITHUB_STEP_SUMMARY -Append
           "- Payload SHA-256 verified" | Out-File $env:GITHUB_STEP_SUMMARY -Append
           "- Native x64 clean build" | Out-File $env:GITHUB_STEP_SUMMARY -Append
@@ -207,10 +238,11 @@ jobs:
         if: ${{ always() }}
         uses: actions/upload-artifact@v4
         with:
-          name: oneclick-v57-9-native-cef-gate
+          name: oneclick-v58-2-runtime-promotion-gate
           path: |
             results/
             payload-sha256.txt
             harness-version.txt
             v579-harness-baseline.txt
+            runtime-promotion-layout.txt
           if-no-files-found: warn
