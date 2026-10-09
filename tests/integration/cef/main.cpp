@@ -190,6 +190,16 @@ public:
             });
 
         webview_.bind(
+            "test.checkpoint",
+            [](const std::string& name) {
+                std::cout
+                    << "checkpoint: "
+                    << name
+                    << std::endl;
+                return true;
+            });
+
+        webview_.bind(
             "test.throw",
             []() -> int {
                 throw std::runtime_error(
@@ -334,6 +344,10 @@ public:
         webview_.bind(
             "test.fail",
             [this](const std::string& message) {
+                std::cerr
+                    << "bridge-fail: "
+                    << message
+                    << std::endl;
                 failure_ = message;
                 success_ = false;
                 webview_.destroy();
@@ -374,6 +388,9 @@ public:
 
     void onClosed() override
     {
+        std::cout
+            << "checkpoint: browser-closed"
+            << std::endl;
         CefQuitMessageLoop();
     }
 
@@ -611,7 +628,16 @@ int main(int argc, char* argv[])
     }
 
     CefRunMessageLoop();
+
+    std::cout
+        << "checkpoint: message-loop-returned"
+        << std::endl;
+
     CefShutdown();
+
+    std::cout
+        << "checkpoint: cef-shutdown-complete"
+        << std::endl;
 
     if (!listener.success())
     {

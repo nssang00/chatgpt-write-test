@@ -35,6 +35,10 @@ window.ui = {
     }
   }
 
+  async function checkpoint(name) {
+    await xytron.test.checkpoint(String(name));
+  }
+
   try {
     if (!location.search.includes("reloaded=1")) {
       const beforeReload = await xytron.math.add(1, 2);
@@ -46,6 +50,8 @@ window.ui = {
       location.replace(location.href + "?reloaded=1");
       return;
     }
+
+    await checkpoint("reload-ready");
 
     const result = await xytron.math.add(3, 4);
     if (result !== 7) {
@@ -85,6 +91,8 @@ window.ui = {
       );
       return;
     }
+
+    await checkpoint("root-object-ok");
 
     const primitiveResult =
       await xytron.invoke("math.add", 2, 5);
@@ -126,6 +134,8 @@ window.ui = {
       );
       return;
     }
+
+    await checkpoint("worker-concurrency-ok");
 
     const objectResult = await xytron.echo.object({
       name: "camera",
@@ -184,7 +194,9 @@ window.ui = {
 
     let eventSubscription = "";
     const eventPromise = new Promise((resolve) => {
-      eventSubscription = xytron.on(
+      await checkpoint("value-binary-ok");
+
+    eventSubscription = xytron.on(
         "test.event",
         (payload) => resolve(payload)
       );
@@ -205,6 +217,8 @@ window.ui = {
       await fail("event transport failed");
       return;
     }
+
+    await checkpoint("events-ok");
 
     const camera =
       await xytron.camera.open();
@@ -278,6 +292,8 @@ window.ui = {
       return;
     }
 
+    await checkpoint("native-object-ok");
+
     let nativeExceptionRejected = false;
     try {
       await xytron.test.throw();
@@ -305,6 +321,8 @@ window.ui = {
       await fail("missing method did not reject Promise correctly");
       return;
     }
+
+    await checkpoint("error-mapping-ok");
 
     await xytron.test.beginCppCalls();
 
@@ -335,6 +353,8 @@ window.ui = {
       return;
     }
 
+    await checkpoint("cpp-to-js-ok");
+
     const done =
       await xytron.test.done(result);
 
@@ -342,6 +362,8 @@ window.ui = {
       await fail("pre-destroy checks did not complete");
       return;
     }
+
+    await checkpoint("pre-destroy-ok");
 
     window.__nativewebPendingStarted = false;
 
@@ -359,6 +381,8 @@ window.ui = {
       await fail("pending JS Promise was never entered");
       return;
     }
+
+    await checkpoint("pending-js-entered");
 
     try {
       await xytron.test.destroyWithPending();

@@ -115,6 +115,14 @@ public:
             return maxConcurrentCalls_.load();
         });
 
+        webview_.bind("test.checkpoint", [](const std::string& name) {
+            std::cout
+                << "checkpoint: "
+                << name
+                << std::endl;
+            return true;
+        });
+
         webview_.bind("test.throw", []() -> int {
             throw std::runtime_error("expected native exception");
         });
@@ -223,6 +231,10 @@ public:
         });
 
         webview_.bind("test.fail", [this](const std::string& message) {
+            std::cerr
+                << "bridge-fail: "
+                << message
+                << std::endl;
             failure_ = message;
             success_ = false;
             webview_.destroy();
