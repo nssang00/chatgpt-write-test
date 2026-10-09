@@ -79,6 +79,14 @@ if(NOT WIN32)
   )
 endif()
 
+# CEF intentionally builds its own wrapper with C++ exceptions disabled.
+# NativeWeb's public/runtime contract converts user C++ exceptions into
+# structured Promise errors, so do not propagate CEF's _HAS_EXCEPTIONS=0
+# policy into NativeWeb-owned backend/host targets.
+if(MSVC)
+  list(REMOVE_ITEM CEF_COMPILER_DEFINES _HAS_EXCEPTIONS=0)
+endif()
+
 add_library(nativeweb_cef_backend STATIC
   "${NATIVEWEB_ROOT}/src/browser/cef/cef_value_converter.cpp"
   "${NATIVEWEB_ROOT}/src/browser/cef/cef_renderer_app.cpp"
@@ -97,6 +105,9 @@ SET_LIBRARY_TARGET_PROPERTIES(nativeweb_cef_backend)
 
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
   target_compile_options(nativeweb_cef_backend PRIVATE -frtti -fexceptions)
+elseif(MSVC)
+  target_compile_options(nativeweb_cef_backend PRIVATE /EHsc)
+  target_compile_definitions(nativeweb_cef_backend PRIVATE _HAS_EXCEPTIONS=1)
 endif()
 
 target_link_libraries(nativeweb_cef_backend
@@ -129,6 +140,9 @@ SET_EXECUTABLE_TARGET_PROPERTIES(${TARGET})
 
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
   target_compile_options(${TARGET} PRIVATE -frtti -fexceptions)
+elseif(MSVC)
+  target_compile_options(${TARGET} PRIVATE /EHsc)
+  target_compile_definitions(${TARGET} PRIVATE _HAS_EXCEPTIONS=1)
 endif()
 
 target_link_libraries(${TARGET}
@@ -182,6 +196,9 @@ SET_EXECUTABLE_TARGET_PROPERTIES(${MULTI_TARGET})
 
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
   target_compile_options(${MULTI_TARGET} PRIVATE -frtti -fexceptions)
+elseif(MSVC)
+  target_compile_options(${MULTI_TARGET} PRIVATE /EHsc)
+  target_compile_definitions(${MULTI_TARGET} PRIVATE _HAS_EXCEPTIONS=1)
 endif()
 
 target_link_libraries(${MULTI_TARGET}

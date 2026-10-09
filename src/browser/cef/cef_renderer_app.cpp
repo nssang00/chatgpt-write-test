@@ -345,16 +345,6 @@ void CefRendererApp::OnContextCreated(
 
     static const char kWrapperScript[] =
         "(function(native,global){"
-        "const transportInvoke=native.invokeRaw;"
-        "const invokeRaw=(...args)=>transportInvoke(...args).then((value)=>{"
-        "if(value&&typeof value==='object'&&value.__nativeweb_error===true){"
-        "const error=new Error(String(value.code||'native_error')+': '+"
-        "String(value.message||'Native call failed'));"
-        "error.code=String(value.code||'native_error');"
-        "throw error;"
-        "}"
-        "return value;"
-        "});"
         "const wrap=(value)=>{"
         "if(!value||typeof value!=='object')return value;"
         "if(value instanceof ArrayBuffer)return value;"
@@ -369,10 +359,10 @@ void CefRendererApp::OnContextCreated(
         "if(p==='__nativewebObjectId')return t.id;"
         "if(p==='__nativewebType')return t.type;"
         "if(p==='dispose')return ()=>"
-        "invokeRaw('__native_object.release',t.id,t.type);"
+        "native.invokeRaw('__native_object.release',t.id,t.type);"
         "if(p in t)return t[p];"
         "if(typeof p!=='string')return undefined;"
-        "return (...args)=>invokeRaw("
+        "return (...args)=>native.invokeRaw("
         "'__native_object.call',t.id,t.type,p,...args"
         ").then(wrap);"
         "}});"
@@ -384,7 +374,7 @@ void CefRendererApp::OnContextCreated(
         "return value;"
         "};"
         "const invoke=(method,...args)=>"
-        "invokeRaw(method,...args).then(wrap);"
+        "native.invokeRaw(method,...args).then(wrap);"
         "native.invoke=invoke;"
         "native.on=(name,callback)=>"
         "native.onRaw(name,(payload)=>callback(wrap(payload)));"
@@ -749,28 +739,8 @@ bool CefRendererApp::OnProcessMessageReceived(
         const std::string errorMessage =
             args->GetString(3).ToString();
 
-        CefRefPtr<CefV8Value> errorValue =
-            CefV8Value::CreateObject(
-                nullptr,
-                nullptr);
-
-        errorValue->SetValue(
-            "__nativeweb_error",
-            CefV8Value::CreateBool(true),
-            V8_PROPERTY_ATTRIBUTE_READONLY);
-
-        errorValue->SetValue(
-            "code",
-            CefV8Value::CreateString(code),
-            V8_PROPERTY_ATTRIBUTE_READONLY);
-
-        errorValue->SetValue(
-            "message",
-            CefV8Value::CreateString(errorMessage),
-            V8_PROPERTY_ATTRIBUTE_READONLY);
-
-        pending.promise->ResolvePromise(
-            errorValue);
+        pending.promise->RejectPromise(
+            code + ": " + errorMessage);
     }
 
     pending.context->Exit();

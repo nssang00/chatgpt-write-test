@@ -4,7 +4,6 @@
 #include "core/worker_pool.hpp"
 
 #include <exception>
-#include <iostream>
 
 namespace nativeweb {
 namespace detail {
@@ -34,22 +33,9 @@ Any invokeBoundRequest(
     }
     catch (const Error& error)
     {
-#if defined(_WIN32)
-        std::cout
-            << "checkpoint: bridge-caught-error code="
-            << error.code()
-            << std::endl;
-#endif
-        const Any response =
-            makeErrorMessage(
-                requestId,
-                error);
-#if defined(_WIN32)
-        std::cout
-            << "checkpoint: bridge-made-error-envelope"
-            << std::endl;
-#endif
-        return response;
+        return makeErrorMessage(
+            requestId,
+            error);
     }
     catch (const std::exception& error)
     {
