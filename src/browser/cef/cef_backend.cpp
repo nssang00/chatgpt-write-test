@@ -144,6 +144,16 @@ void sendBridgeMessageToBrowser(
         return;
     }
 
+#if defined(_WIN32)
+    if (parsed.type == BridgeMessageType::Error)
+    {
+        std::cout
+            << "checkpoint: cef-error-post-start code="
+            << parsed.errorCode
+            << std::endl;
+    }
+#endif
+
     CefRefPtr<CefProcessMessage> cefMessage =
         CefProcessMessage::Create("nativeweb.response");
 
@@ -167,6 +177,15 @@ void sendBridgeMessageToBrowser(
     browser->GetMainFrame()->SendProcessMessage(
         PID_RENDERER,
         cefMessage);
+
+#if defined(_WIN32)
+    if (parsed.type == BridgeMessageType::Error)
+    {
+        std::cout
+            << "checkpoint: cef-error-post-finished"
+            << std::endl;
+    }
+#endif
 }
 
 } // namespace

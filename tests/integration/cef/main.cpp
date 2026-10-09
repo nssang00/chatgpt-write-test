@@ -192,6 +192,11 @@ public:
         webview_.bind(
             "test.rejectExpected",
             []() -> int {
+#if defined(_WIN32)
+                std::cout
+                    << "checkpoint: reject-before-throw"
+                    << std::endl;
+#endif
                 throw nativeweb::Error(
                     "expected_error",
                     "expected structured rejection");
