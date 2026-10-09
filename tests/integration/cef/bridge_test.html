@@ -192,11 +192,11 @@ window.ui = {
       return;
     }
 
+    await checkpoint("value-binary-ok");
+
     let eventSubscription = "";
     const eventPromise = new Promise((resolve) => {
-      await checkpoint("value-binary-ok");
-
-    eventSubscription = xytron.on(
+      eventSubscription = xytron.on(
         "test.event",
         (payload) => resolve(payload)
       );
