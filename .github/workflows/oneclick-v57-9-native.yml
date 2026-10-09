@@ -1,13 +1,14 @@
-name: OneClick v58.2 Runtime Promotion Gate
+name: OneClick v58.2.1 Overlay Cleanup Gate
 
 on:
   workflow_dispatch:
   push:
     branches:
-      - ci/oneclick-v58-2
+      - ci/oneclick-v58-2-1
     paths:
       - '.github/workflows/oneclick-v57-9-native.yml'
       - 'ci/v58.2-runtime/**'
+      - 'ci/v58.2.1-harness/**'
       - 'ci/v58-release/**'
 
 permissions:
@@ -42,6 +43,26 @@ jobs:
           "targetHarnessVersion=57.9.0" | Set-Content v579-harness-baseline.txt
           "nativeSourceSha256=3c752da814aabb4224c4ed84cd19c9fdf223cfef6def3691908c339e1b344382" | Add-Content v579-harness-baseline.txt
           "nativeBaseline=v57.8 (byte-identical Native tree)" | Add-Content v579-harness-baseline.txt
+
+      - name: Verify v58.2.1 stale overlay cleanup contract
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $base = Join-Path $env:RUNNER_TEMP 'overlay-cleanup-contract'
+          $pkg = Join-Path $base 'Package\com.company.webview'
+          $promoted = Join-Path $pkg 'Runtime\Backends\CEF\Native\Host'
+          $stale = Join-Path $pkg 'Prototypes\CefTexture\Native\Host'
+          New-Item -ItemType Directory -Force -Path $promoted,$stale | Out-Null
+          'runtime' | Set-Content (Join-Path $promoted 'CefRuntime.cpp')
+          'stale' | Set-Content (Join-Path $stale 'CefRuntime.cpp')
+          $json = & .\ci\v58.2.1-harness\overlay_cleanup_contract.ps1 -PackageRoot $pkg
+          $r = $json | ConvertFrom-Json
+          if (-not $r.removed -or $r.staleExists -or -not $r.promotedExists) { throw "Overlay cleanup did not remove only the stale prototype tree: $json" }
+          $protected = Join-Path $base 'protected\Package\com.company.webview'
+          New-Item -ItemType Directory -Force -Path (Join-Path $protected 'Prototypes\CefTexture') | Out-Null
+          $failed = $false
+          try { & .\ci\v58.2.1-harness\overlay_cleanup_contract.ps1 -PackageRoot $protected | Out-Host } catch { $failed = $true }
+          if (-not $failed) { throw 'Cleanup must refuse to delete stale prototype tree when promoted Runtime marker is missing.' }
 
       - name: Reconstruct exact v58.2 Runtime source
         shell: pwsh
@@ -198,7 +219,7 @@ jobs:
         if: ${{ always() }}
         shell: pwsh
         run: |
-          "## v58.2 Runtime Promotion exact-source gate" | Out-File $env:GITHUB_STEP_SUMMARY -Append
+          "## v58.2.1 Overlay Cleanup + Runtime exact-source gate" | Out-File $env:GITHUB_STEP_SUMMARY -Append
           "" | Out-File $env:GITHUB_STEP_SUMMARY -Append
           "- Payload SHA-256 verified" | Out-File $env:GITHUB_STEP_SUMMARY -Append
           "- Native x64 clean build" | Out-File $env:GITHUB_STEP_SUMMARY -Append
@@ -210,7 +231,7 @@ jobs:
         if: ${{ always() }}
         uses: actions/upload-artifact@v4
         with:
-          name: oneclick-v58-2-runtime-promotion-gate
+          name: oneclick-v58-2-1-overlay-cleanup-gate
           path: |
             results/
             payload-sha256.txt
