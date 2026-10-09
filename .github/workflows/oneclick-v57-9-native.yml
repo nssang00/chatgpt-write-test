@@ -1,16 +1,17 @@
-name: OneClick v58.2.3 Refresh Diagnostic Gate
+name: OneClick v58.2.4 Managed Runtime Wiring Gate
 
 on:
   workflow_dispatch:
   push:
     branches:
-      - ci/oneclick-v58-2-3
+      - ci/oneclick-v58-2-4
     paths:
       - '.github/workflows/oneclick-v57-9-native.yml'
       - 'ci/v58.2-runtime/**'
       - 'ci/v58.2.1-harness/**'
       - 'ci/v58.2.2-harness/**'
       - 'ci/v58.2.3-harness/**'
+      - 'ci/v58.2.4-managed/**'
       - 'ci/v58-release/**'
 
 permissions:
@@ -88,6 +89,20 @@ jobs:
             throw "Refresh diagnostic contract regressed: $json"
           }
           if ($r.failureCode -ne 'REFRESH_GPU_PROCESS_CRASH') { throw "Unexpected refresh failure code: $json" }
+
+      - name: Verify v58.2.4 managed API consistency contract
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $contract = Get-Content 'ci/v58.2.4-managed/managed-api-contract.json' -Raw | ConvertFrom-Json
+          if ($contract.harnessVersion -ne '58.2.4') { throw "Unexpected managed contract version: $($contract.harnessVersion)" }
+          if (@($contract.missing).Count -ne 0) { throw "Managed API contract has unresolved facade calls: $($contract.missing -join ', ')" }
+          foreach ($required in @('CefTextureSurface_GetGpuAdapterDiagnostics','CefTextureSurface_GetStats','CefTextureSurface_GetUnityTexture')) {
+            if (@($contract.requiredForwarders) -notcontains $required) { throw "Missing required managed forwarder: $required" }
+          }
+          if ($contract.webViewRuntimeSha256 -ne 'f568ba150a2ab87b0bb6298f0364597a6c53e668774b8d74e24b19b2387b8134') {
+            throw "Managed facade source hash mismatch."
+          }
 
       - name: Reconstruct exact v58.2 Runtime source
         shell: pwsh
@@ -244,7 +259,7 @@ jobs:
         if: ${{ always() }}
         shell: pwsh
         run: |
-          "## v58.2.3 Refresh Diagnostic + Runtime exact-source gate" | Out-File $env:GITHUB_STEP_SUMMARY -Append
+          "## v58.2.4 Managed Wiring + Runtime exact-source gate" | Out-File $env:GITHUB_STEP_SUMMARY -Append
           "" | Out-File $env:GITHUB_STEP_SUMMARY -Append
           "- Payload SHA-256 verified" | Out-File $env:GITHUB_STEP_SUMMARY -Append
           "- Native x64 clean build" | Out-File $env:GITHUB_STEP_SUMMARY -Append
@@ -256,7 +271,7 @@ jobs:
         if: ${{ always() }}
         uses: actions/upload-artifact@v4
         with:
-          name: oneclick-v58-2-3-refresh-diagnostic-gate
+          name: oneclick-v58-2-4-managed-wiring-gate
           path: |
             results/
             payload-sha256.txt
