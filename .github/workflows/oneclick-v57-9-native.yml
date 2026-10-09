@@ -1,14 +1,15 @@
-name: OneClick v58.2.1 Overlay Cleanup Gate
+name: OneClick v58.2.2 Build Path Gate
 
 on:
   workflow_dispatch:
   push:
     branches:
-      - ci/oneclick-v58-2-1
+      - ci/oneclick-v58-2-2
     paths:
       - '.github/workflows/oneclick-v57-9-native.yml'
       - 'ci/v58.2-runtime/**'
       - 'ci/v58.2.1-harness/**'
+      - 'ci/v58.2.2-harness/**'
       - 'ci/v58-release/**'
 
 permissions:
@@ -63,6 +64,18 @@ jobs:
           $failed = $false
           try { & .\ci\v58.2.1-harness\overlay_cleanup_contract.ps1 -PackageRoot $protected | Out-Host } catch { $failed = $true }
           if (-not $failed) { throw 'Cleanup must refuse to delete stale prototype tree when promoted Runtime marker is missing.' }
+
+      - name: Verify v58.2.2 bundle-root build path contract
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $base = Join-Path $env:RUNNER_TEMP 'build-path-contract'
+          $tools = Join-Path $base 'Tools'
+          New-Item -ItemType Directory -Force -Path $tools | Out-Null
+          'Write-Host contract' | Set-Content (Join-Path $tools 'Build-CefWindowsX64.ps1')
+          $json = & .\ci\v58.2.2-harness\build_path_contract.ps1 -BundleRoot $base
+          $r = $json | ConvertFrom-Json
+          if (-not $r.bundleRootTools -or $r.packageInternalTools) { throw "Unexpected build path contract result: $json" }
 
       - name: Reconstruct exact v58.2 Runtime source
         shell: pwsh
@@ -219,7 +232,7 @@ jobs:
         if: ${{ always() }}
         shell: pwsh
         run: |
-          "## v58.2.1 Overlay Cleanup + Runtime exact-source gate" | Out-File $env:GITHUB_STEP_SUMMARY -Append
+          "## v58.2.2 Build Path + Runtime exact-source gate" | Out-File $env:GITHUB_STEP_SUMMARY -Append
           "" | Out-File $env:GITHUB_STEP_SUMMARY -Append
           "- Payload SHA-256 verified" | Out-File $env:GITHUB_STEP_SUMMARY -Append
           "- Native x64 clean build" | Out-File $env:GITHUB_STEP_SUMMARY -Append
@@ -231,7 +244,7 @@ jobs:
         if: ${{ always() }}
         uses: actions/upload-artifact@v4
         with:
-          name: oneclick-v58-2-1-overlay-cleanup-gate
+          name: oneclick-v58-2-2-build-path-gate
           path: |
             results/
             payload-sha256.txt
