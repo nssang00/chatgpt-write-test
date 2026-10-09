@@ -3,7 +3,7 @@ import { Alert, Button, Card, Input, Switch, Table, Typography } from 'antd';
 import { expandBlueprint,readPath,scopedPath,writePath } from './blueprint.mjs';
 
 /** JSON is declarative data. All executable behavior comes from trusted React controls/actions. */
-export function DynamicView({blueprint,definitions={},data,onDataChange,actions={}}) {
+export function DynamicView({blueprint,definitions={},reactComponents={},data,onDataChange,actions={}}) {
   let tree;
   try { tree=expandBlueprint(blueprint,definitions); }
   catch(e){return <Alert showIcon type="error" message="Blueprint error" description={e.message}/>;}
@@ -42,7 +42,25 @@ export function DynamicView({blueprint,definitions={},data,onDataChange,actions=
           <Table size="small" rowKey={(r,i)=>r.id??i} dataSource={list} columns={columns} pagination={false}/>
         </Card>;
       }
-      default:return <Alert key={key} type="error" message={'Unknown component: '+node.type}/>;
+      default:{
+        const External=reactComponents[node.type];
+        if(!External)return <Alert key={key} type="error" message={'React component not installed: '+node.type}/>;
+        const manifest=definitions[node.type]?.manifest??{};
+        const extProps={...p};
+        for(const [port,path] of Object.entries(node.bind||{})){
+          const spec=manifest.bindings?.[port];
+          if(spec){
+            extProps[spec.prop]=readPath(data,scopedPath(node.scope,path));
+            if(spec.change)extProps[spec.change]=value=>change(port,value);
+          }
+        }
+        for(const [evt,name] of Object.entries(node.on||{})){
+          const callback=manifest.events?.[evt];
+          if(callback&&typeof actions[name]==='function')
+            extProps[callback]=(...args)=>actions[name]({data,scope:node.scope,args});
+        }
+        return <External key={key} {...extProps}>{children?.length?children:undefined}</External>;
+      }
     }
   };
   return <div className="render-root">{render(tree)}</div>;
