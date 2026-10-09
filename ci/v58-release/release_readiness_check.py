@@ -28,7 +28,7 @@ for unwanted in ['Tests','Validation','Tools']:
     check(f'RELEASE_EXCLUDES_{unwanted.upper()}', not (pkg/unwanted).exists(), f'Final release package must exclude {unwanted}/.', warning=True)
 licenses=[p.name for p in pkg.iterdir() if p.is_file() and p.name.lower().startswith(('license','notice','third'))]
 check('LICENSE_NOTICE_PRESENT', bool(licenses), 'No LICENSE/NOTICE/THIRD_PARTY file found in package root.', blocker=True)
-report={'schemaVersion':1,'harnessVersion':'58.2.3','releaseReady':len(blockers)==0,'status':('READY' if not blockers else ('BLOCKED_RUNTIME_PROMOTION' if any(b['code'] in ('RUNTIME_CEF_BACKEND_IMPLEMENTED','PUBLIC_WEBVIEW_API_IMPLEMENTED','VALIDATED_IMPLEMENTATION_PROMOTED_FROM_PROTOTYPES') for b in blockers) else 'BLOCKED_RELEASE_METADATA')),'blockers':blockers,'warnings':warnings,'checks':checks,'policy':{'finalReleaseExcludes':['Tests','Validation','Tools'],'prototypeCodeAllowedInFinalRelease':False,'validatedImplementationMustBeInRuntime':True}}
+report={'schemaVersion':1,'harnessVersion':'58.2.4','releaseReady':len(blockers)==0,'status':('READY' if not blockers else ('BLOCKED_RUNTIME_PROMOTION' if any(b['code'] in ('RUNTIME_CEF_BACKEND_IMPLEMENTED','PUBLIC_WEBVIEW_API_IMPLEMENTED','VALIDATED_IMPLEMENTATION_PROMOTED_FROM_PROTOTYPES') for b in blockers) else 'BLOCKED_RELEASE_METADATA')),'blockers':blockers,'warnings':warnings,'checks':checks,'policy':{'finalReleaseExcludes':['Tests','Validation','Tools'],'prototypeCodeAllowedInFinalRelease':False,'validatedImplementationMustBeInRuntime':True}}
 out=root/'release-readiness-report.json'
 out.write_text(json.dumps(report,indent=2,ensure_ascii=False),encoding='utf-8')
 print(json.dumps(report,indent=2,ensure_ascii=False))
