@@ -65,6 +65,14 @@ export function validateBlueprint(input,definitions={}, {maxNodes=300,maxDepth=3
       if(!isRecord(def)){errors.push('Invalid component definition: '+node.type);return;}
       if(def.kind==='react'){
         if(!isRecord(def.manifest))errors.push('Missing React component manifest: '+node.type);
+        else{
+          for(const p of Object.keys(node.props??{}))
+            if(!Object.hasOwn(def.manifest.props??{},p))errors.push('Unknown React prop: '+node.type+'.'+p);
+          for(const p of Object.keys(node.bind??{}))
+            if(!Object.hasOwn(def.manifest.bindings??{},p))errors.push('Unknown React binding: '+node.type+'.'+p);
+          for(const e of Object.keys(node.on??{}))
+            if(!Object.hasOwn(def.manifest.events??{},e))errors.push('Unknown React event: '+node.type+'.'+e);
+        }
       }else{
         if(!isRecord(def.root)){errors.push('Invalid component definition: '+node.type);return;}
         visit(def.root,depth+1,[...ancestry,node.type]);

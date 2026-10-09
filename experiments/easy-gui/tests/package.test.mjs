@@ -64,3 +64,11 @@ test('regression: nested composites keep independent data scopes',()=>{
   assert.equal(tree.children[0].children[0].scope,'customerA.shipping');
   assert.equal(tree.children[1].children[0].scope,'customerB.shipping');
 });
+
+test('security: dynamic React blocks accept only manifest-declared props and ports',()=>{
+  const d={Badge:defineReactComponent('Badge',()=>null,meta).definition};
+  assert.equal(validateBlueprint({type:'Badge',props:{label:'A'}},d).valid,true);
+  assert.match(validateBlueprint({type:'Badge',props:{dangerouslySetInnerHTML:{__html:'x'}}},d).errors.join(','),/Unknown React prop/);
+  assert.match(validateBlueprint({type:'Badge',bind:{notDeclared:'shipping.name'}},d).errors.join(','),/Unknown React binding/);
+  assert.match(validateBlueprint({type:'Badge',on:{click:'save'}},d).errors.join(','),/Unknown React event/);
+});

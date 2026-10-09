@@ -10,6 +10,8 @@ const forbidden=new Set(['__proto__','prototype','constructor']);
 export function validateManifest(manifest){
   const errors=[];
   if(!record(manifest))return ['Manifest must be an object'];
+  if(!record(manifest.props??{})||!record(manifest.bindings??{})||!record(manifest.events??{}))
+    return ['Manifest props, bindings, events must be objects'];
   for(const [key,spec] of Object.entries(manifest.props??{})){
     if(!validName(key)||!record(spec)||!propTypes.has(spec.type))errors.push('Invalid prop descriptor: '+key);
     if(spec?.type==='enum'&&(!Array.isArray(spec.options)||spec.options.some(x=>typeof x!=='string')))errors.push('Invalid enum options: '+key);
@@ -24,7 +26,7 @@ export function validateManifest(manifest){
 }
 export function defineReactComponent(name, component, manifest={props:{}}){
   if(!validName(name)||BUILTINS.includes(name))throw new Error('Invalid React component name');
-  if(typeof component!=='function'&&typeof component!=='object')throw new Error('React component must be a component value');
+  if(typeof component!=='function'&&(typeof component!=='object'||component===null))throw new Error('React component must be a component value');
   const errors=validateManifest(manifest);
   if(errors.length)throw new Error(errors.join('; '));
   return {name,definition:{kind:'react',manifest},component};
