@@ -1,15 +1,16 @@
-name: OneClick v58.2.2 Build Path Gate
+name: OneClick v58.2.3 Refresh Diagnostic Gate
 
 on:
   workflow_dispatch:
   push:
     branches:
-      - ci/oneclick-v58-2-2
+      - ci/oneclick-v58-2-3
     paths:
       - '.github/workflows/oneclick-v57-9-native.yml'
       - 'ci/v58.2-runtime/**'
       - 'ci/v58.2.1-harness/**'
       - 'ci/v58.2.2-harness/**'
+      - 'ci/v58.2.3-harness/**'
       - 'ci/v58-release/**'
 
 permissions:
@@ -76,6 +77,17 @@ jobs:
           $json = & .\ci\v58.2.2-harness\build_path_contract.ps1 -BundleRoot $base
           $r = $json | ConvertFrom-Json
           if (-not $r.bundleRootTools -or $r.packageInternalTools) { throw "Unexpected build path contract result: $json" }
+
+      - name: Verify v58.2.3 non-gating refresh diagnostic contract
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $json = & .\ci\v58.2.3-harness\refresh_diagnostic_contract.ps1 -ExitCode 33 -GpuCrash $true
+          $r = $json | ConvertFrom-Json
+          if ($r.gating -ne $false -or $r.continuedToFullSuite -ne $true -or $r.shouldAbort -ne $false -or $r.status -ne 'WARN') {
+            throw "Refresh diagnostic contract regressed: $json"
+          }
+          if ($r.failureCode -ne 'REFRESH_GPU_PROCESS_CRASH') { throw "Unexpected refresh failure code: $json" }
 
       - name: Reconstruct exact v58.2 Runtime source
         shell: pwsh
@@ -232,7 +244,7 @@ jobs:
         if: ${{ always() }}
         shell: pwsh
         run: |
-          "## v58.2.2 Build Path + Runtime exact-source gate" | Out-File $env:GITHUB_STEP_SUMMARY -Append
+          "## v58.2.3 Refresh Diagnostic + Runtime exact-source gate" | Out-File $env:GITHUB_STEP_SUMMARY -Append
           "" | Out-File $env:GITHUB_STEP_SUMMARY -Append
           "- Payload SHA-256 verified" | Out-File $env:GITHUB_STEP_SUMMARY -Append
           "- Native x64 clean build" | Out-File $env:GITHUB_STEP_SUMMARY -Append
@@ -244,7 +256,7 @@ jobs:
         if: ${{ always() }}
         uses: actions/upload-artifact@v4
         with:
-          name: oneclick-v58-2-2-build-path-gate
+          name: oneclick-v58-2-3-refresh-diagnostic-gate
           path: |
             results/
             payload-sha256.txt
