@@ -5,10 +5,12 @@
 #include "core/bridge_message.hpp"
 #include "include/cef_process_message.h"
 #include "include/cef_render_handler.h"
+#include "include/cef_request_handler.h"
 #include "include/cef_task.h"
 
 #include <cstdint>
 #include <functional>
+#include <iostream>
 #include <sstream>
 #include <stdexcept>
 
@@ -173,7 +175,8 @@ class CefBackend::Client :
     public CefClient,
     public CefLifeSpanHandler,
     public CefLoadHandler,
-    public CefRenderHandler
+    public CefRenderHandler,
+    public CefRequestHandler
 {
 public:
     explicit Client(CefBackend* owner)
@@ -194,6 +197,29 @@ public:
     CefRefPtr<CefRenderHandler> GetRenderHandler() override
     {
         return this;
+    }
+
+    CefRefPtr<CefRequestHandler> GetRequestHandler() override
+    {
+        return this;
+    }
+
+    void OnRenderProcessTerminated(
+        CefRefPtr<CefBrowser> browser,
+        TerminationStatus status,
+        int errorCode,
+        const CefString& errorString) override
+    {
+        std::cerr
+            << "cef-renderer-terminated: browser="
+            << (browser ? browser->GetIdentifier() : -1)
+            << " status="
+            << static_cast<int>(status)
+            << " error="
+            << errorCode
+            << " message="
+            << errorString.ToString()
+            << std::endl;
     }
 
     void OnAfterCreated(

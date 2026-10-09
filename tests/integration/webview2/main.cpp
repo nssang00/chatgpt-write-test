@@ -115,6 +115,12 @@ public:
             return maxConcurrentCalls_.load();
         });
 
+        webview_.bind("test.rejectExpected", []() -> int {
+            throw nativeweb::Error(
+                "expected_error",
+                "expected structured rejection");
+        });
+
         webview_.bind("test.checkpoint", [](const std::string& name) {
             std::cout
                 << "checkpoint: "

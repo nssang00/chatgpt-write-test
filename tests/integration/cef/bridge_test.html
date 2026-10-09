@@ -220,6 +220,26 @@ window.ui = {
 
     await checkpoint("events-ok");
 
+    let expectedStructuredRejected = false;
+
+    try {
+      await xytron.test.rejectExpected();
+    } catch (error) {
+      const text = String(error);
+      expectedStructuredRejected =
+        text.includes("expected_error") &&
+        text.includes("expected structured rejection");
+    }
+
+    if (!expectedStructuredRejected) {
+      await fail(
+        "expected structured rejection did not reject Promise"
+      );
+      return;
+    }
+
+    await checkpoint("generic-error-reject-ok");
+
     const camera =
       await xytron.camera.open();
 
