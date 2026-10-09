@@ -84,6 +84,20 @@ jobs:
           & $exe "--no-sandbox" "--url=$url"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
+      - name: Dump Windows CEF diagnostics
+        if: failure()
+        shell: pwsh
+        run: |
+          Write-Host "=== CEF diagnostic logs ==="
+          Get-ChildItem -Path . -Recurse -File -Include "*.log","*.dmp" -ErrorAction SilentlyContinue | ForEach-Object {
+            Write-Host "--- $($_.FullName) ---"
+            if ($_.Extension -eq ".log") {
+              Get-Content $_.FullName -Tail 400 -ErrorAction SilentlyContinue
+            } else {
+              Write-Host "dump-size=$($_.Length)"
+            }
+          }
+
       - name: Run real Windows CEF multi-WebView isolation
         shell: pwsh
         timeout-minutes: 5

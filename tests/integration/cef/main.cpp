@@ -594,7 +594,13 @@ int main(int argc, char* argv[])
     CefSettings settings;
     settings.no_sandbox = true;
     settings.windowless_rendering_enabled = true;
+#if defined(_WIN32)
+    CefString(&settings.log_file) =
+        "nativeweb-cef-windows.log";
+    settings.log_severity = LOGSEVERITY_INFO;
+#else
     settings.log_severity = LOGSEVERITY_WARNING;
+#endif
 
     nativeweb::detail::registerCefBackendFactory();
 

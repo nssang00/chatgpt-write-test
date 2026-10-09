@@ -3,6 +3,7 @@
 #include "browser/cef/cef_value_converter.hpp"
 #include "include/cef_process_message.h"
 
+#include <iostream>
 #include <sstream>
 #include <vector>
 
@@ -738,8 +739,27 @@ bool CefRendererApp::OnProcessMessageReceived(
         const std::string errorMessage =
             args->GetString(3).ToString();
 
-        pending.promise->RejectPromise(
-            code + ": " + errorMessage);
+#if defined(_WIN32)
+        std::cerr
+            << "cef-renderer-reject-before: id="
+            << id
+            << " code="
+            << code
+            << std::endl;
+#endif
+
+        const bool rejected =
+            pending.promise->RejectPromise(
+                code + ": " + errorMessage);
+
+#if defined(_WIN32)
+        std::cerr
+            << "cef-renderer-reject-after: id="
+            << id
+            << " ok="
+            << (rejected ? "true" : "false")
+            << std::endl;
+#endif
     }
 
     pending.context->Exit();
