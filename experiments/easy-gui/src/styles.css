@@ -1,0 +1,31 @@
+*{box-sizing:border-box}html,body,#root{min-height:100%;margin:0}
+body{font-family:system-ui,sans-serif;background:#f3f6fa;color:#233047}
+.studio{min-height:100vh}.studio header{background:white;border-bottom:1px solid #dde4ed;min-height:60px;
+ display:flex;align-items:center;justify-content:space-between;padding:12px 20px;gap:14px;flex-wrap:wrap}
+.studio header strong{font-size:18px}.studio header small{color:#8994a2;margin-left:12px}
+.file-button{display:inline-block;padding:4px 11px;font-size:12px;line-height:24px;background:#fff;
+ border:1px solid #d9d9d9;border-radius:6px;cursor:pointer}
+.workbench{display:grid;grid-template-columns:200px minmax(350px,1fr) 230px;max-width:1600px;margin:auto;min-height:525px}
+.toolbox,.inspector{background:white;padding:16px;border-right:1px solid #e1e6ee}
+.inspector{border-left:1px solid #e1e6ee;border-right:0}
+.toolbox h3,.inspector h3{margin:0 0 16px}.toolbox h4{margin:10px 0}
+.toolbox small{color:#6c7b8e}.controls{display:grid;gap:5px;margin:12px 0}
+.controls .ant-btn{text-align:left}
+.tree-node{display:block;text-align:left;width:100%;border:0;background:none;cursor:pointer;
+ padding:7px;font-size:12px;border-radius:5px}
+.tree-node.active,.tree-node:hover{background:#eaf3ff}
+.tree-node small{color:#8796a8;margin-left:4px}
+.workbench main{padding:18px;min-width:0}
+.preview-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
+.preview{background:white;min-height:430px;border:1px solid #dee6f0;border-radius:12px;padding:24px;overflow:auto}
+.easy-column{display:flex;flex-direction:column}.easy-row{display:flex;flex-wrap:wrap;align-items:start}
+.easy-row>*{flex:1;min-width:180px}.easy-field{display:flex;flex-direction:column;gap:7px;font-size:13px}
+.easy-switch{display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:13px;padding:6px 0}
+.inspector label{display:flex;flex-direction:column;gap:5px;font-size:12px;color:#687588;margin:14px 0}
+.inspector .ant-btn-dangerous{margin-top:12px}
+.bottom{margin:8px auto;max-width:1540px;background:white;border-radius:9px;padding:18px 24px}
+.bottom pre{white-space:pre-wrap;overflow:auto;background:#f5f7fb;padding:14px;font-size:12px}
+.bottom .ant-btn{margin-bottom:8px}
+.studio footer{text-align:center;padding:14px;color:#91a0ad;font-size:11px}
+@media(max-width:900px){.workbench{grid-template-columns:160px 1fr}.inspector{grid-column:1/-1;border-top:1px solid #ddd}}
+@media(max-width:560px){.workbench{grid-template-columns:1fr}.preview{padding:12px}}

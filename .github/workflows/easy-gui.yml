@@ -1,0 +1,46 @@
+name: Easy GUI Studio CI
+on:
+  pull_request:
+    paths:
+      - 'experiments/easy-gui/**'
+      - '.github/workflows/easy-gui.yml'
+  push:
+    branches:
+      - main
+      - 'feature/**'
+    paths:
+      - 'experiments/easy-gui/**'
+      - '.github/workflows/easy-gui.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: gui-${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: experiments/easy-gui
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+      - name: Unit tests
+        run: npm run test:unit
+      - name: Smoke tests
+        run: npm run test:smoke
+      - name: Regression tests
+        run: npm run test:regression
+      - name: React production build
+        run: npm run build
