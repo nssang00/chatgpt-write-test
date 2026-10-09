@@ -1,53 +1,62 @@
-# Easy GUI Studio (PoC)
+# Easy GUI Studio — React component composition PoC
 
-**Purpose:** enable MFC/WPF and React beginners to use existing React UI components quickly, without introducing a new UI renderer. This is an isolated experiment; NativeWeb C++ code remains unchanged.
+An isolated React + Ant Design experiment alongside the NativeWeb C++ runtime. Existing native sources are unchanged.
 
-## Start
+## Quick start
 
-From this directory:
+```bash
+cd experiments/easy-gui
+npm install
+npm run dev
+```
 
-    npm install
-    npm run dev
+Use Toolbox to select existing UI controls and trusted React components, edit props/bindings, and preview immediately. The same AddressEditor block is used twice with independent shipping/billing data.
 
-Open the Vite local URL. Edit in the visual catalog/property panel or the JSON editor; each change updates a real React + Ant Design preview. Two reusable AddressEditor instances bind independently to shipping and billing data.
+## Register an existing React component
 
-## Generate a project
+Any ordinary React component works in code, without an Easy GUI dependency. To expose it in Designer/JSON, import and register it in `src/code-components.jsx`:
 
-    npm run create -- ../my-app
-    cd ../my-app
-    npm install
-    npm run dev
+```jsx
+const registered=defineReactComponent('StatusBadge',StatusBadge,{
+  props:{label:{type:'string',default:'상태'},tone:{type:'enum',options:['blue','green'],default:'green'}},
+  bindings:{active:{prop:'active'}}
+});
+```
 
-The scaffolder refuses to overwrite an existing directory.
+The `StatusBadge` example itself lives in `src/custom/StatusBadge.jsx` and uses an actual Ant Design Tag. Its manifest is for editor discoverability. React code always comes from trusted build-time imports, not remote JSON.
+
+## Export a composite and install it in another project
+
+Choose **컴포넌트 패키지** in the Studio; save `MySharedScreen.easygui.json`.
+In a separate project created with `npm run create -- ../my-app`:
+
+```bash
+cd ../my-app
+npm run components -- add /path/to/MySharedScreen.easygui.json
+npm install
+npm run dev
+```
+
+The CLI merges versioned, validated definitions into `src/installed-components.json`. Composites appear in the Toolbox on startup. The installer rejects unknown components, recursion, unsafe property keys, and version/name conflicts. A bundle referencing a code component declares it in `requires.react`; the receiving app must separately import that code into `src/code-components.jsx`.
+
+Studio's **JSON 가져오기** also recognizes portable component bundles. Downloaded JSON never executes JavaScript.
 
 ## Tests
 
-    npm run test:unit
-    npm run test:smoke
-    npm run test:regression
-    npm run build
+```bash
+npm run test:unit
+npm run test:smoke
+npm run test:regression
+npm run build
+npx playwright install chromium
+npm run test:e2e
+```
 
-Node built-in tests can run offline. The production React build requires npm dependencies. GitHub Actions runs all four commands on Ubuntu and Windows.
+GitHub Actions runs Node tests and build on Ubuntu/Windows and Chromium e2e on Ubuntu.
 
-## Concepts
+## Limits
 
-- JSX: ordinary React/AntD components remain available, with no registration requirement.
-- Blueprint: a limited, data-only JSON tree resolves pre-approved components and actions.
-- Composite: a published blueprint becomes another Toolbox component; copies have independent data scopes.
-- Export/import: JSON bundle includes the blueprint and local component definitions.
-- No arbitrary JavaScript in JSON; no eval or arbitrary remote packages at runtime.
-
-## Current limits
-
-- Visual editing uses add/select/edit/remove, not yet full drag-and-drop nesting.
-- 'Publish' registers a component in the **current Studio session**, not a hosted registry or npm.
-- Code tab explains integration, not full JSX round-trip generation.
-- Default AntD is replaceable in principle, but a second renderer is not yet built.
-- No actual persistence backend; sample Save events show the selected model.
-
-## Next
-
-1. Component manifest and safe third-party React component registration.
-2. Nested drag-and-drop designer, typed binding editor, action editor, undo/redo.
-3. Persisted component packages and cross-project dependency/version resolution.
-4. NativeWeb bridge template and real API/CRUD integration.
+- Local JSON package transfer works; no remote marketplace, npm publish or untrusted runtime code loading.
+- Visual edit currently supports add/select/inspect/remove, not nested drag/drop or undo.
+- No full JSX ↔ JSON transformation. Advanced React remains unrestricted.
+- Default control adapter is AntD; a second adapter has not been verified.

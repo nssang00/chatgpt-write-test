@@ -7,12 +7,22 @@
     "dev": "vite --host 127.0.0.1",
     "build": "vite build",
     "test": "npm run test:unit && npm run test:smoke && npm run test:regression",
-    "test:unit": "node --test tests/unit.test.mjs",
+    "test:unit": "node --test tests/unit.test.mjs tests/package.test.mjs",
     "test:smoke": "node --test tests/smoke.test.mjs",
     "test:regression": "node --test tests/regression.test.mjs",
-    "create": "node scripts/create.mjs"
+    "create": "node scripts/create.mjs",
+    "components": "node scripts/components.mjs"
   },
-  "dependencies": { "react": "^19.1.1", "react-dom": "^19.1.1", "antd": "^5.27.0" },
-  "devDependencies": { "vite": "^7.1.0", "@vitejs/plugin-react": "^5.0.0" },
-  "engines": { "node": ">=20.19.0" }
+  "dependencies": {
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1",
+    "antd": "^5.27.0"
+  },
+  "devDependencies": {
+    "vite": "^7.1.0",
+    "@vitejs/plugin-react": "^5.0.0"
+  },
+  "engines": {
+    "node": ">=20.19.0"
+  }
 }

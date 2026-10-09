@@ -24,3 +24,25 @@ test('smoke: entrypoint renders real AntD components',async()=>{
   assert.match(main,/createRoot/);
   assert.match(main,/validateBlueprint/);
 });
+
+test('smoke: generated project can install a portable component package',async()=>{
+  const {createComponentBundle}=await import('../src/component-kit.mjs');
+  const {initialDefinitions}=await import('../src/examples.mjs');
+  const temp=await mkdtemp(path.join(tmpdir(),'easy-gui-package-'));
+  const target=path.join(temp,'consumer');
+  try{
+    const gen=spawnSync(process.execPath,[path.join(project,'scripts/create.mjs'),target],{encoding:'utf8'});
+    assert.equal(gen.status,0,gen.stderr);
+    const bundle=createComponentBundle('SharedAddress',{type:'AddressEditor',scope:'shipping'},initialDefinitions);
+    const file=path.join(temp,'SharedAddress.easygui.json');
+    const {writeFile}=await import('node:fs/promises');
+    await writeFile(file,JSON.stringify(bundle),'utf8');
+    const added=spawnSync(process.execPath,[path.join(target,'scripts/components.mjs'),'add',file],{encoding:'utf8'});
+    assert.equal(added.status,0,added.stderr);
+    const installed=JSON.parse(await readFile(path.join(target,'src/installed-components.json'),'utf8'));
+    assert.ok(installed.SharedAddress&&installed.AddressEditor);
+    assert.equal(spawnSync(process.execPath,[path.join(target,'scripts/components.mjs'),'add',file],{encoding:'utf8'}).status,0);
+    const {expandBlueprint}=await import('../src/blueprint.mjs');
+    assert.equal(expandBlueprint({type:'SharedAddress'},installed).type,'Panel');
+  }finally{await rm(temp,{recursive:true,force:true});}
+});
