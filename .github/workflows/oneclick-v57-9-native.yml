@@ -7,7 +7,7 @@ on:
       - ci/oneclick-v58-2
     paths:
       - '.github/workflows/oneclick-v57-9-native.yml'
-      - 'ci/v57.8-native/**'
+      - 'ci/v58.2-runtime/**'
       - 'ci/v58-release/**'
 
 permissions:
@@ -22,7 +22,7 @@ jobs:
     env:
       CEF_VERSION: 154.0.28+g564dd6c+chromium-154.0.8037.58
       CEF_PLATFORM: windows64
-      PAYLOAD_SHA256: ad2eae30b606d4683f05b3c54fb51a5319dccfefe6039366107a38d9bd756c86
+      PAYLOAD_SHA256: 80453dc4c58e8ff8bc6fa62867aad08f033cb55550ff2e3b4e761ff9fc8218fe
 
     steps:
       - name: Checkout
@@ -43,62 +43,34 @@ jobs:
           "nativeSourceSha256=3c752da814aabb4224c4ed84cd19c9fdf223cfef6def3691908c339e1b344382" | Add-Content v579-harness-baseline.txt
           "nativeBaseline=v57.8 (byte-identical Native tree)" | Add-Content v579-harness-baseline.txt
 
-      - name: Reconstruct v57.8 native baseline source for v57.9 harness-only gate
+      - name: Reconstruct exact v58.2 Runtime source
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $parts = Get-ChildItem 'ci\v57.8-native\source-part*.b64' | Sort-Object Name
-          if ($parts.Count -ne 4) { throw "Expected 4 payload parts, found $($parts.Count)." }
+          $parts = Get-ChildItem 'ci\v58.2-runtime\source-part*.b64' | Sort-Object Name
+          if ($parts.Count -ne 3) { throw "Expected 3 payload parts, found $($parts.Count)." }
           $b64 = ($parts | ForEach-Object { (Get-Content $_.FullName -Raw).Trim() }) -join ''
-          $archive = Join-Path $env:RUNNER_TEMP 'v578_native_ci.tar.xz'
+          $archive = Join-Path $env:RUNNER_TEMP 'v582_runtime_ci.tar.xz'
           [IO.File]::WriteAllBytes($archive, [Convert]::FromBase64String($b64))
           $hash = (Get-FileHash $archive -Algorithm SHA256).Hash.ToLowerInvariant()
           "payloadSha256=$hash" | Tee-Object -FilePath "$env:GITHUB_WORKSPACE\payload-sha256.txt"
           if ($hash -ne $env:PAYLOAD_SHA256) { throw "Payload SHA-256 mismatch. Expected $env:PAYLOAD_SHA256, got $hash" }
           $source = Join-Path $env:GITHUB_WORKSPACE 'ci-source'
-          $unpack = Join-Path $env:RUNNER_TEMP 'v578-payload-unpack'
+          $unpack = Join-Path $env:RUNNER_TEMP 'v582-payload-unpack'
           New-Item -ItemType Directory -Force -Path $source,$unpack | Out-Null
-          $seven = 'C:\\Program Files\\7-Zip\\7z.exe'
-          if (-not (Test-Path $seven)) { throw "7-Zip not found: $seven" }
+          $seven = 'C:\Program Files\7-Zip\7z.exe'
           & $seven x $archive "-o$unpack" -y | Out-Host
           if ($LASTEXITCODE -ne 0) { throw "payload xz extraction failed: $LASTEXITCODE" }
           $tarFile = Get-ChildItem $unpack -Filter '*.tar' | Select-Object -First 1
           if (-not $tarFile) { throw 'payload xz extraction did not produce a tar file.' }
           & $seven x $tarFile.FullName "-o$source" -y | Out-Host
           if ($LASTEXITCODE -ne 0) { throw "payload tar extraction failed: $LASTEXITCODE" }
-          $config = Get-Content (Join-Path $source 'config.json') -Raw | ConvertFrom-Json
-          if ($config.harnessVersion -ne '57.8.0') { throw "Unexpected harness version: $($config.harnessVersion)" }
-          "harnessVersion=$($config.harnessVersion)" | Tee-Object -FilePath "$env:GITHUB_WORKSPACE\harness-version.txt"
-
-      - name: Re-layout validated source as v58.2 Runtime promotion
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Stop'
-          $source = Join-Path $env:GITHUB_WORKSPACE 'ci-source'
-          $pkg = Join-Path $source 'Package\com.company.webview'
-          $oldNative = Join-Path $pkg 'Prototypes\CefTexture\Native'
-          $runtimeNative = Join-Path $pkg 'Runtime\Backends\CEF\Native'
-          $validationSmoke = Join-Path $pkg 'Validation\CefTexture\NativeSmoke'
-          if (-not (Test-Path $oldNative)) { throw "Baseline native tree missing: $oldNative" }
-          New-Item -ItemType Directory -Force -Path (Split-Path $runtimeNative -Parent),(Split-Path $validationSmoke -Parent) | Out-Null
-          Move-Item -Path (Join-Path $oldNative 'Smoke') -Destination $validationSmoke
-          Move-Item -Path $oldNative -Destination $runtimeNative
-          $cmakePath = Join-Path $runtimeNative 'CMakeLists.txt'
-          $cmake = Get-Content $cmakePath -Raw
-          $cmake = $cmake.Replace('project(CompanyWebViewCefTexturePrototype LANGUAGES CXX)','project(CompanyWebViewCefRuntime LANGUAGES CXX)')
-          $cmake = $cmake.Replace('set(PROTOTYPE_STAGE_DIR "${CMAKE_BINARY_DIR}/stage" CACHE PATH "Prototype staging output")','set(WEBVIEW_STAGE_DIR "${CMAKE_BINARY_DIR}/stage" CACHE PATH "Runtime staging output")' + [Environment]::NewLine + 'set(WEBVIEW_VALIDATION_SMOKE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../../../Validation/CefTexture/NativeSmoke")')
-          $cmake = $cmake.Replace('Smoke/main.cpp','${WEBVIEW_VALIDATION_SMOKE_DIR}/main.cpp')
-          $cmake = $cmake.Replace('Smoke/export_check.cpp','${WEBVIEW_VALIDATION_SMOKE_DIR}/export_check.cpp')
-          $cmake = $cmake.Replace('Smoke/native_refresh_control.cpp','${WEBVIEW_VALIDATION_SMOKE_DIR}/native_refresh_control.cpp')
-          $cmake = $cmake.Replace('Smoke/d3d11_copy_benchmark.cpp','${WEBVIEW_VALIDATION_SMOKE_DIR}/d3d11_copy_benchmark.cpp')
-          $cmake = $cmake.Replace('Smoke/dxgi_adapter_probe.cpp','${WEBVIEW_VALIDATION_SMOKE_DIR}/dxgi_adapter_probe.cpp')
-          $cmake = $cmake.Replace('${PROTOTYPE_STAGE_DIR}','${WEBVIEW_STAGE_DIR}')
-          $cmake = $cmake.Replace('PROTOTYPE_NATIVE_STAGE','WEBVIEW_NATIVE_STAGE').Replace('PROTOTYPE_RUNTIME_STAGE','WEBVIEW_RUNTIME_STAGE')
-          $cmake = $cmake.Replace('CefTexturePrototypeStage','CefRuntimeStage')
-          Set-Content -Path $cmakePath -Value $cmake -Encoding UTF8
-          if (Test-Path (Join-Path $pkg 'Prototypes\CefTexture\Native')) { throw 'Prototype native tree still exists after promotion.' }
-          if (-not (Test-Path (Join-Path $runtimeNative 'Host\CefRuntime.cpp'))) { throw 'Promoted CefRuntime.cpp missing.' }
-          if (-not (Test-Path (Join-Path $validationSmoke 'export_check.cpp'))) { throw 'Validation smoke source missing after split.' }
+          $runtimeNative = Join-Path $source 'Package\com.company.webview\Runtime\Backends\CEF\Native'
+          $validationSmoke = Join-Path $source 'Package\com.company.webview\Validation\CefTexture\NativeSmoke'
+          if (-not (Test-Path (Join-Path $runtimeNative 'Host\CefRuntime.cpp'))) { throw 'Exact Runtime native source missing.' }
+          if (-not (Test-Path (Join-Path $validationSmoke 'export_check.cpp'))) { throw 'Exact Validation smoke source missing.' }
+          if (Test-Path (Join-Path $source 'Package\com.company.webview\Prototypes')) { throw 'Prototype tree unexpectedly present.' }
+          "harnessVersion=58.2.0" | Tee-Object -FilePath "$env:GITHUB_WORKSPACE\harness-version.txt"
           "runtimePromotionLayout=PASS" | Set-Content "$env:GITHUB_WORKSPACE\runtime-promotion-layout.txt"
 
       - name: Download pinned CEF 154
@@ -226,7 +198,7 @@ jobs:
         if: ${{ always() }}
         shell: pwsh
         run: |
-          "## v58.2 Runtime Promotion first-pass gate" | Out-File $env:GITHUB_STEP_SUMMARY -Append
+          "## v58.2 Runtime Promotion exact-source gate" | Out-File $env:GITHUB_STEP_SUMMARY -Append
           "" | Out-File $env:GITHUB_STEP_SUMMARY -Append
           "- Payload SHA-256 verified" | Out-File $env:GITHUB_STEP_SUMMARY -Append
           "- Native x64 clean build" | Out-File $env:GITHUB_STEP_SUMMARY -Append
