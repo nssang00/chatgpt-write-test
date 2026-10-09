@@ -232,6 +232,8 @@ window.ui = {
       return;
     }
 
+    await checkpoint("native-object-open");
+
     const cameraValue =
       await camera.add(2);
 
@@ -242,6 +244,8 @@ window.ui = {
       );
       return;
     }
+
+    await checkpoint("native-object-add");
 
     const cameraName =
       await camera.name();
@@ -254,6 +258,8 @@ window.ui = {
       return;
     }
 
+    await checkpoint("native-object-name");
+
     const accepted =
       await xytron.camera.accept(camera);
 
@@ -264,6 +270,8 @@ window.ui = {
       return;
     }
 
+    await checkpoint("native-object-roundtrip");
+
     const released =
       await camera.dispose();
 
@@ -273,6 +281,8 @@ window.ui = {
       );
       return;
     }
+
+    await checkpoint("native-object-dispose");
 
     let releasedCallRejected = false;
 
@@ -292,6 +302,7 @@ window.ui = {
       return;
     }
 
+    await checkpoint("native-object-released-reject");
     await checkpoint("native-object-ok");
 
     let nativeExceptionRejected = false;
