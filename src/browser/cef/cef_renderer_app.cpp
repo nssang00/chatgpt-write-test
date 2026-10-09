@@ -759,6 +759,8 @@ bool CefRendererApp::OnProcessMessageReceived(
             << " ok="
             << (rejected ? "true" : "false")
             << std::endl;
+#else
+        (void)rejected;
 #endif
     }
 
