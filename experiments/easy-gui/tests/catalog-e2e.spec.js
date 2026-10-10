@@ -48,3 +48,15 @@ test('controls gallery renders real tree, slider and split panels',async({page},
   await expect(page.locator('.ant-splitter')).toHaveCount(1);
   await page.screenshot({path:testInfo.outputPath('studio-gallery.png'),fullPage:true});
 });
+
+test('inspector exposes binding tools and duplicates selected controls',async({page},testInfo)=>{
+  await page.goto('/');
+  await page.getByRole('textbox',{name:'컨트롤 검색'}).fill('숫자 입력');
+  await page.getByRole('button',{name:/NumberField/}).click();
+  await page.getByRole('button',{name:'바인딩',exact:true}).click();
+  await expect(page.getByText('Binding: value',{exact:true})).toBeVisible();
+  await page.getByRole('button',{name:'속성',exact:true}).click();
+  await page.getByRole('button',{name:'블록 복제'}).click();
+  await expect(page.locator('.ant-input-number')).toHaveCount(2);
+  await page.screenshot({path:testInfo.outputPath('studio-inspector.png'),fullPage:true});
+});
