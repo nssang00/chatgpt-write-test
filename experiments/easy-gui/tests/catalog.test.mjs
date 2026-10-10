@@ -9,7 +9,7 @@ test('basic GUI catalog has controls for layout, inputs, display and data',()=>{
   assert.deepEqual(BUILTINS,Object.keys(CONTROL_CATALOG));
   for(const group of CONTROL_GROUPS)
     assert.ok(Object.values(CONTROL_CATALOG).some(spec=>spec.group===group));
-  for(const name of ['TextField','PasswordField','TextArea','NumberField','SelectField','DateField',
+  for(const name of ['TreeView','ListView','SplitPanel','Slider','Steps','TextField','PasswordField','TextArea','NumberField','SelectField','DateField',
     'CheckBox','RadioGroup','Switch','Table','Button','Grid','Tabs','Panel','Statistic','Alert'])
     assert.ok(BUILTINS.includes(name),name);
 });
@@ -25,7 +25,7 @@ test('every toolbox item has usable default properties and valid blueprint contr
 
 test('complete example templates are valid and independent',()=>{
   const names=Object.keys(SCREEN_TEMPLATES);
-  for(const name of ['workspace','form','dashboard','blank'])assert.ok(names.includes(name));
+  for(const name of ['workspace','form','dashboard','blank','gallery'])assert.ok(names.includes(name));
   for(const name of names){
     const copy=getTemplate(name);
     const check=validateBlueprint(copy,initialDefinitions);

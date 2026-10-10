@@ -10,7 +10,7 @@ export const sampleData = {
     {id:6,name:'한수연',city:'대구',enabled:false}
   ],
   contact:{name:'김하늘',email:'hello@example.com',department:'개발팀',
-    createdAt:'2026-10-10',note:'신규 고객의 요청 사항을 기록합니다.',enabled:true}
+    createdAt:'2026-10-10',score:45,note:'신규 고객의 요청 사항을 기록합니다.',enabled:true}
 };
 export const initialDefinitions = {
   AddressEditor:{root:{type:'Panel',props:{title:'주소 편집'},children:[

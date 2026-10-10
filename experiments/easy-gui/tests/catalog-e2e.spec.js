@@ -36,3 +36,15 @@ test('studio supports a small-screen canvas view',async({page},testInfo)=>{
   await expect(page.locator('.preview')).toHaveClass(/preview-mobile/);
   await page.screenshot({path:testInfo.outputPath('studio-mobile.png'),fullPage:true});
 });
+
+test('controls gallery renders real tree, slider and split panels',async({page},testInfo)=>{
+  await page.goto('/');
+  await page.locator('.template-picker .ant-select').click();
+  await page.getByText('컴포넌트 갤러리',{exact:true}).last().click();
+  await expect(page.getByText('컴포넌트 갤러리',{exact:true}).first()).toBeVisible();
+  await expect(page.locator('.ant-tree')).toHaveCount(1);
+  await expect(page.locator('.ant-slider')).toHaveCount(1);
+  await expect(page.locator('.ant-steps')).toHaveCount(1);
+  await expect(page.locator('.ant-splitter')).toHaveCount(1);
+  await page.screenshot({path:testInfo.outputPath('studio-gallery.png'),fullPage:true});
+});

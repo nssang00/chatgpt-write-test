@@ -81,11 +81,46 @@ const blank={schemaVersion:1,name:'빈 화면',root:col('root',[
   {type:'Text',id:'startText',props:{text:'왼쪽 도구상자에서 컴포넌트를 추가해 보세요.'}}
 ])};
 
+const gallery={
+  schemaVersion:1,name:'컨트롤 갤러리',
+  root:col('root',[
+    heading('galleryTitle','컴포넌트 갤러리',2),
+    {type:'Text',id:'galleryDesc',props:{text:'기본 UI 도구를 선택하고 데이터 바인딩과 속성을 시험해 보세요.'}},
+    {type:'Grid',id:'galleryGrid',props:{columns:2,gap:16},children:[
+      panel('galleryForm','입력 도구',[
+        field('TextField','galleryName','이름','contact.name'),
+        field('PasswordField','galleryPassword','비밀번호',null,{props:{placeholder:'비밀번호 입력'}}),
+        field('NumberField','galleryAge','수량',null,{props:{min:0}}),
+        field('SelectField','galleryDept','담당 부서','contact.department',{props:{options:'개발팀,기획팀,운영팀'}}),
+        field('DateField','galleryDate','시작 날짜','contact.createdAt'),
+        field('Slider','gallerySlider','만족도','contact.score',{props:{min:0,max:100,defaultValue:45}}),
+        {type:'CheckBox',id:'galleryCheck',props:{label:'활성화'},bind:{checked:'contact.enabled'}},
+        btn('gallerySave','설정 저장')
+      ]),
+      panel('galleryDisplay','상태 및 정보',[
+        {type:'Alert',id:'galleryAlert',props:{type:'success',message:'작업 준비 완료',description:'기본 컴포넌트가 준비되었습니다.'}},
+        {type:'Steps',id:'gallerySteps',props:{current:1,items:'시작,구성,완료'}},
+        {type:'Progress',id:'galleryProgress',props:{percent:68,status:'active'}},
+        {type:'Tag',id:'galleryTag',props:{text:'정상',color:'green'}},
+        {type:'Divider',id:'galleryDivider',props:{title:'목록 도구'}},
+        {type:'TreeView',id:'galleryTree',props:{title:'프로젝트 탐색',items:'화면,컴포넌트,자산'}},
+        {type:'ListView',id:'galleryList',props:{title:'최근 항목',items:'고객 관리,환경 설정,운영 대시보드'}}
+      ])
+    ]},
+    heading('splitHeading','분할 레이아웃',4),
+    {type:'SplitPanel',id:'gallerySplit',props:{direction:'horizontal'},children:[
+      panel('galleryLeft','왼쪽 영역',[{type:'Text',id:'leftText',props:{text:'크기를 조절할 수 있는 패널'}}]),
+      panel('galleryRight','오른쪽 영역',[{type:'Text',id:'rightText',props:{text:'기존 React 컴포넌트도 여기에 배치할 수 있습니다.'}}])
+    ]}
+  ])
+};
+
 export const SCREEN_TEMPLATES={
   workspace:{label:'사용자 관리',description:'테이블 · 카드 · 재사용 폼',blueprint:workspace},
   form:{label:'고객 등록 폼',description:'필드 · 데이터 바인딩 · 저장',blueprint:form},
   dashboard:{label:'운영 대시보드',description:'지표 · 진행률 · 알림',blueprint:dashboard},
-  blank:{label:'빈 화면',description:'원하는 구성으로 시작',blueprint:blank}
+  blank:{label:'빈 화면',description:'원하는 구성으로 시작',blueprint:blank},
+  gallery:{label:'컴포넌트 갤러리',description:'기본 컨트롤 체험',blueprint:gallery}
 };
 export const templateNames=()=>Object.keys(SCREEN_TEMPLATES);
 export const getTemplate=(name)=>copy(SCREEN_TEMPLATES[name]?.blueprint??workspace);
