@@ -1,10 +1,10 @@
-name: OneClick v58.2.4 Managed Runtime Wiring Gate
+name: OneClick v58.3 Release Candidate Packaging Gate
 
 on:
   workflow_dispatch:
   push:
     branches:
-      - ci/oneclick-v58-2-4
+      - ci/oneclick-v58-3
     paths:
       - '.github/workflows/oneclick-v57-9-native.yml'
       - 'ci/v58.2-runtime/**'
@@ -12,6 +12,7 @@ on:
       - 'ci/v58.2.2-harness/**'
       - 'ci/v58.2.3-harness/**'
       - 'ci/v58.2.4-managed/**'
+      - 'ci/v58.3-release/**'
       - 'ci/v58-release/**'
 
 permissions:
@@ -103,6 +104,21 @@ jobs:
           if ($contract.webViewRuntimeSha256 -ne 'f568ba150a2ab87b0bb6298f0364597a6c53e668774b8d74e24b19b2387b8134') {
             throw "Managed facade source hash mismatch."
           }
+
+      - name: Verify v58.3 release candidate packaging contract
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $contract = Get-Content 'ci/v58.3-release/release-contract.json' -Raw | ConvertFrom-Json
+          if ($contract.harnessVersion -ne '58.3.0') { throw "Unexpected release contract version: $($contract.harnessVersion)" }
+          if ($contract.packageVersion -ne '1.0.0-rc.1') { throw "Unexpected package version: $($contract.packageVersion)" }
+          if ($contract.readinessStatus -ne 'READY_FOR_RC_PACKAGING' -or $contract.shippingStatus -ne 'READY_RC') { throw "Unexpected release readiness/shipping status." }
+          $expectedExclusions = @('Tests','Validation','Tools','Prototypes')
+          if (@($contract.releaseExcludes).Count -ne 4) { throw "Release exclusion count mismatch." }
+          foreach ($x in $expectedExclusions) { if (@($contract.releaseExcludes) -notcontains $x) { throw "Missing release exclusion: $x" } }
+          foreach ($x in @('LICENSE','NOTICE','THIRD_PARTY_NOTICES.md','ThirdParty/CEF-LICENSE.txt')) { if (@($contract.requiredMetadata) -notcontains $x) { throw "Missing release metadata contract: $x" } }
+          foreach ($x in @('Runtime/Plugins/x86_64/CompanyWebViewCefTextureProbe.dll','Runtime/Plugins/x86_64/CompanyWebViewCefSubprocess.exe','Runtime/Plugins/x86_64/libcef.dll')) { if (@($contract.requiredRuntimeFiles) -notcontains $x) { throw "Missing runtime payload contract: $x" } }
+          if ($contract.cefLicenseSha256 -ne 'a7bf389f9975ac4e56c850708124c210bd52965f5cf22a3be06254dbab1fbc78') { throw "CEF license hash mismatch." }
 
       - name: Reconstruct exact v58.2 Runtime source
         shell: pwsh
@@ -259,7 +275,7 @@ jobs:
         if: ${{ always() }}
         shell: pwsh
         run: |
-          "## v58.2.4 Managed Wiring + Runtime exact-source gate" | Out-File $env:GITHUB_STEP_SUMMARY -Append
+          "## v58.3 Release Candidate Packaging + Runtime exact-source gate" | Out-File $env:GITHUB_STEP_SUMMARY -Append
           "" | Out-File $env:GITHUB_STEP_SUMMARY -Append
           "- Payload SHA-256 verified" | Out-File $env:GITHUB_STEP_SUMMARY -Append
           "- Native x64 clean build" | Out-File $env:GITHUB_STEP_SUMMARY -Append
@@ -271,7 +287,7 @@ jobs:
         if: ${{ always() }}
         uses: actions/upload-artifact@v4
         with:
-          name: oneclick-v58-2-4-managed-wiring-gate
+          name: oneclick-v58-3-release-candidate-gate
           path: |
             results/
             payload-sha256.txt
