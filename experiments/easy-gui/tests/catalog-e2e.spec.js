@@ -41,7 +41,7 @@ test('controls gallery renders real tree, slider and split panels',async({page},
   await page.goto('/');
   await page.locator('.template-picker .ant-select').click();
   await page.getByText('컴포넌트 갤러리',{exact:true}).last().click();
-  await expect(page.getByText('컴포넌트 갤러리',{exact:true}).first()).toBeVisible();
+  await expect(page.getByRole('main').getByText('컴포넌트 갤러리',{exact:true})).toBeVisible();
   await expect(page.locator('.ant-tree')).toHaveCount(1);
   await expect(page.locator('.ant-slider')).toHaveCount(1);
   await expect(page.locator('.ant-steps')).toHaveCount(1);
