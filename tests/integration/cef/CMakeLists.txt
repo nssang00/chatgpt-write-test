@@ -46,6 +46,7 @@ add_library(nativeweb_core_for_cef STATIC
   "${NATIVEWEB_ROOT}/src/core/binding_registry.cpp"
   "${NATIVEWEB_ROOT}/src/core/worker_pool.cpp"
   "${NATIVEWEB_ROOT}/src/browser/common/backend_registry.cpp"
+  "${NATIVEWEB_ROOT}/src/plugin/shared_library.cpp"
   "${NATIVEWEB_ROOT}/src/webview.cpp"
 )
 
@@ -77,6 +78,7 @@ if(NOT WIN32)
   target_link_libraries(nativeweb_core_for_cef
     PUBLIC
       Threads::Threads
+      ${CMAKE_DL_LIBS}
   )
 endif()
 

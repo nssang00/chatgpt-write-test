@@ -17,6 +17,7 @@ add_library(nativeweb_core STATIC
     src/core/binding_registry.cpp
     src/core/worker_pool.cpp
     src/browser/common/backend_registry.cpp
+    src/plugin/shared_library.cpp
     src/webview.cpp
 )
 add_library(NativeWeb::Core ALIAS nativeweb_core)
@@ -29,7 +30,11 @@ target_include_directories(nativeweb_core
         ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
 
-target_link_libraries(nativeweb_core PUBLIC Threads::Threads)
+target_link_libraries(nativeweb_core
+    PUBLIC
+        Threads::Threads
+        ${CMAKE_DL_LIBS}
+)
 
 target_compile_features(nativeweb_core PUBLIC cxx_std_11)
 
@@ -44,4 +49,5 @@ if(NATIVEWEB_BUILD_TESTS)
     enable_testing()
     add_subdirectory(tests/core)
     add_subdirectory(tests/api)
+    add_subdirectory(tests/plugin)
 endif()
