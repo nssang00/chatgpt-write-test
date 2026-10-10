@@ -73,7 +73,7 @@ function Studio(){
     const manifest=registry[type]?.manifest;
     const props=manifest?Object.fromEntries(
       Object.entries(manifest.props??{}).filter(([,x])=>x.default!==undefined).map(([k,x])=>[k,x.default])
-    ):defaults[type]||{title:type};
+    ):{title:type};
     const n=builtins.includes(type) ? defaultNode(type,'n'+Math.random().toString(36).slice(2,10)):
       {id:'n'+Math.random().toString(36).slice(2,10),type,props:clone(props)};
     if(!builtins.includes(type))n.scope='shipping';
