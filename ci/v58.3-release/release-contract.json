@@ -1,0 +1,26 @@
+{
+  "harnessVersion": "58.3.0",
+  "packageVersion": "1.0.0-rc.1",
+  "readinessStatus": "READY_FOR_RC_PACKAGING",
+  "shippingStatus": "READY_RC",
+  "exactNativePayloadSha256": "80453dc4c58e8ff8bc6fa62867aad08f033cb55550ff2e3b4e761ff9fc8218fe",
+  "releaseExcludes": [
+    "Tests",
+    "Validation",
+    "Tools",
+    "Prototypes"
+  ],
+  "requiredMetadata": [
+    "LICENSE",
+    "NOTICE",
+    "THIRD_PARTY_NOTICES.md",
+    "ThirdParty/CEF-LICENSE.txt"
+  ],
+  "requiredRuntimeFiles": [
+    "Runtime/Plugins/x86_64/CompanyWebViewCefTextureProbe.dll",
+    "Runtime/Plugins/x86_64/CompanyWebViewCefSubprocess.exe",
+    "Runtime/Plugins/x86_64/libcef.dll"
+  ],
+  "cefLicenseSha256": "a7bf389f9975ac4e56c850708124c210bd52965f5cf22a3be06254dbab1fbc78",
+  "policy": "Validation source may contain Tests/Validation; generated shipping artifact must be stripped, self-contained, and redistribution-notice complete."
+}
