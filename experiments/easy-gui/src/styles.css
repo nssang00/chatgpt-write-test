@@ -114,3 +114,13 @@ body{background:#f5f7fb}
 .preview-mobile .easy-stat .ant-card-body{padding:16px}
 .preview-mobile .easy-table-card .ant-card-body{padding:12px}
 .preview-mobile .ant-table-wrapper{overflow-x:auto}
+
+.inspector-tabs{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:3px;
+  border-radius:9px;background:#f2f4f9;padding:4px;margin:16px 0 8px}
+.inspector-tabs button{padding:7px 2px;border:0;border-radius:6px;background:transparent;
+  font-size:11px;color:#7c89a1;cursor:pointer}
+.inspector-tabs button.active{color:#5856d6;font-weight:750;background:white;box-shadow:0 1px 5px rgba(40,50,100,.08)}
+.inspector-commands{display:flex;gap:7px;margin:20px 0;flex-wrap:wrap}
+.inspector-hint{background:#f6f7fe;border-radius:9px;padding:13px;font-size:11px;
+  line-height:1.65;color:#75839d}
+.inspector .inspector-commands .ant-btn{margin:0}

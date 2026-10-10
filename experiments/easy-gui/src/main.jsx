@@ -44,6 +44,7 @@ function Studio(){
   const [template,setTemplate]=useState('workspace');
   const [search,setSearch]=useState('');
   const [viewport,setViewport]=useState('desktop');
+  const [inspectorTab,setInspectorTab]=useState('props');
   const [history,setHistory]=useState({past:[],future:[]});
   const [registry,setRegistry]=useState(()=>clone({...initialDefinitions,...installedComponents,...codeDefinitions}));
   const [data,setData]=useState(()=>clone(sampleData));
@@ -91,7 +92,19 @@ function Studio(){
     if(type==='Button')n.on={click:'save'};
     const target=item&&containers.has(item.type)?selected:'root';
     setDocument(update(doc,target,node=>{node.children??=[];node.children.push(n);}));
-    setSelected(n.id);
+    setSelected(n.id);setInspectorTab('props');
+  };
+  const duplicate=()=>{
+    if(selected==='root'||!item)return;
+    const copied=clone(item);
+    visit(copied,n=>{n.id='n'+Math.random().toString(36).slice(2,10);});
+    const next=clone(doc);let added=false;
+    visit(next.root,parent=>{
+      if(added||!parent.children)return;
+      const at=parent.children.findIndex(child=>child.id===selected);
+      if(at>=0){parent.children.splice(at+1,0,copied);added=true;}
+    });
+    if(added){setDocument(next);setSelected(copied.id);}
   };
   const edit=(kind,key,value)=>setDocument(update(doc,selected,n=>{n[kind]??={};n[kind][key]=value;}));
   const editScope=value=>setDocument(update(doc,selected,n=>{n.scope=value;}));
@@ -209,36 +222,70 @@ function Studio(){
         {saved&&<Alert type="success" showIcon message={'Save: '+saved}/>}
       </main>
       <aside className="inspector"><h3>속성 편집 <span className="eyebrow">INSPECTOR</span></h3>
-        {item?<><Tag>{item.type}</Tag>
-          <label>ID<Input disabled size="small" value={item.id}/></label>
-          <label>Scope<Input size="small" value={item.scope||''} onChange={e=>editScope(e.target.value)}/></label>
-          {Object.entries({...Object.fromEntries(
-            Object.entries(CONTROL_CATALOG[item.type]?.props??registry[item.type]?.manifest?.props??{}).map(([k,info])=>[k,info.default??''])
-          ),...item.props}).map(([key,value])=>{
-            const field=CONTROL_CATALOG[item.type]?.props?.[key]??registry[item.type]?.manifest?.props?.[key];
-            return <label key={key}>{field?.label||key}
-              {field?.type==='enum'?<Select size="small" value={value}
-                options={field.options.map(v=>({value:v,label:v}))}
-                onChange={v=>edit('props',key,v)}/>:
-              field?.type==='boolean'?<Select size="small" value={Boolean(value)}
-                options={[{value:true,label:'true'},{value:false,label:'false'}]}
-                onChange={v=>edit('props',key,v)}/>:
-              <Input size="small" value={String(value)}
-                onChange={e=>edit('props',key,field?.type==='number'||key==='gap'?Number(e.target.value):e.target.value)}/>}
-            </label>;
-          })}
-          {Object.entries({...Object.fromEntries(
-            Object.keys(registry[item.type]?.manifest?.bindings||
-              ({TextField:{value:1},PasswordField:{value:1},TextArea:{value:1},
-                NumberField:{value:1},DateField:{value:1},SelectField:{value:1},
-                RadioGroup:{value:1},CheckBox:{checked:1},Switch:{checked:1},
-                Table:{data:1}}[item.type]||{})).map(k=>[k,''])
-          ),...item.bind}).map(([key,value])=><label key={key}>Binding: {key}
-            <Select showSearch size="small" style={{width:'100%'}} value={value}
-              onChange={v=>edit('bind',key,v)}
-              options={[...new Set([...pathOptions(data),'name','city','enabled'])].map(v=>({value:v,label:v}))}/>
-          </label>)}
-          <Button danger size="small" disabled={selected==='root'} onClick={remove}>선택 블록 삭제</Button>
+        {item?<><Tag>{CONTROL_CATALOG[item.type]?.label||item.type}</Tag>
+          <div className="inspector-tabs">
+            {['props','bind','events'].map(tab=><button key={tab} type="button"
+              className={inspectorTab===tab?'active':''} onClick={()=>setInspectorTab(tab)}>
+              {({props:'속성',bind:'바인딩',events:'이벤트'})[tab]}
+            </button>)}
+          </div>
+          {inspectorTab==='props'&&<>
+            <label>ID<Input disabled size="small" value={item.id}/></label>
+            <label>데이터 범위<Input size="small" value={item.scope||''}
+              placeholder="예: shipping" onChange={e=>editScope(e.target.value)}/></label>
+            {Object.entries({...Object.fromEntries(
+              Object.entries(CONTROL_CATALOG[item.type]?.props??registry[item.type]?.manifest?.props??{})
+                .map(([k,info])=>[k,info.default??''])
+            ),...item.props}).map(([key,value])=>{
+              const field=CONTROL_CATALOG[item.type]?.props?.[key]??registry[item.type]?.manifest?.props?.[key];
+              const nice={label:'라벨',title:'제목',text:'텍스트',gap:'간격',columns:'열 개수',
+                placeholder:'힌트 문구',primary:'기본 버튼',disabled:'비활성화',rows:'행 수',
+                options:'선택 항목',items:'표시 항목',min:'최솟값',max:'최댓값',
+                pageSize:'페이지 크기',percent:'진행률',value:'기본값',
+                level:'제목 크기',direction:'분할 방향',color:'색상',type:'종류'};
+              return <label key={key}>{field?.label||nice[key]||key}
+                {field?.type==='enum'?<Select size="small" value={value}
+                  options={field.options.map(v=>({value:v,label:v}))}
+                  onChange={v=>edit('props',key,v)}/>:
+                field?.type==='boolean'?<Select size="small" value={Boolean(value)}
+                  options={[{value:true,label:'사용'},{value:false,label:'미사용'}]}
+                  onChange={v=>edit('props',key,v)}/>:
+                <Input size="small" value={String(value??'')}
+                  onChange={e=>edit('props',key,field?.type==='number'||key==='gap'
+                    ?Number(e.target.value):e.target.value)}/>}
+              </label>;
+            })}
+          </>}
+          {inspectorTab==='bind'&&<>
+            <p className="inspector-hint">화면 요소에 데이터 필드를 연결합니다. 데이터는 미리보기에서 바로 바뀝니다.</p>
+            {Object.entries({...Object.fromEntries(
+              Object.keys(registry[item.type]?.manifest?.bindings||
+                ({TextField:{value:1},PasswordField:{value:1},TextArea:{value:1},
+                  NumberField:{value:1},DateField:{value:1},SelectField:{value:1},Slider:{value:1},
+                  RadioGroup:{value:1},CheckBox:{checked:1},Switch:{checked:1},
+                  Table:{data:1}}[item.type]||{})).map(k=>[k,''])
+            ),...item.bind}).map(([key,value])=><label key={key}>Binding: {key}
+              <Select showSearch allowClear size="small" style={{width:'100%'}}
+                placeholder="필드 선택" value={value||undefined}
+                onChange={v=>edit('bind',key,v||'')}
+                options={[...new Set([...pathOptions(data),'name','city','enabled'])].map(v=>({value:v,label:v}))}/>
+            </label>)}
+          </>}
+          {inspectorTab==='events'&&<>
+            <p className="inspector-hint">이벤트가 발생하면 등록된 동작을 실행합니다.</p>
+            {Object.entries({...Object.fromEntries(
+              Object.keys(registry[item.type]?.manifest?.events||
+                (item.type==='Button'?{click:1}:{})).map(k=>[k,''])
+            ),...item.on}).map(([event])=><label key={event}>이벤트: {event}
+              <Select size="small" value={item.on?.[event]||undefined}
+                onChange={action=>edit('on',event,action)}
+                options={[{label:'저장 (save)',value:'save'}]}/>
+            </label>)}
+          </>}
+          <div className="inspector-commands">
+            <Button size="small" disabled={selected==='root'} onClick={duplicate}>블록 복제</Button>
+            <Button danger size="small" disabled={selected==='root'} onClick={remove}>선택 블록 삭제</Button>
+          </div>
         </>:<span>블록을 선택하세요.</span>}
       </aside>
     </div>
