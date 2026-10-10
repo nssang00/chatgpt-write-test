@@ -2,6 +2,22 @@
 
 An isolated React + Ant Design experiment alongside the NativeWeb C++ runtime. Existing native sources are unchanged.
 
+## Visual Studio refresh (v0.2)
+
+The Studio now starts with a **working user-management screen**, not a blank renderer. Select a template from the canvas toolbar:
+
+- **사용자 관리**: live table, summary cards and two separately bound AddressEditor instances.
+- **고객 등록 폼**: real text/date/select/checkbox inputs and sample binding.
+- **운영 대시보드**: statistics, progress, notifications and table.
+- **컨트롤 갤러리**: try the built-in controls, tree, list, slider and Splitter.
+- **빈 화면**: empty composition starting point.
+
+The Toolbox provides **28 real React/Ant Design-based controls**, grouped as layouts, inputs, display components and actions/data tools. Search by GUI name or type. Click a control to add it to the selected layout container; select a preview element or tree node to edit its properties. Boolean and enum fields offer pickers, while bindings can be chosen from sample data fields. Undo/Redo and mobile-width preview are supported.
+
+Browser regression tests save **screenshots** into the GitHub Actions `easy-gui-visual-review` artifact so visual changes can be inspected rather than checking only build success.
+
+**Not production-ready yet:** nested drag-and-drop, full property/event metadata, accessibility and responsive design need further work. This is a real React/AntD MVP for assessing creation flow, not a replacement UI engine.
+
 ## Quick start
 
 ```bash
