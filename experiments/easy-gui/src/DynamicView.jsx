@@ -96,7 +96,7 @@ export function DynamicView({
         const list=Array.isArray(rows)?rows:[];
         const keys=options(p.columns).map(o=>o.value);
         const columns=(keys.length?keys:Object.keys(list[0]??{}).filter(k=>k!=='id')).map(k=>({
-          key:k,title:k,dataIndex:k,
+          key:k,title:({name:'이름',city:'지역',enabled:'상태',email:'이메일',department:'부서'})[k]||k,dataIndex:k,
           render:v=>v===true?<Tag color="green">활성</Tag>:v===false?<Tag>비활성</Tag>:(v??'—')
         }));
         element=<Card title={p.title||'데이터 목록'} className="easy-table-card" size="small">

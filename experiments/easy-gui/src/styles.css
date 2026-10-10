@@ -103,3 +103,14 @@ body{background:#f5f7fb}
 .studio footer{padding:12px 20px;background:#fff;text-align:center;color:#a5afbd;font-size:11px;border-top:1px solid #f1f2f7}
 @media(max-width:1100px){.workbench{grid-template-columns:230px minmax(370px,1fr)}.inspector{grid-column:1/-1;border-left:0;border-top:1px solid #e7eaf2;display:block}.inspector>label{max-width:450px}.preview{padding:22px}}
 @media(max-width:650px){.studio header{padding:12px;align-items:start}.app-brand{min-width:auto}.workbench{display:flex;flex-direction:column}.toolbox{border:0;border-bottom:1px solid #e7eaf2}.toolbox-list{max-height:240px}.workbench main{padding:14px}.preview{padding:15px}.easy-grid{grid-template-columns:1fr!important}.easy-row>.design-node{min-width:100%}}
+
+/* Browser screenshot review: avoid outlining the whole page on initial selection. */
+.render-root>.design-node.is-selected{outline:0}
+.easy-panel .ant-card-body{display:flex;flex-direction:column;gap:14px}
+.easy-panel .easy-field{gap:7px}
+.preview-mobile .easy-grid{grid-template-columns:1fr!important}
+.preview-mobile .easy-row{flex-direction:column!important}
+.preview-mobile .easy-row>.design-node{width:100%;flex-basis:auto;min-width:0}
+.preview-mobile .easy-stat .ant-card-body{padding:16px}
+.preview-mobile .easy-table-card .ant-card-body{padding:12px}
+.preview-mobile .ant-table-wrapper{overflow-x:auto}

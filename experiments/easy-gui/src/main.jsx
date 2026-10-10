@@ -14,6 +14,12 @@ import './styles.css';
 const clone=value=>structuredClone(value);
 const builtins=Object.keys(CONTROL_CATALOG);
 const containers=new Set(builtins.filter(isContainer));
+const glyphs={
+  column:'☷',row:'↔',grid:'▦',panel:'▣',divider:'—',tabs:'▤',
+  heading:'H',text:'T',tag:'◆',alert:'!',statistic:'◷',progress:'◕',
+  input:'⌨',select:'⌄',radio:'◉',calendar:'▦',check:'☑',switch:'◐',
+  button:'●',table:'▥'
+};
 const pathOptions=(obj,prefix='',depth=0)=>{
   if(depth>4||!obj||typeof obj!=='object')return [];
   return Object.entries(obj).flatMap(([key,value])=>{
@@ -175,7 +181,7 @@ function Studio(){
           return choices.length?<div className="group-block" key={group}>
             <div className="group-title">{group}<span>{choices.length}</span></div>
             <div className="controls">{choices.map(type=><Button key={type} size="small" block
-              onClick={()=>add(type)}><span className="control-icon">▦</span>
+              onClick={()=>add(type)}><span className="control-icon">{glyphs[CONTROL_CATALOG[type].icon]||'◇'}</span>
               {CONTROL_CATALOG[type].label} <small>+ {type}</small></Button>)}</div>
           </div>:null;
         })}</div>
