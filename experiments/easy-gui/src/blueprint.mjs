@@ -1,5 +1,6 @@
 /** Dependency-free, data-only UI composition engine. React is an adapter. */
-export const BUILTINS = Object.freeze(['Column','Row','Panel','Text','TextField','Switch','Button','Table']);
+import { BUILTIN_NAMES } from './catalog.mjs';
+export const BUILTINS = BUILTIN_NAMES;
 const FORBIDDEN = new Set(['__proto__','prototype','constructor']);
 const IDENTIFIER = /^[A-Za-z_$][A-Za-z0-9_$]*$/;
 const NAME = /^[A-Za-z][A-Za-z0-9_]*$/;
