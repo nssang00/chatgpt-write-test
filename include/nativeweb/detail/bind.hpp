@@ -2,6 +2,7 @@
 #define NATIVEWEB_DETAIL_BIND_HPP_INCLUDED
 
 #include "nativeweb/any.hpp"
+#include "nativeweb/detail/callable.hpp"
 
 #include <cstddef>
 #include <functional>
@@ -11,9 +12,6 @@
 #include <type_traits>
 
 namespace nativeweb {
-
-typedef std::function<Any(const VariantList&)> DynamicFunction;
-
 namespace detail {
 
 template <std::size_t... Indices>
@@ -193,26 +191,67 @@ bindMember(
         method);
 }
 
-template <typename Callable>
-DynamicFunction makeDynamicFunction(Callable callable)
+template <typename Traits, std::size_t... Indices>
+void appendCallableArgumentTypes(
+    CallableSignature& signature,
+    IndexSequence<Indices...>)
 {
-    typedef typename std::decay<Callable>::type StoredCallable;
+    const CallableType values[] = {
+        callableType<
+            typename Traits::template Arg<Indices>::Type>()...
+    };
+
+    signature.arguments.assign(
+        values,
+        values + sizeof...(Indices));
+}
+
+template <typename Traits>
+void appendCallableArgumentTypes(
+    CallableSignature&,
+    IndexSequence<>)
+{
+}
+
+template <typename CallableValue>
+Callable makeCallable(CallableValue callable)
+{
+    typedef typename std::decay<CallableValue>::type StoredCallable;
     typedef FunctionTraits<StoredCallable> Traits;
     typedef typename MakeIndexSequence<Traits::Arity>::Type Indices;
 
-    return [callable](const VariantList& args) mutable -> Any
-    {
-        if (args.size() != static_cast<std::size_t>(Traits::Arity))
+    const DynamicFunction dynamic =
+        [callable](const VariantList& args) mutable -> Any
         {
-            throw std::runtime_error(
-                "NativeWeb bind argument count mismatch");
-        }
+            if (args.size() != static_cast<std::size_t>(Traits::Arity))
+            {
+                throw std::runtime_error(
+                    "NativeWeb bind argument count mismatch");
+            }
 
-        return invokeCallable<Callable, Traits>(
-            callable,
-            args,
-            Indices());
-    };
+            return invokeCallable<CallableValue, Traits>(
+                callable,
+                args,
+                Indices());
+        };
+
+    CallableSignature signature;
+    signature.result =
+        callableType<typename Traits::ResultType>();
+
+    appendCallableArgumentTypes<Traits>(
+        signature,
+        Indices());
+
+    return Callable(
+        dynamic,
+        signature);
+}
+
+template <typename CallableValue>
+DynamicFunction makeDynamicFunction(CallableValue callable)
+{
+    return makeCallable(callable).dynamicFunction();
 }
 
 } // namespace detail

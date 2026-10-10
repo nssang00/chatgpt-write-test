@@ -14,7 +14,7 @@ Any invokeBoundRequest(
     RequestId requestId,
     const std::string& method,
     const VariantList& args,
-    const DynamicFunction& function)
+    const Callable& function)
 {
     if (!function)
     {
@@ -29,7 +29,7 @@ Any invokeBoundRequest(
     {
         return makeResponseMessage(
             requestId,
-            function(args));
+            function.invoke(args));
     }
     catch (const Error& error)
     {
@@ -64,40 +64,52 @@ void BridgeRuntime::bind(
     const std::string& method,
     const DynamicFunction& function)
 {
-    if (method.empty())
-        throw Error("invalid_method", "NativeWeb method name cannot be empty");
+    bindings_.bind(
+        method,
+        Callable(function));
+}
 
-    if (!function)
-        throw Error("invalid_method", "NativeWeb method callback is empty");
+void BridgeRuntime::bind(
+    const std::string& method,
+    const Callable& callable)
+{
+    bindings_.bind(
+        method,
+        callable);
+}
 
-    std::lock_guard<std::mutex> lock(methodMutex_);
-    methods_[method] = function;
+RegistrationToken BridgeRuntime::registerBinding(
+    const std::string& method,
+    const Callable& callable)
+{
+    return bindings_.registerBinding(
+        method,
+        callable);
 }
 
 bool BridgeRuntime::unbind(const std::string& method)
 {
-    std::lock_guard<std::mutex> lock(methodMutex_);
-    return methods_.erase(method) != 0;
+    return bindings_.unbind(method);
 }
 
 bool BridgeRuntime::hasMethod(const std::string& method) const
 {
-    std::lock_guard<std::mutex> lock(methodMutex_);
-    return methods_.find(method) != methods_.end();
+    return bindings_.has(method);
 }
 
-DynamicFunction BridgeRuntime::findMethod(
+bool BridgeRuntime::methodSignature(
+    const std::string& method,
+    CallableSignature* signature) const
+{
+    return bindings_.signature(
+        method,
+        signature);
+}
+
+Callable BridgeRuntime::findMethod(
     const std::string& method) const
 {
-    std::lock_guard<std::mutex> lock(methodMutex_);
-
-    std::map<std::string, DynamicFunction>::const_iterator found =
-        methods_.find(method);
-
-    if (found == methods_.end())
-        return DynamicFunction();
-
-    return found->second;
+    return bindings_.find(method);
 }
 
 OutboundCall BridgeRuntime::call(
@@ -209,7 +221,7 @@ void BridgeRuntime::receiveAsync(
         return;
     }
 
-    const DynamicFunction function =
+    const Callable function =
         findMethod(parsed.method);
 
     if (!function)
@@ -280,8 +292,7 @@ void BridgeRuntime::shutdown()
 
     events_.clear();
 
-    std::lock_guard<std::mutex> lock(methodMutex_);
-    methods_.clear();
+    bindings_.clear();
 }
 
 std::size_t BridgeRuntime::pendingCount() const
@@ -291,8 +302,7 @@ std::size_t BridgeRuntime::pendingCount() const
 
 std::size_t BridgeRuntime::methodCount() const
 {
-    std::lock_guard<std::mutex> lock(methodMutex_);
-    return methods_.size();
+    return bindings_.size();
 }
 
 } // namespace detail

@@ -1,6 +1,7 @@
 #ifndef NATIVEWEB_BRIDGE_RUNTIME_HPP_INCLUDED
 #define NATIVEWEB_BRIDGE_RUNTIME_HPP_INCLUDED
 
+#include "core/binding_registry.hpp"
 #include "core/bridge_message.hpp"
 #include "core/event_dispatcher.hpp"
 #include "core/pending_call_registry.hpp"
@@ -9,9 +10,7 @@
 #include <atomic>
 #include <future>
 #include <functional>
-#include <map>
 #include <memory>
-#include <mutex>
 #include <string>
 
 namespace nativeweb {
@@ -84,8 +83,20 @@ public:
         const std::string& method,
         const DynamicFunction& function);
 
+    void bind(
+        const std::string& method,
+        const Callable& callable);
+
+    RegistrationToken registerBinding(
+        const std::string& method,
+        const Callable& callable);
+
     bool unbind(const std::string& method);
     bool hasMethod(const std::string& method) const;
+
+    bool methodSignature(
+        const std::string& method,
+        CallableSignature* signature) const;
 
     OutboundCall call(
         const std::string& method,
@@ -134,11 +145,9 @@ private:
         std::atomic<bool> active;
     };
 
-    DynamicFunction findMethod(const std::string& method) const;
+    Callable findMethod(const std::string& method) const;
 
-    mutable std::mutex methodMutex_;
-    std::map<std::string, DynamicFunction> methods_;
-
+    BindingRegistry bindings_;
     PendingCallRegistry pending_;
     EventDispatcher events_;
     std::shared_ptr<AsyncDispatchState> asyncState_;

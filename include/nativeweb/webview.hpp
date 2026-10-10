@@ -137,10 +137,9 @@ public:
     template <typename Callable>
     void bind(const std::string& method, Callable callable)
     {
-        const DynamicFunction dynamic =
-            detail::makeDynamicFunction(callable);
-
-        bind(method, dynamic);
+        bindCallable(
+            method,
+            detail::makeCallable(callable));
     }
 
     template <typename Result, typename... Args>
@@ -166,6 +165,10 @@ public:
     }
 
 private:
+    void bindCallable(
+        const std::string& method,
+        const detail::Callable& callable);
+
     void beginExecute(
         const std::string& method,
         const VariantList& args,

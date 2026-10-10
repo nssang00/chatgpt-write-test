@@ -249,3 +249,30 @@ add_test(
     NAME core.bridge_async
     COMMAND nativeweb_bridge_async_regression
 )
+
+
+add_executable(nativeweb_callable_regression
+    callable_regression.cpp
+)
+
+target_link_libraries(nativeweb_callable_regression PRIVATE NativeWeb::Core)
+target_include_directories(nativeweb_callable_regression PRIVATE ${PROJECT_SOURCE_DIR}/src)
+set_target_properties(nativeweb_callable_regression PROPERTIES
+    CXX_STANDARD 11
+    CXX_STANDARD_REQUIRED YES
+    CXX_EXTENSIONS NO
+)
+add_test(NAME core.callable COMMAND nativeweb_callable_regression)
+
+add_executable(nativeweb_binding_registry_regression
+    binding_registry_regression.cpp
+)
+
+target_link_libraries(nativeweb_binding_registry_regression PRIVATE NativeWeb::Core)
+target_include_directories(nativeweb_binding_registry_regression PRIVATE ${PROJECT_SOURCE_DIR}/src)
+set_target_properties(nativeweb_binding_registry_regression PROPERTIES
+    CXX_STANDARD 11
+    CXX_STANDARD_REQUIRED YES
+    CXX_EXTENSIONS NO
+)
+add_test(NAME core.binding_registry COMMAND nativeweb_binding_registry_regression)

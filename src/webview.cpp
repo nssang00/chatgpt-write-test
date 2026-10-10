@@ -219,6 +219,20 @@ public:
         runtime_.bind(method, function);
     }
 
+    void bindCallable(
+        const std::string& method,
+        const detail::Callable& callable)
+    {
+        if (method.find("__native_object.") == 0)
+        {
+            throw Error(
+                "reserved_method",
+                "NativeWeb internal object method name is reserved");
+        }
+
+        runtime_.bind(method, callable);
+    }
+
     NativeObjectHandle addObject(
         const std::shared_ptr<void>& object,
         const std::string& typeName)
@@ -470,6 +484,15 @@ void WebView::bind(
     const DynamicFunction& function)
 {
     impl_->bind(method, function);
+}
+
+void WebView::bindCallable(
+    const std::string& method,
+    const detail::Callable& callable)
+{
+    impl_->bindCallable(
+        method,
+        callable);
 }
 
 std::future<Any> WebView::execute(

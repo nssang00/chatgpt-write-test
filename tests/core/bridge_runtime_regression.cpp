@@ -140,6 +140,35 @@ void testTypedOutboundCall()
     CHECK(result.get() == 42);
 }
 
+void testCallableMetadataAndScopedBinding()
+{
+    nativeweb::detail::BridgeRuntime bridge;
+
+    bridge.bind(
+        "typed.add",
+        nativeweb::detail::makeCallable(
+            [](int a, int b) { return a + b; }));
+
+    nativeweb::detail::CallableSignature signature;
+
+    CHECK(bridge.methodSignature("typed.add", &signature));
+    CHECK(signature.arity() == 2u);
+    CHECK(signature.result.kind == nativeweb::detail::CallableTypeKind::Integer);
+
+    {
+        nativeweb::detail::RegistrationToken token =
+            bridge.registerBinding(
+                "plugin.temp",
+                nativeweb::detail::makeCallable(
+                    []() { return 9; }));
+
+        CHECK(bridge.hasMethod("plugin.temp"));
+        CHECK(token.valid());
+    }
+
+    CHECK(!bridge.hasMethod("plugin.temp"));
+}
+
 void testEvents()
 {
     nativeweb::detail::BridgeRuntime bridge;
@@ -188,6 +217,7 @@ int main()
     testMissingAndException();
     testOutboundResolveReject();
     testTypedOutboundCall();
+    testCallableMetadataAndScopedBinding();
     testEvents();
     testShutdownRejectsPendingAndClearsState();
 

@@ -14,6 +14,7 @@ add_library(nativeweb_core STATIC
     src/core/bridge_message.cpp
     src/core/json_codec.cpp
     src/core/bridge_runtime.cpp
+    src/core/binding_registry.cpp
     src/core/worker_pool.cpp
     src/browser/common/backend_registry.cpp
     src/webview.cpp
