@@ -6,6 +6,7 @@
 
 #include <cstddef>
 #include <functional>
+#include <memory>
 #include <string>
 #include <type_traits>
 #include <vector>
@@ -225,6 +226,16 @@ public:
     {
     }
 
+    Callable(
+        const DynamicFunction& function,
+        const CallableSignature& signature,
+        const std::shared_ptr<void>& lifetime)
+        : function_(function),
+          signature_(signature),
+          lifetime_(lifetime)
+    {
+    }
+
     Any invoke(const VariantList& args) const
     {
         return function_(args);
@@ -250,9 +261,15 @@ public:
         return function_;
     }
 
+    const std::shared_ptr<void>& lifetime() const
+    {
+        return lifetime_;
+    }
+
 private:
     DynamicFunction function_;
     CallableSignature signature_;
+    std::shared_ptr<void> lifetime_;
 };
 
 } // namespace detail

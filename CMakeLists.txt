@@ -18,6 +18,7 @@ add_library(nativeweb_core STATIC
     src/core/worker_pool.cpp
     src/browser/common/backend_registry.cpp
     src/plugin/shared_library.cpp
+    src/plugin/plugin_module.cpp
     src/webview.cpp
 )
 add_library(NativeWeb::Core ALIAS nativeweb_core)
