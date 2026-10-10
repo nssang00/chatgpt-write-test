@@ -493,7 +493,7 @@ Platform Smoke:             37787721167 SUCCESS
 
 - security permission/capability policy
 - larger binary/shared-memory transport
-- Windows CEF backend final runtime regression
+- Windows WebView2/CEF engine-switch regression
 - Host adapters
 - PluginModule / stable C ABI plugin runtime
 - overload-selection helper / stable plugin type IDs
@@ -505,14 +505,14 @@ Platform Smoke:             37787721167 SUCCESS
 
 가장 먼저 해야 할 일:
 
-1. 최신 Core/Linux CEF/WebView2 Regression이 green인 상태를 항상 유지한다.
-2. Windows CEF real runtime regression의 현재 exit-code failure를 재현/수정한다.
-3. Windows에서 WebView2/CEF engine-switch regression을 추가한다.
-4. `Callable + SignatureMetadata + RegistrationToken` foundation을 기존 public API 변경 없이 추가한다.
+1. 최신 Core/Linux CEF/Windows CEF/WebView2 Regression이 green인 상태를 항상 유지한다.
+2. Windows에서 WebView2/CEF engine-switch regression을 추가한다.
+3. PluginModule + stable versioned C ABI v1 prototype을 만든다.
+4. real DLL/SO plugin register/call/lifetime regression을 추가한다.
 5. security permission/capability policy skeleton을 추가한다.
 6. TransferBuffer / SharedBuffer를 기본 Binary와 분리된 advanced API로 추가한다.
 7. thin Host adapters를 Win32/MFC/WinForms 순으로 시작한다.
-8. Callable foundation 위에 SharedLibrary + PluginModule + stable C ABI prototype을 만든다.
+8. TypeScript/codegen metadata를 Callable signature 위에 확장한다.
 
 세부 단계는 [docs/ROADMAP.md](docs/ROADMAP.md)를 따른다.
 
@@ -638,3 +638,25 @@ missing library / missing symbol / move ownership / unload도 regression에 포�
 
 아직 SharedLibrary 성공만으로 Plugin SDK 완료라고 간주하지 않는다.
 다음 단계는 PluginModule + versioned C ABI + real plugin registration/lifetime test다.
+
+
+### Latest full verified callable/loader baseline
+
+```text
+Code head: cca3bc446e7023538a8928682780c7ac5952e892
+
+Core Regression:              38018203881 SUCCESS
+Linux CEF Bridge:             38018203880 SUCCESS
+Windows CEF Bridge:           38018203913 SUCCESS
+Windows WebView2 Bridge:      38018203918 SUCCESS
+Platform Smoke:               38018203876 SUCCESS
+```
+
+이 baseline에서 기존 `bind()`, root `.method()`, `xytron.foo()`, worker concurrency, typed future, native object, multi-WebView contract는 유지된다.
+
+추가로 검증된 foundation:
+
+- Callable + signature metadata
+- BindingRegistry
+- generation-safe RegistrationToken
+- real Windows DLL / Linux SO SharedLibrary load/symbol/unload

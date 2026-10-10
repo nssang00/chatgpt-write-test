@@ -118,8 +118,8 @@ Selected CEF:
 
 ### CEF Windows
 
-- [ ] CEF Windows backend
-- [ ] same contract suite
+- [x] CEF Windows backend
+- [x] same contract suite
 - [ ] engine switch test
 
 완료 기준:

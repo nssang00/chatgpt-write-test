@@ -4,7 +4,7 @@
 
 NativeWeb은 기존 C/C++ application과 native SDK를 유지하면서 UI를 HTML/CSS/JavaScript로 만들 수 있게 하는 desktop runtime/platform을 목표로 한다.
 
-현재 저장소는 **Core runtime + Linux CEF + Windows WebView2 real browser integration 단계**다. Windows/Linux Core CI, pinned CEF 144의 실제 browser-process/renderer-process bridge, Windows WebView2 bridge가 GitHub Actions에서 동작한다.
+현재 저장소는 **Core runtime + Linux/Windows CEF + Windows WebView2 real browser integration 단계**다. Windows/Linux Core CI와 세 browser matrix가 GitHub Actions에서 실제 동작한다.
 
 ## Why
 
@@ -115,12 +115,15 @@ Initial verified workflow run:
 
 Any 기반 Core regression과 public API contract가 Windows/Ubuntu에서 통과한다. Linux CEF와 Windows WebView2 모두 public `WebView` API를 통한 실제 JS↔C++ bridge를 검증한다. 현재 공통 검증에는 `xytron.foo()` direct facade, `xytron.invoke()` compatibility, worker-pool 기반 JS→C++ 병렬 실행, RequestId 기반 typed C++ future, root C++ object binding, object/array/binary, reload, events, Promise/error mapping, multi-WebView isolation, destroy-pending, native object Proxy lifecycle가 포함된다.
 
-Latest full verified feature head: `aaa22a5f4e53923836a300a4213a8308cdeab213`.
+Latest verified code head: `cca3bc446e7023538a8928682780c7ac5952e892`.
 
-- Core Regression: `37787721138` — Ubuntu/Windows success
-- NativeWeb WebView2 Bridge: `37787721031` — real Windows WebView2 single/multi-view success
-- Platform Smoke: `37787721167` — Ubuntu/Windows success
-- Latest Linux CEF verified baseline remains green from the preceding CEF feature runs.
+- Core Regression: `38018203881` — Ubuntu/Windows success
+- NativeWeb CEF Bridge: `38018203880` — real Linux CEF success
+- NativeWeb CEF Windows Bridge: `38018203913` — real Windows CEF success
+- NativeWeb WebView2 Bridge: `38018203918` — real Windows WebView2 success
+- Platform Smoke: `38018203876` — Ubuntu/Windows success
+
+Callable/signature metadata와 generation-safe registration ownership이 기존 public API 변경 없이 들어갔고, Windows/Linux에서 실제 DLL/SO를 빌드해 `SharedLibrary` load/symbol/unload regression도 통과한다.
 
 ## Start here
 
@@ -138,13 +141,13 @@ Latest full verified feature head: `aaa22a5f4e53923836a300a4213a8308cdeab213`.
 
 ## Immediate next work
 
-1. Windows CEF backend + engine-switch regression
-2. security permission/capability policy
-3. WebView2/CEF common browser-contract fixture 정리
-4. root/class binding metadata/codegen 방향 확장
+1. Windows WebView2/CEF engine-switch regression
+2. PluginModule + stable versioned C ABI prototype
+3. real DLL/SO plugin register/call/lifetime regression
+4. security permission/capability policy
 5. TransferBuffer / SharedBuffer advanced binary transport
 6. Win32/MFC/WinForms thin host adapters
-7. stable C ABI plugin prototype
+7. TypeScript/codegen metadata 확장
 8. sidecar runtime prototype
 
 ## Repository note

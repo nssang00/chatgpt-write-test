@@ -63,14 +63,14 @@ Platform Smoke 외에 `.github/workflows/core-regression.yml`이 추가되었다
 - public WebView API compile contract
 - BrowserBackend compile contract
 
-Latest full verified Windows WebView2 feature baseline:
+Latest full verified callable/loader baseline:
 
-- Head SHA: `aaa22a5f4e53923836a300a4213a8308cdeab213`
-- Core Regression run `37787721138`: Ubuntu + Windows success
-- Platform Smoke run `37787721167`: Ubuntu + Windows success
-- NativeWeb WebView2 Bridge run `37787721031`: Windows real WebView2 single-view + multi-WebView success
-
-Latest Linux CEF feature baseline remains separately verified by the CEF workflow.
+- Code head: `cca3bc446e7023538a8928682780c7ac5952e892`
+- Core Regression run `38018203881`: Ubuntu + Windows success
+- Platform Smoke run `38018203876`: Ubuntu + Windows success
+- Linux CEF Bridge run `38018203880`: success
+- Windows CEF Bridge run `38018203913`: success
+- Windows WebView2 Bridge run `38018203918`: success
 
 Core coverage now includes Any/containers/binary, typed bind, RequestId-correlated typed pending futures without per-call `std::async`, structured errors, worker pool/task queue, concurrent async bridge routing, event dispatcher, bridge messages/runtime, ObjectRegistry, NativeObjectRuntime, root object binding, WebView orchestration/engine selection and public API compile contracts.
 
