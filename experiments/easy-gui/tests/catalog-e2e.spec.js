@@ -24,6 +24,7 @@ test('preconfigured form template changes the canvas and its data binding',async
   await page.goto('/');
   await page.locator('.template-picker .ant-select').click();
   await page.getByText('고객 등록 폼',{exact:true}).last().click();
+  await page.keyboard.press('Escape');
   await expect(page.getByText('신규 고객 등록',{exact:true})).toBeVisible();
   await expect(page.locator('.ant-picker')).toHaveCount(1);
   await expect(page.getByRole('main').getByText('메모',{exact:true})).toBeVisible();
@@ -41,6 +42,7 @@ test('controls gallery renders real tree, slider and split panels',async({page},
   await page.goto('/');
   await page.locator('.template-picker .ant-select').click();
   await page.getByText('컴포넌트 갤러리',{exact:true}).last().click();
+  await page.keyboard.press('Escape');
   await expect(page.getByRole('heading',{name:'컴포넌트 갤러리',exact:true})).toBeVisible();
   await expect(page.locator('.ant-tree')).toHaveCount(1);
   await expect(page.locator('.ant-slider')).toHaveCount(1);
