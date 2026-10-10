@@ -1,7 +1,7 @@
 import React from 'react';
 import {
   Alert, Button, Card, Checkbox, DatePicker, Divider, Empty, Input, InputNumber,
-  Progress, Radio, Select, Statistic, Switch, Table, Tabs, Tag, Typography
+  Progress, Radio, Select, Slider, Splitter, Statistic, Steps, Switch, Table, Tabs, Tag, Tree, List, Typography
 } from 'antd';
 import dayjs from 'dayjs';
 import {expandBlueprint,readPath,scopedPath,writePath} from './blueprint.mjs';
@@ -49,6 +49,9 @@ export function DynamicView({
       case 'Grid':element=<div className="easy-grid" style={{gap:p.gap??16,
         gridTemplateColumns:`repeat(${Math.max(1,Math.min(6,Number(p.columns)||2))},minmax(0,1fr))`}}>{children}</div>;break;
       case 'Panel':element=<Card title={p.title} className="easy-panel">{children}</Card>;break;
+      case 'SplitPanel':element=<Splitter layout={p.direction||'horizontal'} className="easy-split"
+        style={{minHeight:220}}>{(node.children||[]).map((child,i)=>
+          <Splitter.Panel key={child.id||i} min="20%">{render(child)}</Splitter.Panel>)}</Splitter>;break;
       case 'Tabs':element=<Tabs size={p.size||'middle'}
         items={(node.children??[]).map((child,i)=>({
           key:child.id??String(i),label:child.props?.title??'탭 '+(i+1),
@@ -65,6 +68,8 @@ export function DynamicView({
         title={p.title} value={Number(p.value)||0} suffix={p.suffix}/></Card>;break;
       case 'Progress':element=<Progress percent={Math.max(0,Math.min(100,Number(p.percent)||0))}
         status={p.status||'normal'}/>;break;
+      case 'Steps':element=<Steps size="small" current={Number(p.current)||0}
+        items={options(p.items).map(x=>({title:x.label}))}/>;break;
       case 'TextField':element=label(pick('value'));break;
       case 'PasswordField':element=label(<Input.Password
         value={bounded(node,'value')?String(value('value')??''):undefined}
@@ -74,6 +79,10 @@ export function DynamicView({
         placeholder={p.placeholder} onChange={e=>change('value',e.target.value)}/>);break;
       case 'NumberField':element=label(<InputNumber style={{width:'100%'}}
         min={p.min} value={bounded(node,'value')?value('value'):undefined}
+        onChange={v=>change('value',v)}/>);break;
+      case 'Slider':element=label(<Slider min={Number(p.min)||0}
+        max={Number(p.max)||100} defaultValue={Number(p.defaultValue)||45}
+        value={bounded(node,'value')?Number(value('value')):undefined}
         onChange={v=>change('value',v)}/>);break;
       case 'SelectField':element=label(<Select style={{width:'100%'}} options={options(p.options)}
         value={bounded(node,'value')?(value('value')||undefined):undefined}
@@ -91,6 +100,12 @@ export function DynamicView({
           onChange={v=>change('checked',v)}/></div>;break;
       case 'Button':element=<Button type={p.primary?'primary':'default'} onClick={()=>act('click')}>
         {p.label||'확인'}</Button>;break;
+      case 'TreeView':element=<Card title={p.title||'탐색'} size="small" className="easy-panel">
+        <Tree showLine defaultExpandAll treeData={options(p.items).map((entry,i)=>({
+          key:String(i),title:entry.label}))}/></Card>;break;
+      case 'ListView':element=<Card title={p.title||'목록'} size="small" className="easy-panel">
+        <List size="small" bordered dataSource={options(p.items).map(o=>o.value)}
+          renderItem={entry=><List.Item>{entry}</List.Item>}/></Card>;break;
       case 'Table':{
         const rows=value('data');
         const list=Array.isArray(rows)?rows:[];

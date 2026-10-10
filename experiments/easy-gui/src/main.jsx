@@ -15,10 +15,10 @@ const clone=value=>structuredClone(value);
 const builtins=Object.keys(CONTROL_CATALOG);
 const containers=new Set(builtins.filter(isContainer));
 const glyphs={
-  column:'☷',row:'↔',grid:'▦',panel:'▣',divider:'—',tabs:'▤',
-  heading:'H',text:'T',tag:'◆',alert:'!',statistic:'◷',progress:'◕',
-  input:'⌨',select:'⌄',radio:'◉',calendar:'▦',check:'☑',switch:'◐',
-  button:'●',table:'▥'
+  column:'☷',row:'↔',grid:'▦',panel:'▣',split:'↔',divider:'—',tabs:'▤',
+  heading:'H',text:'T',tag:'◆',alert:'!',statistic:'◷',progress:'◕',steps:'➊',
+  input:'⌨',select:'⌄',radio:'◉',calendar:'▦',check:'☑',switch:'◐',slider:'◉',
+  button:'●',table:'▥',tree:'♧',list:'☰'
 };
 const pathOptions=(obj,prefix='',depth=0)=>{
   if(depth>4||!obj||typeof obj!=='object')return [];
@@ -87,6 +87,7 @@ function Studio(){
     if(type==='TextField')n.bind={value:'shipping.name'};
     if(type==='Switch'||type==='CheckBox')n.bind={checked:'shipping.enabled'};
     if(type==='Table')n.bind={data:'users'};
+    if(type==='Slider')n.bind={value:'contact.score'};
     if(type==='Button')n.on={click:'save'};
     const target=item&&containers.has(item.type)?selected:'root';
     setDocument(update(doc,target,node=>{node.children??=[];node.children.push(n);}));
