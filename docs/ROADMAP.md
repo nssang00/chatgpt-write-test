@@ -68,15 +68,15 @@
 
 Plugin SDK와 TypeScript generation 전에 공통 callable metadata layer를 만든다.
 
-- [ ] `Callable` type-erasure
-- [ ] `SignatureMetadata` (argument count/types + result type)
-- [ ] existing free function/lambda bind parity
-- [ ] member + const-member parity
-- [ ] void / exception parity
+- [x] `Callable` type-erasure
+- [x] `SignatureMetadata` (argument count/types + result type) baseline
+- [x] existing free function/lambda bind parity
+- [x] member + const-member parity
+- [x] void / exception parity
 - [ ] explicit overload-selection escape hatch
-- [ ] current `bind()` public API unchanged
-- [ ] root object `.method()` public API unchanged
-- [ ] `RegistrationToken` / owner tracking
+- [x] current `bind()` public API unchanged
+- [x] root object `.method()` public API unchanged
+- [x] generation-safe `RegistrationToken` / registration ownership baseline
 
 상세 설계: [CALLABLE_PLUGIN_DESIGN.md](CALLABLE_PLUGIN_DESIGN.md)
 
@@ -180,7 +180,7 @@ Host layer가 application framework로 커지면 설계를 다시 검토한다.
 
 핵심 제품 차별화 단계. Phase 2.6 Callable metadata foundation을 재사용한다.
 
-- [ ] small cross-platform SharedLibrary abstraction
+- [x] small cross-platform SharedLibrary abstraction + real DLL/SO load test
 - [ ] PluginModule + registration ownership
 - [ ] stable versioned C ABI draft
 - [ ] embedded plugin descriptor (id/version/ABI/runtime/capabilities)

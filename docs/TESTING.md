@@ -383,3 +383,20 @@ Plugin 완료 조건은 단순 DLL/SO load 성공이 아니다.
 - controlled unload after calls/objects are released
 - plugin exception does not cross C ABI boundary
 - Windows DLL + Linux SO real integration
+
+
+## SharedLibrary regression
+
+Plugin loader foundation은 mock handle로 완료 처리하지 않는다.
+
+Windows/Linux Core CI에서 실제 shared library를 빌드하고 다음을 검증한다.
+
+- DLL/SO path load
+- exported C symbol resolve
+- resolved function 실제 호출
+- missing symbol structured error
+- missing library structured error
+- move ownership
+- explicit unload
+
+이 테스트는 PluginModule/C ABI의 전제 조건일 뿐 plugin 완료 기준은 아니다.

@@ -495,8 +495,8 @@ Platform Smoke:             37787721167 SUCCESS
 - larger binary/shared-memory transport
 - Windows CEF backend final runtime regression
 - Host adapters
-- Callable/signature metadata foundation
-- plugin runtime
+- PluginModule / stable C ABI plugin runtime
+- overload-selection helper / stable plugin type IDs
 - sidecar runtime
 - CLI
 - Code - OSS compatibility experiment
@@ -571,3 +571,70 @@ Platform Smoke:             37787721167 SUCCESS
 - 외부 입력/파일이 필요한 blocker
 
 **대화가 아니라 repository가 source of truth가 되도록 유지한다.**
+
+
+### Callable foundation implementation baseline
+
+Public API는 변경하지 않았다.
+
+계속 동작하는 형태:
+
+```cpp
+webview.bind("math.add", [](int a, int b) {
+    return a + b;
+});
+
+webview.bind("apple", new Apple())
+    .method("add", &Apple::add)
+    .method("sub", &Apple::sub);
+```
+
+내부 구현:
+
+```text
+typed C++ callable
+      ↓
+Callable
+ ├─ DynamicFunction-compatible opaque invoke
+ └─ CallableSignature
+      ↓
+BindingRegistry
+      ↓
+BridgeRuntime / WorkerPool
+```
+
+완료된 항목:
+
+- free function/lambda/member/const-member callable metadata
+- known bridge types: void/bool/integer/number/string/list/dict/binary/native-object
+- root object method가 public JS argument signature만 노출
+- 기존 DynamicFunction primitive compatibility 유지
+- BindingRegistry를 BridgeRuntime의 method storage에서 분리
+- permanent application binding 유지
+- move-only RegistrationToken
+- generation-aware release: 오래된 token이 같은 이름의 새 binding을 제거하지 못함
+- Windows/Linux Core regression
+- Linux CEF / WebView2 browser regression에서 기존 public API 변화 없음
+
+### SharedLibrary foundation
+
+Qt QLibrary / Boost.DLL / POCO SharedLibrary에서 필요한 최소 low-level 역할만 dependency-free internal abstraction으로 구현했다.
+
+```text
+SharedLibrary
+  load(path)
+  loaded()
+  symbol(name)
+  unload()
+```
+
+platform:
+
+- Windows: LoadLibraryExW / GetProcAddress / FreeLibrary
+- Linux: dlopen / dlsym / dlclose
+
+실제 테스트 shared library를 CI에서 빌드한 뒤 symbol을 resolve/call한다.
+missing library / missing symbol / move ownership / unload도 regression에 포함한다.
+
+아직 SharedLibrary 성공만으로 Plugin SDK 완료라고 간주하지 않는다.
+다음 단계는 PluginModule + versioned C ABI + real plugin registration/lifetime test다.

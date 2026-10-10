@@ -371,15 +371,16 @@ missing dependency PE/ELF/Mach-O 분석은 loader baseline 이후의 diagnostics
 
 browser backend green baseline을 유지한 상태에서 다음 순서로 진행한다.
 
-1. `Callable` type-erasure + `SignatureMetadata`
-2. 기존 `bind()` / root object `.method()`를 Callable 위로 이관
-3. free/lambda/member/const-member/void/error/overload metadata regression
-4. `RegistrationToken` + owner tracking
-5. small `SharedLibrary` abstraction
-6. `PluginModule` + stable C ABI v1 draft
-7. real DLL/SO plugin load/register/call/lifetime regression on Windows/Linux
-8. C++ `NATIVEWEB_PLUGIN` convenience wrapper
-9. plugin inspect / TypeScript declaration generation
+1. [x] `Callable` type-erasure + signature metadata baseline
+2. [x] 기존 `bind()` / root object `.method()`를 Callable 위로 이관
+3. [x] free/lambda/member/const-member/void metadata regression
+4. [ ] explicit overload-selection helper
+5. [x] generation-safe `RegistrationToken` + registration ownership
+6. [x] small `SharedLibrary` abstraction + real DLL/SO loader regression
+7. [ ] `PluginModule` + stable C ABI v1 draft
+8. [ ] real DLL/SO plugin load/register/call/lifetime regression on Windows/Linux
+9. [ ] C++ `NATIVEWEB_PLUGIN` convenience wrapper
+10. [ ] plugin inspect / TypeScript declaration generation
 
 중요:
 
