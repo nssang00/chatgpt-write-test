@@ -7,6 +7,7 @@ on:
       - "src/browser/webview2/**"
       - "src/browser/common/**"
       - "src/core/**"
+      - "src/plugin/**"
       - "src/webview.cpp"
       - "include/nativeweb/**"
       - "tests/integration/webview2/**"
