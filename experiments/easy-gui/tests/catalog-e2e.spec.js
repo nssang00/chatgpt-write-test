@@ -15,7 +15,7 @@ test('toolbox search finds advanced basic controls and adds a real AntD input',a
   await page.goto('/');
   await page.getByRole('textbox',{name:'컨트롤 검색'}).fill('숫자 입력');
   await page.getByRole('button',{name:/NumberField/}).click();
-  await expect(page.getByText('수량',{exact:true})).toBeVisible();
+  await expect(page.getByRole('main').getByText('수량',{exact:true})).toBeVisible();
   await expect(page.locator('.ant-input-number')).toHaveCount(1);
   await expect(page.getByText('NumberField',{exact:true}).first()).toBeVisible();
 });
@@ -26,7 +26,7 @@ test('preconfigured form template changes the canvas and its data binding',async
   await page.getByText('고객 등록 폼',{exact:true}).last().click();
   await expect(page.getByText('신규 고객 등록',{exact:true})).toBeVisible();
   await expect(page.locator('.ant-picker')).toHaveCount(1);
-  await expect(page.getByText('메모',{exact:true})).toBeVisible();
+  await expect(page.getByRole('main').getByText('메모',{exact:true})).toBeVisible();
   await page.screenshot({path:testInfo.outputPath('studio-form.png'),fullPage:true});
 });
 
