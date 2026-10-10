@@ -3,19 +3,24 @@ import {createRoot} from 'react-dom/client';
 import {Alert,Button,Card,Input,Select,Space,Tag,Typography,message} from 'antd';
 import {DynamicView} from './DynamicView.jsx';
 import {parseBlueprint,publishComponent,validateBlueprint} from './blueprint.mjs';
-import {initialBlueprint,initialDefinitions,sampleData} from './examples.mjs';
+import {initialDefinitions,sampleData} from './examples.mjs';
+import {CONTROL_CATALOG,CONTROL_GROUPS,defaultNode,isContainer} from './catalog.mjs';
+import {SCREEN_TEMPLATES,getTemplate} from './templates.mjs';
 import {createComponentBundle,installComponentBundle,COMPONENT_FORMAT} from './component-kit.mjs';
 import {codeDefinitions,codeRenderers} from './code-components.jsx';
 import installedComponents from './installed-components.json';
 import './styles.css';
 
 const clone=value=>structuredClone(value);
-const builtins=['Column','Row','Panel','Text','TextField','Switch','Button','Table'];
-const containers=new Set(['Column','Row','Panel']);
-const defaults={
-  Column:{gap:12},Row:{gap:12},Panel:{title:'패널'},Text:{text:'새 텍스트'},
-  TextField:{label:'입력',placeholder:'값 입력'},Switch:{label:'사용'},
-  Button:{label:'확인'},Table:{title:'데이터 목록'}
+const builtins=Object.keys(CONTROL_CATALOG);
+const containers=new Set(builtins.filter(isContainer));
+const pathOptions=(obj,prefix='',depth=0)=>{
+  if(depth>4||!obj||typeof obj!=='object')return [];
+  return Object.entries(obj).flatMap(([key,value])=>{
+    const name=prefix?prefix+'.'+key:key;
+    if(Array.isArray(value)||value===null||typeof value!=='object')return [name];
+    return pathOptions(value,name,depth+1);
+  });
 };
 const visit=(node,fn)=>{fn(node);(node.children||[]).forEach(c=>visit(c,fn));};
 const find=(doc,id)=>{let found;visit(doc.root,n=>{if(n.id===id)found=n;});return found;};
@@ -29,28 +34,52 @@ function NodeTree({node,selected,onSelect,depth=0}){
   </React.Fragment>;
 }
 function Studio(){
-  const [doc,setDoc]=useState(()=>clone(initialBlueprint));
+  const [doc,setDoc]=useState(()=>getTemplate('workspace'));
+  const [template,setTemplate]=useState('workspace');
+  const [search,setSearch]=useState('');
+  const [viewport,setViewport]=useState('desktop');
+  const [history,setHistory]=useState({past:[],future:[]});
   const [registry,setRegistry]=useState(()=>clone({...initialDefinitions,...installedComponents,...codeDefinitions}));
   const [data,setData]=useState(()=>clone(sampleData));
   const [selected,setSelected]=useState('root');
-  const [json,setJson]=useState(()=>JSON.stringify(initialBlueprint,null,2));
+  const [json,setJson]=useState(()=>JSON.stringify(getTemplate('workspace'),null,2));
   const [mode,setMode]=useState('designer');
   const [error,setError]=useState('');
   const [saved,setSaved]=useState('');
   const [notice,holder]=message.useMessage();
   const item=find(doc,selected);
   const checked=validateBlueprint(doc,registry);
-  const setDocument=next=>{setDoc(next);setJson(JSON.stringify(next,null,2));setError('');};
+  const setDocument=next=>{
+    setHistory(prev=>({past:[...prev.past.slice(-19),doc],future:[]}));
+    setDoc(next);setJson(JSON.stringify(next,null,2));setError('');
+  };
+  const undo=()=>{
+    if(!history.past.length)return;
+    const last=history.past.at(-1);
+    setHistory(prev=>({past:prev.past.slice(0,-1),future:[doc,...prev.future]}));
+    setDoc(last);setJson(JSON.stringify(last,null,2));setSelected(last.root?.id||'root');
+  };
+  const redo=()=>{
+    if(!history.future.length)return;
+    const next=history.future[0];
+    setHistory(prev=>({past:[...prev.past,doc],future:prev.future.slice(1)}));
+    setDoc(next);setJson(JSON.stringify(next,null,2));setSelected(next.root?.id||'root');
+  };
+  const chooseTemplate=name=>{
+    setTemplate(name);const next=getTemplate(name);setDocument(next);
+    setSelected(next.root?.id||'root');setData(clone(sampleData));
+  };
   const add=type=>{
     const manifest=registry[type]?.manifest;
     const props=manifest?Object.fromEntries(
       Object.entries(manifest.props??{}).filter(([,x])=>x.default!==undefined).map(([k,x])=>[k,x.default])
     ):defaults[type]||{title:type};
-    const n={id:'n'+Math.random().toString(36).slice(2,10),type,props:clone(props)};
+    const n=builtins.includes(type) ? defaultNode(type,'n'+Math.random().toString(36).slice(2,10)):
+      {id:'n'+Math.random().toString(36).slice(2,10),type,props:clone(props)};
     if(!builtins.includes(type))n.scope='shipping';
     if(manifest?.bindings?.active)n.bind={active:'enabled'};
     if(type==='TextField')n.bind={value:'shipping.name'};
-    if(type==='Switch')n.bind={checked:'shipping.enabled'};
+    if(type==='Switch'||type==='CheckBox')n.bind={checked:'shipping.enabled'};
     if(type==='Table')n.bind={data:'users'};
     if(type==='Button')n.on={click:'save'};
     const target=item&&containers.has(item.type)?selected:'root';
@@ -125,9 +154,11 @@ function Studio(){
   }};
   return <div className="studio">
     {holder}
-    <header><div><strong>Easy GUI Studio</strong><small> React components, made easy</small></div>
-      <Space wrap><Button size="small" onClick={()=>{
-        setDocument(clone(initialBlueprint));setRegistry(clone({...initialDefinitions,...installedComponents,...codeDefinitions}));
+    <header><div className="app-brand"><span className="brand-symbol">◈</span><span><strong>Easy GUI Studio</strong><small>Visual UI Builder · React ecosystem</small></span></div>
+      <Space wrap><Button size="small" onClick={undo} disabled={!history.past.length}>↶ Undo</Button>
+        <Button size="small" onClick={redo} disabled={!history.future.length}>↷ Redo</Button>
+        <Button size="small" onClick={()=>{
+        chooseTemplate('workspace');setRegistry(clone({...initialDefinitions,...installedComponents,...codeDefinitions}));
         setData(clone(sampleData));setSelected('root');}}>초기화</Button>
         <label className="file-button">JSON 가져오기<input hidden type="file" accept=".json,application/json" onChange={importJson}/></label>
         <Button size="small" onClick={download}>JSON 다운로드</Button>
@@ -135,27 +166,49 @@ function Studio(){
         <Button size="small" type="primary" onClick={publish}>컴포넌트로 등록</Button></Space>
     </header>
     <div className="workbench">
-      <aside className="toolbox"><h3>Toolbox</h3><small>기본 컨트롤</small>
-        <div className="controls">{builtins.map(n=><Button key={n} size="small" block onClick={()=>add(n)}>+ {n}</Button>)}</div>
+      <aside className="toolbox"><h3>컴포넌트 <span className="eyebrow">TOOLBOX</span></h3>
+        <Input allowClear placeholder="컨트롤 검색..." aria-label="컨트롤 검색"
+          value={search} onChange={e=>setSearch(e.target.value)}/>
+        <div className="toolbox-list">{CONTROL_GROUPS.map(group=>{
+          const choices=builtins.filter(type=>CONTROL_CATALOG[type].group===group &&
+            (type+' '+CONTROL_CATALOG[type].label).toLowerCase().includes(search.toLowerCase()));
+          return choices.length?<div className="group-block" key={group}>
+            <div className="group-title">{group}<span>{choices.length}</span></div>
+            <div className="controls">{choices.map(type=><Button key={type} size="small" block
+              onClick={()=>add(type)}><span className="control-icon">▦</span>
+              {CONTROL_CATALOG[type].label} <small>+ {type}</small></Button>)}</div>
+          </div>:null;
+        })}</div>
         <hr/><small>조립한 컴포넌트</small>
-        <div className="controls">{Object.keys(registry).map(n=><Button key={n} size="small" block onClick={()=>add(n)}>+ {n}</Button>)}</div>
+        <div className="controls custom-controls">{Object.keys(registry)
+          .filter(n=>n.toLowerCase().includes(search.toLowerCase()))
+          .map(n=><Button key={n} size="small" block onClick={()=>add(n)}>+ {n}</Button>)}</div>
         <hr/><h4>Component Tree</h4><NodeTree node={doc.root} selected={selected} onSelect={setSelected}/>
       </aside>
-      <main><div className="preview-head"><Tag color="blue">Live React + AntD</Tag>
-        <Button size="small" onClick={()=>setData(clone(sampleData))}>데이터 초기화</Button></div>
+      <main><div className="preview-head">
+          <div className="template-picker"><span>화면 템플릿</span>
+            <Select aria-label="화면 템플릿" value={template} style={{minWidth:180}}
+              onChange={chooseTemplate}
+              options={Object.entries(SCREEN_TEMPLATES).map(([value,x])=>({value,label:x.label}))}/>
+          </div><div className="preview-options"><Tag color="blue">● Live Preview</Tag>
+            <Button size="small" onClick={()=>setViewport(v=>v==='desktop'?'mobile':'desktop')}>
+              {viewport==='desktop'?'모바일 보기':'데스크톱 보기'}</Button>
+            <Button size="small" onClick={()=>setData(clone(sampleData))}>데이터 초기화</Button>
+          </div></div>
         {!checked.valid&&<Alert type="error" message={checked.errors.join('; ')} showIcon/>}
-        <div className="preview"><DynamicView blueprint={doc} definitions={registry} reactComponents={codeRenderers} data={data}
+        <div className={'preview '+(viewport==='mobile'?'preview-mobile':'')}><DynamicView blueprint={doc} definitions={registry} reactComponents={codeRenderers}
+          selectedNode={selected} onNodeSelect={setSelected} data={data}
           onDataChange={setData} actions={actions}/></div>
         {saved&&<Alert type="success" showIcon message={'Save: '+saved}/>}
       </main>
-      <aside className="inspector"><h3>Properties</h3>
+      <aside className="inspector"><h3>속성 편집 <span className="eyebrow">INSPECTOR</span></h3>
         {item?<><Tag>{item.type}</Tag>
           <label>ID<Input disabled size="small" value={item.id}/></label>
           <label>Scope<Input size="small" value={item.scope||''} onChange={e=>editScope(e.target.value)}/></label>
           {Object.entries({...Object.fromEntries(
-            Object.entries(registry[item.type]?.manifest?.props||{}).map(([k,info])=>[k,info.default??''])
+            Object.entries(CONTROL_CATALOG[item.type]?.props??registry[item.type]?.manifest?.props??{}).map(([k,info])=>[k,info.default??''])
           ),...item.props}).map(([key,value])=>{
-            const field=registry[item.type]?.manifest?.props?.[key];
+            const field=CONTROL_CATALOG[item.type]?.props?.[key]??registry[item.type]?.manifest?.props?.[key];
             return <label key={key}>{field?.label||key}
               {field?.type==='enum'?<Select size="small" value={value}
                 options={field.options.map(v=>({value:v,label:v}))}
@@ -168,12 +221,15 @@ function Studio(){
             </label>;
           })}
           {Object.entries({...Object.fromEntries(
-            Object.keys(registry[item.type]?.manifest?.bindings||{}).map(k=>[k,''])
+            Object.keys(registry[item.type]?.manifest?.bindings||
+              ({TextField:{value:1},PasswordField:{value:1},TextArea:{value:1},
+                NumberField:{value:1},DateField:{value:1},SelectField:{value:1},
+                RadioGroup:{value:1},CheckBox:{checked:1},Switch:{checked:1},
+                Table:{data:1}}[item.type]||{})).map(k=>[k,''])
           ),...item.bind}).map(([key,value])=><label key={key}>Binding: {key}
             <Select showSearch size="small" style={{width:'100%'}} value={value}
               onChange={v=>edit('bind',key,v)}
-              options={['shipping.name','shipping.city','shipping.enabled','billing.name','billing.city',
-                'billing.enabled','users','name','city','enabled'].map(v=>({value:v,label:v}))}/>
+              options={[...new Set([...pathOptions(data),'name','city','enabled'])].map(v=>({value:v,label:v}))}/>
           </label>)}
           <Button danger size="small" disabled={selected==='root'} onClick={remove}>선택 블록 삭제</Button>
         </>:<span>블록을 선택하세요.</span>}
@@ -182,7 +238,7 @@ function Studio(){
     <div className="bottom"><Space style={{marginBottom:8}}>
       {['designer','json','code','data'].map(n=><Button key={n} size="small" type={mode===n?'primary':'default'} onClick={()=>setMode(n)}>{n}</Button>)}
     </Space>
-    {mode==='designer'&&<Typography.Paragraph>기본 블록을 추가하고 Properties에서 수정하세요.
+    {mode==='designer'&&<Typography.Paragraph>① 왼쪽에서 컨트롤 선택 → ② 화면에서 선택 → ③ 속성과 데이터 바인딩 → ④ 미리보기 / JSON / 재사용. 
       AddressEditor 한 종류가 배송지/청구지 각각 독립된 데이터에 바인딩됩니다.
       현재 화면 전체를 컴포넌트로 등록하면 Toolbox에서 다시 조립할 수 있습니다.</Typography.Paragraph>}
     {mode==='json'&&<><Input.TextArea rows={11} value={json} onChange={e=>setJson(e.target.value)}
