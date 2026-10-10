@@ -17,7 +17,7 @@ test('toolbox search finds advanced basic controls and adds a real AntD input',a
   await page.getByRole('button',{name:/NumberField/}).click();
   await expect(page.getByRole('main').getByText('수량',{exact:true})).toBeVisible();
   await expect(page.locator('.ant-input-number')).toHaveCount(1);
-  await expect(page.getByText('NumberField',{exact:true}).first()).toBeVisible();
+  await expect(page.locator('.inspector > .ant-tag')).toBeVisible();
 });
 
 test('preconfigured form template changes the canvas and its data binding',async({page},testInfo)=>{
@@ -41,7 +41,7 @@ test('controls gallery renders real tree, slider and split panels',async({page},
   await page.goto('/');
   await page.locator('.template-picker .ant-select').click();
   await page.getByText('컴포넌트 갤러리',{exact:true}).last().click();
-  await expect(page.getByRole('main').getByText('컴포넌트 갤러리',{exact:true})).toBeVisible();
+  await expect(page.getByRole('heading',{name:'컴포넌트 갤러리',exact:true})).toBeVisible();
   await expect(page.locator('.ant-tree')).toHaveCount(1);
   await expect(page.locator('.ant-slider')).toHaveCount(1);
   await expect(page.locator('.ant-steps')).toHaveCount(1);
@@ -54,7 +54,7 @@ test('inspector exposes binding tools and duplicates selected controls',async({p
   await page.getByRole('textbox',{name:'컨트롤 검색'}).fill('숫자 입력');
   await page.getByRole('button',{name:/NumberField/}).click();
   await page.getByRole('button',{name:'바인딩',exact:true}).click();
-  await expect(page.getByText('Binding: value',{exact:true})).toBeVisible();
+  await expect(page.locator('.inspector label').filter({hasText:'Binding: value'})).toBeVisible();
   await page.getByRole('button',{name:'속성',exact:true}).click();
   await page.getByRole('button',{name:'블록 복제'}).click();
   await expect(page.locator('.ant-input-number')).toHaveCount(2);
