@@ -2,6 +2,7 @@
 #define NATIVEWEB_PLUGIN_MODULE_HPP_INCLUDED
 
 #include "core/binding_registry.hpp"
+#include "nativeweb/plugin_abi.h"
 
 #include <memory>
 #include <string>
