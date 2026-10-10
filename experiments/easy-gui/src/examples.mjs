@@ -1,7 +1,16 @@
 export const sampleData = {
   shipping:{name:'김민수',city:'서울',enabled:true},
   billing:{name:'이서연',city:'부산',enabled:false},
-  users:[{id:1,name:'김민수',city:'서울'},{id:2,name:'이서연',city:'부산'}]
+  users:[
+    {id:1,name:'김민수',city:'서울',enabled:true},
+    {id:2,name:'이서연',city:'부산',enabled:false},
+    {id:3,name:'박서준',city:'대전',enabled:true},
+    {id:4,name:'최유진',city:'광주',enabled:true},
+    {id:5,name:'정지훈',city:'인천',enabled:true},
+    {id:6,name:'한수연',city:'대구',enabled:false}
+  ],
+  contact:{name:'김하늘',email:'hello@example.com',department:'개발팀',
+    createdAt:'2026-10-10',note:'신규 고객의 요청 사항을 기록합니다.',enabled:true}
 };
 export const initialDefinitions = {
   AddressEditor:{root:{type:'Panel',props:{title:'주소 편집'},children:[
