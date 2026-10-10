@@ -495,7 +495,10 @@ Platform Smoke:             37787721167 SUCCESS
 - larger binary/shared-memory transport
 - Windows WebView2/CEF engine-switch regression
 - Host adapters
-- PluginModule / stable C ABI plugin runtime
+- native object/module lifetime coupling
+- queued/running task/module lifetime regression
+- plugin descriptor runtime/capability metadata
+- C++ NATIVEWEB_PLUGIN convenience wrapper
 - overload-selection helper / stable plugin type IDs
 - sidecar runtime
 - CLI
@@ -660,3 +663,61 @@ Platform Smoke:               38018203876 SUCCESS
 - BindingRegistry
 - generation-safe RegistrationToken
 - real Windows DLL / Linux SO SharedLibrary load/symbol/unload
+
+
+### PluginModule / C ABI v1 verified baseline
+
+현재 이것은 **plugin function-registration vertical slice**이며 최종 Plugin SDK 전체가 아니다.
+
+구현:
+
+- public C-compatible `include/nativeweb/plugin_abi.h`
+- well-known entry point `nativeweb_plugin_init_v1`
+- plugin id/version/ABI validation
+- relative plugin API -> `<plugin-id>.<method>`
+- null/bool/int32/double/string/binary synchronous value ABI
+- plugin error -> structured `nativeweb::Error`
+- PluginModule owns RegistrationToken list
+- Callable owns strong PluginLibraryLease
+- module teardown unregisters public methods before releasing its own lease
+- retained/in-flight Callable can keep DLL/SO loaded after PluginModule teardown
+
+실제 regression:
+
+```text
+valid plugin DLL/SO
+  -> load
+  -> init v1
+  -> sample.add / sample.fail register
+  -> invoke
+
+bad ABI plugin
+  -> plugin_abi_mismatch
+
+plain shared library
+  -> missing nativeweb_plugin_init_v1 rejection
+```
+
+Latest verified code head:
+
+```text
+a6a1d268e922259d46162f78b1fb253947960513
+
+Core Regression:          38018624756 SUCCESS (Ubuntu + Windows)
+Linux CEF Bridge:         38018624741 SUCCESS
+Windows CEF Bridge:       38018624735 SUCCESS
+Windows WebView2 Bridge:  38018624737 SUCCESS
+Platform Smoke:           38018624765 SUCCESS
+```
+
+Core regression의 `plugin.module`은 Ubuntu/Windows에서 실제 shared library를 빌드해 실행한다.
+
+남은 plugin 핵심:
+
+1. native object entry가 PluginLibraryLease 보유
+2. queued/running worker task lifetime을 명시적으로 regression
+3. plugin-owned events
+4. runtime/capability/permission descriptor
+5. C++ `Plugin / Api / NATIVEWEB_PLUGIN` convenience layer
+6. safe unload state / plugin_busy
+7. TS metadata generation

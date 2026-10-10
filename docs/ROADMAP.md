@@ -181,20 +181,20 @@ Host layer가 application framework로 커지면 설계를 다시 검토한다.
 핵심 제품 차별화 단계. Phase 2.6 Callable metadata foundation을 재사용한다.
 
 - [x] small cross-platform SharedLibrary abstraction + real DLL/SO load test
-- [ ] PluginModule + registration ownership
-- [ ] stable versioned C ABI draft
+- [x] PluginModule + function registration ownership baseline
+- [x] stable versioned C ABI v1 function-call baseline
 - [ ] embedded plugin descriptor (id/version/ABI/runtime/capabilities)
 - [ ] C++ wrapper
 - [ ] `NATIVEWEB_PLUGIN` macro/export convenience
-- [ ] plugin namespace registration
-- [ ] callable/module lifetime coupling
+- [x] plugin namespace registration
+- [x] callable/module lifetime coupling
 - [ ] native object/module lifetime coupling
 - [ ] queued/running task/module lifetime coupling
 - [ ] conservative unload / plugin_busy policy
-- [ ] real DLL Windows regression
-- [ ] real SO Linux regression
+- [x] real DLL Windows regression
+- [x] real SO Linux regression
 - [ ] object/event/binary support
-- [ ] ABI compatibility validation
+- [x] ABI compatibility validation baseline
 - [ ] TypeScript declaration generation
 - [ ] missing-dependency diagnostics
 - [ ] `xweb plugin new/build/inspect`

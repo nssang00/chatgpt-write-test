@@ -377,11 +377,93 @@ browser backend green baseline을 유지한 상태에서 다음 순서로 진행
 4. [ ] explicit overload-selection helper
 5. [x] generation-safe `RegistrationToken` + registration ownership
 6. [x] small `SharedLibrary` abstraction + real DLL/SO loader regression
-7. [ ] `PluginModule` + stable C ABI v1 draft
-8. [ ] real DLL/SO plugin load/register/call/lifetime regression on Windows/Linux
+7. [x] `PluginModule` + stable C ABI v1 function-registration baseline
+8. [x] real DLL/SO plugin load/register/call/callable-lifetime regression on Windows/Linux
 9. [ ] C++ `NATIVEWEB_PLUGIN` convenience wrapper
 10. [ ] plugin inspect / TypeScript declaration generation
 
 중요:
 
 > 내부 리팩터링 때문에 현재 public API regression이나 CEF/WebView2 browser contract가 변경되어서는 안 된다.
+
+
+## 14. Implemented C ABI v1 baseline
+
+현재 구현된 binary boundary:
+
+```c
+nativeweb_plugin_init_v1(nw_plugin_api_v1* out)
+```
+
+Plugin은 descriptor에 다음을 제공한다.
+
+- `abi_version`
+- `id`
+- `version`
+- `plugin_context`
+- `register_api`
+- optional `shutdown`
+
+Host는 `nw_host_api_v1::register_function`을 통해 plugin의 상대 method name을 받으며, 실제 registry 이름은:
+
+```text
+<plugin-id>.<relative-name>
+```
+
+으로 등록한다.
+
+현재 value ABI v1 baseline:
+
+- null
+- bool
+- int32
+- double
+- string view
+- binary view
+
+string/binary input view는 call 동안만 유효하다.
+plugin output string/binary/error view는 callback이 반환할 때까지만 유효하면 되고 NativeWeb이 callback 반환 전에 복사한다.
+
+아직 ABI v1 baseline에 넣지 않은 것:
+
+- list/map
+- native object handle
+- async callback/future ABI
+- event ABI
+- capability/permission descriptor
+- runtime min/max compatibility descriptor
+
+이 항목들은 C ABI struct versioning/size compatibility를 유지하면서 확장한다.
+
+## 15. Implemented module lifetime baseline
+
+`PluginModule`은 registration token들과 library lease를 분리한다.
+
+```text
+PluginModule
+  ├─ RegistrationToken[]
+  └─ PluginLibraryLease
+          └─ SharedLibrary
+
+BindingRegistry
+  └─ Callable
+       └─ strong PluginLibraryLease
+```
+
+Module destructor는 먼저 registration을 제거한다.
+
+이미 registry에서 복사되어 실행 중이거나 외부에서 보유 중인 `Callable`은 strong lease를 보유하므로 DLL/SO code가 premature unload되지 않는다.
+
+실제 regression은 다음을 검증한다.
+
+1. real DLL/SO load
+2. C ABI init
+3. plugin id/version 확인
+4. `sample.add` registration/call
+5. plugin error -> NativeWeb structured Error
+6. ABI mismatch reject
+7. missing init symbol reject
+8. module destruction -> registry removal
+9. module destruction 이후 retained Callable 호출 성공
+
+아직 native object와 queued/running worker task에 대한 module lease regression은 별도로 추가해야 한다.

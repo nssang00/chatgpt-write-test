@@ -63,14 +63,14 @@ Platform Smoke 외에 `.github/workflows/core-regression.yml`이 추가되었다
 - public WebView API compile contract
 - BrowserBackend compile contract
 
-Latest full verified callable/loader baseline:
+Latest full verified plugin-function vertical-slice baseline:
 
-- Code head: `cca3bc446e7023538a8928682780c7ac5952e892`
-- Core Regression run `38018203881`: Ubuntu + Windows success
-- Platform Smoke run `38018203876`: Ubuntu + Windows success
-- Linux CEF Bridge run `38018203880`: success
-- Windows CEF Bridge run `38018203913`: success
-- Windows WebView2 Bridge run `38018203918`: success
+- Code head: `a6a1d268e922259d46162f78b1fb253947960513`
+- Core Regression run `38018624756`: Ubuntu + Windows success
+- Platform Smoke run `38018624765`: Ubuntu + Windows success
+- Linux CEF Bridge run `38018624741`: success
+- Windows CEF Bridge run `38018624735`: success
+- Windows WebView2 Bridge run `38018624737`: success
 
 Core coverage now includes Any/containers/binary, typed bind, RequestId-correlated typed pending futures without per-call `std::async`, structured errors, worker pool/task queue, concurrent async bridge routing, event dispatcher, bridge messages/runtime, ObjectRegistry, NativeObjectRuntime, root object binding, WebView orchestration/engine selection and public API compile contracts.
 
@@ -400,3 +400,28 @@ Windows/Linux Core CI에서 실제 shared library를 빌드하고 다음을 검�
 - explicit unload
 
 이 테스트는 PluginModule/C ABI의 전제 조건일 뿐 plugin 완료 기준은 아니다.
+
+
+## PluginModule v1 vertical-slice regression
+
+현재 `plugin.module`은 Ubuntu/Windows에서 실제 SO/DLL을 생성한다.
+
+검증:
+
+- valid plugin init symbol load
+- ABI v1 validation
+- plugin id/version
+- relative namespace registration
+- int32 function call result
+- plugin structured error mapping
+- bad ABI rejection
+- missing entry symbol rejection
+- module teardown unregisters methods
+- retained Callable keeps plugin library code alive after module teardown
+
+다음 regression에서 추가할 것:
+
+- native object retains module lease
+- queued/running worker task retains module lease
+- plugin-owned event/listener lifetime
+- explicit safe unload / busy state

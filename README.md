@@ -123,7 +123,7 @@ Latest verified code head: `cca3bc446e7023538a8928682780c7ac5952e892`.
 - NativeWeb WebView2 Bridge: `38018203918` — real Windows WebView2 success
 - Platform Smoke: `38018203876` — Ubuntu/Windows success
 
-Callable/signature metadata와 generation-safe registration ownership이 기존 public API 변경 없이 들어갔고, Windows/Linux에서 실제 DLL/SO를 빌드해 `SharedLibrary` load/symbol/unload regression도 통과한다.
+Callable/signature metadata와 generation-safe registration ownership이 기존 public API 변경 없이 들어갔다. 또한 Windows/Linux에서 실제 DLL/SO를 빌드해 SharedLibrary와 C ABI v1 PluginModule function-registration vertical slice까지 통과한다. 아직 native-object/task lifetime과 C++ plugin convenience API는 구현 중이다.
 
 ## Start here
 
@@ -142,9 +142,10 @@ Callable/signature metadata와 generation-safe registration ownership이 기존 
 ## Immediate next work
 
 1. Windows WebView2/CEF engine-switch regression
-2. PluginModule + stable versioned C ABI prototype
-3. real DLL/SO plugin register/call/lifetime regression
-4. security permission/capability policy
+2. native object / queued task의 plugin module lifetime coupling
+3. C++ Plugin/Api/NATIVEWEB_PLUGIN convenience API
+4. plugin descriptor runtime/capability metadata
+5. security permission/capability policy
 5. TransferBuffer / SharedBuffer advanced binary transport
 6. Win32/MFC/WinForms thin host adapters
 7. TypeScript/codegen metadata 확장
