@@ -76,6 +76,15 @@ export function validateBlueprint(input,definitions={}, {maxNodes=300,maxDepth=3
         }
       }else{
         if(!isRecord(def.root)){errors.push('Invalid component definition: '+node.type);return;}
+        if(def.manifest){
+          for(const section of ['props','bindings','events']){
+            const exposed=def.manifest[section]??{};
+            if(!isRecord(exposed)){errors.push('Invalid exposed '+section+' on '+node.type);continue;}
+            const values=section==='bindings'?node.bind:section==='events'?node.on:node.props;
+            for(const port of Object.keys(values??{}))
+              if(!Object.hasOwn(exposed,port))errors.push('Unknown composite '+section+' port: '+node.type+'.'+port);
+          }
+        }
         visit(def.root,depth+1,[...ancestry,node.type]);
       }
     }

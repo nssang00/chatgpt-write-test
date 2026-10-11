@@ -16,12 +16,28 @@ export function validateManifest(manifest){
     if(!validName(key)||!record(spec)||!propTypes.has(spec.type))errors.push('Invalid prop descriptor: '+key);
     if(spec?.type==='enum'&&(!Array.isArray(spec.options)||spec.options.some(x=>typeof x!=='string')))errors.push('Invalid enum options: '+key);
   }
-  for(const [port,config] of Object.entries(manifest.bindings??{})){
-    if(!validName(port)||!record(config)||!validName(config.prop)||config.change!==undefined&&!validName(config.change))
-      errors.push('Invalid binding descriptor: '+port);
+  for(const [key,spec] of Object.entries(manifest.props??{})){
+    if(spec?.target!==undefined&&(!validName(spec.target)||!validName(spec.prop)))
+      errors.push('Invalid exposed prop target: '+key);
   }
-  for(const [evt,callback] of Object.entries(manifest.events??{}))
-    if(!validName(evt)||!validName(callback))errors.push('Invalid event descriptor: '+evt);
+  for(const [port,config] of Object.entries(manifest.bindings??{})){
+    const valid=record(config)&&
+      (config.target!==undefined
+        ?validName(config.target)&&validName(config.port)
+        :validName(config.prop)&&(config.change===undefined||validName(config.change)));
+    if(!validName(port)||!valid)errors.push('Invalid binding descriptor: '+port);
+  }
+  for(const [evt,callback] of Object.entries(manifest.events??{})){
+    const valid=record(callback)
+      ?validName(callback.target)&&validName(callback.event)
+      :validName(callback);
+    if(!validName(evt)||!valid)errors.push('Invalid event descriptor: '+evt);
+  }
+  if(!record(manifest.slots??{}))errors.push('Invalid slots descriptor');
+  else for(const [slot,spec] of Object.entries(manifest.slots??{})){
+    if(!validName(slot)||!record(spec)||!Array.isArray(spec.accepts)||
+      spec.accepts.some(s=>s!=='*'&&!validName(s)))errors.push('Invalid slot descriptor: '+slot);
+  }
   return errors;
 }
 export function defineReactComponent(name, component, manifest={props:{}}){
@@ -74,7 +90,7 @@ export function validateComponentBundle(bundle){
   for(const [type,def] of Object.entries(bundle.definitions)){
     if(!validName(type)||BUILTINS.includes(type))throw new Error('Invalid component dependency: '+type);
     if(!record(def))throw new Error('Invalid component definition: '+type);
-    if(def.kind==='react'){
+    if(def.kind==='react'||def.manifest){
       const errors=validateManifest(def.manifest);
       if(errors.length)throw new Error(errors.join('; '));
     }
