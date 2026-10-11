@@ -11,10 +11,11 @@ const bounded=(node,port)=>Boolean(node.bind?.[port]);
 export function DynamicView({
   blueprint, definitions={}, reactComponents={}, data, onDataChange,
   actions={}, onNodeSelect, selectedNode, renderBuiltin=renderAntdControl,
-  viewport='desktop', pendingType, onPlacement, onResizeSpan
+  viewport='desktop', pendingType, onPlacement, onResizeSpan, onFreePosition
 }) {
   const [dropHint,setDropHint]=useState(null);
   const resizeStart=useRef(null);
+  const moveStart=useRef(null);
   let tree;
   try{tree=expandBlueprint(blueprint,definitions);}
   catch(error){return <Alert showIcon type="error" message="Blueprint error" description={error.message}/>;}
@@ -58,16 +59,21 @@ export function DynamicView({
       }
     }
     const direction=parent?.type==='Row'?'horizontal':'vertical';
-    const sideAt=event=>!parent?'inside':suggestDropSide(event.currentTarget.getBoundingClientRect(),
+    const sideAt=event=>(!parent||node.type==='FreeCanvas'||parent?.type==='FreeCanvas')
+      ?'inside':suggestDropSide(event.currentTarget.getBoundingClientRect(),
       event.clientX,event.clientY,{container:isContainer(node.type)&&
         !node.instanceType,direction});
     const layoutParent=parent?.type==='Grid';
+    const freeParent=parent?.type==='FreeCanvas';
     const columns=Math.max(1,Math.min(12,Number(parent?.props?.columns)||2));
     const span=getGridSpan(node,viewport,columns);
     const sizing=node.sizing?.mode;
     const isRow=parent?.type==='Row';
+    const free=node.placement?.free??{x:16,y:16,width:200,height:48};
     const layoutStyle={
       ...(layoutParent?{gridColumn:'span '+span}:{}),
+      ...(freeParent?{position:'absolute',left:free.x,top:free.y,
+        width:free.width,minHeight:free.height}:{}) ,
       ...(sizing==='hug'?{width:'fit-content',...(isRow?{flex:'0 0 auto'}:{})}:{}),
       ...(sizing==='fill'?{width:'100%',...(isRow?{flex:'1 1 0%'}:{})}:{}),
       ...(sizing==='fixed'?{width:node.sizing.px+'px',maxWidth:'100%',
@@ -75,10 +81,20 @@ export function DynamicView({
     };
     const hover=dropHint?.id===editableId?dropHint.side:null;
     const canEdit=Boolean(onNodeSelect);
+    const dropLocation=event=>{
+      const freeZone=event.currentTarget.closest('.easy-free-canvas')??
+        event.currentTarget.querySelector('.easy-free-canvas');
+      const target=freeZone?(parent?.type==='FreeCanvas'?parent.editableId??parent.id:editableId):
+        editableId;
+      const rect=freeZone?.getBoundingClientRect();
+      return {targetId:target,side:rect?'inside':sideAt(event),
+        ...(rect?{point:{x:Math.max(0,event.clientX-rect.left),
+          y:Math.max(0,event.clientY-rect.top)}}:{})};
+    };
     const handlePlacement=event=>{
       event.stopPropagation();
       if(pendingType&&onPlacement){
-        onPlacement({type:pendingType,targetId:editableId,side:sideAt(event)});
+        onPlacement({type:pendingType,...dropLocation(event)});
         setDropHint(null);
       }else onNodeSelect?.(editableId);
     };
@@ -89,7 +105,7 @@ export function DynamicView({
       const toolbox=event.dataTransfer.getData('application/x-easygui-control');
       if(plain||toolbox){
         onPlacement({sourceId:plain||undefined,type:toolbox||undefined,
-          targetId:editableId,side:sideAt(event)});
+          ...dropLocation(event)});
       }
       setDropHint(null);
     };
@@ -116,9 +132,25 @@ export function DynamicView({
       style={layoutStyle}>
       {element}
       {canEdit&&editableId===selectedNode&&parent&&!pendingType&&
-        <button type="button" className="canvas-move-handle" draggable
+        <button type="button" className={'canvas-move-handle'+(freeParent?' free-move':'')}
+          draggable={!freeParent}
           title="다른 위치로 드래그하여 이동" aria-label="선택 요소 이동"
           onClick={event=>event.stopPropagation()}
+          onPointerDown={event=>{
+            if(!freeParent)return;
+            event.stopPropagation();event.preventDefault();
+            moveStart.current={id:editableId,x:event.clientX,y:event.clientY,free};
+            event.currentTarget.setPointerCapture(event.pointerId);
+          }}
+          onPointerUp={event=>{
+            if(!freeParent||!moveStart.current)return;
+            event.stopPropagation();
+            const start=moveStart.current;
+            onFreePosition?.(start.id,{...start.free,
+              x:start.free.x+event.clientX-start.x,
+              y:start.free.y+event.clientY-start.y});
+            moveStart.current=null;
+          }}
           onDragStart={event=>{
             event.stopPropagation();event.dataTransfer.effectAllowed='move';
             event.dataTransfer.setData('application/x-easygui-node',editableId);
