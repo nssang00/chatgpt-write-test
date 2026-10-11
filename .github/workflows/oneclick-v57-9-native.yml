@@ -137,6 +137,11 @@ jobs:
           foreach ($x in @('Tests','Validation','Tools','Prototypes')) { if (@($contract.releaseExcludes) -notcontains $x) { throw "Missing GA exclusion: $x" } }
           foreach ($x in @('RELEASE_NOTES.md','DISTRIBUTION_CHECKLIST.md','ThirdParty/CEF-LICENSE.txt')) { if (@($contract.requiredMetadata) -notcontains $x) { throw "Missing GA metadata contract: $x" } }
 
+      - name: Verify v58.4 signing path normalization
+        shell: pwsh
+        run: |
+          .\ci\v58.4-ga\signing_path_contract.ps1
+
       - name: Reconstruct exact v58.2 Runtime source
         shell: pwsh
         run: |
