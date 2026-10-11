@@ -94,3 +94,46 @@ add_test(
         $<TARGET_FILE:nativeweb_test_bad_abi_plugin>
         $<TARGET_FILE:nativeweb_test_shared_library>
 )
+
+
+add_library(nativeweb_test_cpp_plugin SHARED
+    sample_cpp_plugin.cpp
+)
+
+target_include_directories(nativeweb_test_cpp_plugin
+    PRIVATE
+        ${PROJECT_SOURCE_DIR}/include
+)
+
+set_target_properties(nativeweb_test_cpp_plugin PROPERTIES
+    CXX_STANDARD 11
+    CXX_STANDARD_REQUIRED YES
+    CXX_EXTENSIONS NO
+)
+
+add_executable(nativeweb_cpp_plugin_wrapper_regression
+    cpp_plugin_wrapper_regression.cpp
+)
+
+target_link_libraries(nativeweb_cpp_plugin_wrapper_regression
+    PRIVATE
+        NativeWeb::Core
+)
+
+target_include_directories(nativeweb_cpp_plugin_wrapper_regression
+    PRIVATE
+        ${PROJECT_SOURCE_DIR}/src
+)
+
+set_target_properties(nativeweb_cpp_plugin_wrapper_regression PROPERTIES
+    CXX_STANDARD 11
+    CXX_STANDARD_REQUIRED YES
+    CXX_EXTENSIONS NO
+)
+
+add_test(
+    NAME plugin.cpp_wrapper
+    COMMAND
+        nativeweb_cpp_plugin_wrapper_regression
+        $<TARGET_FILE:nativeweb_test_cpp_plugin>
+)
