@@ -16,11 +16,11 @@ test('clicking Toolbox enters placement mode; placement at exact canvas location
   await page.getByRole('button',{name:/TextField/}).click();
   await expect(page.getByRole('status')).toContainText('배치 모드');
   await expect(page.locator('.preview input')).toHaveCount(0);
-  await root(page).click({position:{x:6,y:6}});
+  await page.locator('.preview [data-node-id="startText"]').click({position:{x:8,y:3}});
   await expect(page.locator('.preview input')).toHaveCount(1);
   await expect(page.getByRole('status')).toHaveCount(0);
   const doc=await json(page);
-  expect(doc.root.children.at(-1).type).toBe('TextField');
+  expect(doc.root.children[1].type).toBe('TextField');
   await page.screenshot({path:testInfo.outputPath('click-to-place.png'),fullPage:true});
 });
 test('escape cancels placement without mutating canvas',async({page})=>{
@@ -54,7 +54,7 @@ test('Grid child can span multiple columns and keyboard resize stays responsive'
   await page.goto('/');
   await page.locator('.preview [data-node-id="metricOne"]').click();
   await expect(page.getByRole('combobox',{name:'Grid 너비'})).toBeVisible();
-  await page.getByRole('combobox',{name:'Grid 너비'}).click();
+  await page.locator('.layout-controls .ant-select').last().click();
   await page.getByText('2칸',{exact:true}).last().click();
   await expect(page.locator('.preview [data-node-id="metricOne"]')).toHaveAttribute('data-grid-span','2');
   const handle=page.getByRole('button',{name:'Grid 열 너비 조절'});
@@ -68,7 +68,7 @@ test('Grid child can span multiple columns and keyboard resize stays responsive'
 test('selected control supports Hug Fill and Fixed sizing',async({page})=>{
   await blank(page);
   await page.locator('.preview [data-node-id="startText"]').click();
-  await page.getByRole('combobox',{name:'너비 방식'}).click();
+  await page.locator('.layout-controls .ant-select').first().click();
   await page.getByText('Fixed · 고정 너비',{exact:true}).last().click();
   await expect(page.getByRole('spinbutton',{name:'고정 너비(px)'})).toBeVisible();
   const doc=await json(page);
