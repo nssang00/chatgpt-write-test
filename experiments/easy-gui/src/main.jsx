@@ -101,7 +101,7 @@ function Studio(){
     ):{title:type};
     const n=builtins.includes(type) ? defaultNode(type,'n'+Math.random().toString(36).slice(2,10)):
       {id:'n'+Math.random().toString(36).slice(2,10),type,props:clone(props)};
-    if(!builtins.includes(type))n.scope='shipping';
+    if(!builtins.includes(type)&&manifest?.kind==='react')n.scope='shipping';
     if(manifest?.bindings?.active)n.bind={active:'enabled'};
     if(type==='TextField')n.bind={value:'shipping.name'};
     if(type==='Switch'||type==='CheckBox')n.bind={checked:'shipping.enabled'};

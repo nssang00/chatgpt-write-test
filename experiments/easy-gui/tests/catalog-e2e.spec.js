@@ -62,3 +62,40 @@ test('inspector exposes binding tools and duplicates selected controls',async({p
   await expect(page.locator('.ant-input-number')).toHaveCount(2);
   await page.screenshot({path:testInfo.outputPath('studio-inspector.png'),fullPage:true});
 });
+
+test('composition: extract a selected form and reuse it as a new Toolbox component',async({page},testInfo)=>{
+  await page.goto('/');
+  await page.locator('.template-picker .ant-select').click();
+  await page.getByText('고객 등록 폼',{exact:true}).last().click();
+  await page.locator('.app-brand').click();
+  const original=page.locator('.preview input').first();
+  await expect(original).toHaveValue('김하늘');
+  await page.locator('.tree-node').filter({hasText:'Panel'}).first().click();
+  page.once('dialog',d=>d.accept('CustomerBlock'));
+  await page.getByRole('button',{name:'컴포넌트로 추출',exact:true}).click();
+  await expect(page.getByRole('button',{name:'+ CustomerBlock'})).toBeVisible();
+  await expect(original).toHaveValue('김하늘');
+  await page.getByRole('button',{name:'+ CustomerBlock'}).click();
+  await expect(page.getByText('고객 정보',{exact:true})).toHaveCount(2);
+  await page.screenshot({path:testInfo.outputPath('studio-extracted-component.png'),fullPage:true});
+});
+test('composition: clicking nested composite fields selects the correct instance',async({page})=>{
+  await page.goto('/');
+  const form=page.locator('.easy-panel').filter({hasText:'배송지'}).first();
+  await form.locator('input').first().click();
+  await expect(page.locator('.inspector > .ant-tag')).toContainText('AddressEditor');
+});
+test('composition: move an item by dragging tree nodes into an existing container',async({page})=>{
+  await page.goto('/');
+  await page.locator('.template-picker .ant-select').click();
+  await page.getByText('고객 등록 폼',{exact:true}).last().click();
+  await page.locator('.app-brand').click();
+  const source=page.locator('.tree-node').filter({hasText:'TextField'}).first();
+  const target=page.locator('.tree-node').filter({hasText:'Row'}).first();
+  await source.dragTo(target);
+  await page.getByRole('button',{name:'json',exact:true}).click();
+  const text=await page.locator('.bottom textarea').inputValue();
+  const parsed=JSON.parse(text);
+  const row=parsed.root.children.find(c=>c.type==='Panel').children.find(c=>c.type==='Row');
+  expect(row.children.some(c=>c.type==='TextField')).toBeTruthy();
+});
