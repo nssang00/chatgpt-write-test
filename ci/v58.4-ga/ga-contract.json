@@ -1,0 +1,29 @@
+{
+  "harnessVersion": "58.4.0",
+  "packageVersion": "1.0.0",
+  "readinessStatus": "READY_FOR_GA_PACKAGING",
+  "unsignedShippingStatus": "READY_GA_UNSIGNED_CANDIDATE",
+  "signedShippingStatus": "READY_GA",
+  "exactNativePayloadSha256": "80453dc4c58e8ff8bc6fa62867aad08f033cb55550ff2e3b4e761ff9fc8218fe",
+  "releaseExcludes": [
+    "Tests",
+    "Validation",
+    "Tools",
+    "Prototypes"
+  ],
+  "requiredMetadata": [
+    "LICENSE",
+    "NOTICE",
+    "THIRD_PARTY_NOTICES.md",
+    "ThirdParty/CEF-LICENSE.txt",
+    "RELEASE_NOTES.md",
+    "DISTRIBUTION_CHECKLIST.md"
+  ],
+  "signaturePolicy": {
+    "audit": "Get-AuthenticodeSignature",
+    "invalidStatusIsFatal": true,
+    "unsignedIsInternalCandidateOnly": true,
+    "externalGaRequiresAllValid": true
+  },
+  "policy": "1.0.0 metadata may be produced before signing, but the harness must label any unsigned artifact READY_GA_UNSIGNED_CANDIDATE rather than READY_GA."
+}
