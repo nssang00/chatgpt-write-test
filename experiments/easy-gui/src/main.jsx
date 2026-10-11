@@ -1,4 +1,4 @@
-import React,{useState} from 'react';
+import React,{useEffect,useState} from 'react';
 import {createRoot} from 'react-dom/client';
 import {Alert,Button,Card,Input,Select,Space,Tag,Typography,message} from 'antd';
 import {DynamicView} from './DynamicView.jsx';
@@ -75,6 +75,12 @@ function Studio(){
   const [data,setData]=useState(()=>clone(sampleData));
   const [selected,setSelected]=useState('root');
   const [pendingType,setPendingType]=useState(null);
+  useEffect(()=>{
+    if(!pendingType)return;
+    const cancel=event=>{if(event.key==='Escape')setPendingType(null);};
+    window.addEventListener('keydown',cancel);
+    return()=>window.removeEventListener('keydown',cancel);
+  },[pendingType]);
   const [json,setJson]=useState(()=>JSON.stringify(getTemplate('workspace'),null,2));
   const [mode,setMode]=useState('designer');
   const [error,setError]=useState('');

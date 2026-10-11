@@ -58,7 +58,7 @@ export function DynamicView({
       }
     }
     const direction=parent?.type==='Row'?'horizontal':'vertical';
-    const sideAt=event=>suggestDropSide(event.currentTarget.getBoundingClientRect(),
+    const sideAt=event=>!parent?'inside':suggestDropSide(event.currentTarget.getBoundingClientRect(),
       event.clientX,event.clientY,{container:isContainer(node.type)&&
         !node.instanceType,direction});
     const layoutParent=parent?.type==='Grid';
