@@ -3,6 +3,7 @@ import {test,expect} from '@playwright/test';
 test('trusted React component is selectable with editable manifest metadata',async({page})=>{
   await page.goto('/');
   await page.getByRole('button',{name:'+ StatusBadge'}).click();
+  await page.locator('.preview .render-root > .design-node').click({position:{x:6,y:6}});
   await expect(page.getByText('상태: 활성')).toBeVisible();
   await expect(page.getByText('활성 색상')).toBeVisible();
 });

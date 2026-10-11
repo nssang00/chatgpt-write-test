@@ -15,6 +15,7 @@ test('toolbox search finds advanced basic controls and adds a real AntD input',a
   await page.goto('/');
   await page.getByRole('textbox',{name:'컨트롤 검색'}).fill('숫자 입력');
   await page.getByRole('button',{name:/NumberField/}).click();
+  await page.locator('.preview .render-root > .design-node').click({position:{x:6,y:6}});
   await expect(page.getByRole('main').getByText('수량',{exact:true})).toBeVisible();
   await expect(page.locator('.ant-input-number')).toHaveCount(1);
   await expect(page.locator('.inspector > .ant-tag')).toBeVisible();
@@ -55,6 +56,7 @@ test('inspector exposes binding tools and duplicates selected controls',async({p
   await page.goto('/');
   await page.getByRole('textbox',{name:'컨트롤 검색'}).fill('숫자 입력');
   await page.getByRole('button',{name:/NumberField/}).click();
+  await page.locator('.preview .render-root > .design-node').click({position:{x:6,y:6}});
   await page.getByRole('button',{name:'바인딩',exact:true}).click();
   await expect(page.locator('.inspector label').filter({hasText:'Binding: value'})).toBeVisible();
   await page.getByRole('button',{name:'속성',exact:true}).click();
@@ -76,6 +78,7 @@ test('composition: extract a selected form and reuse it as a new Toolbox compone
   await expect(page.getByRole('button',{name:'+ CustomerBlock'})).toBeVisible();
   await expect(original).toHaveValue('김하늘');
   await page.getByRole('button',{name:'+ CustomerBlock'}).click();
+  await page.locator('.preview .render-root > .design-node').click({position:{x:6,y:6}});
   await expect(page.getByText('고객 정보',{exact:true})).toHaveCount(2);
   await page.screenshot({path:testInfo.outputPath('studio-extracted-component.png'),fullPage:true});
 });
