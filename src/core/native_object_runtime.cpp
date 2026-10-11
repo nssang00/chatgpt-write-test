@@ -13,6 +13,17 @@ NativeObjectHandle NativeObjectRuntime::add(
     const std::shared_ptr<void>& object,
     const std::string& typeName)
 {
+    return add(
+        object,
+        typeName,
+        std::shared_ptr<void>());
+}
+
+NativeObjectHandle NativeObjectRuntime::add(
+    const std::shared_ptr<void>& object,
+    const std::string& typeName,
+    const std::shared_ptr<void>& owner)
+{
     if (!object)
         throw Error(
             "invalid_native_object",
@@ -24,7 +35,9 @@ NativeObjectHandle NativeObjectRuntime::add(
             "NativeWeb native object type name cannot be empty");
 
     const ObjectId id =
-        objects_.add<void>(object);
+        objects_.add<void>(
+            object,
+            owner);
 
     Entry entry;
     entry.typeName = typeName;

@@ -22,6 +22,11 @@ public:
         const std::shared_ptr<void>& object,
         const std::string& typeName);
 
+    NativeObjectHandle add(
+        const std::shared_ptr<void>& object,
+        const std::string& typeName,
+        const std::shared_ptr<void>& owner);
+
     void bindMethod(
         const NativeObjectHandle& handle,
         const std::string& method,

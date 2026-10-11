@@ -421,7 +421,7 @@ Windows/Linux Core CI에서 실제 shared library를 빌드하고 다음을 검�
 
 다음 regression 우선순위:
 
-1. queued/running worker task retains module lease
-2. native object retains module lease
-3. plugin-owned event/listener lifetime
-4. explicit safe unload / busy state
+1. [x] queued/running worker task retains module lease
+2. [ ] native object retains module lease
+3. [ ] plugin-owned event/listener lifetime
+4. [ ] explicit safe unload / busy state

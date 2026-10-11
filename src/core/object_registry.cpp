@@ -18,7 +18,7 @@ bool ObjectRegistry::release(ObjectId id)
 {
     std::lock_guard<std::mutex> lock(mutex_);
 
-    std::map<ObjectId, Entry>::iterator found = objects_.find(id);
+    std::map<ObjectId, EntryPtr>::iterator found = objects_.find(id);
     if (found == objects_.end())
         return false;
 

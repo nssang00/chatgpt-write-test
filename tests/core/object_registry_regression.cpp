@@ -123,6 +123,48 @@ void testClearReleasesObjects()
     CHECK(destroyed == 2);
 }
 
+void testOwnerLeaseFollowsManagedObject()
+{
+    int objectDestroyed = 0;
+    int ownerDestroyed = 0;
+
+    nativeweb::detail::ObjectRegistry registry;
+
+    std::shared_ptr<LifetimeProbe> object(
+        new LifetimeProbe(
+            &objectDestroyed));
+
+    std::shared_ptr<LifetimeProbe> owner(
+        new LifetimeProbe(
+            &ownerDestroyed));
+
+    const nativeweb::detail::ObjectId id =
+        registry.add(
+            object,
+            std::static_pointer_cast<void>(
+                owner));
+
+    std::shared_ptr<LifetimeProbe> managed =
+        registry.get<LifetimeProbe>(id);
+
+    object.reset();
+    owner.reset();
+
+    CHECK(objectDestroyed == 0);
+    CHECK(ownerDestroyed == 0);
+
+    // Removing the registry entry must not invalidate a managed pointer that
+    // was already handed out. Its aliasing state retains both object and owner.
+    CHECK(registry.release(id));
+    CHECK(objectDestroyed == 0);
+    CHECK(ownerDestroyed == 0);
+
+    managed.reset();
+
+    CHECK(objectDestroyed == 1);
+    CHECK(ownerDestroyed == 1);
+}
+
 void testRejectNullObject()
 {
     nativeweb::detail::ObjectRegistry registry;
@@ -150,6 +192,7 @@ int main()
     testUniqueIdsAndTypeSafety();
     testRegistryOwnsLifetime();
     testClearReleasesObjects();
+    testOwnerLeaseFollowsManagedObject();
     testRejectNullObject();
 
     if (failures != 0)

@@ -33,6 +33,21 @@ struct Camera
     int base;
 };
 
+struct OwnerProbe
+{
+    explicit OwnerProbe(int* value)
+        : destroyed(value)
+    {
+    }
+
+    ~OwnerProbe()
+    {
+        ++(*destroyed);
+    }
+
+    int* destroyed;
+};
+
 void testObjectLifecycleAndMethods()
 {
     nativeweb::detail::NativeObjectRuntime runtime;
@@ -90,11 +105,42 @@ void testObjectLifecycleAndMethods()
     CHECK(missing);
 }
 
+void testObjectRetainsOwnerLease()
+{
+    int ownerDestroyed = 0;
+
+    nativeweb::detail::NativeObjectRuntime runtime;
+
+    std::shared_ptr<Camera> camera(
+        new Camera(7));
+
+    std::shared_ptr<OwnerProbe> owner(
+        new OwnerProbe(
+            &ownerDestroyed));
+
+    const nativeweb::NativeObjectHandle handle =
+        runtime.add(
+            std::static_pointer_cast<void>(
+                camera),
+            "Camera",
+            std::static_pointer_cast<void>(
+                owner));
+
+    owner.reset();
+
+    CHECK(ownerDestroyed == 0);
+    CHECK(runtime.size() == 1u);
+
+    CHECK(runtime.release(handle));
+    CHECK(ownerDestroyed == 1);
+}
+
 } // namespace
 
 int main()
 {
     testObjectLifecycleAndMethods();
+    testObjectRetainsOwnerLease();
 
     if (failures != 0)
     {
