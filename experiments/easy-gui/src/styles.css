@@ -124,3 +124,32 @@ body{background:#f5f7fb}
 .inspector-hint{background:#f6f7fe;border-radius:9px;padding:13px;font-size:11px;
   line-height:1.65;color:#75839d}
 .inspector .inspector-commands .ant-btn{margin:0}
+
+/* Direct manipulation: show exactly where a component will land. */
+.placement-banner{background:#f1efff;color:#4341a2;border:1px solid #d8d4ff;
+  display:flex;align-items:center;justify-content:space-between;gap:12px;
+  border-radius:9px;padding:9px 12px;font-size:12px;margin-bottom:12px}
+.placement-cursor{cursor:crosshair}
+.design-node.drop-inside{outline:2px solid #5b58df!important;outline-offset:3px;
+  background-color:rgba(102,99,227,.055)}
+.design-node.drop-before::before,.design-node.drop-after::after{content:"";position:absolute;
+  height:4px;left:0;right:0;background:#625be3;border-radius:6px;
+  box-shadow:0 0 0 3px rgba(98,91,227,.14);z-index:20;pointer-events:none}
+.design-node.drop-before::before{top:-6px}
+.design-node.drop-after::after{bottom:-6px}
+.toolbox .controls .ant-btn[draggable="true"]{cursor:grab}
+.toolbox .controls .ant-btn[draggable="true"]:active{cursor:grabbing}
+.easy-column:empty,.easy-row:empty,.easy-grid:empty{min-height:72px;
+  border:2px dashed #d6d7ef;border-radius:8px}
+.grid-resize-handle{position:absolute;z-index:35;right:-8px;top:50%;
+  transform:translateY(-50%);background:#625be3;color:#fff;border:2px solid white;
+  border-radius:12px;width:18px;height:38px;cursor:ew-resize;
+  box-shadow:0 2px 6px rgba(64,60,157,.22);touch-action:none}
+.grid-resize-handle:focus-visible{outline:3px solid #8782fc;outline-offset:2px}
+.layout-controls{border:1px solid #e9e9fd;border-radius:10px;
+  background:#f8f8ff;padding:11px 9px 12px;margin:10px 0 14px}
+.layout-controls>strong{display:block;font-size:12px;color:#5651bf;margin-bottom:7px}
+.layout-controls label{display:flex;flex-direction:column;gap:6px;font-size:11px;
+  color:#66728e;font-weight:600;margin:8px 0}
+.layout-controls label .ant-select,.layout-controls label .ant-input{width:100%}
+.preview-mobile .design-node{max-width:100%}
