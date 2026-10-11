@@ -64,7 +64,7 @@ public:
     {
         std::lock_guard<std::mutex> lock(mutex_);
 
-        std::map<ObjectId, Entry>::const_iterator found =
+        std::map<ObjectId, EntryPtr>::const_iterator found =
             objects_.find(id);
 
         if (found == objects_.end())
