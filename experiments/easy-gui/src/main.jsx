@@ -8,7 +8,7 @@ import {CONTROL_CATALOG,CONTROL_GROUPS,defaultNode,isContainer} from './catalog.
 import {getComponentManifest} from './manifest.mjs';
 import {findNode,updateNode,removeNode,duplicateNode,moveNode,visitNodes,
   extractComponent} from './commands.mjs';
-import {placeNode,setGridSpan,setNodeSizing} from './layout.mjs';
+import {placeNode,setGridSpan,setNodeSizing,setFreePlacement} from './layout.mjs';
 import {SCREEN_TEMPLATES,getTemplate} from './templates.mjs';
 import {createComponentBundle,installComponentBundle,COMPONENT_FORMAT} from './component-kit.mjs';
 import {codeDefinitions,codeRenderers} from './code-components.jsx';
@@ -26,7 +26,7 @@ const findParent=(doc,id)=>{
   return result;
 };
 const glyphs={
-  column:'☷',row:'↔',grid:'▦',panel:'▣',split:'↔',divider:'—',tabs:'▤',
+  column:'☷',row:'↔',grid:'▦',canvas:'⊞',panel:'▣',split:'↔',divider:'—',tabs:'▤',
   heading:'H',text:'T',tag:'◆',alert:'!',statistic:'◷',progress:'◕',steps:'➊',
   input:'⌨',select:'⌄',radio:'◉',calendar:'▦',check:'☑',switch:'◐',slider:'◉',
   button:'●',table:'▥',tree:'♧',list:'☰'
@@ -131,13 +131,19 @@ function Studio(){
     setMode('designer');
     notice.info('캔버스에서 배치할 위치를 클릭하거나 컨트롤을 끌어다 놓으세요');
   };
-  const place=({sourceId,type,targetId,side})=>{
+  const place=({sourceId,type,targetId,side,point})=>{
     try{
       const kind=type??(!sourceId?pendingType:undefined);
       const node=kind?createNode(kind):undefined;
-      const next=placeNode(doc,{sourceId,node,targetId,side,definitions:registry});
+      let next=placeNode(doc,{sourceId,node,targetId,side,definitions:registry});
+      const movedId=sourceId??node.id;
+      if(point&&findNode(doc,targetId)?.type==='FreeCanvas'){
+        const previous=sourceId?findNode(doc,sourceId)?.placement?.free:null;
+        next=setFreePlacement(next,movedId,{x:point.x-36,y:point.y-20,
+          width:previous?.width??200,height:previous?.height??64});
+      }
       setDocument(next);
-      setSelected(sourceId??node.id);
+      setSelected(movedId);
       setInspectorTab('props');
       setPendingType(null);
     }catch(e){setError(e.message);}
@@ -302,6 +308,10 @@ function Studio(){
           onResizeSpan={(id,span)=>{
             try{setDocument(setGridSpan(doc,id,viewport,span));}
             catch(e){setError(e.message);}
+          }}
+          onFreePosition={(id,position)=>{
+            try{setDocument(setFreePlacement(doc,id,position));}
+            catch(e){setError(e.message);}
           }}/></div>
         {saved&&<Alert type="success" showIcon message={'Save: '+saved}/>}
       </main>
@@ -316,14 +326,27 @@ function Studio(){
           {inspectorTab==='props'&&<>
             {selected!=='root'&&<div className="layout-controls">
               <strong>배치 및 크기</strong>
-              <label>너비 방식
+              {selectedParent?.type==='FreeCanvas'?<>
+                <span className="free-placement-badge">자유 배치 · 픽셀 좌표</span>
+                {['x','y','width','height'].map(field=><label key={field}>
+                  {({x:'X 좌표',y:'Y 좌표',width:'너비',height:'높이'})[field]}
+                  <Input aria-label={'자유 배치 '+field} type="number" size="small"
+                    value={item.placement?.free?.[field]??({x:16,y:16,width:200,height:64})[field]}
+                    onChange={e=>{
+                      const next={x:16,y:16,width:200,height:64,...(item.placement?.free??{})};
+                      next[field]=Number(e.target.value);
+                      try{setDocument(setFreePlacement(doc,selected,next));}
+                      catch(err){setError(err.message);}
+                    }}/>
+                </label>)}
+              </>:<label>너비 방식
                 <Select aria-label="너비 방식" size="small"
                   value={item.sizing?.mode??'fill'}
                   options={[{value:'hug',label:'Hug · 콘텐츠'},{value:'fill',label:'Fill · 공간 채우기'},
                     {value:'fixed',label:'Fixed · 고정 너비'}]}
                   onChange={mode=>changeSize(mode,item.sizing?.px??320)}/>
-              </label>
-              {item.sizing?.mode==='fixed'&&<label>고정 너비(px)
+              </label>}
+              {selectedParent?.type!=='FreeCanvas'&&item.sizing?.mode==='fixed'&&<label>고정 너비(px)
                 <Input aria-label="고정 너비(px)" type="number" min={40} max={2400} size="small"
                   value={item.sizing.px} onChange={e=>changeSize('fixed',Number(e.target.value))}/>
               </label>}
