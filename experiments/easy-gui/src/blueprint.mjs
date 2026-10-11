@@ -1,5 +1,6 @@
 /** Dependency-free, data-only UI composition engine. React is an adapter. */
 import { BUILTIN_NAMES } from './catalog.mjs';
+import { validateLayoutNode } from './layout.mjs';
 export const BUILTINS = BUILTIN_NAMES;
 const FORBIDDEN = new Set(['__proto__','prototype','constructor']);
 const IDENTIFIER = /^[A-Za-z_$][A-Za-z0-9_$]*$/;
@@ -63,6 +64,7 @@ export function validateBlueprint(input,definitions={}, {maxNodes=300,maxDepth=3
     if(node.props!==undefined&&(!isRecord(node.props)||Object.keys(node.props).some(k=>FORBIDDEN.has(k))))
       errors.push('Invalid props on '+node.type);
     if(node.children!==undefined&&!Array.isArray(node.children))errors.push('Invalid children on '+node.type);
+    errors.push(...validateLayoutNode(node));
     if(!BUILTINS.includes(node.type)) {
       const def=definitions[node.type];
       if(!def){errors.push('Unknown component: '+node.type);return;}
@@ -136,11 +138,14 @@ export function expandBlueprint(input,definitions={},parentScope=''){
         instancePath:path,editableId:owner??node.id??expanded.editableId,
         scope:expanded.scope,
         // Legacy definitions had no explicit external contract.
+        placement:node.placement??expanded.placement,
+        sizing:node.sizing??expanded.sizing,
         props:manifest?expanded.props:{...expanded.props,...node.props}};
     }
     return {
       id:node.id,type:node.type,props:node.props??{},bind:node.bind??{},
-      on:node.on??{},scope:ownScope,instancePath:path,editableId:owner??node.id,
+      on:node.on??{},placement:node.placement,sizing:node.sizing,
+      scope:ownScope,instancePath:path,editableId:owner??node.id,
       children:(node.children??[]).map((child,index)=>build(child,ownScope,path,owner,index))
     };
   };
