@@ -85,8 +85,8 @@ test('FreeCanvas opt-in allows position-specific placement and x/y Inspector edi
   const positioned=page.locator('.easy-free-canvas > .design-node').first();
   await expect(positioned).toBeVisible();
   await positioned.click();
-  await expect(page.getByRole('textbox',{name:'자유 배치 x'})).toBeVisible();
-  await page.getByRole('textbox',{name:'자유 배치 x'}).fill('180');
+  await expect(page.getByRole('spinbutton',{name:'자유 배치 x'})).toBeVisible();
+  await page.getByRole('spinbutton',{name:'자유 배치 x'}).fill('180');
   await expect(positioned).toHaveCSS('left','180px');
   await page.screenshot({path:testInfo.outputPath('free-canvas.png'),fullPage:true});
   const doc=await json(page);
