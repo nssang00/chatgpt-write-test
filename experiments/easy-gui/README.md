@@ -12,11 +12,34 @@ The Studio now starts with a **working user-management screen**, not a blank ren
 - **컨트롤 갤러리**: try the built-in controls, tree, list, slider and Splitter.
 - **빈 화면**: empty composition starting point.
 
-The Toolbox provides **28 real React/Ant Design-based controls**, grouped as layouts, inputs, display components and actions/data tools. Search by GUI name or type. Click a control to add it to the selected layout container; select a preview element or tree node to edit its properties. Boolean and enum fields offer pickers, while bindings can be chosen from sample data fields. Undo/Redo and mobile-width preview are supported.
+The Toolbox provides **28 real React/Ant Design-based controls**, grouped as layouts, inputs, display components and actions/data tools. Search by GUI name or type. Click a control to enter placement mode, then click the desired canvas location. Alternatively drag directly from Toolbox to the canvas. Select a preview element or tree node to edit its properties. Boolean and enum fields offer pickers, while bindings can be chosen from sample data fields. Undo/Redo and mobile-width preview are supported.
 
 Browser regression tests save **screenshots** into the GitHub Actions `easy-gui-visual-review` artifact so visual changes can be inspected rather than checking only build success.
 
-**Not production-ready yet:** nested drag-and-drop, full property/event metadata, accessibility and responsive design need further work. This is a real React/AntD MVP for assessing creation flow, not a replacement UI engine.
+**Not production-ready yet:** free-coordinate canvas layout, full Dock/slot designer, comprehensive accessibility and breakpoint authoring still need work. This is a real React/AntD MVP for assessing creation flow, not a replacement UI engine.
+
+## Layout authoring (v0.3)
+
+- Click a control in Toolbox, then click its destination on the canvas. Press **Esc** or **취소** to cancel without changing the document.
+- Drag from Toolbox to a component or into a Row/Column/Grid/Panel. The highlighted **before/after/inside** target controls the insertion point, not the end of the root list.
+- Select an existing component to show its **move handle**; drag the handle to relocate it. Component Tree drag/drop is still supported.
+- Select a Grid child to adjust its **Grid 너비** in the Inspector, or use the handle on the right edge (mouse drag or Left/Right keyboard arrow). Mobile preview collapses grids to a single column.
+- Every selected control supports **Hug**, **Fill**, and **Fixed px** width modes. Editor sizing is stored in `node.sizing` and grid occupancy in `node.placement.desktop.span` rather than mixed with ordinary React props.
+- Existing Blueprint JSON without layout metadata continues to render with the old defaults. Exported components preserve their placement and sizing.
+
+### Layout metadata example
+
+```json
+{
+  "type": "TextField",
+  "id": "email",
+  "props": { "label": "이메일" },
+  "sizing": { "mode": "fill" },
+  "placement": { "desktop": { "span": 2 } }
+}
+```
+
+For a Grid with `columns: 3`, this control spans two columns on desktop and one in mobile preview. `src/layout.mjs` owns immutable exact insertion, relocation, size/span adjustments, and validation. Browser E2E includes drag, click placement, resize, keyboard editing, and mobile regression.
 
 ## Quick start
 
@@ -76,7 +99,7 @@ This is **not** a new UI framework. Any trusted React component can still be aut
 4. Its properties, bindings and events are suggested as named external ports.
 5. Use **컴포넌트 패키지** to export a local `.easygui.json` bundle, and install it in another generated project using `npm run components -- add ...`.
 
-Tree nodes can be dragged into layout containers to relocate them (cycle/invalid-target moves are rejected). This is a first **tree-level drag/drop** implementation, not yet a free canvas drag/drop editor or slot layout engine.
+Tree nodes and the **selected canvas element's move handle** can be dragged to relocate them; Toolbox controls can also be dropped at specific locations. The canvas shows before/after/inside insertion hints. Invalid drops, cycles, and duplicate node IDs are rejected. This remains **flow-based layout**, not unrestricted absolute-coordinate positioning.
 
 **Known limits:** exposed ports are currently inferred and cannot yet be curated in a guided UI; nested slots, true round-trip TSX, IR-to-independent-TSX generation, automatic npm metadata inference and hosted package publication remain future milestones. Real React component code is always installed as trusted application code, never executed from imported JSON.
 
@@ -96,6 +119,6 @@ GitHub Actions runs Node tests and build on Ubuntu/Windows and Chromium e2e on U
 ## Limits
 
 - Local JSON package transfer works; no remote marketplace, npm publish or untrusted runtime code loading.
-- Visual edit currently supports add/select/inspect/remove, not nested drag/drop or undo.
+- Visual editing supports Toolbox/canvas drag/drop, exact insertion, Undo/Redo, and Grid span/sizing. Free absolute positioning and a full multi-breakpoint editor are future work.
 - No full JSX ↔ JSON transformation. Advanced React remains unrestricted.
 - Default control adapter is AntD; a second adapter has not been verified.
