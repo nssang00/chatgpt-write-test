@@ -1,20 +1,13 @@
 import {CONTROL_CATALOG} from './catalog.mjs';
 
 /** Unified editor contract. Ordinary React JSX never needs this metadata. */
-const builtinValuePorts={
-  TextField:'value',PasswordField:'value',TextArea:'value',NumberField:'value',
-  Slider:'value',SelectField:'value',RadioGroup:'value',DateField:'value',
-  CheckBox:'checked',Switch:'checked',Table:'data'
-};
-const booleanEvents={Button:{click:'onClick'}};
 export function getComponentManifest(type,definitions={}){
   const builtin=CONTROL_CATALOG[type];
   if(builtin){
-    const port=builtinValuePorts[type];
     return {
       name:type,kind:'builtin',props:builtin.props??{},
-      bindings:port?{[port]:{prop:port,change:port==='checked'?'onChange':'onChange'}}:{},
-      events:booleanEvents[type]??{},
+      bindings:builtin.bindingPorts??{},
+      events:builtin.eventPorts??{},
       slots:builtin.container?{children:{accepts:['*']}}:{},
       designer:{label:builtin.label,category:builtin.group,icon:builtin.icon,
         container:Boolean(builtin.container)}

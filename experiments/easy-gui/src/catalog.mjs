@@ -1,5 +1,6 @@
 // Canonical built-in component catalog. Every entry maps to an existing React/AntD control.
 const prop=(type,defaultValue,options)=>({type,default:defaultValue,...(options?{options}:{} )});
+const port=name=>({[name]:{prop:name,change:'onChange'}});
 export const CONTROL_CATALOG={
   Column:{group:'레이아웃',label:'세로 배치',icon:'column',container:true,props:{gap:prop('number',16)}},
   Row:{group:'레이아웃',label:'가로 배치',icon:'row',container:true,props:{gap:prop('number',16)}},
@@ -15,18 +16,18 @@ export const CONTROL_CATALOG={
   Statistic:{group:'텍스트·표시',label:'지표 카드',icon:'statistic',props:{title:prop('string','전체 사용자'),value:prop('number',128),suffix:prop('string','명')}},
   Progress:{group:'텍스트·표시',label:'진행률',icon:'progress',props:{percent:prop('number',65),status:prop('enum','normal',['normal','success','exception','active'])}},
   Steps:{group:'텍스트·표시',label:'단계 표시',icon:'steps',props:{current:prop('number',1),items:prop('string','시작,검토,완료')}},
-  TextField:{group:'입력',label:'텍스트 입력',icon:'input',props:{label:prop('string','이름'),placeholder:prop('string','값 입력'),disabled:prop('boolean',false)},bindings:{value:'shipping.name'}},
-  PasswordField:{group:'입력',label:'비밀번호',icon:'input',props:{label:prop('string','비밀번호'),placeholder:prop('string','비밀번호 입력')}},
-  TextArea:{group:'입력',label:'여러 줄 입력',icon:'input',props:{label:prop('string','설명'),placeholder:prop('string','내용 입력'),rows:prop('number',3)}},
-  NumberField:{group:'입력',label:'숫자 입력',icon:'input',props:{label:prop('string','수량'),min:prop('number',0)}},
-  Slider:{group:'입력',label:'슬라이더',icon:'slider',props:{label:prop('string','진행도'),min:prop('number',0),max:prop('number',100),defaultValue:prop('number',45)}},
-  SelectField:{group:'입력',label:'선택 목록',icon:'select',props:{label:prop('string','부서'),placeholder:prop('string','항목 선택'),options:prop('string','개발팀,기획팀,운영팀')}},
-  RadioGroup:{group:'입력',label:'라디오 그룹',icon:'radio',props:{label:prop('string','구분'),options:prop('string','개발팀,기획팀,운영팀')}},
-  DateField:{group:'입력',label:'날짜 선택',icon:'calendar',props:{label:prop('string','시작일'),placeholder:prop('string','날짜 선택')}},
-  CheckBox:{group:'입력',label:'체크박스',icon:'check',props:{label:prop('string','동의합니다')}},
-  Switch:{group:'입력',label:'스위치',icon:'switch',props:{label:prop('string','사용 여부')}},
-  Button:{group:'동작·데이터',label:'버튼',icon:'button',props:{label:prop('string','확인'),primary:prop('boolean',true)},events:{click:'save'}},
-  Table:{group:'동작·데이터',label:'데이터 테이블',icon:'table',props:{title:prop('string','사용자 목록'),columns:prop('string','name,city'),pageSize:prop('number',5)},bindings:{data:'users'}},
+  TextField:{group:'입력',label:'텍스트 입력',icon:'input',props:{label:prop('string','이름'),placeholder:prop('string','값 입력'),disabled:prop('boolean',false)},bindings:{value:'shipping.name'},bindingPorts:port('value')},
+  PasswordField:{group:'입력',label:'비밀번호',icon:'input',props:{label:prop('string','비밀번호'),placeholder:prop('string','비밀번호 입력')},bindingPorts:port('value')},
+  TextArea:{group:'입력',label:'여러 줄 입력',icon:'input',props:{label:prop('string','설명'),placeholder:prop('string','내용 입력'),rows:prop('number',3)},bindingPorts:port('value')},
+  NumberField:{group:'입력',label:'숫자 입력',icon:'input',props:{label:prop('string','수량'),min:prop('number',0)},bindingPorts:port('value')},
+  Slider:{group:'입력',label:'슬라이더',icon:'slider',props:{label:prop('string','진행도'),min:prop('number',0),max:prop('number',100),defaultValue:prop('number',45)},bindingPorts:port('value')},
+  SelectField:{group:'입력',label:'선택 목록',icon:'select',props:{label:prop('string','부서'),placeholder:prop('string','항목 선택'),options:prop('string','개발팀,기획팀,운영팀')},bindingPorts:port('value')},
+  RadioGroup:{group:'입력',label:'라디오 그룹',icon:'radio',props:{label:prop('string','구분'),options:prop('string','개발팀,기획팀,운영팀')},bindingPorts:port('value')},
+  DateField:{group:'입력',label:'날짜 선택',icon:'calendar',props:{label:prop('string','시작일'),placeholder:prop('string','날짜 선택')},bindingPorts:port('value')},
+  CheckBox:{group:'입력',label:'체크박스',icon:'check',props:{label:prop('string','동의합니다')},bindingPorts:port('checked')},
+  Switch:{group:'입력',label:'스위치',icon:'switch',props:{label:prop('string','사용 여부')},bindingPorts:port('checked')},
+  Button:{group:'동작·데이터',label:'버튼',icon:'button',props:{label:prop('string','확인'),primary:prop('boolean',true)},events:{click:'save'},eventPorts:{click:'onClick'}},
+  Table:{group:'동작·데이터',label:'데이터 테이블',icon:'table',props:{title:prop('string','사용자 목록'),columns:prop('string','name,city'),pageSize:prop('number',5)},bindings:{data:'users'},bindingPorts:{data:{prop:'data'}}},
   TreeView:{group:'동작·데이터',label:'트리 뷰',icon:'tree',props:{title:prop('string','탐색'),items:prop('string','프로젝트,화면,컴포넌트')}},
   ListView:{group:'동작·데이터',label:'목록 뷰',icon:'list',props:{title:prop('string','목록'),items:prop('string','첫 번째 항목,두 번째 항목,세 번째 항목')}},
 };
