@@ -5,6 +5,9 @@ import {DynamicView} from './DynamicView.jsx';
 import {parseBlueprint,publishComponent,validateBlueprint} from './blueprint.mjs';
 import {initialDefinitions,sampleData} from './examples.mjs';
 import {CONTROL_CATALOG,CONTROL_GROUPS,defaultNode,isContainer} from './catalog.mjs';
+import {getComponentManifest} from './manifest.mjs';
+import {findNode,updateNode,appendNode,removeNode,duplicateNode,moveNode,
+  extractComponent} from './commands.mjs';
 import {SCREEN_TEMPLATES,getTemplate} from './templates.mjs';
 import {createComponentBundle,installComponentBundle,COMPONENT_FORMAT} from './component-kit.mjs';
 import {codeDefinitions,codeRenderers} from './code-components.jsx';
@@ -28,15 +31,29 @@ const pathOptions=(obj,prefix='',depth=0)=>{
     return pathOptions(value,name,depth+1);
   });
 };
-const visit=(node,fn)=>{fn(node);(node.children||[]).forEach(c=>visit(c,fn));};
-const find=(doc,id)=>{let found;visit(doc.root,n=>{if(n.id===id)found=n;});return found;};
-const update=(doc,id,fn)=>{const result=clone(doc);visit(result.root,n=>{if(n.id===id)fn(n);});return result;};
-function NodeTree({node,selected,onSelect,depth=0}){
+function NodeTree({node,selected,onSelect,onMove,depth=0}){
   return <React.Fragment>
-    <button className={'tree-node '+(node.id===selected?'active':'')} style={{paddingLeft:12+depth*12}}
+    <button className={'tree-node '+(node.id===selected?'active':'')}
+      style={{paddingLeft:12+depth*12}}
+      draggable={depth>0}
+      title={isContainer(node.type)?'여기로 블록을 드롭하여 이동':'선택하여 편집'}
+      onDragStart={event=>{
+        event.dataTransfer.effectAllowed='move';
+        event.dataTransfer.setData('text/plain',node.id);
+      }}
+      onDragOver={event=>{
+        if(isContainer(node.type)){event.preventDefault();event.dataTransfer.dropEffect='move';}
+      }}
+      onDrop={event=>{
+        if(!isContainer(node.type))return;
+        event.preventDefault();
+        event.stopPropagation();
+        const source=event.dataTransfer.getData('text/plain');
+        if(source)onMove(source,node.id);
+      }}
       onClick={()=>onSelect(node.id)}>{node.type} <small>{node.props?.label||''}</small></button>
-    {node.children?.map((n,i)=><NodeTree key={n.id||i} node={n} selected={selected}
-      onSelect={onSelect} depth={depth+1}/>)}
+    {node.children?.map((child,i)=><NodeTree key={child.id||i} node={child}
+      selected={selected} onSelect={onSelect} onMove={onMove} depth={depth+1}/>)}
   </React.Fragment>;
 }
 function Studio(){
@@ -54,7 +71,8 @@ function Studio(){
   const [error,setError]=useState('');
   const [saved,setSaved]=useState('');
   const [notice,holder]=message.useMessage();
-  const item=find(doc,selected);
+  const item=findNode(doc,selected);
+  const currentManifest=item?getComponentManifest(item.type,registry):null;
   const checked=validateBlueprint(doc,registry);
   const setDocument=next=>{
     setHistory(prev=>({past:[...prev.past.slice(-19),doc],future:[]}));
@@ -77,7 +95,7 @@ function Studio(){
     setSelected(next.root?.id||'root');setData(clone(sampleData));
   };
   const add=type=>{
-    const manifest=registry[type]?.manifest;
+    const manifest=getComponentManifest(type,registry);
     const props=manifest?Object.fromEntries(
       Object.entries(manifest.props??{}).filter(([,x])=>x.default!==undefined).map(([k,x])=>[k,x.default])
     ):{title:type};
@@ -91,28 +109,41 @@ function Studio(){
     if(type==='Slider')n.bind={value:'contact.score'};
     if(type==='Button')n.on={click:'save'};
     const target=item&&containers.has(item.type)?selected:'root';
-    setDocument(update(doc,target,node=>{node.children??=[];node.children.push(n);}));
-    setSelected(n.id);setInspectorTab('props');
+    try{
+      setDocument(appendNode(doc,target,n,registry));
+      setSelected(n.id);setInspectorTab('props');
+    }catch(err){setError(err.message);}
   };
   const duplicate=()=>{
-    if(selected==='root'||!item)return;
-    const copied=clone(item);
-    visit(copied,n=>{n.id='n'+Math.random().toString(36).slice(2,10);});
-    const next=clone(doc);let added=false;
-    visit(next.root,parent=>{
-      if(added||!parent.children)return;
-      const at=parent.children.findIndex(child=>child.id===selected);
-      if(at>=0){parent.children.splice(at+1,0,copied);added=true;}
-    });
-    if(added){setDocument(next);setSelected(copied.id);}
+    if(selected==='root')return;
+    try{
+      const copied=duplicateNode(doc,selected);
+      setDocument(copied.doc);setSelected(copied.id);
+    }catch(err){setError(err.message);}
   };
-  const edit=(kind,key,value)=>setDocument(update(doc,selected,n=>{n[kind]??={};n[kind][key]=value;}));
-  const editScope=value=>setDocument(update(doc,selected,n=>{n.scope=value;}));
+  const move=(source,target)=>{
+    try{
+      setDocument(moveNode(doc,source,target,registry));setSelected(source);
+    }catch(err){setError(err.message);}
+  };
+  const extract=()=>{
+    if(selected==='root'){notice.warning('추출할 컨트롤을 먼저 선택하세요');return;}
+    const name=window.prompt('새 컴포넌트 이름 (영문)','ReusableBlock');
+    if(!name)return;
+    try{
+      const result=extractComponent(doc,selected,name,registry);
+      setRegistry(result.definitions);
+      setDocument(result.doc);
+      notice.success(name+' 컴포넌트로 추출했습니다');
+    }catch(err){setError(err.message);}
+  };
+  const edit=(kind,key,value)=>setDocument(updateNode(doc,selected,n=>{n[kind]??={};n[kind][key]=value;}));
+  const editScope=value=>setDocument(updateNode(doc,selected,n=>{n.scope=value;}));
   const remove=()=>{
     if(selected==='root')return;
-    const next=clone(doc);
-    visit(next.root,n=>{if(n.children)n.children=n.children.filter(child=>child.id!==selected);});
-    setDocument(next);setSelected('root');
+    try{
+      setDocument(removeNode(doc,selected));setSelected('root');
+    }catch(err){setError(err.message);}
   };
   const publish=()=>{
     const name=window.prompt('컴포넌트 이름 (영문/숫자/밑줄)', 'MyComponent');
@@ -183,6 +214,7 @@ function Studio(){
         <label className="file-button">JSON 가져오기<input hidden type="file" accept=".json,application/json" onChange={importJson}/></label>
         <Button size="small" onClick={download}>JSON 다운로드</Button>
         <Button size="small" onClick={downloadPackage}>컴포넌트 패키지</Button>
+        <Button size="small" onClick={extract}>선택 영역 추출</Button>
         <Button size="small" type="primary" onClick={publish}>컴포넌트로 등록</Button></Space>
     </header>
     <div className="workbench">
@@ -203,7 +235,7 @@ function Studio(){
         <div className="controls custom-controls">{Object.keys(registry)
           .filter(n=>n.toLowerCase().includes(search.toLowerCase()))
           .map(n=><Button key={n} size="small" block onClick={()=>add(n)}>+ {n}</Button>)}</div>
-        <hr/><h4>Component Tree</h4><NodeTree node={doc.root} selected={selected} onSelect={setSelected}/>
+        <hr/><h4>Component Tree</h4><NodeTree node={doc.root} selected={selected} onSelect={setSelected} onMove={move}/>
       </aside>
       <main><div className="preview-head">
           <div className="template-picker"><span>화면 템플릿</span>
@@ -234,10 +266,10 @@ function Studio(){
             <label>데이터 범위<Input size="small" value={item.scope||''}
               placeholder="예: shipping" onChange={e=>editScope(e.target.value)}/></label>
             {Object.entries({...Object.fromEntries(
-              Object.entries(CONTROL_CATALOG[item.type]?.props??registry[item.type]?.manifest?.props??{})
+              Object.entries(currentManifest?.props??{})
                 .map(([k,info])=>[k,info.default??''])
             ),...item.props}).map(([key,value])=>{
-              const field=CONTROL_CATALOG[item.type]?.props?.[key]??registry[item.type]?.manifest?.props?.[key];
+              const field=currentManifest?.props?.[key];
               const nice={label:'라벨',title:'제목',text:'텍스트',gap:'간격',columns:'열 개수',
                 placeholder:'힌트 문구',primary:'기본 버튼',disabled:'비활성화',rows:'행 수',
                 options:'선택 항목',items:'표시 항목',min:'최솟값',max:'최댓값',
@@ -259,11 +291,7 @@ function Studio(){
           {inspectorTab==='bind'&&<>
             <p className="inspector-hint">화면 요소에 데이터 필드를 연결합니다. 데이터는 미리보기에서 바로 바뀝니다.</p>
             {Object.entries({...Object.fromEntries(
-              Object.keys(registry[item.type]?.manifest?.bindings||
-                ({TextField:{value:1},PasswordField:{value:1},TextArea:{value:1},
-                  NumberField:{value:1},DateField:{value:1},SelectField:{value:1},Slider:{value:1},
-                  RadioGroup:{value:1},CheckBox:{checked:1},Switch:{checked:1},
-                  Table:{data:1}}[item.type]||{})).map(k=>[k,''])
+              Object.keys(currentManifest?.bindings??{}).map(k=>[k,''])
             ),...item.bind}).map(([key,value])=><label key={key}>Binding: {key}
               <Select showSearch allowClear size="small" style={{width:'100%'}}
                 placeholder="필드 선택" value={value||undefined}
@@ -274,8 +302,7 @@ function Studio(){
           {inspectorTab==='events'&&<>
             <p className="inspector-hint">이벤트가 발생하면 등록된 동작을 실행합니다.</p>
             {Object.entries({...Object.fromEntries(
-              Object.keys(registry[item.type]?.manifest?.events||
-                (item.type==='Button'?{click:1}:{})).map(k=>[k,''])
+              Object.keys(currentManifest?.events??{}).map(k=>[k,''])
             ),...item.on}).map(([event])=><label key={event}>이벤트: {event}
               <Select size="small" value={item.on?.[event]||undefined}
                 onChange={action=>edit('on',event,action)}
@@ -284,6 +311,7 @@ function Studio(){
           </>}
           <div className="inspector-commands">
             <Button size="small" disabled={selected==='root'} onClick={duplicate}>블록 복제</Button>
+            <Button size="small" disabled={selected==='root'} onClick={extract}>컴포넌트로 추출</Button>
             <Button danger size="small" disabled={selected==='root'} onClick={remove}>선택 블록 삭제</Button>
           </div>
         </>:<span>블록을 선택하세요.</span>}

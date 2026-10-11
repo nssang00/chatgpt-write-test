@@ -23,7 +23,7 @@ export function DynamicView({
 
   const render=node=>{
     const p=node.props??{};
-    const key=node.id??node.type+'-'+node.scope;
+    const key=node.instancePath??node.id??node.type+'-'+node.scope;
     const children=node.children?.map(render);
     const fieldPath=port=>scopedPath(node.scope,node.bind?.[port]??'');
     const value=port=>readPath(data,fieldPath(port));
@@ -141,8 +141,8 @@ export function DynamicView({
     }
     if(!onNodeSelect)return <React.Fragment key={key}>{element}</React.Fragment>;
     return <div key={key} data-node-id={node.id||''} onClick={e=>{
-      e.stopPropagation();onNodeSelect(node.id);
-    }} className={'design-node'+(node.id&&node.id===selectedNode?' is-selected':'')}>
+      e.stopPropagation();onNodeSelect(node.editableId??node.id);
+    }} className={'design-node'+(node.id&&(node.editableId??node.id)===selectedNode?' is-selected':'')}>
       {element}
     </div>;
   };
