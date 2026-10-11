@@ -63,14 +63,14 @@ Platform Smoke 외에 `.github/workflows/core-regression.yml`이 추가되었다
 - public WebView API compile contract
 - BrowserBackend compile contract
 
-Latest full verified plugin-function vertical-slice baseline:
+Latest full verified plugin/lifetime/C++-wrapper baseline:
 
-- Code head: `a6a1d268e922259d46162f78b1fb253947960513`
-- Core Regression run `38018624756`: Ubuntu + Windows success
-- Platform Smoke run `38018624765`: Ubuntu + Windows success
-- Linux CEF Bridge run `38018624741`: success
-- Windows CEF Bridge run `38018624735`: success
-- Windows WebView2 Bridge run `38018624737`: success
+- Code head: `b876a74726e33609d3603ec572c6c8d03ab592e8`
+- Core Regression run `38107973666`: Ubuntu + Windows success
+- Platform Smoke run `38107973650`: Ubuntu + Windows success
+- Linux CEF Bridge run `38107973658`: success
+- Windows CEF Bridge run `38107973662`: success
+- Windows WebView2 Bridge run `38107973704`: success
 
 Core coverage now includes Any/containers/binary, typed bind, RequestId-correlated typed pending futures without per-call `std::async`, structured errors, worker pool/task queue, concurrent async bridge routing, event dispatcher, bridge messages/runtime, ObjectRegistry, NativeObjectRuntime, root object binding, WebView orchestration/engine selection and public API compile contracts.
 
@@ -422,6 +422,39 @@ Windows/Linux Core CI에서 실제 shared library를 빌드하고 다음을 검�
 다음 regression 우선순위:
 
 1. [x] queued/running worker task retains module lease
-2. [ ] native object retains module lease
-3. [ ] plugin-owned event/listener lifetime
-4. [ ] explicit safe unload / busy state
+2. [x] generic managed native object retains optional owner lease
+3. [ ] real plugin-created native object retains module lease
+4. [ ] plugin-owned event/listener lifetime
+5. [ ] explicit safe unload / busy state
+
+
+## C++ plugin wrapper regression
+
+`include/nativeweb/plugin.hpp` convenience layer는 C ABI를 대체하지 않는다.
+
+실제 Ubuntu/Windows Core CI에서 별도 DLL/SO를 다음 형태로 빌드한다.
+
+```cpp
+class SampleCppPlugin : public nativeweb::Plugin {
+public:
+    void registerApi(nativeweb::PluginApi& api) override {
+        api.bind("add", ...);
+        api.bind("echo", ...);
+    }
+};
+
+NATIVEWEB_PLUGIN(SampleCppPlugin, "cppsample")
+```
+
+검증:
+
+- plugin target은 NativeWeb Core library에 링크하지 않음
+- macro-exported C ABI v1 entry point를 PluginModule이 load
+- plugin id/version
+- int32 call
+- string call/result
+- binary argument
+- C++ `nativeweb::Error` -> ABI error -> host `nativeweb::Error`
+- module teardown -> wrapper registrations 제거
+
+이 테스트가 성공해도 native object/event/async ABI가 완료되었다는 뜻은 아니다.

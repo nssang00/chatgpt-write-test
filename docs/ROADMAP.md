@@ -186,14 +186,17 @@ Host layer가 application framework로 커지면 설계를 다시 검토한다.
 - [ ] embedded plugin descriptor (id/version/ABI/runtime/capabilities)
 - [x] queued/running task/module lifetime coupling
 - [ ] native object/module lifetime coupling
-- [ ] C++ wrapper
-- [ ] `NATIVEWEB_PLUGIN` macro/export convenience
+  - [x] ObjectRegistry/NativeObjectRuntime owner-lease foundation
+  - [ ] real plugin-created native object ABI/lifetime regression
+- [x] C++ wrapper
+- [x] `NATIVEWEB_PLUGIN` macro/export convenience
 - [x] plugin namespace registration
 - [x] callable/module lifetime coupling
 - [ ] conservative unload / plugin_busy policy
 - [x] real DLL Windows regression
 - [x] real SO Linux regression
-- [ ] object/event/binary support
+- [x] binary function argument/result baseline
+- [ ] native object/event plugin support
 - [x] ABI compatibility validation baseline
 - [ ] TypeScript declaration generation
 - [ ] missing-dependency diagnostics

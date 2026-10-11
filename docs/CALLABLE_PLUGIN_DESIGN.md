@@ -379,9 +379,11 @@ browser backend green baseline을 유지한 상태에서 다음 순서로 진행
 6. [x] small `SharedLibrary` abstraction + real DLL/SO loader regression
 7. [x] `PluginModule` + stable C ABI v1 function-registration baseline
 8. [x] real DLL/SO plugin load/register/call/callable-lifetime regression on Windows/Linux
-9. [ ] queued/running worker task -> PluginModule lease regression
+9. [x] queued/running worker task -> PluginModule lease regression
 10. [ ] native object -> PluginModule lease coupling
-11. [ ] C++ `NATIVEWEB_PLUGIN` convenience wrapper
+    - [x] generic ObjectRegistry/NativeObjectRuntime owner-lease foundation
+    - [ ] real plugin-created object ABI/lifetime regression
+11. [x] C++ `Plugin / PluginApi / NATIVEWEB_PLUGIN` convenience wrapper
 12. [ ] conservative unload / `plugin_busy` state machine
 13. [ ] plugin inspect / TypeScript declaration generation
 
@@ -469,7 +471,24 @@ Module destructor는 먼저 registration을 제거한다.
 8. module destruction -> registry removal
 9. module destruction 이후 retained Callable 호출 성공
 
-아직 native object와 queued/running worker task에 대한 module lease regression은 별도로 추가해야 한다.
+queued/running worker task는 real DLL/SO regression으로 검증됐다.
+
+native object 쪽은 generic foundation까지 구현됐다:
+
+```text
+ObjectRegistry Entry
+  - shared_ptr<void> object
+  - shared_ptr<void> owner
+
+get<T>()
+  -> aliasing shared_ptr<T>
+  -> object + owner state를 함께 retain
+```
+
+따라서 registry entry가 release된 뒤에도 이미 전달된 managed pointer가 살아 있으면 owner lease도 같이 살아 있다.
+
+아직 남은 것은 C ABI가 plugin-created native object/factory를 표현하도록 확장하고,
+그 실제 DLL/SO object가 이 owner lease를 사용하는 end-to-end regression이다.
 
 
 ## 16. Revised lifetime-first implementation order
@@ -493,3 +512,39 @@ webview.bind("apple", ...).method(...);
 ```
 
 는 계속 동일하며 plugin convenience API도 stable C ABI를 감싸는 additive layer로만 추가한다.
+
+
+## 17. Implemented C++ plugin convenience layer
+
+public header:
+
+```text
+include/nativeweb/plugin.hpp
+```
+
+사용 예:
+
+```cpp
+class CameraPlugin : public nativeweb::Plugin {
+public:
+    void registerApi(nativeweb::PluginApi& api) override {
+        api.bind("open", ...);
+        api.bind("capture", ...);
+    }
+};
+
+NATIVEWEB_PLUGIN(CameraPlugin, "camera")
+```
+
+특징:
+
+- header-only convenience layer
+- plugin shared library가 NativeWeb Core에 링크할 필요 없음
+- 기존 `plugin_abi.h` v1 위에서 동작
+- macro는 well-known `nativeweb_plugin_init_v1` C symbol을 export
+- C++ exception은 C ABI 밖으로 나가지 않고 structured error로 변환
+- v1 wrapper baseline은 null/bool/int32/double/string/binary를 사용
+- function registration lifetime은 PluginExportContext가 소유
+
+실제 regression은 C++ wrapper로 작성한 DLL/SO를 빌드하고 PluginModule로 다시 로드해
+add/string/binary/error mapping과 teardown unregister를 검증한다.

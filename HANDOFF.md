@@ -509,10 +509,10 @@ Platform Smoke:             37787721167 SUCCESS
 가장 먼저 해야 할 일:
 
 1. 최신 Core/Linux CEF/Windows CEF/WebView2 Regression이 green인 상태를 항상 유지한다.
-2. queued/running worker task가 PluginModule teardown 뒤에도 library lease를 유지하는지 real DLL/SO regression으로 증명한다.
-3. native object와 PluginModule lifetime coupling을 설계/테스트한다.
-4. C++ Plugin wrapper + `NATIVEWEB_PLUGIN` export convenience를 stable C ABI 위에 추가한다.
-5. conservative unload / `plugin_busy` policy를 정의한다.
+2. plugin-created native object를 C ABI v1-compatible extension으로 표현하고 ObjectRegistry owner lease와 연결한다.
+3. real DLL/SO object factory -> JS/native handle -> release까지 module lifetime regression을 추가한다.
+4. conservative unload / `plugin_busy` policy를 정의한다.
+5. runtime/capability/permission plugin descriptor를 확장한다.
 6. Windows에서 WebView2/CEF engine-switch regression을 추가한다.
 7. security permission/capability policy skeleton을 추가한다.
 8. TransferBuffer / SharedBuffer를 기본 Binary와 분리된 advanced API로 추가한다.
@@ -703,23 +703,33 @@ plain shared library
 Latest verified code head:
 
 ```text
-a6a1d268e922259d46162f78b1fb253947960513
+b876a74726e33609d3603ec572c6c8d03ab592e8
 
-Core Regression:          38018624756 SUCCESS (Ubuntu + Windows)
-Linux CEF Bridge:         38018624741 SUCCESS
-Windows CEF Bridge:       38018624735 SUCCESS
-Windows WebView2 Bridge:  38018624737 SUCCESS
-Platform Smoke:           38018624765 SUCCESS
+Core Regression:          38107973666 SUCCESS (Ubuntu + Windows)
+Linux CEF Bridge:         38107973658 SUCCESS
+Windows CEF Bridge:       38107973662 SUCCESS
+Windows WebView2 Bridge:  38107973704 SUCCESS
+Platform Smoke:           38107973650 SUCCESS
 ```
 
 Core regression의 `plugin.module`은 Ubuntu/Windows에서 실제 shared library를 빌드해 실행한다.
 
+추가로 완료된 plugin/lifetime foundation:
+
+- queued 상태의 worker task가 module teardown 뒤에도 copied Callable lease로 DLL/SO를 유지
+- running 상태의 worker task가 module teardown 중에도 DLL/SO를 유지
+- ObjectRegistry managed pointer가 object + optional owner lease를 함께 유지
+- NativeObjectRuntime에 internal owner lease overload 추가
+- C++ `Plugin / PluginApi` header-only wrapper
+- `NATIVEWEB_PLUGIN(Type, "id")`가 stable C ABI v1 entry point를 export
+- wrapper plugin의 int/string/binary/error mapping을 실제 Windows DLL/Linux SO로 검증
+- CEF multi-WebView coordinator를 worker concurrency에 맞게 thread-safe하게 보강
+
 남은 plugin 핵심:
 
-1. native object entry가 PluginLibraryLease 보유
-2. queued/running worker task lifetime을 명시적으로 regression
-3. plugin-owned events
-4. runtime/capability/permission descriptor
-5. C++ `Plugin / Api / NATIVEWEB_PLUGIN` convenience layer
-6. safe unload state / plugin_busy
-7. TS metadata generation
+1. C ABI에서 plugin-created native object handle/factory를 표현하고 real object/module lifetime을 검증
+2. plugin-owned events/listeners
+3. runtime/capability/permission descriptor
+4. safe unload state / `plugin_busy`
+5. explicit overload helper
+6. TS metadata generation

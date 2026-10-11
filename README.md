@@ -98,6 +98,23 @@ ROS2 pluginlib와 비슷한 사용 경험을 목표로 하되, NativeWeb에서�
 
 Developer-facing API는 C++답게 만들고, binary boundary는 stable C ABI를 사용한다.
 
+현재 C++ convenience baseline:
+
+```cpp
+class CameraPlugin : public nativeweb::Plugin {
+public:
+    void registerApi(nativeweb::PluginApi& api) override {
+        api.bind("open", ...);
+        api.bind("capture", ...);
+    }
+};
+
+NATIVEWEB_PLUGIN(CameraPlugin, "camera")
+```
+
+이 wrapper는 header-only이며 plugin DLL/SO가 NativeWeb Core에 직접 링크하지 않아도 된다.
+macro 내부에서는 versioned `nativeweb_plugin_init_v1` C ABI entry point만 export한다.
+
 ## Current verified status
 
 GitHub Actions에서 C++11 CMake/CTest smoke environment를 실제 검증했다.
@@ -115,15 +132,15 @@ Initial verified workflow run:
 
 Any 기반 Core regression과 public API contract가 Windows/Ubuntu에서 통과한다. Linux CEF와 Windows WebView2 모두 public `WebView` API를 통한 실제 JS↔C++ bridge를 검증한다. 현재 공통 검증에는 `xytron.foo()` direct facade, `xytron.invoke()` compatibility, worker-pool 기반 JS→C++ 병렬 실행, RequestId 기반 typed C++ future, root C++ object binding, object/array/binary, reload, events, Promise/error mapping, multi-WebView isolation, destroy-pending, native object Proxy lifecycle가 포함된다.
 
-Latest verified code head: `cca3bc446e7023538a8928682780c7ac5952e892`.
+Latest verified code head: `b876a74726e33609d3603ec572c6c8d03ab592e8`.
 
-- Core Regression: `38018203881` — Ubuntu/Windows success
-- NativeWeb CEF Bridge: `38018203880` — real Linux CEF success
-- NativeWeb CEF Windows Bridge: `38018203913` — real Windows CEF success
-- NativeWeb WebView2 Bridge: `38018203918` — real Windows WebView2 success
-- Platform Smoke: `38018203876` — Ubuntu/Windows success
+- Core Regression: `38107973666` — Ubuntu/Windows success
+- NativeWeb CEF Bridge: `38107973658` — real Linux CEF success
+- NativeWeb CEF Windows Bridge: `38107973662` — real Windows CEF success
+- NativeWeb WebView2 Bridge: `38107973704` — real Windows WebView2 success
+- Platform Smoke: `38107973650` — Ubuntu/Windows success
 
-Callable/signature metadata와 generation-safe registration ownership이 기존 public API 변경 없이 들어갔다. 또한 Windows/Linux에서 실제 DLL/SO를 빌드해 SharedLibrary와 C ABI v1 PluginModule function-registration vertical slice까지 통과한다. 아직 native-object/task lifetime과 C++ plugin convenience API는 구현 중이다.
+Callable/signature metadata, generation-safe registration ownership, real DLL/SO SharedLibrary, C ABI v1 PluginModule, queued/running task module lease, native-object owner-lease foundation, C++ Plugin/PluginApi wrapper와 `NATIVEWEB_PLUGIN` convenience까지 기존 WebView public API 변경 없이 검증됐다. Plugin-created native object ABI와 safe hot-unload는 아직 미완료다.
 
 ## Start here
 
@@ -141,15 +158,14 @@ Callable/signature metadata와 generation-safe registration ownership이 기존 
 
 ## Immediate next work
 
-1. Windows WebView2/CEF engine-switch regression
-2. native object / queued task의 plugin module lifetime coupling
-3. C++ Plugin/Api/NATIVEWEB_PLUGIN convenience API
-4. plugin descriptor runtime/capability metadata
+1. plugin-created native object ABI + module lifetime regression
+2. conservative unload / `plugin_busy` state machine
+3. Windows WebView2/CEF engine-switch regression
+4. plugin descriptor runtime/capability/permission metadata
 5. security permission/capability policy
-5. TransferBuffer / SharedBuffer advanced binary transport
-6. Win32/MFC/WinForms thin host adapters
-7. TypeScript/codegen metadata 확장
-8. sidecar runtime prototype
+6. TransferBuffer / SharedBuffer advanced binary transport
+7. Win32/MFC/WinForms thin host adapters
+8. TypeScript/codegen metadata 확장
 
 ## Repository note
 
