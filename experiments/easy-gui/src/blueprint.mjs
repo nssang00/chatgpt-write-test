@@ -84,18 +84,52 @@ export function validateBlueprint(input,definitions={}, {maxNodes=300,maxDepth=3
   if(!isRecord(definitions))errors.push('Invalid definitions');else visit(root,0,[]);
   return {valid:errors.length===0,errors,nodeCount:count};
 }
+/** Resolve reusable compositions into a stable, instance-scoped runtime tree.
+ * editableId always points to a node actually owned by the authoring screen.
+ */
 export function expandBlueprint(input,definitions={},parentScope=''){
   const check=validateBlueprint(input,definitions);
   if(!check.valid)throw new Error(check.errors.join('; '));
-  const build=(node,scope)=>{
+  const build=(node,scope,parentPath='',owner=null)=>{
     const ownScope=scopedPath(scope,node.scope??'');
+    const path=parentPath+'/'+(node.id??node.type);
     const component=definitions[node.type];
-    if(component?.kind!=='react' && component){
-      const inner=build(component.root,ownScope);
-      return {...inner,id:node.id??inner.id,instanceType:node.type,props:{...inner.props,...node.props},scope:inner.scope};
+    if(component&&component.kind!=='react'){
+      const root=structuredClone(component.root);
+      const manifest=component.manifest;
+      if(manifest){
+        const byId=new Map();
+        const index=n=>{if(n.id)byId.set(n.id,n);(n.children??[]).forEach(index);};
+        index(root);
+        const apply=(kind,values)=>{
+          for(const [port,value] of Object.entries(values??{})){
+            const spec=manifest[kind]?.[port];
+            if(!spec)throw new Error('Unexposed composite '+kind+' port: '+port);
+            const target=byId.get(spec.target);
+            if(!target)throw new Error('Missing composite target: '+spec.target);
+            const key=kind==='props'?'prop':kind==='bindings'?'port':'event';
+            if(!validName(spec[key]))throw new Error('Invalid composite port: '+port);
+            const targetSection=kind==='bindings'?'bind':kind==='events'?'on':'props';
+            target[targetSection]??={};
+            target[targetSection][spec[key]]=value;
+          }
+        };
+        apply('props',node.props);
+        apply('bindings',node.bind);
+        apply('events',node.on);
+      }
+      const expanded=build(root,ownScope,path,owner??node.id??null);
+      return {...expanded,id:node.id??expanded.id,instanceType:node.type,
+        instancePath:path,editableId:owner??node.id??expanded.editableId,
+        scope:expanded.scope,
+        // Legacy definitions had no explicit external contract.
+        props:manifest?expanded.props:{...expanded.props,...node.props}};
     }
-    return {id:node.id,type:node.type,props:node.props??{},bind:node.bind??{},on:node.on??{},
-      scope:ownScope,children:(node.children??[]).map(child=>build(child,ownScope))};
+    return {
+      id:node.id,type:node.type,props:node.props??{},bind:node.bind??{},
+      on:node.on??{},scope:ownScope,instancePath:path,editableId:owner??node.id,
+      children:(node.children??[]).map(child=>build(child,ownScope,path,owner))
+    };
   };
   return build(input?.root??input,parentScope);
 }
