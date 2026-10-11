@@ -13,7 +13,11 @@ export function validateLayoutNode(node){
   if(node.placement!==undefined){
     if(!isRecord(node.placement))errors.push('Invalid placement');
     else for(const [breakpoint,place] of Object.entries(node.placement)){
-      if(!['desktop','mobile'].includes(breakpoint)||!isRecord(place)||
+      if(breakpoint==='free'){
+        if(!isRecord(place)||['x','y','width','height'].some(k=>
+          !Number.isFinite(place[k])||place[k]<0||place[k]>2400)||
+          place.width<40||place.height<24)errors.push('Invalid free placement');
+      }else if(!['desktop','mobile'].includes(breakpoint)||!isRecord(place)||
         !Number.isInteger(place.span)||place.span<1||place.span>12)
         errors.push('Invalid grid span for '+breakpoint);
     }
@@ -42,6 +46,17 @@ export function setGridSpan(doc,id,breakpoint,span){
   target.placement??={};
   target.placement[breakpoint]={...(target.placement[breakpoint]??{}),span};
   return result;
+}
+export function setFreePlacement(doc,id,{x,y,width,height}){
+  const next=copy(doc),target=findNode(next,id);
+  if(!target)throw new Error('Unknown node: '+id);
+  const clamp=(n,min,max)=>Math.max(min,Math.min(max,Math.round(Number(n)||0)));
+  target.placement??={};
+  target.placement.free={
+    x:clamp(x,0,2400),y:clamp(y,0,2400),
+    width:clamp(width,40,2400),height:clamp(height,24,2400)
+  };
+  return next;
 }
 export function getGridSpan(node,viewport,columns){
   if(viewport==='mobile')return 1;

@@ -23,6 +23,7 @@ export function renderAntdControl(node,{children,render,value,change,act,bounded
     switch(node.type){
       case 'Column':element=<div className="easy-column" style={{gap:p.gap??16}}>{children}</div>;break;
       case 'Row':element=<div className="easy-row" style={{gap:p.gap??16}}>{children}</div>;break;
+      case 'FreeCanvas':element=<div className="easy-free-canvas" style={{minHeight:Math.max(160,Math.min(1800,Number(p.height)||420))}}>{children}</div>;break;
       case 'Grid':element=<div className="easy-grid" style={{gap:p.gap??16,
         gridTemplateColumns:`repeat(${Math.max(1,Math.min(6,Number(p.columns)||2))},minmax(0,1fr))`}}>{children}</div>;break;
       case 'Panel':element=<Card title={p.title} className="easy-panel">{children}</Card>;break;

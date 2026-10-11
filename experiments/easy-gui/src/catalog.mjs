@@ -5,6 +5,7 @@ export const CONTROL_CATALOG={
   Column:{group:'레이아웃',label:'세로 배치',icon:'column',container:true,props:{gap:prop('number',16)}},
   Row:{group:'레이아웃',label:'가로 배치',icon:'row',container:true,props:{gap:prop('number',16)}},
   Grid:{group:'레이아웃',label:'그리드',icon:'grid',container:true,props:{columns:prop('number',2),gap:prop('number',16)}},
+  FreeCanvas:{group:'레이아웃',label:'자유 배치 영역',icon:'canvas',container:true,props:{height:prop('number',420)}},
   Panel:{group:'레이아웃',label:'패널 / 카드',icon:'panel',container:true,props:{title:prop('string','새 패널')}},
   SplitPanel:{group:'레이아웃',label:'분할 패널',icon:'split',container:true,props:{direction:prop('enum','horizontal',['horizontal','vertical'])}},
   Divider:{group:'레이아웃',label:'구분선',icon:'divider',props:{title:prop('string','')}},

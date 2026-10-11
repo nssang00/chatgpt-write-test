@@ -160,3 +160,14 @@ body{background:#f5f7fb}
   box-shadow:0 3px 10px rgba(57,50,115,.16)}
 .canvas-move-handle:active{cursor:grabbing}
 .canvas-move-handle:focus-visible{outline:3px solid #8a82f8;outline-offset:2px}
+
+/* Opt-in free-position container: absolute placement stays inside this frame. */
+.easy-free-canvas{position:relative;min-height:300px;width:100%;
+  border-radius:10px;border:1px dashed #aaa7e8;
+  background-color:#fbfaff;
+  background-image:radial-gradient(#dbdcf4 0.8px,transparent 0.8px);
+  background-size:18px 18px;overflow:hidden}
+.easy-free-canvas>.design-node{position:absolute;margin:0;min-width:0}
+.free-placement-badge{font-size:11px;color:#635aba;background:#f4f2ff;
+  border-radius:6px;padding:5px 8px}
+.canvas-move-handle.free-move{cursor:move}
