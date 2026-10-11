@@ -34,7 +34,7 @@ export function writePath(model,path,value) {
 export function validName(name) {return typeof name==='string'&&NAME.test(name)&&!FORBIDDEN.has(name);}
 const isRecord=value=>value!==null&&typeof value==='object'&&!Array.isArray(value);
 export function validateBlueprint(input,definitions={}, {maxNodes=300,maxDepth=32}={}) {
-  const errors=[];let count=0;
+  const errors=[];let count=0;const authorIds=new Set();
   const root=input?.root??input;
   const visit=(node,depth,ancestry)=>{
     count++;
@@ -42,6 +42,10 @@ export function validateBlueprint(input,definitions={}, {maxNodes=300,maxDepth=3
     if(depth>maxDepth){errors.push('Depth limit exceeded');return;}
     if(!isRecord(node)||!validName(node.type)){errors.push('Invalid component type');return;}
     if(node.id!==undefined&&!validName(node.id))errors.push('Invalid node id for '+node.type);
+    if(node.id!==undefined&&!ancestry.length){
+      if(authorIds.has(node.id))errors.push('Duplicate authoring node ID: '+node.id);
+      authorIds.add(node.id);
+    }
     if(node.scope!==undefined){try{pathSegments(node.scope);}catch(e){errors.push(e.message);}}
     if(node.bind!==undefined){
       if(!isRecord(node.bind))errors.push('Invalid binding for '+node.type);
@@ -99,9 +103,9 @@ export function validateBlueprint(input,definitions={}, {maxNodes=300,maxDepth=3
 export function expandBlueprint(input,definitions={},parentScope=''){
   const check=validateBlueprint(input,definitions);
   if(!check.valid)throw new Error(check.errors.join('; '));
-  const build=(node,scope,parentPath='',owner=null)=>{
+  const build=(node,scope,parentPath='',owner=null,position=0)=>{
     const ownScope=scopedPath(scope,node.scope??'');
-    const path=parentPath+'/'+(node.id??node.type);
+    const path=parentPath+'/'+(node.id??String(position)+'-'+node.type);
     const component=definitions[node.type];
     if(component&&component.kind!=='react'){
       const root=structuredClone(component.root);
@@ -137,7 +141,7 @@ export function expandBlueprint(input,definitions={},parentScope=''){
     return {
       id:node.id,type:node.type,props:node.props??{},bind:node.bind??{},
       on:node.on??{},scope:ownScope,instancePath:path,editableId:owner??node.id,
-      children:(node.children??[]).map(child=>build(child,ownScope,path,owner))
+      children:(node.children??[]).map((child,index)=>build(child,ownScope,path,owner,index))
     };
   };
   return build(input?.root??input,parentScope);
