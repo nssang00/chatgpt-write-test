@@ -115,6 +115,14 @@ export function DynamicView({
         (hover?' drop-'+hover:'')+(pendingType?' placement-cursor':'')}
       style={layoutStyle}>
       {element}
+      {canEdit&&editableId===selectedNode&&parent&&!pendingType&&
+        <button type="button" className="canvas-move-handle" draggable
+          title="다른 위치로 드래그하여 이동" aria-label="선택 요소 이동"
+          onClick={event=>event.stopPropagation()}
+          onDragStart={event=>{
+            event.stopPropagation();event.dataTransfer.effectAllowed='move';
+            event.dataTransfer.setData('application/x-easygui-node',editableId);
+          }}>✥</button>}
       {resizeAvailable&&editableId===selectedNode&&<button type="button"
         className="grid-resize-handle" aria-label="Grid 열 너비 조절"
         title="드래그 또는 좌우 화살표로 Grid 너비 변경"

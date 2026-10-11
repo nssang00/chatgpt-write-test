@@ -153,3 +153,10 @@ body{background:#f5f7fb}
   color:#66728e;font-weight:600;margin:8px 0}
 .layout-controls label .ant-select,.layout-controls label .ant-input{width:100%}
 .preview-mobile .design-node{max-width:100%}
+
+.canvas-move-handle{position:absolute;z-index:36;left:-8px;top:-8px;
+  border:1px solid #5e59d9;background:#fff;color:#5651bf;
+  width:26px;height:26px;border-radius:8px;cursor:grab;
+  box-shadow:0 3px 10px rgba(57,50,115,.16)}
+.canvas-move-handle:active{cursor:grabbing}
+.canvas-move-handle:focus-visible{outline:3px solid #8a82f8;outline-offset:2px}
