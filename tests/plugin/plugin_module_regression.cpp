@@ -1,9 +1,15 @@
 #include "core/binding_registry.hpp"
 #include "nativeweb/error.hpp"
 #include "plugin/plugin_module.hpp"
+#include "core/worker_pool.hpp"
 
+#include <chrono>
+#include <exception>
+#include <future>
 #include <iostream>
+#include <memory>
 #include <string>
+#include <thread>
 
 namespace {
 
@@ -38,7 +44,7 @@ void testLoadRegisterCallAndLifetime(
 
         CHECK(module.id() == "sample");
         CHECK(module.version() == "1.0.0");
-        CHECK(module.registrationCount() == 2u);
+        CHECK(module.registrationCount() == 4u);
 
         CHECK(registry.has("sample.add"));
         CHECK(registry.has("sample.fail"));
@@ -90,6 +96,162 @@ void testLoadRegisterCallAndLifetime(
         AnyCast<int>(
             retained.invoke(args)) ==
         42);
+}
+
+void testQueuedTaskRetainsModuleLease(
+    const std::string& pluginPath)
+{
+    nativeweb::detail::BindingRegistry registry;
+    std::unique_ptr<nativeweb::detail::PluginModule> module(
+        new nativeweb::detail::PluginModule(
+            pluginPath,
+            registry));
+
+    nativeweb::detail::Callable slow =
+        registry.find("sample.slow_add");
+
+    VariantList args;
+    args.push_back(Any(20));
+    args.push_back(Any(22));
+
+    nativeweb::detail::WorkerPool pool(1);
+
+    std::promise<void> releaseBlocker;
+    std::shared_future<void> blocker =
+        releaseBlocker.get_future().share();
+
+    std::promise<void> blockerStartedPromise;
+    std::future<void> blockerStarted =
+        blockerStartedPromise.get_future();
+
+    CHECK(pool.post([&]() {
+        blockerStartedPromise.set_value();
+        blocker.wait();
+    }));
+
+    CHECK(
+        blockerStarted.wait_for(
+            std::chrono::seconds(3)) ==
+        std::future_status::ready);
+
+    std::promise<int> resultPromise;
+    std::future<int> result =
+        resultPromise.get_future();
+
+    CHECK(pool.post(
+        [slow, args, &resultPromise]() mutable {
+            try
+            {
+                resultPromise.set_value(
+                    AnyCast<int>(
+                        slow.invoke(args)));
+            }
+            catch (...)
+            {
+                resultPromise.set_exception(
+                    std::current_exception());
+            }
+        }));
+
+    // The queued task owns the only remaining Callable copy after these
+    // releases. Destroying the module must unregister methods but must not
+    // unload the DLL/SO before the queued task starts.
+    slow = nativeweb::detail::Callable();
+    module.reset();
+
+    CHECK(!registry.has("sample.slow_add"));
+
+    releaseBlocker.set_value();
+
+    CHECK(
+        result.wait_for(
+            std::chrono::seconds(3)) ==
+        std::future_status::ready);
+
+    CHECK(result.get() == 42);
+    pool.shutdown();
+}
+
+void testRunningTaskRetainsModuleLease(
+    const std::string& pluginPath)
+{
+    nativeweb::detail::BindingRegistry registry;
+    std::unique_ptr<nativeweb::detail::PluginModule> module(
+        new nativeweb::detail::PluginModule(
+            pluginPath,
+            registry));
+
+    nativeweb::detail::Callable slow =
+        registry.find("sample.slow_add");
+
+    nativeweb::detail::Callable status =
+        registry.find("sample.is_slow_running");
+
+    VariantList args;
+    args.push_back(Any(40));
+    args.push_back(Any(2));
+
+    nativeweb::detail::WorkerPool pool(1);
+
+    std::promise<int> resultPromise;
+    std::future<int> result =
+        resultPromise.get_future();
+
+    CHECK(pool.post(
+        [slow, args, &resultPromise]() mutable {
+            try
+            {
+                resultPromise.set_value(
+                    AnyCast<int>(
+                        slow.invoke(args)));
+            }
+            catch (...)
+            {
+                resultPromise.set_exception(
+                    std::current_exception());
+            }
+        }));
+
+    bool observedRunning = false;
+    const std::chrono::steady_clock::time_point deadline =
+        std::chrono::steady_clock::now() +
+        std::chrono::seconds(3);
+
+    while (
+        std::chrono::steady_clock::now() <
+        deadline)
+    {
+        if (
+            AnyCast<bool>(
+                status.invoke(
+                    VariantList())))
+        {
+            observedRunning = true;
+            break;
+        }
+
+        std::this_thread::sleep_for(
+            std::chrono::milliseconds(5));
+    }
+
+    CHECK(observedRunning);
+
+    // Drop all test-thread references into plugin code. The worker task's
+    // captured Callable must now be the only lease keeping the library loaded.
+    status = nativeweb::detail::Callable();
+    slow = nativeweb::detail::Callable();
+    module.reset();
+
+    CHECK(!registry.has("sample.slow_add"));
+    CHECK(!registry.has("sample.is_slow_running"));
+
+    CHECK(
+        result.wait_for(
+            std::chrono::seconds(3)) ==
+        std::future_status::ready);
+
+    CHECK(result.get() == 42);
+    pool.shutdown();
 }
 
 void testAbiMismatch(
@@ -157,6 +319,12 @@ int main(
     }
 
     testLoadRegisterCallAndLifetime(
+        argv[1]);
+
+    testQueuedTaskRetainsModuleLease(
+        argv[1]);
+
+    testRunningTaskRetainsModuleLease(
         argv[1]);
 
     testAbiMismatch(

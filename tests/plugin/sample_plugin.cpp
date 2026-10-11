@@ -1,8 +1,13 @@
 #include "nativeweb/plugin_abi.h"
 
+#include <atomic>
+#include <chrono>
 #include <cstring>
+#include <thread>
 
 namespace {
+
+std::atomic<bool> gSlowRunning(false);
 
 int32_t addCall(
     void*,
@@ -64,6 +69,67 @@ int32_t failCall(
     return -1;
 }
 
+int32_t slowAddCall(
+    void*,
+    const nw_value_v1* args,
+    uint64_t argc,
+    nw_value_v1* result,
+    nw_error_v1*)
+{
+    if (
+        argc != 2 ||
+        !args ||
+        args[0].type != NW_VALUE_INT32_V1 ||
+        args[1].type != NW_VALUE_INT32_V1)
+    {
+        return -1;
+    }
+
+    gSlowRunning.store(true);
+
+    std::this_thread::sleep_for(
+        std::chrono::milliseconds(250));
+
+    result->struct_size =
+        static_cast<uint32_t>(
+            sizeof(*result));
+
+    result->type =
+        NW_VALUE_INT32_V1;
+
+    result->data.int32_value =
+        args[0].data.int32_value +
+        args[1].data.int32_value;
+
+    gSlowRunning.store(false);
+    return 0;
+}
+
+int32_t isSlowRunningCall(
+    void*,
+    const nw_value_v1*,
+    uint64_t argc,
+    nw_value_v1* result,
+    nw_error_v1*)
+{
+    if (argc != 0)
+        return -1;
+
+    result->struct_size =
+        static_cast<uint32_t>(
+            sizeof(*result));
+
+    result->type =
+        NW_VALUE_BOOL_V1;
+
+    result->data.boolean_value =
+        gSlowRunning.load()
+            ? 1u
+            : 0u;
+
+    return 0;
+}
+
 int32_t registerApi(
     void*,
     const nw_host_api_v1* host)
@@ -92,6 +158,26 @@ int32_t registerApi(
             host->host_context,
             "fail",
             &failCall,
+            0) != 0)
+    {
+        return -1;
+    }
+
+    if (
+        host->register_function(
+            host->host_context,
+            "slow_add",
+            &slowAddCall,
+            0) != 0)
+    {
+        return -1;
+    }
+
+    if (
+        host->register_function(
+            host->host_context,
+            "is_slow_running",
+            &isSlowRunningCall,
             0) != 0)
     {
         return -1;
