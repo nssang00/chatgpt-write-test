@@ -184,12 +184,12 @@ Host layer가 application framework로 커지면 설계를 다시 검토한다.
 - [x] PluginModule + function registration ownership baseline
 - [x] stable versioned C ABI v1 function-call baseline
 - [ ] embedded plugin descriptor (id/version/ABI/runtime/capabilities)
+- [ ] queued/running task/module lifetime coupling
+- [ ] native object/module lifetime coupling
 - [ ] C++ wrapper
 - [ ] `NATIVEWEB_PLUGIN` macro/export convenience
 - [x] plugin namespace registration
 - [x] callable/module lifetime coupling
-- [ ] native object/module lifetime coupling
-- [ ] queued/running task/module lifetime coupling
 - [ ] conservative unload / plugin_busy policy
 - [x] real DLL Windows regression
 - [x] real SO Linux regression

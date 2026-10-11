@@ -509,13 +509,14 @@ Platform Smoke:             37787721167 SUCCESS
 가장 먼저 해야 할 일:
 
 1. 최신 Core/Linux CEF/Windows CEF/WebView2 Regression이 green인 상태를 항상 유지한다.
-2. Windows에서 WebView2/CEF engine-switch regression을 추가한다.
-3. PluginModule + stable versioned C ABI v1 prototype을 만든다.
-4. real DLL/SO plugin register/call/lifetime regression을 추가한다.
-5. security permission/capability policy skeleton을 추가한다.
-6. TransferBuffer / SharedBuffer를 기본 Binary와 분리된 advanced API로 추가한다.
-7. thin Host adapters를 Win32/MFC/WinForms 순으로 시작한다.
-8. TypeScript/codegen metadata를 Callable signature 위에 확장한다.
+2. queued/running worker task가 PluginModule teardown 뒤에도 library lease를 유지하는지 real DLL/SO regression으로 증명한다.
+3. native object와 PluginModule lifetime coupling을 설계/테스트한다.
+4. C++ Plugin wrapper + `NATIVEWEB_PLUGIN` export convenience를 stable C ABI 위에 추가한다.
+5. conservative unload / `plugin_busy` policy를 정의한다.
+6. Windows에서 WebView2/CEF engine-switch regression을 추가한다.
+7. security permission/capability policy skeleton을 추가한다.
+8. TransferBuffer / SharedBuffer를 기본 Binary와 분리된 advanced API로 추가한다.
+9. TypeScript/codegen metadata를 Callable signature 위에 확장한다.
 
 세부 단계는 [docs/ROADMAP.md](docs/ROADMAP.md)를 따른다.
 
@@ -557,7 +558,8 @@ Platform Smoke:             37787721167 SUCCESS
 - Any.h를 새 Value type으로 임의 교체하지 않는다. 현재 committed Any.h를 기준으로 확장한다.
 - Linux CEF integration, public WebView orchestration, multi-WebView, destroy-pending, native object Proxy vertical slice는 실제로 통과했다.
 - Windows WebView2 backend도 real GitHub Actions에서 동일 bridge HTML과 multi-WebView isolation을 실제 통과했다.
-- Windows CEF backend가 구현됐다고 가정하지 않는다.
+- Windows CEF backend도 real GitHub Actions에서 동일 CEF contract suite를 실제 통과했다.
+- browser backend 완료 여부는 항상 최신 Actions run으로 재확인한다.
 - placeholder 제품명/CLI 이름을 최종 브랜드로 간주하지 않는다.
 
 ## 16. 작업 종료 시 handoff 갱신 규칙

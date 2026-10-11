@@ -419,9 +419,9 @@ Windows/Linux Core CI에서 실제 shared library를 빌드하고 다음을 검�
 - module teardown unregisters methods
 - retained Callable keeps plugin library code alive after module teardown
 
-다음 regression에서 추가할 것:
+다음 regression 우선순위:
 
-- native object retains module lease
-- queued/running worker task retains module lease
-- plugin-owned event/listener lifetime
-- explicit safe unload / busy state
+1. queued/running worker task retains module lease
+2. native object retains module lease
+3. plugin-owned event/listener lifetime
+4. explicit safe unload / busy state

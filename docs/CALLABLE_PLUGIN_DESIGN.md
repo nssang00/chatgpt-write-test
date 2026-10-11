@@ -379,8 +379,11 @@ browser backend green baseline을 유지한 상태에서 다음 순서로 진행
 6. [x] small `SharedLibrary` abstraction + real DLL/SO loader regression
 7. [x] `PluginModule` + stable C ABI v1 function-registration baseline
 8. [x] real DLL/SO plugin load/register/call/callable-lifetime regression on Windows/Linux
-9. [ ] C++ `NATIVEWEB_PLUGIN` convenience wrapper
-10. [ ] plugin inspect / TypeScript declaration generation
+9. [ ] queued/running worker task -> PluginModule lease regression
+10. [ ] native object -> PluginModule lease coupling
+11. [ ] C++ `NATIVEWEB_PLUGIN` convenience wrapper
+12. [ ] conservative unload / `plugin_busy` state machine
+13. [ ] plugin inspect / TypeScript declaration generation
 
 중요:
 
@@ -467,3 +470,26 @@ Module destructor는 먼저 registration을 제거한다.
 9. module destruction 이후 retained Callable 호출 성공
 
 아직 native object와 queued/running worker task에 대한 module lease regression은 별도로 추가해야 한다.
+
+
+## 16. Revised lifetime-first implementation order
+
+현재 function-call C ABI vertical slice는 실제 Windows DLL / Linux SO에서 검증되었다.
+따라서 다음 단계는 API convenience보다 lifetime correctness를 먼저 증명한다.
+
+우선순위:
+
+1. queued/running worker task가 copied `Callable`을 통해 `PluginLibraryLease`를 보유하는지 real plugin으로 검증
+2. plugin-created native object가 module lease를 보유하도록 ObjectRegistry/NativeObjectRuntime ownership 확장
+3. 그 위에 C++ `Plugin` / `PluginApi` wrapper와 `NATIVEWEB_PLUGIN(...)` macro 제공
+4. explicit unload는 active calls/live objects/registrations가 모두 안전할 때만 허용
+5. overload helper와 TypeScript/codegen은 lifetime/ABI foundation 이후 진행
+
+이 순서는 사용자-facing API를 변경하지 않는다.
+
+```cpp
+webview.bind(...);
+webview.bind("apple", ...).method(...);
+```
+
+는 계속 동일하며 plugin convenience API도 stable C ABI를 감싸는 additive layer로만 추가한다.
