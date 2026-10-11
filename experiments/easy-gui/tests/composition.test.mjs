@@ -113,3 +113,27 @@ test('security regression: undeclared external composite ports are rejected',()=
  assert.throws(()=>extractComponent(sample,'root','Bad',{}),/non-root/);
  assert.throws(()=>extractComponent(sample,'editor','Column',{}),/Invalid or existing/);
 });
+
+test('regression: authoring node IDs must be unique, definition IDs may repeat per instance',()=>{
+ const bad={root:{type:'Column',id:'root',children:[
+   {type:'Text',id:'dup'},{type:'Button',id:'dup'}
+ ]}};
+ const result=validateBlueprint(bad,{});
+ assert.equal(result.valid,false);
+ assert.match(result.errors.join(' '),/Duplicate authoring node ID/);
+ const okay=validateBlueprint(initialBlueprint,initialDefinitions);
+ assert.equal(okay.valid,true);
+});
+test('regression: anonymous sibling nodes still receive distinct runtime paths',()=>{
+ const result=expandBlueprint({type:'Row',id:'root',children:[
+   {type:'Text',props:{text:'a'}},{type:'Text',props:{text:'b'}}
+ ]},{});
+ assert.notEqual(result.children[0].instancePath,result.children[1].instancePath);
+});
+test('regression: extracted public property overrides internal target without mutating definition',()=>{
+ const extracted=extractComponent(sample,'editor','CustomerEditor',{});
+ const edited=updateNode(extracted.doc,'editor',n=>{n.props={title:'변경된 제목'};});
+ const panel=expandBlueprint(edited,extracted.definitions).children[0];
+ assert.equal(panel.props.title,'변경된 제목');
+ assert.equal(extracted.definitions.CustomerEditor.root.props.title,'고객 정보');
+});

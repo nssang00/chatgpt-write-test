@@ -57,6 +57,29 @@ The CLI merges versioned, validated definitions into `src/installed-components.j
 
 Studio's **JSON 가져오기** also recognizes portable component bundles. Downloaded JSON never executes JavaScript.
 
+## Current architecture and composable authoring
+
+This is **not** a new UI framework. Any trusted React component can still be authored as ordinary JSX. The optional manifest is only for designer discovery.
+
+- `src/catalog.mjs`: builtin control definitions and default data/action ports (single source of metadata).
+- `src/manifest.mjs`: unified manifest view for builtins, trusted React modules, and extracted compositions; drives Toolbox/Inspector.
+- `src/blueprint.mjs`: serializable screen tree, validation, immutable data paths and scoped component expansion. Runtime nodes carry `instancePath` and `editableId` so repeated composites select their owning instance.
+- `src/commands.mjs`: pure add/update/duplicate/remove/move/extract operations that preserve the original screen.
+- `src/DynamicView.jsx`: renderer traversal, bindings, actions and selection.
+- `src/adapters/antd.jsx`: default React UI library renderer; a different trusted renderer can be provided with `renderBuiltin`.
+
+### Extract a reusable component
+
+1. Select a Panel/Form or other non-root node in the **Component Tree** or canvas.
+2. Choose **컴포넌트로 추출** and give it a unique name.
+3. The selected subtree is replaced by one composite instance. The component appears in the Toolbox.
+4. Its properties, bindings and events are suggested as named external ports.
+5. Use **컴포넌트 패키지** to export a local `.easygui.json` bundle, and install it in another generated project using `npm run components -- add ...`.
+
+Tree nodes can be dragged into layout containers to relocate them (cycle/invalid-target moves are rejected). This is a first **tree-level drag/drop** implementation, not yet a free canvas drag/drop editor or slot layout engine.
+
+**Known limits:** exposed ports are currently inferred and cannot yet be curated in a guided UI; nested slots, true round-trip TSX, IR-to-independent-TSX generation, automatic npm metadata inference and hosted package publication remain future milestones. Real React component code is always installed as trusted application code, never executed from imported JSON.
+
 ## Tests
 
 ```bash
