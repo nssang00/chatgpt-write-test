@@ -74,3 +74,40 @@ test('selected control supports Hug Fill and Fixed sizing',async({page})=>{
   const doc=await json(page);
   expect(doc.root.children[1].sizing).toEqual({mode:'fixed',px:320});
 });
+
+test('FreeCanvas opt-in allows position-specific placement and x/y Inspector edits',async({page},testInfo)=>{
+  await blank(page);
+  await page.getByRole('button',{name:/FreeCanvas/}).click();
+  await root(page).click({position:{x:8,y:8}});
+  await expect(page.locator('.easy-free-canvas')).toHaveCount(1);
+  await page.getByRole('button',{name:/Tag/}).dragTo(page.locator('.easy-free-canvas'),
+    {targetPosition:{x:150,y:120}});
+  const positioned=page.locator('.easy-free-canvas > .design-node').first();
+  await expect(positioned).toBeVisible();
+  await positioned.click();
+  await expect(page.getByRole('textbox',{name:'자유 배치 x'})).toBeVisible();
+  await page.getByRole('textbox',{name:'자유 배치 x'}).fill('180');
+  await expect(positioned).toHaveCSS('left','180px');
+  await page.screenshot({path:testInfo.outputPath('free-canvas.png'),fullPage:true});
+  const doc=await json(page);
+  const free=doc.root.children.find(n=>n.type==='FreeCanvas');
+  expect(free.children[0].placement.free.x).toBe(180);
+});
+test('FreeCanvas handle moves a selected element without changing its layout parent',async({page})=>{
+  await blank(page);
+  await page.getByRole('button',{name:/FreeCanvas/}).click();
+  await root(page).click({position:{x:8,y:8}});
+  await page.getByRole('button',{name:/Text/}).first().dragTo(page.locator('.easy-free-canvas'),
+    {targetPosition:{x:130,y:100}});
+  const floating=page.locator('.easy-free-canvas > .design-node').first();
+  await floating.click();
+  const before=Number.parseFloat(await floating.evaluate(el=>getComputedStyle(el).left));
+  const handle=page.getByRole('button',{name:'선택 요소 이동'});
+  const b=await handle.boundingBox();
+  await page.mouse.move(b.x+b.width/2,b.y+b.height/2);
+  await page.mouse.down();
+  await page.mouse.move(b.x+b.width/2+75,b.y+b.height/2+20,{steps:6});
+  await page.mouse.up();
+  const after=Number.parseFloat(await floating.evaluate(el=>getComputedStyle(el).left));
+  expect(after).toBeGreaterThan(before);
+});

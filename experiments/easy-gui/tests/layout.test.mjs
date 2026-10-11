@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {placeNode,setGridSpan,getGridSpan,setNodeSizing,suggestDropSide} from '../src/layout.mjs';
+import {placeNode,setGridSpan,getGridSpan,setNodeSizing,setFreePlacement,suggestDropSide} from '../src/layout.mjs';
 import {validateBlueprint,expandBlueprint} from '../src/blueprint.mjs';
 import {createComponentBundle,installComponentBundle} from '../src/component-kit.mjs';
 
@@ -79,4 +79,29 @@ test('regression: bundle exports layout metadata and preserves on reinstall',()=
   const result=expandBlueprint({type:'NewLayout',id:'instance'},installed);
   assert.equal(result.children[1].children[0].placement.desktop.span,3);
   assert.equal(result.children[1].children[0].sizing.px,320);
+});
+
+test('unit: FreeCanvas absolute coordinates are bounded and validated',()=>{
+  const base=screen();
+  base.root.children.push({type:'FreeCanvas',id:'free',props:{height:500},children:[
+    {type:'Text',id:'floating',props:{text:'Floating'}}
+  ]});
+  const next=setFreePlacement(base,'floating',{x:120,y:74,width:230,height:80});
+  assert.deepEqual(next.root.children[3].children[0].placement.free,{x:120,y:74,width:230,height:80});
+  assert.equal(validateBlueprint(next).valid,true);
+  assert.equal(base.root.children[3].children[0].placement,undefined);
+  const clamped=setFreePlacement(next,'floating',{x:-100,y:3000,width:2,height:8});
+  assert.deepEqual(clamped.root.children[3].children[0].placement.free,{x:0,y:2400,width:40,height:24});
+  assert.equal(validateBlueprint(clamped).valid,true);
+});
+test('regression: FreeCanvas placements survive composite packaging and validation',()=>{
+  const d={root:{type:'FreeCanvas',id:'free',props:{height:320},children:[
+    {type:'Button',id:'button',props:{label:'Click'},placement:{free:{x:28,y:42,width:130,height:48}}}
+  ]}};
+  const pack=createComponentBundle('FloatingForm',d.root,{});
+  const defs=installComponentBundle({},JSON.parse(JSON.stringify(pack)));
+  const rt=expandBlueprint({type:'FloatingForm',id:'instance'},defs);
+  assert.deepEqual(rt.children[0].placement.free,{x:28,y:42,width:130,height:48});
+  d.root.children[0].placement.free.x=-1;
+  assert.match(validateBlueprint(d).errors.join(' '),/Invalid free placement/);
 });

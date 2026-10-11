@@ -24,7 +24,7 @@ Browser regression tests save **screenshots** into the GitHub Actions `easy-gui-
 - Drag from Toolbox to a component or into a Row/Column/Grid/Panel. The highlighted **before/after/inside** target controls the insertion point, not the end of the root list.
 - Select an existing component to show its **move handle**; drag the handle to relocate it. Component Tree drag/drop is still supported.
 - Select a Grid child to adjust its **Grid 너비** in the Inspector, or use the handle on the right edge (mouse drag or Left/Right keyboard arrow). Mobile preview collapses grids to a single column.
-- Every selected control supports **Hug**, **Fill**, and **Fixed px** width modes. Editor sizing is stored in `node.sizing` and grid occupancy in `node.placement.desktop.span` rather than mixed with ordinary React props.
+- Controls in flow layouts support **Hug**, **Fill**, and **Fixed px** width modes. Editor sizing is stored in `node.sizing` and grid occupancy in `node.placement.desktop.span` rather than mixed with ordinary React props.
 - Existing Blueprint JSON without layout metadata continues to render with the old defaults. Exported components preserve their placement and sizing.
 
 ### Layout metadata example
@@ -39,7 +39,27 @@ Browser regression tests save **screenshots** into the GitHub Actions `easy-gui-
 }
 ```
 
-For a Grid with `columns: 3`, this control spans two columns on desktop and one in mobile preview. `src/layout.mjs` owns immutable exact insertion, relocation, size/span adjustments, and validation. Browser E2E includes drag, click placement, resize, keyboard editing, and mobile regression.
+For a Grid with `columns: 3`, this control spans two columns on desktop and one in mobile preview.
+
+### Optional Free Canvas (absolute positioning)
+
+Select **자유 배치 영역 (FreeCanvas)** from Toolbox and place it in a screen. Drop controls at a precise x/y coordinate inside that frame. Select a child and drag its move handle or edit X/Y/width/height directly in the Inspector. This layout is deliberately **opt-in**: ordinary forms, grids and dashboards continue to use flow-based responsive layout.
+
+```json
+{
+  "type": "FreeCanvas",
+  "id": "free",
+  "props": {"height": 420},
+  "children": [{
+    "type": "Button",
+    "id": "floatingButton",
+    "props": {"label": "Click"},
+    "placement": {"free": {"x": 80, "y": 80, "width": 180, "height": 50}}
+  }]
+}
+```
+
+Free Canvas is useful for desktop-like tools and overlays, but its coordinates **do not automatically reflow on mobile**. Use Grid/Stack for responsive business forms.  `src/layout.mjs` owns immutable exact insertion, relocation, size/span adjustments, and validation. Browser E2E includes drag, click placement, resize, keyboard editing, and mobile regression.
 
 ## Quick start
 
