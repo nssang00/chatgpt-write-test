@@ -8,6 +8,7 @@
 #include <chrono>
 #include <future>
 #include <iostream>
+#include <mutex>
 #include <string>
 
 namespace {
@@ -51,8 +52,11 @@ public:
         nativeweb::WebView* view,
         const std::string& id)
     {
-        views_[index] = view;
-        ids_[index] = id;
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            views_[index] = view;
+            ids_[index] = id;
+        }
 
         view->bind(
             "test.identity",
@@ -71,8 +75,27 @@ public:
                     return false;
                 }
 
-                ready_[index] = true;
-                startCrossChecksIfReady();
+                bool shouldStart = false;
+
+                {
+                    std::lock_guard<std::mutex> lock(mutex_);
+                    ready_[index] = true;
+
+                    if (
+                        !callsStarted_ &&
+                        ready_[0] &&
+                        ready_[1] &&
+                        views_[0] &&
+                        views_[1])
+                    {
+                        callsStarted_ = true;
+                        shouldStart = true;
+                    }
+                }
+
+                if (shouldStart)
+                    startCrossChecks();
+
                 return true;
             });
 
@@ -87,6 +110,7 @@ public:
                     return false;
                 }
 
+                std::lock_guard<std::mutex> lock(mutex_);
                 eventReceived_[index] = true;
                 return true;
             });
@@ -120,9 +144,15 @@ public:
                     return false;
                 }
 
-                done_[index] = true;
+                bool close = false;
 
-                if (done_[0] && done_[1])
+                {
+                    std::lock_guard<std::mutex> lock(mutex_);
+                    done_[index] = true;
+                    close = done_[0] && done_[1];
+                }
+
+                if (close)
                     closeAll();
 
                 return true;
@@ -138,15 +168,23 @@ public:
 
     void onClosed()
     {
-        ++closedCount_;
+        bool quit = false;
 
-        if (closedCount_ == 2)
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            ++closedCount_;
+            quit = closedCount_ == 2;
+        }
+
+        if (quit)
             CefQuitMessageLoop();
     }
 
     bool success()
     {
         evaluateCallsIfReady();
+
+        std::lock_guard<std::mutex> lock(mutex_);
 
         return failure_.empty() &&
             done_[0] &&
@@ -157,54 +195,74 @@ public:
             eventReceived_[1];
     }
 
-    const std::string& failure() const
+    std::string failure() const
     {
+        std::lock_guard<std::mutex> lock(mutex_);
         return failure_;
     }
 
 private:
-    void startCrossChecksIfReady()
+    void startCrossChecks()
     {
-        if (callsStarted_ ||
-            !ready_[0] ||
-            !ready_[1] ||
-            !views_[0] ||
-            !views_[1])
+        nativeweb::WebView* first = 0;
+        nativeweb::WebView* second = 0;
+        std::string firstId;
+        std::string secondId;
+
         {
-            return;
+            std::lock_guard<std::mutex> lock(mutex_);
+            first = views_[0];
+            second = views_[1];
+            firstId = ids_[0];
+            secondId = ids_[1];
         }
 
         VariantDict firstEvent;
-        firstEvent["id"] = ids_[0];
+        firstEvent["id"] = firstId;
 
         VariantDict secondEvent;
-        secondEvent["id"] = ids_[1];
+        secondEvent["id"] = secondId;
 
-        views_[0]->emit(
+        first->emit(
             "isolation.event",
             Any(firstEvent));
 
-        views_[1]->emit(
+        second->emit(
             "isolation.event",
             Any(secondEvent));
 
-        firstIdentity_ =
-            views_[0]->execute<std::string>(
+        std::future<std::string> firstFuture =
+            first->execute<std::string>(
                 "ui.identity");
 
-        secondIdentity_ =
-            views_[1]->execute<std::string>(
+        std::future<std::string> secondFuture =
+            second->execute<std::string>(
                 "ui.identity");
 
-        callsStarted_ = true;
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            firstIdentity_ =
+                std::move(firstFuture);
+            secondIdentity_ =
+                std::move(secondFuture);
+        }
     }
 
     void evaluateCallsIfReady()
     {
-        if (!callsStarted_ || callsEvaluated_)
-            return;
+        std::unique_lock<std::mutex> lock(mutex_);
 
-        if (firstIdentity_.wait_for(
+        if (
+            !callsStarted_ ||
+            callsEvaluated_ ||
+            !firstIdentity_.valid() ||
+            !secondIdentity_.valid())
+        {
+            return;
+        }
+
+        if (
+            firstIdentity_.wait_for(
                 std::chrono::milliseconds(0)) !=
                 std::future_status::ready ||
             secondIdentity_.wait_for(
@@ -226,19 +284,23 @@ private:
                 first == ids_[0] &&
                 second == ids_[1];
 
-            if (!callsSuccess_)
+            if (!callsSuccess_ &&
+                failure_.empty())
             {
-                fail(
+                failure_ =
                     "C++->JS WebView identity crossed: " +
-                    first + ", " + second);
+                    first + ", " + second;
             }
         }
         catch (const std::exception& error)
         {
-            fail(
-                std::string(
-                    "C++->JS multi-WebView call failed: ") +
-                error.what());
+            if (failure_.empty())
+            {
+                failure_ =
+                    std::string(
+                        "C++->JS multi-WebView call failed: ") +
+                    error.what();
+            }
         }
 
         callsEvaluated_ = true;
@@ -247,6 +309,8 @@ private:
     VariantDict status(int index)
     {
         evaluateCallsIfReady();
+
+        std::lock_guard<std::mutex> lock(mutex_);
 
         VariantDict result;
         result["done"] =
@@ -265,25 +329,40 @@ private:
 
     void fail(const std::string& message)
     {
-        if (failure_.empty())
-            failure_ = message;
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+
+            if (failure_.empty())
+                failure_ = message;
+        }
 
         closeAll();
     }
 
     void closeAll()
     {
-        if (closeStarted_)
-            return;
+        nativeweb::WebView* first = 0;
+        nativeweb::WebView* second = 0;
 
-        closeStarted_ = true;
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
 
-        if (views_[0])
-            views_[0]->destroy();
+            if (closeStarted_)
+                return;
 
-        if (views_[1])
-            views_[1]->destroy();
+            closeStarted_ = true;
+            first = views_[0];
+            second = views_[1];
+        }
+
+        if (first)
+            first->destroy();
+
+        if (second)
+            second->destroy();
     }
+
+    mutable std::mutex mutex_;
 
     nativeweb::WebView* views_[2];
     std::string ids_[2];
@@ -419,8 +498,11 @@ int main(int argc, char* argv[])
         std::cerr
             << "NativeWeb CEF multi-WebView integration failed";
 
-        if (!coordinator.failure().empty())
-            std::cerr << ": " << coordinator.failure();
+        const std::string failure =
+            coordinator.failure();
+
+        if (!failure.empty())
+            std::cerr << ": " << failure;
 
         std::cerr << std::endl;
         return 3;
