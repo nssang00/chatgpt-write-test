@@ -70,6 +70,49 @@ class IdlcTests(unittest.TestCase):
         self.assertIn("def encode(self) -> bytes:", py)
         self.assertIn("def decode(cls, data:", py)
 
+    def test_request_reply_relation_codegen(self):
+        schema = mod.Parser("""
+        module acme {
+          struct GetStatus {
+            @id(1) string<32> drone_id;
+          };
+          struct Status {
+            @id(1) unsigned long battery;
+          };
+          request GetStatus returns Status;
+        };
+        """).parse()
+        self.assertEqual(len(schema.requests), 1)
+        relation = schema.requests[0]
+        self.assertEqual(relation.request_type.name, "acme.GetStatus")
+        self.assertEqual(relation.reply_type.name, "acme.Status")
+
+        cpp = mod.generate_cpp(schema, "request_reply.idl")
+        self.assertIn(
+            "template <> struct ReplyType<acme::GetStatus>",
+            cpp)
+        self.assertIn("using type = acme::Status;", cpp)
+
+        py = mod.generate_python(schema, "request_reply.idl")
+        self.assertIn("GetStatus.REPLY_TYPE = Status", py)
+
+    def test_request_reply_requires_structs_and_unique_request(self):
+        with self.assertRaisesRegex(mod.IdlError, "request type must be a struct"):
+            mod.Parser("""
+            enum E { A = 0 };
+            struct R { @id(1) long value; };
+            request E returns R;
+            """).parse()
+
+        with self.assertRaisesRegex(mod.IdlError, "duplicate request reply mapping"):
+            mod.Parser("""
+            struct Q { @id(1) long value; };
+            struct R1 { @id(1) long value; };
+            struct R2 { @id(1) long value; };
+            request Q returns R1;
+            request Q returns R2;
+            """).parse()
+
     def test_requires_explicit_field_id(self):
         with self.assertRaisesRegex(mod.IdlError, "requires explicit @id"):
             mod.Parser("struct P { double x; };").parse()

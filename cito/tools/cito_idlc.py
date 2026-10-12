@@ -26,7 +26,13 @@ class EnumDef:
     @property
     def cpp_name(self): return "::".join((*self.modules,self.name))
 @dataclasses.dataclass
-class Schema: structs:list[StructDef]; enums:list[EnumDef]
+class RequestDef:
+    request_type:TypeRef; reply_type:TypeRef; modules:tuple[str,...]
+@dataclasses.dataclass
+class Schema:
+    structs:list[StructDef]
+    enums:list[EnumDef]
+    requests:list[RequestDef]=dataclasses.field(default_factory=list)
 @dataclasses.dataclass(frozen=True)
 class Token: text:str; pos:int
 
@@ -41,7 +47,7 @@ def tokenize(text):
     return out+[Token('<eof>',len(text))]
 
 class Parser:
-    def __init__(self,text): self.text=text; self.t=tokenize(text); self.i=0; self.structs=[]; self.enums=[]; self.names={}
+    def __init__(self,text): self.text=text; self.t=tokenize(text); self.i=0; self.structs=[]; self.enums=[]; self.requests=[]; self.names={}
     def err(self,msg,t=None):
         t=t or self.t[self.i]; return IdlError(f"line {self.text.count(chr(10),0,t.pos)+1}: {msg} (got {t.text!r})")
     def at(self,x): return self.t[self.i].text==x
@@ -57,13 +63,14 @@ class Parser:
         x=self.pop()
         if not re.fullmatch(r'\d+',x.text) or int(x.text)<=0: raise self.err(f'{what} must be a positive integer',x)
         return int(x.text)
-    def parse(self): self.defs(()); self.need('<eof>'); self.resolve(); return Schema(self.structs,self.enums)
+    def parse(self): self.defs(()); self.need('<eof>'); self.resolve(); return Schema(self.structs,self.enums,self.requests)
     def defs(self,mods,stop=False):
         while not self.at('<eof>') and not(stop and self.at('}')):
             if self.at('module'): self.module(mods)
             elif self.at('struct'): self.struct(mods)
             elif self.at('enum'): self.enum(mods)
-            else: raise self.err('expected module, struct, or enum')
+            elif self.at('request'): self.request(mods)
+            else: raise self.err('expected module, struct, enum, or request relation')
     def module(self,mods):
         self.need('module'); n=self.ident(); self.need('{'); self.defs((*mods,n),True); self.need('}'); self.need(';')
     def register(self,mods,n,k):
@@ -84,6 +91,17 @@ class Parser:
             if self.at(','): self.pop()
             else: break
         self.need('}'); self.need(';'); self.enums.append(EnumDef(n,mods,vals))
+    def request(self,mods):
+        self.need('request')
+        request_type=self.type(mods)
+        if request_type.kind!='named':
+            raise self.err('request relation requires a named struct request type')
+        self.need('returns')
+        reply_type=self.type(mods)
+        if reply_type.kind!='named':
+            raise self.err('request relation requires a named struct reply type')
+        self.need(';')
+        self.requests.append(RequestDef(request_type,reply_type,mods))
     def struct(self,mods):
         self.need('struct'); n=self.ident(); self.register(mods,n,'struct'); self.need('{'); fs=[]; ids=set(); names=set()
         while not self.at('}'):
@@ -141,6 +159,17 @@ class Parser:
             raise IdlError(f'unknown referenced type {r.name}')
         for s in self.structs:
             for f in s.fields: one(f.type_ref,s.modules)
+        seen_requests=set()
+        for r in self.requests:
+            one(r.request_type,r.modules)
+            one(r.reply_type,r.modules)
+            if self.names.get(r.request_type.name)!='struct':
+                raise IdlError(f'request type must be a struct: {r.request_type.name}')
+            if self.names.get(r.reply_type.name)!='struct':
+                raise IdlError(f'reply type must be a struct: {r.reply_type.name}')
+            if r.request_type.name in seen_requests:
+                raise IdlError(f'duplicate request reply mapping for {r.request_type.name}')
+            seen_requests.add(r.request_type.name)
 
 CPP={'bool':'bool','int32':'std::int32_t','uint32':'std::uint32_t','int64':'std::int64_t','uint64':'std::uint64_t','float32':'float','float64':'double','string':'std::string'}
 SPEC={'bool':'cito::types::scalar<bool>()','int32':'cito::types::scalar<std::int32_t>()','uint32':'cito::types::scalar<std::uint32_t>()','int64':'cito::types::scalar<std::int64_t>()','uint64':'cito::types::scalar<std::uint64_t>()','float32':'cito::types::scalar<float>()','float64':'cito::types::scalar<double>()'}
@@ -300,6 +329,13 @@ def generate_cpp(schema,source_name='schema.idl'):
             '};',
             ''
         ]
+    for r in schema.requests:
+        out += [
+            f'template <> struct ReplyType<{qcpp(r.request_type.name)}> {{',
+            f'    using type = {qcpp(r.reply_type.name)};',
+            '};',
+            ''
+        ]
     return '\n'.join(out+['} // namespace cito',''])
 
 
@@ -375,6 +411,11 @@ def generate_python(schema,source_name='schema.idl'):
         for f in s.fields:
             out.append(f'        _wire.FieldSpec({f.field_id}, "{f.name}", {py_spec_expr(f.type_ref,kinds)}, {f.optional}),')
         out += ['    ),',')',f'{s.name}.TYPE_ID = {py_spec_name(s.canonical_name)}.type_id',f'{s.name}.SCHEMA_HASH = {py_spec_name(s.canonical_name)}.schema_hash','']
+    for r in schema.requests:
+        out += [
+            f'{py_leaf(r.request_type.name)}.REPLY_TYPE = {py_leaf(r.reply_type.name)}',
+            ''
+        ]
     return '\n'.join(out)
 
 def main(argv=None):

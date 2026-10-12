@@ -26,6 +26,13 @@ struct StaticEnum;
 template <class T>
 struct StaticCodec;
 
+template <class Request>
+struct ReplyType;
+
+template <class Request>
+using ReplyTypeT =
+    typename ReplyType<Request>::type;
+
 template <class T>
 const Type& static_type_ref() {
     static const Type type = StaticType<T>::type();

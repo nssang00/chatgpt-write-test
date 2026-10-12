@@ -109,7 +109,7 @@ if(BUILD_TESTING)
 
   set(GENERATED_DIR ${CMAKE_CURRENT_BINARY_DIR}/generated)
   set(GENERATED_PY_DIR ${CMAKE_CURRENT_BINARY_DIR}/generated_py)
-  foreach(schema position telemetry)
+  foreach(schema position telemetry request_reply)
     add_custom_command(
       OUTPUT ${GENERATED_DIR}/${schema}.hpp
       COMMAND ${CMAKE_COMMAND} -E make_directory ${GENERATED_DIR}
@@ -121,7 +121,7 @@ if(BUILD_TESTING)
       VERBATIM)
   endforeach()
 
-  foreach(schema position telemetry)
+  foreach(schema position telemetry request_reply)
     add_custom_command(
       OUTPUT ${GENERATED_PY_DIR}/${schema}.py
       COMMAND ${CMAKE_COMMAND} -E make_directory ${GENERATED_PY_DIR}
@@ -138,7 +138,8 @@ if(BUILD_TESTING)
     cito_python_generated ALL
     DEPENDS
       ${GENERATED_PY_DIR}/position.py
-      ${GENERATED_PY_DIR}/telemetry.py)
+      ${GENERATED_PY_DIR}/telemetry.py
+      ${GENERATED_PY_DIR}/request_reply.py)
 
   add_test(
     NAME cito_python_typed_smoke
@@ -177,6 +178,25 @@ if(BUILD_TESTING)
             ${GENERATED_PY_DIR})
   set_tests_properties(
     cito_idl_python_wire_smoke
+    PROPERTIES LABELS "smoke;latency;regression")
+
+  add_executable(cito_idl_request_reply_smoke
+    tests/idl_request_reply_smoke.cpp
+    ${GENERATED_DIR}/request_reply.hpp)
+  target_link_libraries(cito_idl_request_reply_smoke PRIVATE cito)
+  target_include_directories(cito_idl_request_reply_smoke PRIVATE ${GENERATED_DIR})
+  target_compile_options(cito_idl_request_reply_smoke PRIVATE -Wall -Wextra -Wpedantic)
+  add_test(NAME cito_idl_request_reply_smoke COMMAND cito_idl_request_reply_smoke)
+  set_tests_properties(cito_idl_request_reply_smoke PROPERTIES LABELS "smoke;latency;regression")
+
+  add_test(
+    NAME cito_python_request_reply_idl_smoke
+    COMMAND ${CMAKE_COMMAND} -E env
+            PYTHONPATH=${CMAKE_CURRENT_SOURCE_DIR}/python:${GENERATED_PY_DIR}
+            ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_idl_request_reply.py)
+  set_tests_properties(
+    cito_python_request_reply_idl_smoke
     PROPERTIES LABELS "smoke;latency;regression")
 
   add_executable(cito_idl_complex_smoke
