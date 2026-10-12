@@ -1,0 +1,38 @@
+{
+  "harnessVersion": "58.4.1",
+  "productRuntimeChanged": false,
+  "runtimeTreeSha256": "55c1e3bfd5219121c73610afbcdc460a6c85a730f2da7bfac2a1da357142f9bb",
+  "caseIds": [
+    "UNITY_BUILD",
+    "NATIVE_CONTROLS",
+    "BROWSER_COMPAT",
+    "MULTI_WEBVIEW",
+    "INPUT_IME",
+    "LIFECYCLE",
+    "REAL_MEDIA",
+    "RELEASE_GA"
+  ],
+  "criticalAssertions": {
+    "browser": [
+      "persistentCookieLocalStoragePass",
+      "rendererTerminationRecoveryPass",
+      "privateProfileIsolationPass",
+      "profileStressPass"
+    ],
+    "input": [
+      "koreanCommitPass",
+      "compositionPass",
+      "editingKeysPass"
+    ],
+    "lifecycle": [
+      "resourceGrowthPass",
+      "concurrent.passed",
+      "concurrent.orphanCount==0"
+    ],
+    "release": [
+      "READY_FOR_GA_PACKAGING",
+      "READY_GA_UNSIGNED_CANDIDATE|READY_GA"
+    ]
+  },
+  "policy": "Future feature/fix work cannot become a baseline unless the full local suite produces all eight PASS contracts. Validation-only v58.4.1 must not alter product Runtime."
+}
