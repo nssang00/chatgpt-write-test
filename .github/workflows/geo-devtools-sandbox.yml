@@ -1,4 +1,4 @@
-name: Geo DevTools Sandbox — isolated tests
+name: Geo DevTools — Node-only isolated E2E
 on:
   push:
     branches:
@@ -26,46 +26,44 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - name: Python 3.12
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
       - name: Unpack isolated Geo DevTools source
         working-directory: .
         run: |
           mkdir -p sandbox/geo-devtools-ci/project
           unzip -q sandbox/geo-devtools-ci/source.zip -d sandbox/geo-devtools-ci/project
           test -f sandbox/geo-devtools-ci/project/package.json
-      - name: Install real OpenLayers and esbuild
-        run: npm install --no-save ol esbuild
-      - name: Node unit and OpenLayers class tests
+      - name: Install Node dependencies (OL, esbuild, Playwright)
+        run: npm install
+      - name: Node unit and real OpenLayers class tests
         run: |
           set -o pipefail
           node -e "import('ol/Map.js').then(() => console.log('real ol package available'))"
           npm test 2>&1 | tee node-tests.log
-      - name: Install Chromium via Playwright
-        run: |
-          python -m pip install 'playwright==1.57.0'
-          python -m playwright install --with-deps chromium
-      - name: UI E2E and seven screenshots
-        run: python tests/visual_e2e.py
-      - name: Bundle real OpenLayers browser application
+      - name: Install Chromium via Node Playwright
+        run: npx playwright install --with-deps chromium
+      - name: Bundle real OL browser fixtures
         run: |
           mkdir -p artifacts
           ./node_modules/.bin/esbuild tests/real-ol/entry.js --bundle --format=iife --platform=browser --outfile=artifacts/real-ol-browser.js
-      - name: Real OpenLayers Map E2E and screenshots
-        run: python tests/real_ol_e2e.py
-      - name: Zero-touch rules unit tests (no SDK)
-        run: python -m unittest discover -s tests -p 'zero_touch_unit.py' -v
-      - name: Bundle real OL page without Geo Doctor instrumentation
-        run: ./node_modules/.bin/esbuild tests/zero-touch/entry.js --bundle --format=iife --platform=browser --outfile=artifacts/zero-touch-browser.js
-      - name: Zero-touch real OL network E2E, screenshots and HTML diagnosis
-        run: python tests/zero_touch_e2e.py
-      - name: Upload screenshots, traces and reports even on failure
+          ./node_modules/.bin/esbuild tests/zero-touch/entry.js --bundle --format=iife --platform=browser --outfile=artifacts/zero-touch-browser.js
+      - name: Node Playwright UI panel E2E and screenshots
+        run: node tests/e2e/visual.js
+      - name: Node Playwright real OpenLayers E2E and screenshots
+        run: node tests/e2e/real-ol.js
+      - name: Node Playwright zero-touch real OL scan and screenshots
+        run: node tests/e2e/zero-touch.js
+      - name: Verify Node-only and report evidence
+        run: |
+          test -f artifacts/zero-touch/01-basic-healthy.png
+          test -f artifacts/zero-touch/02-basic-tile-404.png
+          test -f artifacts/zero-touch/03-basic-diagnosis-report.png
+          test -f artifacts/real-ol/01-real-openlayers.png
+          node -e "const r=require('./artifacts/zero-touch/results.json'); if(!r.passed || r.broken.findings.every(f=>f.rule!=='tile-http-error') || r.healthy.findings.some(f=>f.rule==='tile-http-error')) process.exit(1)"
+      - name: Upload evidence even on failure
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: geo-devtools-sandbox-evidence
+          name: geo-devtools-node-playwright-evidence
           path: |
             sandbox/geo-devtools-ci/project/artifacts/browser/
             sandbox/geo-devtools-ci/project/artifacts/real-ol/
