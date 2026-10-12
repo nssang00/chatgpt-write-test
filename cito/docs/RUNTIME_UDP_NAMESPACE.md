@@ -34,3 +34,14 @@ Assertions:
 - no application-level endpoint scan
 
 The older standalone summary node remains temporarily for the coordinator lease-expiry regression until that scenario is migrated to the reusable adapter as well.
+
+
+## Lease expiry
+
+The lifecycle namespace case also runs through `UdpRuntimeAdapter` now. A Position source is allowed to advertise long enough for the publisher to pull the snapshot and obtain a direct endpoint. The source then exits. The publisher waits past the coordinator lease and requires:
+
+- remote DemandKey route set empty
+- DestinationId UDP endpoint cache entry removed
+- at least one coordinator expiry observed
+
+This removes the previous namespace dependency on the standalone summary prototype.

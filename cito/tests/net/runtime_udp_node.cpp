@@ -195,7 +195,8 @@ bool is_route_request(
 int subscriber(
     int argc,
     char** argv) {
-    if (argc != 9) {
+    if (argc != 9 &&
+        argc != 10) {
         std::cerr
             << "subscriber args\n";
         return 2;
@@ -216,8 +217,16 @@ int subscriber(
             std::stoul(argv[6]));
     const std::string announce_ip =
         argv[7];
+    const int behavior =
+        std::stoi(argv[8]);
     const bool expect_data =
-        std::stoi(argv[8]) != 0;
+        behavior == 1;
+    const bool lease_source_only =
+        behavior == 2;
+    const auto lifetime_ms =
+        argc == 10
+            ? std::stoull(argv[9])
+            : 3200ull;
 
     const cito::InterestKey key{
         7,
@@ -310,7 +319,7 @@ int subscriber(
     while (
         Clock::now() - start <
         std::chrono::milliseconds(
-            3200)) {
+            lifetime_ms)) {
         const auto now =
             Clock::now();
 
@@ -436,10 +445,27 @@ int subscriber(
         return 28;
     }
 
+    if (lease_source_only) {
+        if (route_requests == 0) {
+            std::cerr
+                << "lease source was not routed\n";
+            return 29;
+        }
+
+        std::cout
+            << "lease_source_end "
+            << "route_requests="
+            << route_requests
+            << " control_packets="
+            << control_packets
+            << "\n";
+        return 0;
+    }
+
     if (route_requests != 0) {
         std::cerr
             << "unrelated route request\n";
-        return 29;
+        return 30;
     }
 
     std::cout
@@ -643,6 +669,171 @@ int publisher(
     return 0;
 }
 
+int publisher_expiry(
+    int argc,
+    char** argv) {
+    if (argc != 5) {
+        std::cerr
+            << "publisher-expiry args\n";
+        return 2;
+    }
+
+    const auto type =
+        std::stoull(argv[2]);
+    const auto announce_port =
+        static_cast<std::uint16_t>(
+            std::stoul(argv[3]));
+    const auto listen_ms =
+        std::stoull(argv[4]);
+
+    const cito::InterestKey key{
+        7,
+        17,
+        type};
+
+    cito::detail::HostRuntimeCore host;
+    cito::detail::UdpRuntimeAdapter
+        udp(
+            host,
+            101,
+            101001);
+
+    (void)udp.ensure_routes(
+        key);
+
+    const int fd =
+        make_udp();
+
+    int yes = 1;
+    (void)::setsockopt(
+        fd,
+        SOL_SOCKET,
+        SO_REUSEADDR,
+        &yes,
+        sizeof(yes));
+
+    if (!bind_udp(
+            fd,
+            announce_port)) {
+        perror("bind expiry publisher");
+        return 50;
+    }
+
+    const auto start =
+        Clock::now();
+
+    bool discovered = false;
+    cito::DestinationId discovered_id = 0;
+
+    while (
+        Clock::now() - start <
+        std::chrono::milliseconds(
+            listen_ms)) {
+        pollfd descriptor{
+            fd,
+            POLLIN,
+            0};
+
+        const auto polled =
+            ::poll(
+                &descriptor,
+                1,
+                50);
+
+        if (polled < 0) {
+            perror("poll");
+            return 51;
+        }
+
+        if (
+            polled > 0 &&
+            (descriptor.revents &
+             POLLIN)) {
+            sockaddr_in from{};
+            const auto bytes =
+                receive_bytes(
+                    fd,
+                    &from);
+
+            if (!bytes.empty()) {
+                try {
+                    const auto actions =
+                        udp.process_control(
+                            bytes,
+                            to_endpoint(from),
+                            now_ms());
+
+                    if (!send_actions(
+                            fd,
+                            actions)) {
+                        return 52;
+                    }
+                } catch (
+                    const std::exception&
+                        error) {
+                    std::cerr
+                        << error.what()
+                        << "\n";
+                    return 53;
+                }
+            }
+        }
+
+        const auto& routes =
+            host.remote_destinations(
+                key);
+
+        if (!routes.empty()) {
+            discovered = true;
+            discovered_id =
+                *routes.begin();
+        }
+
+        udp.expire(
+            now_ms());
+    }
+
+    const auto& routes =
+        host.remote_destinations(
+            key);
+
+    const auto endpoint =
+        discovered_id == 0
+            ? nullptr
+            : udp.data_endpoint(
+                discovered_id);
+
+    const auto& stats =
+        udp.control().stats();
+
+    if (
+        !discovered ||
+        !routes.empty() ||
+        endpoint != nullptr ||
+        stats.expired_coordinators == 0) {
+        std::cerr
+            << "expiry cleanup failed "
+            << "discovered="
+            << discovered
+            << " routes="
+            << routes.size()
+            << " expired="
+            << stats.expired_coordinators
+            << "\n";
+        return 54;
+    }
+
+    std::cout
+        << "lease_expired=1 "
+        << "routes=0 "
+        << "endpoint_cache=0 "
+        << "expired_coordinators="
+        << stats.expired_coordinators
+        << "\n";
+
+    return 0;
+}
+
 } // namespace
 
 int main(
@@ -663,6 +854,12 @@ int main(
 
     if (mode == "publisher") {
         return publisher(
+            argc,
+            argv);
+    }
+
+    if (mode == "publisher-expiry") {
+        return publisher_expiry(
             argc,
             argv);
     }

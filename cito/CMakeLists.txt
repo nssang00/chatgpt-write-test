@@ -211,10 +211,6 @@ if(BUILD_TESTING)
     target_link_libraries(cito_udp_node PRIVATE cito)
     target_compile_options(cito_udp_node PRIVATE -Wall -Wextra -Wpedantic)
 
-    add_executable(cito_summary_udp_node tests/net/summary_udp_node.cpp)
-    target_link_libraries(cito_summary_udp_node PRIVATE cito)
-    target_compile_options(cito_summary_udp_node PRIVATE -Wall -Wextra -Wpedantic)
-
     add_executable(cito_runtime_udp_node tests/net/runtime_udp_node.cpp)
     target_link_libraries(cito_runtime_udp_node PRIVATE cito)
     target_compile_options(cito_runtime_udp_node PRIVATE -Wall -Wextra -Wpedantic)

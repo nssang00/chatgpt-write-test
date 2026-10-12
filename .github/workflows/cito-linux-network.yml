@@ -180,18 +180,17 @@ jobs:
             exit "$runtime_status"
           fi
 
-          SUMMARY_BIN="$GITHUB_WORKSPACE/build-cito/cito_summary_udp_node"
-
-          # Discover a direct route, stop the source announcements, then
-          # verify the coordinator lease removes candidate + direct route.
-          sudo ip netns exec cito-pub "$SUMMARY_BIN" \
-            publisher 100 47200 0 1900 \
+          # Discover a direct route through the reusable adapter, stop the
+          # source announcements, then verify lease expiry removes both the
+          # route and its UDP endpoint cache.
+          sudo ip netns exec cito-pub "$RUNTIME_UDP_BIN" \
+            publisher-expiry 100 47200 2000 \
             >lifecycle-publisher.log 2>&1 &
           LIFECYCLE_PUB_PID=$!
 
           sleep 0.2
 
-          sudo ip netns exec cito-pos "$SUMMARY_BIN" \
+          sudo ip netns exec cito-pos "$RUNTIME_UDP_BIN" \
             subscriber 12 100 48212 47212 47200 10.201.0.255 2 700 \
             >lifecycle-source.log 2>&1 &
           LIFECYCLE_SOURCE_PID=$!
@@ -205,9 +204,9 @@ jobs:
           echo "=== expiring coordinator ==="
           cat lifecycle-source.log
 
-          grep -q "discovered=0 sent=0 expired_hosts=1" \
+          grep -q "lease_expired=1 routes=0 endpoint_cache=0" \
             lifecycle-publisher.log || lifecycle_status=1
-          grep -q "lease source ended" \
+          grep -q "lease_source_end" \
             lifecycle-source.log || lifecycle_status=1
 
           exit "$lifecycle_status"
