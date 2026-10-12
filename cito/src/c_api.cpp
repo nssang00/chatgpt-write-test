@@ -1,6 +1,6 @@
 #include <cito/cito_c.h>
 
-#include <cito/detail/host_runtime_core.hpp>
+#include <cito/detail/embedded_host_runtime.hpp>
 #include <cito/detail/raw_context.hpp>
 #include <cito/identity.hpp>
 
@@ -13,8 +13,6 @@
 #include <utility>
 
 namespace {
-
-constexpr cito::detail::AppId kCAbiApp = 1;
 
 bool valid_bytes(
     const void* data,
@@ -42,10 +40,15 @@ struct ContextState {
           scope_id_(
               cito::stable_name_id(
                   scope_)),
+          runtime_(
+              cito::detail::
+                  acquire_embedded_host_runtime()),
+          app_id_(
+              runtime_->allocate_app_id()),
           local_(scope_) {
         const auto registered =
-            host_.register_app(
-                kCAbiApp,
+            runtime_->host().register_app(
+                app_id_,
                 [this](
                     cito::TypeId type_id,
                     std::string_view resource,
@@ -65,8 +68,13 @@ struct ContextState {
     }
 
     ~ContextState() {
-        host_.unregister_app(
-            kCAbiApp);
+        runtime_->host().unregister_app(
+            app_id_);
+    }
+
+    cito::detail::HostRuntimeCore&
+    host() noexcept {
+        return runtime_->host();
     }
 
     cito::InterestKey key(
@@ -81,8 +89,11 @@ struct ContextState {
 
     std::string scope_;
     cito::ScopeId scope_id_{};
+    std::shared_ptr<
+        cito::detail::EmbeddedHostRuntime>
+        runtime_;
+    cito::detail::AppId app_id_{};
     cito::detail::RawContext local_;
-    cito::detail::HostRuntimeCore host_;
 };
 
 } // namespace
@@ -124,7 +135,7 @@ struct cito_subscription {
                 state.lock()) {
             locked->host_
                 .remove_interest(
-                    kCAbiApp,
+                    context->state->app_id_,
                     key);
         }
     }
@@ -230,9 +241,9 @@ cito_status_t cito_context_subscribe(
                 });
 
         const auto interest =
-            context->state->host_
+            context->state->host()
                 .add_interest(
-                    kCAbiApp,
+                    context->state->app_id_,
                     key);
 
         if (!interest.changed) {
@@ -247,9 +258,9 @@ cito_status_t cito_context_subscribe(
                     context->state,
                     key);
         } catch (...) {
-            context->state->host_
+            context->state->host()
                 .remove_interest(
-                    kCAbiApp,
+                    context->state->app_id_,
                     key);
             throw;
         }
@@ -295,7 +306,7 @@ cito_status_t cito_context_has_demand(
                     resource_size);
 
         *out_has_demand =
-            context->state->host_
+            context->state->host()
                 .has_demand(
                     context->state->key(
                         type_id,
@@ -348,7 +359,7 @@ cito_status_t cito_context_publish(
                     payload_size);
 
         const auto result =
-            context->state->host_.publish(
+            context->state->host().publish(
                 context->state->key(
                     type_id,
                     resource_view),

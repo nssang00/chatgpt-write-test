@@ -49,6 +49,7 @@ public:
 
 private:
     struct AppState {
+        bool active{true};
         Deliver deliver;
         std::unordered_map<
             InterestKey,
@@ -68,6 +69,7 @@ public:
         return apps_.emplace(
             app,
             AppState{
+                true,
                 std::move(deliver),
                 {}}).second;
     }
@@ -77,22 +79,21 @@ public:
         const auto it =
             apps_.find(app);
 
-        if (it == apps_.end()) {
+        if (
+            it == apps_.end() ||
+            !it->second.active) {
             return false;
         }
 
-        for (const auto& [key, count] :
-             it->second.interests) {
-            local_apps_.remove(
-                key,
-                app);
+        it->second.active = false;
+        remove_app_interests(
+            app,
+            it->second);
 
-            for (std::size_t i = 0;
-                 i < count;
-                 ++i) {
-                host_interests_.remove(
-                    key);
-            }
+        if (app_dispatch_depth_ != 0) {
+            pending_app_removals_
+                .push_back(app);
+            return true;
         }
 
         apps_.erase(it);
@@ -104,7 +105,9 @@ public:
         const InterestKey& key) {
         auto it = apps_.find(app);
 
-        if (it == apps_.end()) {
+        if (
+            it == apps_.end() ||
+            !it->second.active) {
             return {};
         }
 
@@ -130,7 +133,9 @@ public:
         auto app_it =
             apps_.find(app);
 
-        if (app_it == apps_.end()) {
+        if (
+            app_it == apps_.end() ||
+            !app_it->second.active) {
             return {};
         }
 
@@ -356,23 +361,32 @@ public:
             local.end());
 
         std::size_t delivered = 0;
+        ++app_dispatch_depth_;
 
-        for (const auto app :
-             app_ids) {
-            const auto it =
-                apps_.find(app);
+        try {
+            for (const auto app :
+                 app_ids) {
+                const auto it =
+                    apps_.find(app);
 
-            if (it == apps_.end()) {
-                continue;
+                if (
+                    it == apps_.end() ||
+                    !it->second.active) {
+                    continue;
+                }
+
+                delivered +=
+                    it->second.deliver(
+                        key.type,
+                        resource,
+                        payload);
             }
-
-            delivered +=
-                it->second.deliver(
-                    key.type,
-                    resource,
-                    payload);
+        } catch (...) {
+            finish_app_dispatch();
+            throw;
         }
 
+        finish_app_dispatch();
         return delivered;
     }
 
@@ -431,6 +445,51 @@ public:
     }
 
 private:
+    void remove_app_interests(
+        AppId app,
+        AppState& state) {
+        for (const auto& [key, count] :
+             state.interests) {
+            local_apps_.remove(
+                key,
+                app);
+
+            for (std::size_t i = 0;
+                 i < count;
+                 ++i) {
+                host_interests_.remove(
+                    key);
+            }
+        }
+
+        state.interests.clear();
+    }
+
+    void finish_app_dispatch() {
+        --app_dispatch_depth_;
+
+        if (app_dispatch_depth_ != 0) {
+            return;
+        }
+
+        auto removals =
+            std::move(
+                pending_app_removals_);
+        pending_app_removals_.clear();
+
+        for (const auto app :
+             removals) {
+            const auto it =
+                apps_.find(app);
+
+            if (
+                it != apps_.end() &&
+                !it->second.active) {
+                apps_.erase(it);
+            }
+        }
+    }
+
     void cleanup_remote(
         CoordinatorId coordinator) {
         remote_demands_.remove_host(
@@ -445,6 +504,10 @@ private:
     std::unordered_map<
         AppId,
         AppState> apps_;
+
+    std::size_t app_dispatch_depth_{0};
+    std::vector<AppId>
+        pending_app_removals_;
 
     HostInterests host_interests_;
     InterestIndex local_apps_;

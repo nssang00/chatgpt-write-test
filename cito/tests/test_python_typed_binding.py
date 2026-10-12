@@ -26,37 +26,43 @@ def main() -> None:
             self.encodes += 1
             return b"counted"
 
-    with cito.Context(
-        "acme") as ctx:
-        sub = ctx.on(
+    with (
+        cito.Context("acme") as subscriber,
+        cito.Context("acme") as publisher,
+        cito.Context("other") as isolated,
+    ):
+        sub = subscriber.on(
             position.Position,
             received.append,
             "drone_17")
 
-        assert ctx.has_demand(
+        assert publisher.has_demand(
             position.Position,
             "drone_17")
-        assert not ctx.has_demand(
+        assert not isolated.has_demand(
+            position.Position,
+            "drone_17")
+        assert not publisher.has_demand(
             position.Position,
             "drone_18")
 
         counting = CountingMessage()
         assert (
-            ctx.publish(
+            publisher.publish(
                 counting,
                 "nobody") ==
             0)
         assert counting.encodes == 0
 
         assert (
-            ctx.publish(
+            publisher.publish(
                 value,
                 "drone_18") ==
             0)
         assert received == []
 
         assert (
-            ctx.publish(
+            publisher.publish(
                 value,
                 "drone_17") ==
             1)
@@ -67,12 +73,12 @@ def main() -> None:
             position.Position)
 
         sub.close()
-        assert not ctx.has_demand(
+        assert not publisher.has_demand(
             position.Position,
             "drone_17")
 
         assert (
-            ctx.publish(
+            publisher.publish(
                 value,
                 "drone_17") ==
             0)

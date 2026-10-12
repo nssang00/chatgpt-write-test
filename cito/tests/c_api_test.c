@@ -32,10 +32,40 @@ int main(void) {
 
     const uint8_t hello[] = {'h','e','l','l','o'};
     size_t delivered = 99;
+
+    /* A second Context in the same process shares host demand state. */
+    cito_context_t* peer = NULL;
+    cito_context_t* isolated = NULL;
+    assert(cito_context_create(
+        "acme", 4,
+        &peer) == CITO_STATUS_OK);
+    assert(cito_context_create(
+        "other", 5,
+        &isolated) == CITO_STATUS_OK);
+
+    assert(cito_context_has_demand(
+        peer, 100, "drone_17", 8,
+        &has_demand) == CITO_STATUS_OK);
+    assert(has_demand == 1);
+
+    assert(cito_context_has_demand(
+        isolated, 100, "drone_17", 8,
+        &has_demand) == CITO_STATUS_OK);
+    assert(has_demand == 0);
+
+    assert(cito_context_publish(
+        peer, 100, "drone_17", 8,
+        hello, sizeof hello,
+        &delivered) == CITO_STATUS_OK);
+    assert(delivered == 1);
+    assert(s.calls == 1);
+
+    cito_context_destroy(peer);
+    cito_context_destroy(isolated);
     assert(cito_context_publish(ctx, 100, "drone_18", 8, hello, sizeof hello, &delivered) == CITO_STATUS_OK);
     assert(delivered == 0 && s.calls == 0);
     assert(cito_context_publish(ctx, 100, "drone_17", 8, hello, sizeof hello, &delivered) == CITO_STATUS_OK);
-    assert(delivered == 1 && s.calls == 1 && s.type_id == 100);
+    assert(delivered == 1 && s.calls == 2 && s.type_id == 100);
     assert(strcmp(s.resource, "drone_17") == 0);
     assert(s.size == sizeof hello && memcmp(s.payload, hello, sizeof hello) == 0);
     cito_subscription_destroy(sub);

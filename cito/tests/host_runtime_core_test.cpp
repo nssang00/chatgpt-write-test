@@ -194,5 +194,45 @@ int main() {
     assert(host.unregister_app(2));
     assert(host.app_count() == 0);
 
+    // App destruction from inside delivery must be deferred until the
+    // current callback returns.
+    cito::detail::HostRuntimeCore reentrant;
+    const cito::InterestKey self_key{
+        9, 9, 9};
+
+    reentrant.register_app(
+        99,
+        [&](auto, auto, auto) {
+            assert(
+                reentrant.unregister_app(
+                    99));
+            return std::size_t{1};
+        });
+    reentrant.add_interest(
+        99,
+        self_key);
+
+    const std::array<
+        std::uint8_t,
+        1> one{1};
+
+    const auto self_result =
+        reentrant.publish(
+            self_key,
+            "self",
+            one,
+            [](auto, auto) {
+                return false;
+            });
+
+    assert(
+        self_result.local_delivered ==
+        1);
+    assert(
+        reentrant.app_count() == 0);
+    assert(
+        !reentrant.has_local_demand(
+            self_key));
+
     return 0;
 }
