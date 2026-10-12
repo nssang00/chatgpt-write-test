@@ -13,6 +13,8 @@ int main() {
 
     const auto generated_type = cito::type_of<acme::navigation::Position>();
     assert(generated_type.name() == "acme.navigation.Position");
+    assert(generated_type.type_id() == 3445279360899966310ull);
+    assert(generated_type.schema_hash() == 5316556461892417623ull);
     assert(generated_type.find("x")->id == 1);
     assert(generated_type.find("timestamp")->optional);
     assert(generated_type.find("frame_kind")->type.kind == cito::TypeKind::Enum);

@@ -104,13 +104,45 @@ inline std::uint64_t hash_string(std::uint64_t hash, const std::string& value) n
     return fnv1a(hash, value.data(), value.size());
 }
 
-inline std::uint64_t hash_u64(std::uint64_t hash, std::uint64_t value) noexcept {
-    return fnv1a(hash, &value, sizeof(value));
+inline std::uint64_t hash_u8(
+    std::uint64_t hash,
+    std::uint8_t value) noexcept {
+    return fnv1a(hash, &value, 1);
+}
+
+inline std::uint64_t hash_u32(
+    std::uint64_t hash,
+    std::uint32_t value) noexcept {
+    unsigned char bytes[4];
+    for (int i = 0; i < 4; ++i) {
+        bytes[i] = static_cast<unsigned char>(
+            (value >> (i * 8)) & 0xffu);
+    }
+    return fnv1a(hash, bytes, sizeof(bytes));
+}
+
+inline std::uint64_t hash_i32(
+    std::uint64_t hash,
+    std::int32_t value) noexcept {
+    return hash_u32(
+        hash,
+        static_cast<std::uint32_t>(value));
+}
+
+inline std::uint64_t hash_u64(
+    std::uint64_t hash,
+    std::uint64_t value) noexcept {
+    unsigned char bytes[8];
+    for (int i = 0; i < 8; ++i) {
+        bytes[i] = static_cast<unsigned char>(
+            (value >> (i * 8)) & 0xffu);
+    }
+    return fnv1a(hash, bytes, sizeof(bytes));
 }
 
 inline std::uint64_t hash_type_spec(std::uint64_t hash, const TypeSpec& spec) noexcept {
     const auto kind = static_cast<std::uint8_t>(spec.kind);
-    hash = fnv1a(hash, &kind, sizeof(kind));
+    hash = hash_u8(hash, kind);
     hash = hash_u64(hash, static_cast<std::uint64_t>(spec.bound));
     hash = hash_u64(hash, static_cast<std::uint64_t>(spec.extent));
     hash = hash_u64(hash, spec.referenced_type_id);
@@ -213,7 +245,7 @@ public:
         type.type_id_ = detail::hash_string(basis, type.name_);
         auto schema = type.type_id_;
         for (const auto& value : type.values_) {
-            schema = detail::fnv1a(schema, &value.value, sizeof(value.value));
+            schema = detail::hash_i32(schema, value.value);
             schema = detail::hash_string(schema, value.name);
         }
         type.schema_hash_ = schema;
@@ -275,10 +307,12 @@ public:
 
         auto schema = type.type_id_;
         for (const auto& field : type.fields_) {
-            schema = detail::fnv1a(schema, &field.id, sizeof(field.id));
+            schema = detail::hash_u32(schema, field.id);
             schema = detail::hash_string(schema, field.name);
             schema = detail::hash_type_spec(schema, field.type);
-            schema = detail::fnv1a(schema, &field.optional, sizeof(field.optional));
+            schema = detail::hash_u8(
+                schema,
+                field.optional ? 1u : 0u);
         }
         type.schema_hash_ = schema;
         return type;

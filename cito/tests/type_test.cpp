@@ -14,8 +14,8 @@ int main() {
         .build();
 
     assert(type.name() == "acme.navigation.Position");
-    assert(type.type_id() != 0);
-    assert(type.schema_hash() != 0);
+    assert(type.type_id() == 3445279360899966310ull);
+    assert(type.schema_hash() == 17480316621561973532ull);
     assert(type.fields().size() == 4);
     assert(type.find("timestamp")->optional);
     assert(type.find("frame")->type.bound == 16);

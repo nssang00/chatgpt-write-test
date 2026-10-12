@@ -79,7 +79,16 @@ if(BUILD_TESTING)
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_idlc.py)
   set_tests_properties(cito_idlc_unit PROPERTIES LABELS "unit;regression")
 
+  add_test(
+    NAME cito_python_wire_unit
+    COMMAND ${CMAKE_COMMAND} -E env
+            PYTHONPATH=${CMAKE_CURRENT_SOURCE_DIR}/python
+            ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_python_wire.py)
+  set_tests_properties(cito_python_wire_unit PROPERTIES LABELS "unit;regression")
+
   set(GENERATED_DIR ${CMAKE_CURRENT_BINARY_DIR}/generated)
+  set(GENERATED_PY_DIR ${CMAKE_CURRENT_BINARY_DIR}/generated_py)
   foreach(schema position telemetry)
     add_custom_command(
       OUTPUT ${GENERATED_DIR}/${schema}.hpp
@@ -92,6 +101,25 @@ if(BUILD_TESTING)
       VERBATIM)
   endforeach()
 
+  foreach(schema position telemetry)
+    add_custom_command(
+      OUTPUT ${GENERATED_PY_DIR}/${schema}.py
+      COMMAND ${CMAKE_COMMAND} -E make_directory ${GENERATED_PY_DIR}
+      COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tools/cito_idlc.py
+              ${CMAKE_CURRENT_SOURCE_DIR}/tests/idl/${schema}.idl
+              --lang python
+              -o ${GENERATED_PY_DIR}/${schema}.py
+      DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/tools/cito_idlc.py
+              ${CMAKE_CURRENT_SOURCE_DIR}/tests/idl/${schema}.idl
+      VERBATIM)
+  endforeach()
+
+  add_custom_target(
+    cito_python_generated ALL
+    DEPENDS
+      ${GENERATED_PY_DIR}/position.py
+      ${GENERATED_PY_DIR}/telemetry.py)
+
   add_executable(cito_idl_static_smoke
     tests/idl_static_smoke.cpp
     ${GENERATED_DIR}/position.hpp)
@@ -100,6 +128,25 @@ if(BUILD_TESTING)
   target_compile_options(cito_idl_static_smoke PRIVATE -Wall -Wextra -Wpedantic)
   add_test(NAME cito_idl_static_smoke COMMAND cito_idl_static_smoke)
   set_tests_properties(cito_idl_static_smoke PROPERTIES LABELS "smoke;latency;regression")
+
+  add_executable(cito_idl_python_fixture
+    tests/idl_python_fixture.cpp
+    ${GENERATED_DIR}/position.hpp)
+  target_link_libraries(cito_idl_python_fixture PRIVATE cito)
+  target_include_directories(cito_idl_python_fixture PRIVATE ${GENERATED_DIR})
+  target_compile_options(cito_idl_python_fixture PRIVATE -Wall -Wextra -Wpedantic)
+
+  add_test(
+    NAME cito_idl_python_wire_smoke
+    COMMAND ${CMAKE_COMMAND} -E env
+            PYTHONPATH=${CMAKE_CURRENT_SOURCE_DIR}/python:${GENERATED_PY_DIR}
+            ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_idl_python_wire.py
+            $<TARGET_FILE:cito_idl_python_fixture>
+            ${GENERATED_PY_DIR})
+  set_tests_properties(
+    cito_idl_python_wire_smoke
+    PROPERTIES LABELS "smoke;latency;regression")
 
   add_executable(cito_idl_complex_smoke
     tests/idl_complex_smoke.cpp

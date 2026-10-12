@@ -48,6 +48,28 @@ class IdlcTests(unittest.TestCase):
         self.assertIn('static_detail::encode_field(', cpp)
         self.assertIn('static_detail::read_field(bytes, pos)', cpp)
 
+    def test_python_codegen_uses_same_schema_model(self):
+        schema = mod.Parser("""
+        module acme {
+          enum Mode { Idle = 0, Active = 2 };
+          struct Pose { @id(1) double x; @id(2) double y; };
+          struct Telemetry {
+            @id(1) Pose pose;
+            @id(2) Mode mode;
+            @id(3) sequence<string<64>, 20> tags;
+            @id(4) @optional unsigned long long timestamp;
+          };
+        };
+        """).parse()
+        py = mod.generate_python(schema, "telemetry.idl")
+        self.assertIn("class Mode(IntEnum):", py)
+        self.assertIn("@dataclasses.dataclass", py)
+        self.assertIn("class Telemetry:", py)
+        self.assertIn("_wire.structure(_ACME_POSE_SPEC, Pose)", py)
+        self.assertIn("_wire.sequence(_wire.string(64), 20)", py)
+        self.assertIn("def encode(self) -> bytes:", py)
+        self.assertIn("def decode(cls, data:", py)
+
     def test_requires_explicit_field_id(self):
         with self.assertRaisesRegex(mod.IdlError, "requires explicit @id"):
             mod.Parser("struct P { double x; };").parse()
