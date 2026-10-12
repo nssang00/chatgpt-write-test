@@ -25,6 +25,8 @@ jobs:
     timeout-minutes: 12
     steps:
       - uses: actions/checkout@v4
+      # The runtime package omits unversioned link/header development files,
+      # so CI supplies the exact v2.6.1 development surface explicitly.
       - name: Install MsQuic 2.6.1
         run: |
           curl -fsSL https://packages.microsoft.com/ubuntu/24.04/prod/pool/main/libm/libmsquic/libmsquic_2.6.1_amd64.deb -o /tmp/libmsquic.deb
