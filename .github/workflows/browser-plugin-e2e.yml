@@ -39,6 +39,15 @@ jobs:
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
+      - name: Restore pinned Windows CEF cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            .cache/cef/windows/archive
+            .cache/cef/windows/extracted
+          key: cef-windows64-144.0.36-g78619fd-runtime-v2
+          restore-keys: |
+            cef-windows64-144.0.36-g78619fd
       - name: Download pinned Windows CEF
         shell: pwsh
         run: |
