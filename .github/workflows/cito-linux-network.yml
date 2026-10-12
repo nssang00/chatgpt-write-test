@@ -4,7 +4,11 @@ on:
   push:
     branches: [cito-dev]
     paths:
-      - "cito/**"
+      - "cito/CMakeLists.txt"
+      - "cito/include/**"
+      - "cito/src/**"
+      - "cito/tests/**"
+      - "cito/tools/**"
       - ".github/workflows/cito-linux-network.yml"
   workflow_dispatch:
 
@@ -38,15 +42,11 @@ jobs:
       - name: Build
         run: cmake --build build-cito -j2
 
-      - name: Local unit smoke regression
-        run: |
-          ctest --test-dir build-cito -L unit --output-on-failure
-          ctest --test-dir build-cito -L smoke --output-on-failure
-          ctest --test-dir build-cito -L latency --output-on-failure
-          ctest --test-dir build-cito -L regression --output-on-failure
-
-      - name: Same-host SHM multi-process smoke
-        run: ctest --test-dir build-cito -R "cito_shm_.*_smoke" -V --output-on-failure
+      # Every accepted unit/smoke/latency test also carries the regression
+      # label, so one regression pass covers all three gates without
+      # executing the same tests repeatedly.
+      - name: Regression (unit + smoke + latency)
+        run: ctest --test-dir build-cito -L regression --output-on-failure
 
       - name: Sanitizer configure
         run: |
