@@ -64,26 +64,36 @@ inline std::uint64_t read_u64(
 } // namespace data_detail
 
 inline std::vector<std::uint8_t> encode_data_packet(
-    const DataPacket& packet) {
-    if (packet.payload.size() > 0xffffffffu) {
+    const InterestKey& key,
+    std::span<const std::uint8_t> payload) {
+    if (payload.size() > 0xffffffffu) {
         throw std::length_error("Cito data: payload too large");
     }
 
     std::vector<std::uint8_t> out;
-    out.reserve(32 + packet.payload.size());
+    out.reserve(32 + payload.size());
     out.insert(out.end(), {'C', 'T', 'D', '1'});
 
-    data_detail::write_u64(out, packet.key.scope);
-    data_detail::write_u64(out, packet.key.resource);
-    data_detail::write_u64(out, packet.key.type);
+    data_detail::write_u64(out, key.scope);
+    data_detail::write_u64(out, key.resource);
+    data_detail::write_u64(out, key.type);
     data_detail::write_u32(
         out,
-        static_cast<std::uint32_t>(packet.payload.size()));
+        static_cast<std::uint32_t>(payload.size()));
     out.insert(
         out.end(),
-        packet.payload.begin(),
-        packet.payload.end());
+        payload.begin(),
+        payload.end());
     return out;
+}
+
+inline std::vector<std::uint8_t> encode_data_packet(
+    const DataPacket& packet) {
+    return encode_data_packet(
+        packet.key,
+        std::span<const std::uint8_t>(
+            packet.payload.data(),
+            packet.payload.size()));
 }
 
 inline DataPacketView decode_data_packet_view(

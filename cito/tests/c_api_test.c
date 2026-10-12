@@ -20,6 +20,16 @@ int main(void) {
     struct state s = {0};
     cito_subscription_t* sub = NULL;
     assert(cito_context_subscribe(ctx, 100, "drone_17", 8, cb, &s, &sub) == CITO_STATUS_OK);
+    int has_demand = 99;
+    assert(cito_context_has_demand(
+        ctx, 100, "drone_18", 8,
+        &has_demand) == CITO_STATUS_OK);
+    assert(has_demand == 0);
+    assert(cito_context_has_demand(
+        ctx, 100, "drone_17", 8,
+        &has_demand) == CITO_STATUS_OK);
+    assert(has_demand == 1);
+
     const uint8_t hello[] = {'h','e','l','l','o'};
     size_t delivered = 99;
     assert(cito_context_publish(ctx, 100, "drone_18", 8, hello, sizeof hello, &delivered) == CITO_STATUS_OK);
@@ -29,6 +39,10 @@ int main(void) {
     assert(strcmp(s.resource, "drone_17") == 0);
     assert(s.size == sizeof hello && memcmp(s.payload, hello, sizeof hello) == 0);
     cito_subscription_destroy(sub);
+    assert(cito_context_has_demand(
+        ctx, 100, "drone_17", 8,
+        &has_demand) == CITO_STATUS_OK);
+    assert(has_demand == 0);
     assert(cito_context_publish(ctx, 100, "drone_17", 8, hello, sizeof hello, &delivered) == CITO_STATUS_OK);
     assert(delivered == 0);
     assert(cito_context_run(ctx) == CITO_STATUS_OK);

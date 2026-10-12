@@ -76,6 +76,16 @@ _lib.cito_subscription_destroy.argtypes = [
     ctypes.c_void_p,
 ]
 
+_lib.cito_context_has_demand.argtypes = [
+    ctypes.c_void_p,
+    ctypes.c_uint64,
+    _CHARP,
+    ctypes.c_size_t,
+    ctypes.POINTER(ctypes.c_int),
+]
+_lib.cito_context_has_demand.restype = (
+    ctypes.c_int)
+
 _lib.cito_context_publish.argtypes = [
     ctypes.c_void_p,
     ctypes.c_uint64,
@@ -261,6 +271,42 @@ class Context:
                 decode(payload)),
             resource)
 
+    def has_demand(
+        self,
+        message_type_or_id: Any,
+        resource: str = "",
+    ) -> bool:
+        type_id = (
+            message_type_or_id
+            if isinstance(
+                message_type_or_id,
+                int)
+            else getattr(
+                message_type_or_id,
+                "TYPE_ID",
+                None))
+
+        if type_id is None:
+            raise TypeError(
+                "Cito has_demand() expects "
+                "a generated message type or integer TypeId")
+
+        raw, buffer = _text(resource)
+        result = ctypes.c_int()
+
+        _check(
+            _lib.cito_context_has_demand(
+                self._handle,
+                int(type_id),
+                ctypes.cast(
+                    buffer,
+                    _CHARP),
+                len(raw),
+                ctypes.byref(result)))
+
+        return bool(
+            result.value)
+
     def publish_raw(
         self,
         type_id: int,
@@ -344,6 +390,11 @@ class Context:
                     "typed Cito publish() accepts "
                     "an optional resource string")
             resource = payload_or_resource
+
+        if not self.has_demand(
+                int(type_id),
+                resource):
+            return 0
 
         return self.publish_raw(
             int(type_id),

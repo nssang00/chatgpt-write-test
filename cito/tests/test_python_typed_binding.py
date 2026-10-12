@@ -16,12 +16,37 @@ def main() -> None:
         frame_kind=position.FrameKind.Map,
     )
 
+    class CountingMessage:
+        TYPE_ID = 777
+
+        def __init__(self) -> None:
+            self.encodes = 0
+
+        def encode(self) -> bytes:
+            self.encodes += 1
+            return b"counted"
+
     with cito.Context(
         "acme") as ctx:
         sub = ctx.on(
             position.Position,
             received.append,
             "drone_17")
+
+        assert ctx.has_demand(
+            position.Position,
+            "drone_17")
+        assert not ctx.has_demand(
+            position.Position,
+            "drone_18")
+
+        counting = CountingMessage()
+        assert (
+            ctx.publish(
+                counting,
+                "nobody") ==
+            0)
+        assert counting.encodes == 0
 
         assert (
             ctx.publish(
@@ -42,6 +67,9 @@ def main() -> None:
             position.Position)
 
         sub.close()
+        assert not ctx.has_demand(
+            position.Position,
+            "drone_17")
 
         assert (
             ctx.publish(

@@ -48,13 +48,15 @@ if(BUILD_TESTING)
   cito_add_test(cito_best_effort_delivery_tests tests/best_effort_delivery_test.cpp "unit;latency;regression")
   cito_add_test(cito_reliability_tests tests/reliability_test.cpp "unit;latency;regression")
   cito_add_test(cito_reliable_packet_tests tests/reliable_packet_test.cpp "unit;latency;regression")
+  cito_add_test(cito_host_runtime_core_tests tests/host_runtime_core_test.cpp "unit;latency;regression")
+  cito_add_test(cito_host_runtime_core_smoke tests/host_runtime_core_smoke.cpp "smoke;latency;regression")
   cito_add_test(cito_host_scale_200_tests tests/host_scale_200_test.cpp "smoke;latency;scale;regression")
 
   add_executable(cito_c_api_tests tests/c_api_test.c)
   target_link_libraries(cito_c_api_tests PRIVATE cito_c)
   target_compile_options(cito_c_api_tests PRIVATE -Wall -Wextra -Wpedantic)
   add_test(NAME cito_c_api_tests COMMAND cito_c_api_tests)
-  set_tests_properties(cito_c_api_tests PROPERTIES LABELS "unit;smoke;regression")
+  set_tests_properties(cito_c_api_tests PROPERTIES LABELS "unit;smoke;latency;regression")
 
   add_test(
     NAME cito_python_smoke
@@ -129,7 +131,7 @@ if(BUILD_TESTING)
             ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_python_typed_binding.py)
   set_tests_properties(
     cito_python_typed_smoke
-    PROPERTIES LABELS "smoke;regression")
+    PROPERTIES LABELS "smoke;latency;regression")
 
   add_executable(cito_idl_static_smoke
     tests/idl_static_smoke.cpp

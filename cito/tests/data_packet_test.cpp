@@ -1,10 +1,19 @@
 #include <cito/data_packet.hpp>
 
 #include <cassert>
+#include <cstdint>
+#include <span>
 
 int main() {
     cito::DataPacket packet{{1, 2, 3}, {1, 2, 3, 4}};
     const auto bytes = cito::encode_data_packet(packet);
+    const auto span_bytes =
+        cito::encode_data_packet(
+            packet.key,
+            std::span<const std::uint8_t>(
+                packet.payload.data(),
+                packet.payload.size()));
+    assert(span_bytes == bytes);
 
     const auto view = cito::decode_data_packet_view(bytes);
     assert(view.key == packet.key);

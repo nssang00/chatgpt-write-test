@@ -37,6 +37,10 @@ CITO_C_API cito_status_t cito_context_subscribe(
     cito_message_callback_t callback, void* user_data,
     cito_subscription_t** out_subscription);
 CITO_C_API void cito_subscription_destroy(cito_subscription_t* subscription);
+CITO_C_API cito_status_t cito_context_has_demand(
+    cito_context_t* context, uint64_t type_id,
+    const char* resource, size_t resource_size,
+    int* out_has_demand);
 CITO_C_API cito_status_t cito_context_publish(
     cito_context_t* context, uint64_t type_id,
     const char* resource, size_t resource_size,

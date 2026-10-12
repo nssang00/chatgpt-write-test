@@ -81,6 +81,27 @@ private:
                 pending_removals.push_back(id);
             }
         }
+        bool has_demand(
+            std::uint64_t type_id,
+            std::string_view resource) const noexcept {
+            const auto type_it =
+                buckets.find(type_id);
+
+            if (type_it ==
+                buckets.end()) {
+                return false;
+            }
+
+            const auto resource_it =
+                type_it->second.find(
+                    resource);
+
+            return
+                resource_it !=
+                    type_it->second.end() &&
+                !resource_it->second.empty();
+        }
+
         std::size_t publish(
             std::uint64_t type_id, std::string_view resource,
             std::span<const std::uint8_t> payload) {
@@ -152,6 +173,13 @@ public:
         return RawSubscription([weak = std::move(weak), id] {
             if (const auto state = weak.lock()) state->remove(id);
         });
+    }
+    bool has_demand(
+        std::uint64_t type_id,
+        std::string_view resource) const noexcept {
+        return state_->has_demand(
+            type_id,
+            resource);
     }
     std::size_t publish(std::uint64_t type_id, std::string_view resource,
                         std::span<const std::uint8_t> payload) {
