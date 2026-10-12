@@ -81,13 +81,33 @@ Performance claims additionally require measured p50/p95/p99 benchmarks. Structu
 
 ## Current milestone
 
-The first v1 foundation milestone is green:
+The current v1 integration baseline is green:
 
-- 200-host structural scale gate
-- C ABI raw boundary and C smoke
-- Python raw binding and smoke
-- core regression + ASan/UBSan
-- same-host SHM and three-node Linux namespace tests
+- 200-host structural demand-index scale gate
+- canonical platform-independent TypeId/SchemaHash numeric hashing
+- C++ and Python IDL generation from the same schema model
+- byte-for-byte generated C++ <-> generated Python CTO1 wire compatibility
+- stable C ABI v1 opaque Context/Subscription boundary
+- simple typed Python Context API over the C ABI
+- no-interest typed Python publish skips encoding
+- shared HostRuntimeCore with exact local/remote DemandKey routing
+- transport-independent DiscoveryControlCore
+- portable UdpRuntimeAdapter with encode-once, non-owning data fan-out
+- real three-node namespace selective delivery through the reusable UDP runtime
+- coordinator lease expiry cleans remote routes and UDP endpoint cache
+- multiple C/Python Contexts in one process aggregate on one weak-lifetime embedded host runtime
+- reentrant Context/app destruction covered under ASan/UBSan
+- same-host SHM multi-process regressions
 - actual MsQuic stream and DATAGRAM namespace smoke
 
-The next integration work is typed Python generation and attaching C ABI/Python/QUIC to the shared distributed Context/runtime path.
+The next integration sequence is:
+
+1. move the embedded runtime registry into one compiled shared core so C++ executables and the C ABI shared library cannot accidentally own separate host runtimes across a DSO boundary;
+2. attach IDL-generated C++ Contexts to that shared host core while preserving object-native same-Context delivery and no-interest zero-encode;
+3. extend the host coordinator contract across processes using local IPC for control only, keeping normal data direct/SHM;
+4. attach the reusable UDP adapter to the public Context event loop;
+5. attach QUIC session routing to the same discovery/runtime state and select DATAGRAM vs stream internally;
+6. integrate bounded reliable UDP recovery into the public delivery path;
+7. add Windows C ABI/runtime/QUIC/SHM compatibility gates.
+
+v1 is complete only when those public-runtime integration gates, Windows compatibility, and the definition above are all green.

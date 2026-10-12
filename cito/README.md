@@ -54,14 +54,19 @@ The project has moved beyond the original same-process P0:
 - DynamicData/reference wire interoperability
 - demand-summary discovery and direct route selection
 - same-host multi-process SHM smoke
-- UDP network-namespace discovery/data smokes
+- shared `HostRuntimeCore` + transport-independent discovery control core
+- portable UDP runtime adapter with actual three-node network-namespace selective delivery
+- coordinator lease expiry removes candidate routes and UDP endpoint cache state
 - bounded selective-NACK reliability prototype
 - 200-host demand-index structural scale gate
 - stable C ABI v1 foundation
-- Python binding over the C ABI
+- generated typed Python IDL with byte-for-byte C++ wire compatibility
+- simple Python `ctx.on(Position, ...)` / `ctx.publish(Position(...))`
+- no-interest typed Python publish performs zero serialization
+- multiple C/Python Contexts in one process aggregate onto one embedded host runtime
 - optional MsQuic integration with real QUIC stream + DATAGRAM namespace smoke
 
-The C ABI/Python binding currently expose the same-process raw `type_id + resource + bytes` common boundary. QUIC is validated as a real optional transport backend, but neither is yet fully wired into the normal distributed `Context` path. Those integrations remain part of the v1 completion gate rather than being represented as finished production support.
+The shared discovery/runtime and UDP data path are now reusable library components rather than test-node-only logic. C/Python use that host runtime inside one process. The remaining integration work is to move the registry into one compiled shared runtime across C++/C ABI/Python/DSO boundaries, extend host aggregation across processes with local IPC, and attach UDP/QUIC/SHM underneath the normal public `Context` lifecycle.
 
 See `docs/V1_SCOPE.md` for the exact target and completion criteria.
 
