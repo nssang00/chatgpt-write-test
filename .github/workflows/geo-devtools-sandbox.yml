@@ -55,6 +55,12 @@ jobs:
           ./node_modules/.bin/esbuild tests/real-ol/entry.js --bundle --format=iife --platform=browser --outfile=artifacts/real-ol-browser.js
       - name: Real OpenLayers Map E2E and screenshots
         run: python tests/real_ol_e2e.py
+      - name: Zero-touch rules unit tests (no SDK)
+        run: python -m unittest discover -s tests -p 'zero_touch_unit.py' -v
+      - name: Bundle real OL page without Geo Doctor instrumentation
+        run: ./node_modules/.bin/esbuild tests/zero-touch/entry.js --bundle --format=iife --platform=browser --outfile=artifacts/zero-touch-browser.js
+      - name: Zero-touch real OL network E2E, screenshots and HTML diagnosis
+        run: python tests/zero_touch_e2e.py
       - name: Upload screenshots, traces and reports even on failure
         if: always()
         uses: actions/upload-artifact@v4
@@ -63,6 +69,7 @@ jobs:
           path: |
             sandbox/geo-devtools-ci/project/artifacts/browser/
             sandbox/geo-devtools-ci/project/artifacts/real-ol/
+            sandbox/geo-devtools-ci/project/artifacts/zero-touch/
             sandbox/geo-devtools-ci/project/node-tests.log
           if-no-files-found: warn
           retention-days: 14

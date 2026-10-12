@@ -1,6 +1,6 @@
 # Geo DevTools — isolated GitHub Actions sandbox
 
-**Isolation:** All Geo DevTools test sources are under `sandbox/geo-devtools-ci/` and this single workflow exists only on branch `sandbox/geo-devtools-ci-20261012`.
+**New default (2026-10-12):** URL-only basic scanner in `source.zip` under `scripts/geo_doctor_scan.py`; zero app source changes. Produces sanitized JSON + HTML report. Real OpenLayers 404 tile + healthy controls are in `tests/zero_touch_e2e.py`. See `docs/ZERO_TOUCH_STRATEGY.md` inside ZIP. Runtime adapter remains optional.\n\n**Isolation:** All Geo DevTools test sources are under `sandbox/geo-devtools-ci/` and this single workflow exists only on branch `sandbox/geo-devtools-ci-20261012`.
 NativeWeb source, existing workflows and default `main` branch are unchanged. Do not merge this branch into `main`.
 
 ## Contents
