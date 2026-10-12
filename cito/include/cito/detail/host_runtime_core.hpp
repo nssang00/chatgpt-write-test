@@ -13,6 +13,7 @@
 #include <stdexcept>
 #include <string_view>
 #include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -261,6 +262,21 @@ public:
         return changed;
     }
 
+    bool coordinator_is_current(
+        CoordinatorId coordinator,
+        std::uint64_t incarnation) const noexcept {
+        return leases_.is_current(
+            coordinator,
+            incarnation);
+    }
+
+    std::optional<std::uint64_t>
+    coordinator_incarnation(
+        CoordinatorId coordinator) const noexcept {
+        return leases_.current_incarnation(
+            coordinator);
+    }
+
     bool replace_remote_routes(
         CoordinatorId coordinator,
         std::uint64_t incarnation,
@@ -279,9 +295,10 @@ public:
             destinations);
     }
 
-    std::size_t expire_remote(
+    std::vector<CoordinatorId>
+    expire_remote_coordinators(
         std::uint64_t now_ms) {
-        const auto expired =
+        auto expired =
             leases_.expire(now_ms);
 
         for (const auto coordinator :
@@ -290,7 +307,13 @@ public:
                 coordinator);
         }
 
-        return expired.size();
+        return expired;
+    }
+
+    std::size_t expire_remote(
+        std::uint64_t now_ms) {
+        return expire_remote_coordinators(
+            now_ms).size();
     }
 
     const std::unordered_set<
