@@ -326,9 +326,54 @@ public:
 
     const std::unordered_set<
         DestinationId>& remote_destinations(
+        CoordinatorId coordinator,
+        const InterestKey& key) const noexcept {
+        return remote_routes_.lookup(
+            coordinator,
+            key);
+    }
+
+    const std::unordered_set<
+        DestinationId>& remote_destinations(
         const InterestKey& key) const noexcept {
         return remote_routes_
             .lookup(key);
+    }
+
+    std::size_t deliver_local(
+        const InterestKey& key,
+        std::string_view resource,
+        std::span<const std::uint8_t> payload) {
+        const auto& local =
+            local_apps_.lookup(key);
+
+        if (local.empty()) {
+            return 0;
+        }
+
+        std::vector<AppId> app_ids(
+            local.begin(),
+            local.end());
+
+        std::size_t delivered = 0;
+
+        for (const auto app :
+             app_ids) {
+            const auto it =
+                apps_.find(app);
+
+            if (it == apps_.end()) {
+                continue;
+            }
+
+            delivered +=
+                it->second.deliver(
+                    key.type,
+                    resource,
+                    payload);
+        }
+
+        return delivered;
     }
 
     template <class RemoteSend>
@@ -339,33 +384,11 @@ public:
         RemoteSend&& remote_send) {
         HostPublishResult result;
 
-        const auto& local =
-            local_apps_.lookup(key);
-
-        if (!local.empty()) {
-            // Callback code may unsubscribe while dispatching. Snapshot app
-            // ids so local routing state can change without invalidating the
-            // iteration.
-            std::vector<AppId> app_ids(
-                local.begin(),
-                local.end());
-
-            for (const auto app :
-                 app_ids) {
-                const auto it =
-                    apps_.find(app);
-
-                if (it == apps_.end()) {
-                    continue;
-                }
-
-                result.local_delivered +=
-                    it->second.deliver(
-                        key.type,
-                        resource,
-                        payload);
-            }
-        }
+        result.local_delivered =
+            deliver_local(
+                key,
+                resource,
+                payload);
 
         const auto& remote =
             remote_routes_.lookup(key);

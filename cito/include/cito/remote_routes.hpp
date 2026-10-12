@@ -105,6 +105,28 @@ public:
 
     const std::unordered_set<
         DestinationId>& lookup(
+        CoordinatorId coordinator,
+        const InterestKey& key) const noexcept {
+        const auto host_it =
+            hosts_.find(coordinator);
+
+        if (host_it ==
+            hosts_.end()) {
+            return empty_;
+        }
+
+        const auto route_it =
+            host_it->second.find(key);
+
+        return
+            route_it ==
+                host_it->second.end()
+                ? empty_
+                : route_it->second;
+    }
+
+    const std::unordered_set<
+        DestinationId>& lookup(
         const InterestKey& key) const noexcept {
         const auto it =
             visible_.find(key);

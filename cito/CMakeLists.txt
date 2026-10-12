@@ -52,6 +52,8 @@ if(BUILD_TESTING)
   cito_add_test(cito_host_runtime_core_smoke tests/host_runtime_core_smoke.cpp "smoke;latency;regression")
   cito_add_test(cito_discovery_control_core_tests tests/discovery_control_core_test.cpp "unit;latency;regression")
   cito_add_test(cito_discovery_control_core_smoke tests/discovery_control_core_smoke.cpp "smoke;latency;regression")
+  cito_add_test(cito_udp_runtime_adapter_tests tests/udp_runtime_adapter_test.cpp "unit;latency;regression")
+  cito_add_test(cito_udp_runtime_adapter_smoke tests/udp_runtime_adapter_smoke.cpp "smoke;latency;regression")
   cito_add_test(cito_host_scale_200_tests tests/host_scale_200_test.cpp "smoke;latency;scale;regression")
 
   add_executable(cito_c_api_tests tests/c_api_test.c)

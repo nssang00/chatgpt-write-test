@@ -389,9 +389,10 @@ public:
         return true;
     }
 
-    std::size_t expire(
+    std::vector<CoordinatorId>
+    expire_coordinators(
         std::uint64_t now_ms) {
-        const auto expired =
+        auto expired =
             host_
                 .expire_remote_coordinators(
                     now_ms);
@@ -407,7 +408,13 @@ public:
         stats_.expired_coordinators +=
             expired.size();
 
-        return expired.size();
+        return expired;
+    }
+
+    std::size_t expire(
+        std::uint64_t now_ms) {
+        return expire_coordinators(
+            now_ms).size();
     }
 
     const DiscoveryControlStats&
