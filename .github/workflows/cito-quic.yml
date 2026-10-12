@@ -1,0 +1,83 @@
+name: Cito QUIC
+
+on:
+  push:
+    branches: [cito-dev]
+    paths:
+      - "cito/CMakeLists.txt"
+      - "cito/include/cito/data_packet.hpp"
+      - "cito/include/cito/detail/transport_selector.hpp"
+      - "cito/tests/net/quic_msquic_node.cpp"
+      - "cito/tests/transport_selector_test.cpp"
+      - ".github/workflows/cito-quic.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cito-quic-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  msquic-smoke:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install MsQuic 2.6.1
+        run: |
+          curl -fsSL https://packages.microsoft.com/ubuntu/24.04/prod/pool/main/libm/libmsquic/libmsquic_2.6.1_amd64.deb -o /tmp/libmsquic.deb
+          sudo dpkg -i /tmp/libmsquic.deb
+      - name: Configure and build QUIC smoke
+        run: |
+          cmake -S cito -B build-quic -G Ninja -DCMAKE_BUILD_TYPE=Debug -DCITO_ENABLE_MSQUIC=ON
+          cmake --build build-quic --target cito_quic_msquic_node -j2
+      - name: Generate test certificate
+        run: |
+          openssl req -x509 -newkey rsa:2048 -nodes -days 1 \
+            -keyout quic-key.pem -out quic-cert.pem -subj "/CN=10.202.0.12"
+      - name: Two-node QUIC stream and datagram smoke
+        shell: bash
+        run: |
+          set -euo pipefail
+          cleanup() {
+            sudo ip netns del cito-quic-c 2>/dev/null || true
+            sudo ip netns del cito-quic-s 2>/dev/null || true
+            sudo ip link del br-quic 2>/dev/null || true
+          }
+          trap cleanup EXIT
+          cleanup
+          sudo ip link add br-quic type bridge
+          sudo ip link set br-quic up
+          add_node() {
+            local ns="$1" host="$2" peer="$3" addr="$4"
+            sudo ip netns add "$ns"
+            sudo ip link add "$host" type veth peer name "$peer"
+            sudo ip link set "$host" master br-quic
+            sudo ip link set "$host" up
+            sudo ip link set "$peer" netns "$ns"
+            sudo ip netns exec "$ns" ip link set lo up
+            sudo ip netns exec "$ns" ip link set "$peer" name eth0
+            sudo ip netns exec "$ns" ip addr add "$addr"/24 dev eth0
+            sudo ip netns exec "$ns" ip link set eth0 up
+          }
+          add_node cito-quic-c veth-qc veth-qc-ns 10.202.0.11
+          add_node cito-quic-s veth-qs veth-qs-ns 10.202.0.12
+          BIN="$GITHUB_WORKSPACE/build-quic/cito_quic_msquic_node"
+          sudo ip netns exec cito-quic-s "$BIN" server 4433 \
+            "$GITHUB_WORKSPACE/quic-cert.pem" "$GITHUB_WORKSPACE/quic-key.pem" \
+            >quic-server.log 2>&1 &
+          SERVER_PID=$!
+          sleep 0.5
+          client_status=0
+          sudo ip netns exec cito-quic-c "$BIN" client 10.202.0.12 4433 \
+            >quic-client.log 2>&1 || client_status=$?
+          server_status=0
+          wait "$SERVER_PID" || server_status=$?
+          cat quic-client.log
+          cat quic-server.log
+          test "$client_status" -eq 0
+          test "$server_status" -eq 0
+          grep -q "quic_client stream=1 datagram=1" quic-client.log
+          grep -q "quic_server stream=1 datagram=1" quic-server.log
