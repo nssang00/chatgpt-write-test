@@ -116,9 +116,63 @@ int main() {
         pub_udp.data_endpoint(77)->port ==
         48010);
 
+    // Recreate the route, then withdraw it through the advertised summary.
     assert(
         pub_udp.release_routes(
             key));
+    assert(
+        pub_udp.data_endpoint(77) ==
+        nullptr);
+
+    sends =
+        pub_udp.ensure_routes(
+            key);
+    assert(sends.size() == 1);
+
+    replies =
+        sub_udp.process_control(
+            sends[0].bytes,
+            pub_source,
+            1000);
+    assert(replies.size() == 1);
+
+    (void)pub_udp.process_control(
+        replies[0].bytes,
+        sub_source,
+        1000);
+    assert(
+        pub_udp.data_endpoint(77) !=
+        nullptr);
+
+    subscriber.remove_interest(
+        1,
+        key);
+
+    sends =
+        pub_udp.process_control(
+            sub_udp.announcement(
+                47010,
+                500),
+            sub_source,
+            1100);
+
+    assert(sends.size() == 1);
+
+    replies =
+        sub_udp.process_control(
+            sends[0].bytes,
+            pub_source,
+            1100);
+    assert(replies.size() == 1);
+
+    (void)pub_udp.process_control(
+        replies[0].bytes,
+        sub_source,
+        1100);
+
+    assert(
+        publisher.remote_destinations(
+            key).empty());
     assert(
         pub_udp.data_endpoint(77) ==
         nullptr);

@@ -226,19 +226,29 @@ public:
             return false;
         }
 
-        for (auto& [coordinator, routes] :
-             endpoint_routes_) {
+        for (auto coordinator_it =
+                 endpoint_routes_.begin();
+             coordinator_it !=
+                 endpoint_routes_.end();) {
+            auto& routes =
+                coordinator_it->second;
             const auto it =
                 routes.find(key);
 
-            if (it ==
+            if (it !=
                 routes.end()) {
-                continue;
+                release_destinations(
+                    it->second);
+                routes.erase(it);
             }
 
-            release_destinations(
-                it->second);
-            routes.erase(it);
+            if (routes.empty()) {
+                coordinator_it =
+                    endpoint_routes_.erase(
+                        coordinator_it);
+            } else {
+                ++coordinator_it;
+            }
         }
 
         return true;

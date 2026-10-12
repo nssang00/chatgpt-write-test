@@ -136,10 +136,10 @@ int main() {
             1>{{{112, 48112}}});
 
     exchange(
-        pub_udp,
-        pub_control,
         pos_udp,
         pos_control,
+        pub_udp,
+        pub_control,
         pub_udp.process_control(
             pos_udp.announcement(
                 47111,
@@ -149,10 +149,10 @@ int main() {
         1000);
 
     exchange(
-        pub_udp,
-        pub_control,
         bat_udp,
         bat_control,
+        pub_udp,
+        pub_control,
         pub_udp.process_control(
             bat_udp.announcement(
                 47112,
