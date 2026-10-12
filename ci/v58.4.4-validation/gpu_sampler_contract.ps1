@@ -1,7 +1,10 @@
 $ErrorActionPreference = 'Stop'
 $source = Join-Path $PSScriptRoot 'gpu_sampler_v58_4_4.ps1'
 $expectedSha256 = '7d72d0692be3161b0a1a2f102e7e360778c31b63d3039adaf795f5b8a8068c35'
-$sha = (Get-FileHash $source -Algorithm SHA256).Hash.ToLowerInvariant()
+$raw = Get-Content $source -Raw
+$normalized = $raw.Replace("`r`n", "`n")
+$shaBytes = [Text.Encoding]::UTF8.GetBytes($normalized)
+$sha = ([Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($shaBytes))).ToLowerInvariant()
 if ($sha -ne $expectedSha256) { throw "GPU sampler source hash mismatch: $sha" }
 $raw = Get-Content $source -Raw
 foreach ($needle in @('Get-OptionalGpuMemorySample([int]$ProcessId)', '-ErrorAction SilentlyContinue -ErrorVariable +counterErrors', '[int64]$sample.Status -ne 0', 'no_complete_valid_process_sample', 'counter_exception')) {
