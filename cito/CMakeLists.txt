@@ -57,6 +57,7 @@ if(BUILD_TESTING)
   cito_add_test(cito_reliable_packet_tests tests/reliable_packet_test.cpp "unit;latency;regression")
   cito_add_test(cito_host_runtime_core_tests tests/host_runtime_core_test.cpp "unit;latency;regression")
   cito_add_test(cito_request_reply_core_tests tests/request_reply_core_test.cpp "unit;latency;regression")
+  cito_add_test(cito_request_api_tests tests/request_api_test.cpp "unit;latency;regression")
   cito_add_test(cito_host_runtime_core_smoke tests/host_runtime_core_smoke.cpp "smoke;latency;regression")
   cito_add_test(cito_discovery_control_core_tests tests/discovery_control_core_test.cpp "unit;latency;regression")
   cito_add_test(cito_discovery_control_core_smoke tests/discovery_control_core_smoke.cpp "smoke;latency;regression")
@@ -179,6 +180,15 @@ if(BUILD_TESTING)
   set_tests_properties(
     cito_idl_python_wire_smoke
     PROPERTIES LABELS "smoke;latency;regression")
+
+  add_executable(cito_request_api_smoke
+    tests/request_api_smoke.cpp
+    ${GENERATED_DIR}/request_reply.hpp)
+  target_link_libraries(cito_request_api_smoke PRIVATE cito)
+  target_include_directories(cito_request_api_smoke PRIVATE ${GENERATED_DIR})
+  target_compile_options(cito_request_api_smoke PRIVATE -Wall -Wextra -Wpedantic)
+  add_test(NAME cito_request_api_smoke COMMAND cito_request_api_smoke)
+  set_tests_properties(cito_request_api_smoke PROPERTIES LABELS "smoke;latency;regression")
 
   add_executable(cito_idl_request_reply_smoke
     tests/idl_request_reply_smoke.cpp

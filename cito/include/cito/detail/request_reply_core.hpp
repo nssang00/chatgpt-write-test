@@ -349,6 +349,31 @@ public:
             {});
     }
 
+    std::size_t cancel_requests(
+        AppId requester_app,
+        RequestStatus status =
+            RequestStatus::Cancelled) {
+        std::vector<RequestId> ids;
+
+        for (const auto& [id, pending] :
+             pending_) {
+            if (
+                pending.requester_app ==
+                requester_app) {
+                ids.push_back(id);
+            }
+        }
+
+        for (const auto id : ids) {
+            complete(
+                id,
+                status,
+                {});
+        }
+
+        return ids.size();
+    }
+
     std::size_t pending_count()
         const noexcept {
         return pending_.size();

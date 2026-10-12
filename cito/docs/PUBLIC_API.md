@@ -18,13 +18,26 @@ ctx.publish(
     position);
 ```
 
-One-shot command/query semantics use the **Request/Reply** pattern. The planned
-public verbs are:
+One-shot command/query semantics use the **Request/Reply** pattern. C++ now has
+the same-process baseline:
 
-```text
-request(...)   - send a typed request and await one typed reply
-handle(...)    - register the handler for a typed request
+```cpp
+ctx.handle<GetStatus>(
+    "drone_17",
+    [](const GetStatus& request) {
+        return Status{...};
+    });
+
+auto result =
+    co_await ctx.request(
+        "drone_17",
+        GetStatus{...});
 ```
+
+`request(...)` sends one typed request and awaits one typed reply.
+`handle(...)` registers the typed request handler. Remote transport and
+Python/C ABI exposure remain later integration gates; they reuse this same
+runtime rather than introducing another RPC runtime.
 
 The low-level act of replying to a specific request may use `reply()`, but
 `reply()` is not the handler-registration verb.

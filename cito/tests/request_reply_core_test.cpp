@@ -210,6 +210,44 @@ int main() {
     assert(!late_reply(RequestStatus::Ok, {}));
     assert(!core.cancel(pending.id));
 
+    // Context-style requester teardown can explicitly cancel its pending
+    // correlations before unregistering the app.
+    RequestReplyCore::Reply teardown_reply;
+    const auto teardown_key =
+        key(1, 12, 101);
+    core.register_handler(
+        11,
+        teardown_key,
+        [&](RequestId,
+            AppId,
+            std::span<
+                const std::uint8_t>,
+            RequestReplyCore::Reply reply) {
+            teardown_reply =
+                std::move(reply);
+        });
+
+    int teardown_cancelled = 0;
+    core.start(
+        12,
+        teardown_key,
+        {},
+        [&](RequestStatus status,
+            std::span<
+                const std::uint8_t>) {
+            assert(
+                status ==
+                RequestStatus::Cancelled);
+            ++teardown_cancelled;
+        });
+
+    assert(core.pending_count() == 1);
+    assert(core.cancel_requests(12) == 1);
+    assert(teardown_cancelled == 1);
+    assert(core.pending_count() == 0);
+    assert(!teardown_reply(RequestStatus::Ok, {}));
+    assert(core.unregister_app(11) == 1);
+
     // Handler exceptions become Internal and cannot leak correlation state.
     const auto throwing =
         core.register_handler(

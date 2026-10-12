@@ -2,6 +2,7 @@
 
 #include <cito/detail/embedded_host_runtime.hpp>
 #include <cito/identity.hpp>
+#include <cito/request.hpp>
 #include <cito/static.hpp>
 
 #include <algorithm>
@@ -142,8 +143,17 @@ private:
         }
 
         ~State() {
+            runtime_->requests()
+                .cancel_requests(
+                    app_id_);
+            runtime_->requests()
+                .unregister_app(
+                    app_id_);
+
             if (registered_) {
-                runtime_->host().unregister_app(app_id_);
+                runtime_->host()
+                    .unregister_app(
+                        app_id_);
             }
         }
 
@@ -225,6 +235,209 @@ private:
             return delivered;
         }
 
+        template <class RequestT, class F>
+        HandlerRegistration handle(
+            std::string resource,
+            F&& handler) {
+            using ReplyT =
+                ReplyTypeT<RequestT>;
+
+            const auto key =
+                make_request_key<RequestT>(
+                    resource);
+
+            auto token =
+                runtime_->requests()
+                    .register_handler(
+                        app_id_,
+                        key,
+                        [fn =
+                             std::function<
+                                 ReplyT(
+                                     const RequestT&)>(
+                                 std::forward<F>(
+                                     handler))](
+                            detail::RequestId,
+                            detail::AppId,
+                            std::span<
+                                const std::uint8_t>
+                                payload,
+                            detail::
+                                RequestReplyCore::
+                                    Reply reply) mutable {
+                            try {
+                                const auto request =
+                                    StaticCodec<
+                                        RequestT>::
+                                        decode(
+                                            payload);
+
+                                auto response =
+                                    fn(request);
+
+                                const auto bytes =
+                                    StaticCodec<
+                                        ReplyT>::
+                                        encode(
+                                            response);
+
+                                reply(
+                                    detail::
+                                        RequestStatus::
+                                            Ok,
+                                    std::span<
+                                        const std::uint8_t>(
+                                        bytes.data(),
+                                        bytes.size()));
+                            } catch (...) {
+                                reply(
+                                    detail::
+                                        RequestStatus::
+                                            Internal,
+                                    {});
+                            }
+                        });
+
+            std::weak_ptr<
+                detail::EmbeddedHostRuntime>
+                weak_runtime =
+                    runtime_;
+
+            return HandlerRegistration(
+                [weak_runtime =
+                     std::move(
+                         weak_runtime),
+                 token] {
+                    if (const auto runtime =
+                            weak_runtime
+                                .lock()) {
+                        runtime->requests()
+                            .unregister_handler(
+                                token);
+                    }
+                });
+        }
+
+        template <class RequestT>
+        Request<
+            ReplyTypeT<RequestT>>
+        request(
+            std::string_view resource,
+            const RequestT& value) {
+            using ReplyT =
+                ReplyTypeT<RequestT>;
+
+            auto result_state =
+                std::make_shared<
+                    detail::
+                        RequestState<
+                            ReplyT>>();
+
+            Request<ReplyT> request(
+                result_state);
+
+            const auto key =
+                make_request_key<RequestT>(
+                    resource);
+
+            auto& requests =
+                runtime_->requests();
+
+            // Demand check comes before serialization.
+            if (!requests.has_handler(
+                    key)) {
+                result_state->finish(
+                    Result<ReplyT>::
+                        failure(
+                            RequestStatus::
+                                Unavailable));
+                return request;
+            }
+
+            const auto payload =
+                StaticCodec<RequestT>::
+                    encode(value);
+
+            std::weak_ptr<
+                detail::EmbeddedHostRuntime>
+                weak_runtime =
+                    runtime_;
+
+            const auto started =
+                requests.start(
+                    app_id_,
+                    key,
+                    std::span<
+                        const std::uint8_t>(
+                        payload.data(),
+                        payload.size()),
+                    [result_state](
+                        detail::RequestStatus
+                            status,
+                        std::span<
+                            const std::uint8_t>
+                            response) {
+                        if (
+                            status !=
+                            detail::
+                                RequestStatus::
+                                    Ok) {
+                            result_state->
+                                finish(
+                                    Result<
+                                        ReplyT>::
+                                        failure(
+                                            status));
+                            return;
+                        }
+
+                        try {
+                            auto value =
+                                StaticCodec<
+                                    ReplyT>::
+                                    decode(
+                                        response);
+
+                            result_state->
+                                finish(
+                                    Result<
+                                        ReplyT>::
+                                        success(
+                                            std::move(
+                                                value)));
+                        } catch (...) {
+                            result_state->
+                                finish(
+                                    Result<
+                                        ReplyT>::
+                                        failure(
+                                            RequestStatus::
+                                                Internal));
+                        }
+                    });
+
+            if (
+                started.dispatched &&
+                !result_state->ready()) {
+                result_state->cancel_ =
+                    [weak_runtime =
+                         std::move(
+                             weak_runtime),
+                     id = started.id] {
+                        const auto runtime =
+                            weak_runtime
+                                .lock();
+
+                        return
+                            runtime &&
+                            runtime->requests()
+                                .cancel(id);
+                    };
+            }
+
+            return request;
+        }
+
     private:
         explicit State(std::string_view scope)
             : scope_id_(stable_name_id(scope)),
@@ -238,6 +451,20 @@ private:
                 scope_id_,
                 stable_name_id(resource),
                 type_id};
+        }
+
+        template <class RequestT>
+        detail::RequestKey
+        make_request_key(
+            std::string_view resource)
+            const {
+            return {
+                scope_id_,
+                stable_name_id(
+                    resource),
+                static_type_ref<
+                    RequestT>()
+                    .type_id()};
         }
 
         template <class T>
@@ -497,6 +724,46 @@ public:
         return make_subscription(
             id,
             true);
+    }
+
+    template <class RequestT, class F>
+    HandlerRegistration handle(
+        F&& handler) {
+        return handle<RequestT>(
+            "",
+            std::forward<F>(
+                handler));
+    }
+
+    template <class RequestT, class F>
+    HandlerRegistration handle(
+        std::string resource,
+        F&& handler) {
+        return state_->
+            template handle<RequestT>(
+                std::move(resource),
+                std::forward<F>(
+                    handler));
+    }
+
+    template <class RequestT>
+    Request<ReplyTypeT<RequestT>>
+    request(
+        const RequestT& value) {
+        return request(
+            "",
+            value);
+    }
+
+    template <class RequestT>
+    Request<ReplyTypeT<RequestT>>
+    request(
+        std::string_view resource,
+        const RequestT& value) {
+        return state_->
+            template request<RequestT>(
+                resource,
+                value);
     }
 
     template <class T>
