@@ -4,7 +4,7 @@ A feature is not complete solely because it compiles or has a test harness.
 
 | Gate | Requirement | Current status |
 | --- | --- | --- |
-| Linux C++11 Release | Clean build and all CTest regressions | 21/21 pass locally after assertion fix |
+| Linux C++11 Release | Clean build and all CTest regressions | Release 21/21 and Debug 21/21 pass locally after assertion fix |
 | Windows C++11 Release | Clean build and all CTest regressions | Pending latest ZIP CI |
 | Linux CEF E2E | Real JS proxy open/method/error/busy/dispose/unload | Pending SDK-backed execution |
 | Windows CEF E2E | Same test on Windows CEF | Pending |
