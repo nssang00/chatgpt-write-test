@@ -511,13 +511,18 @@ private:
         for (auto it =
                  requested.begin();
              it != requested.end();) {
-            if (
-                !desired_routes_.contains(
-                    it->first) ||
+            const auto still_desired =
+                desired_routes_.contains(
+                    it->first);
+            const auto still_candidate =
                 host_.candidate_hosts(
                     it->first)
                     .contains(
-                        coordinator)) {
+                        coordinator);
+
+            if (
+                still_desired &&
+                still_candidate) {
                 ++it;
                 continue;
             }
