@@ -1,0 +1,68 @@
+name: Geo DevTools Sandbox — isolated tests
+on:
+  push:
+    branches:
+      - sandbox/geo-devtools-ci-20261012
+    paths:
+      - 'sandbox/geo-devtools-ci/**'
+      - '.github/workflows/geo-devtools-sandbox.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: geo-devtools-sandbox-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  geo-devtools-e2e:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    defaults:
+      run:
+        working-directory: sandbox/geo-devtools-ci/project
+    steps:
+      - name: Checkout isolated branch
+        uses: actions/checkout@v4
+      - name: Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Unpack isolated Geo DevTools source
+        working-directory: .
+        run: |
+          mkdir -p sandbox/geo-devtools-ci/project
+          unzip -q sandbox/geo-devtools-ci/source.zip -d sandbox/geo-devtools-ci/project
+          test -f sandbox/geo-devtools-ci/project/package.json
+      - name: Install real OpenLayers and esbuild
+        run: npm install --no-save ol esbuild
+      - name: Node unit and OpenLayers class tests
+        run: |
+          set -o pipefail
+          node -e "import('ol/Map.js').then(() => console.log('real ol package available'))"
+          npm test 2>&1 | tee node-tests.log
+      - name: Install Chromium via Playwright
+        run: |
+          python -m pip install 'playwright==1.57.0'
+          python -m playwright install --with-deps chromium
+      - name: UI E2E and seven screenshots
+        run: python tests/visual_e2e.py
+      - name: Bundle real OpenLayers browser application
+        run: |
+          mkdir -p artifacts
+          ./node_modules/.bin/esbuild tests/real-ol/entry.js --bundle --format=iife --platform=browser --outfile=artifacts/real-ol-browser.js
+      - name: Real OpenLayers Map E2E and screenshots
+        run: python tests/real_ol_e2e.py
+      - name: Upload screenshots, traces and reports even on failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: geo-devtools-sandbox-evidence
+          path: |
+            sandbox/geo-devtools-ci/project/artifacts/browser/
+            sandbox/geo-devtools-ci/project/artifacts/real-ol/
+            sandbox/geo-devtools-ci/project/node-tests.log
+          if-no-files-found: warn
+          retention-days: 14
