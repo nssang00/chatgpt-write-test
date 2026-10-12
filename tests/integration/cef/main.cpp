@@ -363,6 +363,43 @@ public:
             });
     }
 
+    // Required only in --plugin-path mode. The browser page drives this
+    // test through real JavaScript Promise calls, not a fake backend.
+    void configurePlugin(const std::string& path)
+    {
+        if (path.empty())
+            return;
+
+        const std::string id = webview_.loadPlugin(path);
+        if (id != "objects")
+            throw nativeweb::Error("plugin_id_mismatch", "Unexpected test plugin id");
+
+        webview_.bindPluginFactory("plugin.open", id, "counter_args");
+        webview_.bind("test.plugin.busy", [this, id]() {
+            try {
+                webview_.unloadPlugin(id);
+            } catch (const nativeweb::Error& error) {
+                if (error.code() == "plugin_busy") {
+                    std::cout << "checkpoint: plugin-busy-verified" << std::endl;
+                    return true;
+                }
+                throw;
+            }
+            throw nativeweb::Error("plugin_test_failed", "Unload succeeded with a live object");
+        });
+        webview_.bind("test.plugin.unload", [this, id]() {
+            webview_.unloadPlugin(id);
+            std::cout << "checkpoint: plugin-unloaded" << std::endl;
+            return true;
+        });
+        webview_.bind("test.plugin.done", [this]() {
+            success_ = true;
+            std::cout << "checkpoint: plugin-e2e-complete" << std::endl;
+            webview_.destroy();
+            return true;
+        });
+    }
+
     bool success() const
     {
         return success_;
@@ -565,6 +602,17 @@ private:
     std::atomic<int> maxConcurrentCalls_;
 };
 
+std::string getPluginPath(int argc, char* argv[])
+{
+    const std::string prefix = "--plugin-path=";
+    for (int i = 1; i < argc; ++i) {
+        const std::string value = argv[i];
+        if (value.compare(0, prefix.size(), prefix) == 0)
+            return value.substr(prefix.size());
+    }
+    return std::string();
+}
+
 std::string getUrl(int argc, char* argv[])
 {
     const std::string prefix = "--url=";
@@ -615,6 +663,12 @@ int main(int argc, char* argv[])
     nativeweb::WebView webview;
     IntegrationListener listener(webview);
     webview.setListener(&listener);
+    try {
+        listener.configurePlugin(getPluginPath(argc, argv));
+    } catch (const std::exception& error) {
+        std::cerr << "Plugin E2E setup failed: " << error.what() << std::endl;
+        return 5;
+    }
 
     const std::string url = getUrl(argc, argv);
 

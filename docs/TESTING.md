@@ -458,3 +458,10 @@ NATIVEWEB_PLUGIN(SampleCppPlugin, "cppsample")
 - module teardown -> wrapper registrations 제거
 
 이 테스트가 성공해도 native object/event/async ABI가 완료되었다는 뜻은 아니다.
+
+## Plugin browser E2E (local continuation)
+
+The standalone CEF/WebView2 integration builds now contain the real-DLL/SO
+`browser.plugin_object_lifecycle` CTest. See `docs/BROWSER_PLUGIN_E2E.md`
+for CLI usage, expected checkpoints, and runner prerequisites. Passing Core
+CTest alone does not establish that the browser test passed.

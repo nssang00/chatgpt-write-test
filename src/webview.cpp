@@ -4,6 +4,9 @@
 #include "core/bridge_runtime.hpp"
 #include "core/native_object_runtime.hpp"
 #include "nativeweb/error.hpp"
+#include "plugin/plugin_module.hpp"
+
+#include <map>
 
 #include <cstdint>
 #include <mutex>
@@ -16,6 +19,40 @@ class WebView::Impl :
     public detail::BrowserBackendListener
 {
 private:
+    struct LoadedPlugin
+    {
+        std::shared_ptr<detail::PluginModule> module;
+        std::vector<detail::RegistrationToken> factories;
+    };
+    // Queued bridge callbacks must own their object state independently of
+    // WebView::Impl. In particular, they must never capture a raw Impl*.
+    struct ObjectBridgeState
+    {
+        ObjectBridgeState() : accepting(true) {}
+
+        NativeObjectHandle create(
+            const std::shared_ptr<detail::PluginModule>& module,
+            const std::string& relativeType,
+            const VariantList& args)
+        {
+            std::lock_guard<std::mutex> lock(lifecycleMutex);
+            if (!accepting)
+                throw Error("webview_destroyed", "WebView is shutting down");
+            return module->createObject(relativeType, objects, args);
+        }
+
+        void stop()
+        {
+            std::lock_guard<std::mutex> lock(lifecycleMutex);
+            accepting = false;
+            objects.clear();
+        }
+
+        std::mutex lifecycleMutex;
+        bool accepting;
+        detail::NativeObjectRuntime objects;
+    };
+
     struct ResponseSinkState
     {
         explicit ResponseSinkState(Impl* valueOwner)
@@ -29,14 +66,18 @@ private:
 
 public:
     Impl()
-        : responseSink_(new ResponseSinkState(this)),
+        : objects_(new ObjectBridgeState()),
+          responseSink_(new ResponseSinkState(this)),
           listener_(0),
           resolvedEngine_(Engine::Auto)
     {
+        // Copy shared ownership into every bridge callback: WorkerPool tasks
+        // can outlive the WebView and its BridgeRuntime.
+        const std::shared_ptr<ObjectBridgeState> objectState = objects_;
         runtime_.bind(
             "__native_object.call",
             DynamicFunction(
-                [this](const VariantList& args) -> Any
+                [objectState](const VariantList& args) -> Any
                 {
                     if (args.size() < 3)
                     {
@@ -70,7 +111,7 @@ public:
                         methodArgs.push_back(args[i]);
                     }
 
-                    return objects_.call(
+                    return objectState->objects.call(
                         handle,
                         method,
                         methodArgs);
@@ -79,7 +120,7 @@ public:
         runtime_.bind(
             "__native_object.release",
             DynamicFunction(
-                [this](const VariantList& args) -> Any
+                [objectState](const VariantList& args) -> Any
                 {
                     if (args.empty())
                     {
@@ -97,7 +138,7 @@ public:
                             : std::string();
 
                     return Any(
-                        objects_.release(
+                        objectState->objects.release(
                             parseObjectHandle(
                                 idText,
                                 typeName)));
@@ -146,7 +187,7 @@ public:
     void destroy()
     {
         detachResponseSink();
-        objects_.clear();
+        objects_->stop();
         runtime_.shutdown();
 
         if (backend_)
@@ -156,7 +197,7 @@ public:
     void shutdown()
     {
         detachResponseSink();
-        objects_.clear();
+        objects_->stop();
         runtime_.shutdown();
 
         if (backend_)
@@ -205,6 +246,66 @@ public:
         requireBackend()->reload();
     }
 
+    std::string loadPlugin(const std::string& path)
+    {
+        std::lock_guard<std::mutex> guard(pluginsMutex_);
+        std::shared_ptr<detail::PluginModule> module(
+            new detail::PluginModule(path, runtime_.bindingRegistry(),
+                [this](const std::string& candidate) {
+                    if (plugins_.count(candidate))
+                        throw Error("plugin_duplicate",
+                                    "Plugin is already loaded: " + candidate);
+                }));
+        const std::string pluginId = module->id();
+        plugins_[pluginId].module = module;
+        return pluginId;
+    }
+
+    void bindPluginFactory(const std::string& method,
+                           const std::string& pluginId,
+                           const std::string& relativeType)
+    {
+        std::lock_guard<std::mutex> guard(pluginsMutex_);
+        if (method.empty() || method.find("__native_object.") == 0)
+            throw Error("reserved_method", "Invalid plugin factory binding name");
+        std::map<std::string, LoadedPlugin>::iterator it = plugins_.find(pluginId);
+        if (it == plugins_.end())
+            throw Error("plugin_not_found", "Plugin is not loaded: " + pluginId);
+        std::weak_ptr<detail::PluginModule> module(it->second.module);
+        const std::shared_ptr<ObjectBridgeState> objectState = objects_;
+        detail::RegistrationToken token = runtime_.registerBinding(method,
+            detail::Callable(DynamicFunction(
+                [objectState, module, relativeType](const VariantList& args) -> Any {
+                    std::shared_ptr<detail::PluginModule> active = module.lock();
+                    if (!active)
+                        throw Error("plugin_unloading", "Plugin has been unloaded");
+                    return Any(objectState->create(active, relativeType, args));
+                })));
+        it->second.factories.push_back(std::move(token));
+    }
+
+    NativeObjectHandle createPluginObject(const std::string& pluginId,
+                                          const std::string& relativeType,
+                                          const VariantList& args)
+    {
+        std::lock_guard<std::mutex> guard(pluginsMutex_);
+        std::map<std::string, LoadedPlugin>::iterator it = plugins_.find(pluginId);
+        if (it == plugins_.end())
+            throw Error("plugin_not_found", "Plugin is not loaded: " + pluginId);
+        return objects_->create(it->second.module, relativeType, args);
+    }
+
+    void unloadPlugin(const std::string& pluginId)
+    {
+        std::lock_guard<std::mutex> guard(pluginsMutex_);
+        std::map<std::string, LoadedPlugin>::iterator it = plugins_.find(pluginId);
+        if (it == plugins_.end())
+            throw Error("plugin_not_found", "Plugin is not loaded: " + pluginId);
+        it->second.factories.clear();
+        it->second.module->unload();
+        plugins_.erase(it);
+    }
+
     void bind(
         const std::string& method,
         const DynamicFunction& function)
@@ -237,7 +338,7 @@ public:
         const std::shared_ptr<void>& object,
         const std::string& typeName)
     {
-        return objects_.add(object, typeName);
+        return objects_->objects.add(object, typeName);
     }
 
     void bindObjectMethod(
@@ -245,7 +346,7 @@ public:
         const std::string& method,
         const DynamicFunction& function)
     {
-        objects_.bindMethod(
+        objects_->objects.bindMethod(
             handle,
             method,
             function);
@@ -254,7 +355,7 @@ public:
     bool releaseObject(
         const NativeObjectHandle& handle)
     {
-        return objects_.release(handle);
+        return objects_->objects.release(handle);
     }
 
     std::future<Any> execute(
@@ -345,6 +446,7 @@ public:
     {
         detachResponseSink();
         runtime_.shutdown();
+        objects_->stop();
 
         if (listener_)
             listener_->onClosed();
@@ -394,7 +496,9 @@ private:
 
     std::shared_ptr<ResponseSinkState> responseSink_;
     detail::BridgeRuntime runtime_;
-    detail::NativeObjectRuntime objects_;
+    std::shared_ptr<ObjectBridgeState> objects_;
+    std::map<std::string, LoadedPlugin> plugins_;
+    std::mutex pluginsMutex_;
     std::unique_ptr<detail::BrowserBackend> backend_;
     WebViewListener* listener_;
     Engine resolvedEngine_;
@@ -477,6 +581,30 @@ void WebView::load(const std::string& source)
 void WebView::reload()
 {
     impl_->reload();
+}
+
+std::string WebView::loadPlugin(const std::string& path)
+{
+    return impl_->loadPlugin(path);
+}
+
+void WebView::bindPluginFactory(const std::string& method,
+                               const std::string& pluginId,
+                               const std::string& relativeType)
+{
+    impl_->bindPluginFactory(method, pluginId, relativeType);
+}
+
+NativeObjectHandle WebView::createPluginObject(const std::string& pluginId,
+                                               const std::string& relativeType,
+                                               const VariantList& args)
+{
+    return impl_->createPluginObject(pluginId, relativeType, args);
+}
+
+void WebView::unloadPlugin(const std::string& pluginId)
+{
+    impl_->unloadPlugin(pluginId);
 }
 
 void WebView::bind(

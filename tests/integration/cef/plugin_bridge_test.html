@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>NativeWeb real plugin browser E2E</title></head>
+<body>
+<script>
+(async function () {
+  async function fail(message) {
+    try { await xytron.invoke("test.fail", String(message)); }
+    catch (_) { /* the WebView may already be closing */ }
+  }
+  function ensure(condition, message) {
+    if (!condition) throw new Error(message);
+  }
+  try {
+    // This is a real dynamically-loaded library factory, not camera.open's
+    // host-side mock object from the generic bridge integration test.
+    const counter = await xytron.plugin.open(77);
+    ensure(counter && typeof counter.value === "function", "missing native proxy");
+    ensure(await counter.value() === 77, "argument-aware factory did not receive 77");
+    ensure(await counter.add(5) === 82, "C ABI object method returned wrong value");
+
+    let objectError = false;
+    try { await counter.fail(); }
+    catch (error) { objectError = String(error).includes("counter_failure"); }
+    ensure(objectError, "plugin object error did not reach Promise rejection");
+
+    let factoryError = false;
+    try { await xytron.plugin.open("invalid"); }
+    catch (error) {
+      factoryError = String(error).includes("invalid_factory_arguments");
+    }
+    ensure(factoryError, "invalid factory arguments did not reject");
+    await xytron.test.checkpoint("plugin-js-verified");
+
+    ensure(await xytron.test.plugin.busy() === true,
+      "live plugin object did not block unload");
+    ensure(await counter.value() === 82,
+      "plugin object stopped working during unload quiesce");
+
+    ensure(await counter.dispose() === true, "native dispose failed");
+    let releasedError = false;
+    try { await counter.value(); }
+    catch (error) {
+      releasedError = String(error).includes("native_object_not_found");
+    }
+    ensure(releasedError, "disposed object remained callable");
+
+    ensure(await xytron.test.plugin.unload() === true,
+      "plugin unload after dispose failed");
+    // This callback closes the native browser. Its response need not survive.
+    try { await xytron.test.plugin.done(); }
+    catch (_) { /* expected if browser closes during response */ }
+  } catch (error) {
+    await fail(error && error.stack ? error.stack : String(error));
+  }
+})();
+</script>
+</body>
+</html>

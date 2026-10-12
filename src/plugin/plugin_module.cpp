@@ -4,7 +4,9 @@
 #include "nativeweb/plugin_abi.h"
 #include "plugin/shared_library.hpp"
 
+#include <atomic>
 #include <cstring>
+#include <cstddef>
 #include <limits>
 #include <memory>
 #include <sstream>
@@ -200,16 +202,9 @@ Any pluginValueToAny(
     }
 }
 
-Callable makePluginCallable(
-    nw_plugin_call_v1 function,
-    void* userData,
-    const std::shared_ptr<void>& lifetime)
+template <typename Invoker>
+Any invokePluginCallback(const VariantList& args, const Invoker& invoke)
 {
-    const DynamicFunction dynamic =
-        [function, userData](
-            const VariantList& args)
-            -> Any
-        {
             std::vector<nw_value_v1> pluginArgs(
                 args.size());
 
@@ -252,15 +247,10 @@ Callable makePluginCallable(
                     sizeof(error));
 
             const int32_t status =
-                function(
-                    userData,
-                    pluginArgs.empty()
-                        ? 0
-                        : &pluginArgs[0],
-                    static_cast<uint64_t>(
-                        pluginArgs.size()),
-                    &result,
-                    &error);
+                invoke(
+                    pluginArgs.empty() ? 0 : &pluginArgs[0],
+                    static_cast<uint64_t>(pluginArgs.size()),
+                    &result, &error);
 
             if (status != 0)
             {
@@ -281,16 +271,41 @@ Callable makePluginCallable(
                     message);
             }
 
-            return pluginValueToAny(
-                result);
-        };
+            return pluginValueToAny(result);
+}
 
-    CallableSignature signature;
+Callable makePluginCallable(
+    nw_plugin_call_v1 function,
+    void* userData,
+    const std::shared_ptr<void>& lifetime)
+{
+    // Preserve the lease even when a consumer extracts/copies dynamicFunction()
+    // instead of copying the full Callable wrapper.
+    const DynamicFunction dynamic = [function, userData, lifetime](
+        const VariantList& args) -> Any {
+        (void)lifetime;
+        return invokePluginCallback(args,
+            [function, userData](const nw_value_v1* values, uint64_t count,
+                nw_value_v1* result, nw_error_v1* error) -> int32_t {
+                return function(userData, values, count, result, error);
+            });
+    };
+    return Callable(dynamic, CallableSignature(), lifetime);
+}
 
-    return Callable(
-        dynamic,
-        signature,
-        lifetime);
+ManagedObjectMethod makePluginObjectMethod(
+    nw_plugin_object_call_v1 function, void* userData)
+{
+    return [function, userData](const std::shared_ptr<void>& object,
+        const VariantList& args) -> Any {
+        return invokePluginCallback(args,
+            [function, userData, &object](const nw_value_v1* values,
+                uint64_t count, nw_value_v1* result,
+                nw_error_v1* error) -> int32_t {
+                return function(userData, object.get(), values, count,
+                    result, error);
+            });
+    };
 }
 
 bool validPluginId(
@@ -327,7 +342,7 @@ class PluginLibraryLease
 public:
     explicit PluginLibraryLease(
         const std::string& path)
-        : library(path)
+        : liveObjects(0), library(path)
     {
         std::memset(
             &api,
@@ -346,23 +361,28 @@ public:
                 api.plugin_context);
     }
 
+    std::atomic<std::size_t> liveObjects;
     SharedLibrary library;
     nw_plugin_api_v1 api;
 };
 
 PluginModule::PluginModule(
     const std::string& path,
-    BindingRegistry& registry)
+    BindingRegistry& registry,
+    const std::function<void(const std::string&)>& validateId)
     : registry_(registry),
-      lease_(new PluginLibraryLease(path))
+      lease_(new PluginLibraryLease(path)),
+      quiescing_(false), unloaded_(false), path_(path)
 {
-    initialize();
+    initialize(validateId);
 }
 
 PluginModule::~PluginModule()
 {
     // Tokens unregister public entry points first. Callable copies already
     // queued/running retain PluginLibraryLease and therefore the DLL/SO.
+    std::lock_guard<std::mutex> lock(mutex_);
+    quiescing_ = true;
     registrations_.clear();
     lease_.reset();
 }
@@ -379,15 +399,209 @@ const std::string& PluginModule::version() const
 
 const std::string& PluginModule::path() const
 {
-    return lease_->library.path();
+    return path_;
 }
 
 std::size_t PluginModule::registrationCount() const
 {
+    std::lock_guard<std::mutex> lock(mutex_);
     return registrations_.size();
 }
 
-void PluginModule::initialize()
+std::size_t PluginModule::objectFactoryCount() const
+{
+    std::lock_guard<std::mutex> lock(mutex_);
+    return objectFactories_.size();
+}
+
+NativeObjectHandle PluginModule::createObject(
+    const std::string& relativeType,
+    NativeObjectRuntime& runtime, const VariantList& args)
+{
+    ObjectFactory factory;
+    std::shared_ptr<PluginLibraryLease> lease;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (quiescing_ || unloaded_)
+            throw Error("plugin_unloading", "Plugin is quiescing or unloaded");
+
+        const std::map<std::string, ObjectFactory>::const_iterator found =
+            objectFactories_.find(relativeType);
+        if (found == objectFactories_.end())
+            throw Error("plugin_object_factory_not_found", "Plugin object factory not found");
+
+        factory = found->second;
+        lease = lease_;
+        // Count construction too: unload cannot race with a factory callback.
+        lease->liveObjects.fetch_add(1);
+    }
+
+    void* raw = 0;
+    try {
+        if (factory.createArgs) {
+            invokePluginCallback(args,
+                [&](const nw_value_v1* values, uint64_t count,
+                    nw_value_v1*, nw_error_v1* error) -> int32_t {
+                    raw = factory.createArgs(factory.userData, values, count, error);
+                    return raw ? 0 : -1;
+                });
+        } else {
+            if (!args.empty())
+                throw Error("plugin_factory_arguments_unsupported",
+                            "This plugin factory does not accept arguments");
+            raw = factory.create(factory.userData);
+        }
+    } catch (...) {
+        lease->liveObjects.fetch_sub(1);
+        throw;
+    }
+    if (!raw) {
+        lease->liveObjects.fetch_sub(1);
+        throw Error("plugin_object_create_failed", "Plugin factory returned null");
+    }
+
+    // Destroy while the module lease is still alive, then decrement.
+    const std::shared_ptr<void> object(raw,
+        [factory, lease](void* ptr) {
+            factory.destroy(factory.userData, ptr);
+            lease->liveObjects.fetch_sub(1);
+        });
+    const NativeObjectHandle handle =
+        runtime.add(object, id_ + "." + relativeType, lease);
+    try {
+        for (std::map<std::string, ObjectMethod>::const_iterator it =
+                 factory.methods.begin(); it != factory.methods.end(); ++it) {
+            runtime.bindManagedMethod(handle, it->first,
+                makePluginObjectMethod(it->second.function, it->second.userData));
+        }
+    } catch (...) {
+        runtime.release(handle);
+        throw;
+    }
+    return handle;
+}
+
+void PluginModule::unload()
+{
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (unloaded_)
+        return;
+
+    // No later lookups may acquire fresh callables from our registrations.
+    quiescing_ = true;
+    registrations_.clear();
+
+    // Existing callables (including worker-queued snapshots) and objects
+    // still own library references; never force-unload code they can invoke.
+    for (std::size_t i = 0; i < callableLifetimes_.size(); ++i) {
+        if (!callableLifetimes_[i].expired())
+            throw Error("plugin_busy", "Plugin has retained or pending calls");
+    }
+    if (lease_ && lease_->liveObjects.load() != 0)
+        throw Error("plugin_busy", "Plugin has live native objects or object calls");
+
+    objectFactories_.clear();
+    lease_.reset();
+    unloaded_ = true;
+}
+
+bool PluginModule::unloaded() const
+{
+    std::lock_guard<std::mutex> lock(mutex_);
+    return unloaded_;
+}
+
+int32_t PluginModule::registerObjectFactoryThunk(
+    void* hostContext, const char* relativeType,
+    nw_plugin_create_object_v1 create,
+    nw_plugin_destroy_object_v1 destroy, void* userData)
+{
+    if (!hostContext) return -1;
+    try {
+        return static_cast<PluginModule*>(hostContext)->registerObjectFactory(
+            relativeType, create, destroy, userData);
+    } catch (...) {
+        return -1;
+    }
+}
+
+int32_t PluginModule::registerObjectFactory(
+    const char* relativeType,
+    nw_plugin_create_object_v1 create,
+    nw_plugin_destroy_object_v1 destroy, void* userData)
+{
+    if (!relativeType || !*relativeType || !create || !destroy)
+        return -1;
+    const std::string name(relativeType);
+    if (!validPluginId(name) || objectFactories_.count(name))
+        return -1;
+    ObjectFactory factory;
+    factory.create = create;
+    factory.createArgs = 0;
+    factory.destroy = destroy;
+    factory.userData = userData;
+    objectFactories_.insert(std::make_pair(name, factory));
+    return 0;
+}
+
+int32_t PluginModule::registerObjectFactoryArgsThunk(
+    void* ctx, const char* name, nw_plugin_create_object_args_v1 create,
+    nw_plugin_destroy_object_v1 destroy, void* data)
+{
+    if (!ctx) return -1;
+    try { return static_cast<PluginModule*>(ctx)->registerObjectFactoryArgs(
+        name, create, destroy, data); }
+    catch (...) { return -1; }
+}
+
+int32_t PluginModule::registerObjectFactoryArgs(
+    const char* relativeType, nw_plugin_create_object_args_v1 create,
+    nw_plugin_destroy_object_v1 destroy, void* userData)
+{
+    if (!relativeType || !*relativeType || !create || !destroy) return -1;
+    const std::string name(relativeType);
+    if (!validPluginId(name) || objectFactories_.count(name)) return -1;
+    ObjectFactory factory = {};
+    factory.create = 0;
+    factory.createArgs = create;
+    factory.destroy = destroy;
+    factory.userData = userData;
+    objectFactories_.insert(std::make_pair(name, factory));
+    return 0;
+}
+
+int32_t PluginModule::registerObjectMethodThunk(
+    void* hostContext, const char* relativeType,
+    const char* relativeMethod, nw_plugin_object_call_v1 function,
+    void* userData)
+{
+    if (!hostContext) return -1;
+    try {
+        return static_cast<PluginModule*>(hostContext)->registerObjectMethod(
+            relativeType, relativeMethod, function, userData);
+    } catch (...) {
+        return -1;
+    }
+}
+
+int32_t PluginModule::registerObjectMethod(
+    const char* relativeType, const char* relativeMethod,
+    nw_plugin_object_call_v1 function, void* userData)
+{
+    if (!relativeType || !relativeMethod || !function) return -1;
+    const std::string type(relativeType), method(relativeMethod);
+    if (!validPluginId(type) || !validPluginId(method)) return -1;
+    std::map<std::string, ObjectFactory>::iterator found =
+        objectFactories_.find(type);
+    if (found == objectFactories_.end() || found->second.methods.count(method))
+        return -1;
+    ObjectMethod entry = { function, userData };
+    found->second.methods.insert(std::make_pair(method, entry));
+    return 0;
+}
+
+void PluginModule::initialize(
+    const std::function<void(const std::string&)>& validateId)
 {
     void* symbol =
         lease_->library.symbol(
@@ -448,6 +662,11 @@ void PluginModule::initialize()
             ? lease_->api.version
             : std::string();
 
+    // The descriptor must be read first to learn the ID. Reject conflicts
+    // before invoking register_api, which may otherwise overwrite bindings.
+    if (validateId)
+        validateId(id_);
+
     nw_host_api_v1 host;
     std::memset(
         &host,
@@ -464,6 +683,12 @@ void PluginModule::initialize()
     host.host_context = this;
     host.register_function =
         &PluginModule::registerFunctionThunk;
+    host.register_object_factory =
+        &PluginModule::registerObjectFactoryThunk;
+    host.register_object_method =
+        &PluginModule::registerObjectMethodThunk;
+    host.register_object_factory_args =
+        &PluginModule::registerObjectFactoryArgsThunk;
 
     const int32_t registerStatus =
         lease_->api.register_api(
@@ -530,8 +755,10 @@ int32_t PluginModule::registerFunction(
     if (registry_.has(method))
         return -1;
 
+    // A distinct call lease per method permits exact post-unregister busy
+    // checks without confusing ordinary registration owners with call copies.
     const std::shared_ptr<void> lifetime(
-        lease_);
+        new std::shared_ptr<PluginLibraryLease>(lease_));
 
     RegistrationToken token =
         registry_.registerBinding(
@@ -543,6 +770,7 @@ int32_t PluginModule::registerFunction(
 
     registrations_.push_back(
         std::move(token));
+    callableLifetimes_.push_back(lifetime);
 
     return 0;
 }

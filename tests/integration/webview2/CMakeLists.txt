@@ -167,3 +167,31 @@ set_target_properties(
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
     RUNTIME_OUTPUT_DIRECTORY_RELEASE "${CMAKE_BINARY_DIR}/bin"
 )
+
+# Real SO/DLL used by --plugin-path E2E. Never replace with a mock module.
+add_library(nativeweb_plugin_browser_fixture SHARED
+  "${NATIVEWEB_ROOT}/tests/plugin/object_factory_plugin.cpp"
+)
+target_include_directories(nativeweb_plugin_browser_fixture PRIVATE
+  "${NATIVEWEB_ROOT}/include"
+)
+set_target_properties(nativeweb_plugin_browser_fixture PROPERTIES
+  CXX_STANDARD 11
+  CXX_STANDARD_REQUIRED YES
+  CXX_EXTENSIONS NO
+  LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+  RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+  RUNTIME_OUTPUT_DIRECTORY_RELEASE "${CMAKE_BINARY_DIR}/bin"
+)
+
+# This is an opt-in external SDK build, so the browser E2E is mandatory
+# whenever this integration project is configured and CTest is run.
+include(CTest)
+find_package(Python3 COMPONENTS Interpreter REQUIRED)
+add_test(
+  NAME browser.plugin_object_lifecycle
+  COMMAND "${Python3_EXECUTABLE}"
+    "${NATIVEWEB_ROOT}/tools/run_browser_plugin_e2e.py"
+    --engine webview2 --build-dir "${CMAKE_BINARY_DIR}"
+)
+set_tests_properties(browser.plugin_object_lifecycle PROPERTIES TIMEOUT 150)

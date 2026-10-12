@@ -254,6 +254,76 @@ void testRunningTaskRetainsModuleLease(
     pool.shutdown();
 }
 
+void testExplicitUnloadRetainedCall(const std::string& pluginPath)
+{
+    nativeweb::detail::BindingRegistry registry;
+    nativeweb::detail::PluginModule module(pluginPath, registry);
+    nativeweb::detail::Callable retained = registry.find("sample.add");
+    nativeweb::DynamicFunction extracted = retained.dynamicFunction();
+    try {
+        module.unload();
+        CHECK(false);
+    } catch (const nativeweb::Error& e) {
+        CHECK(e.code() == "plugin_busy");
+    }
+    CHECK(!module.unloaded());
+    CHECK(!registry.has("sample.add"));
+    CHECK(AnyCast<int>(retained.invoke(VariantList(2, Any(21)))) == 42);
+    retained = nativeweb::detail::Callable();
+    // Extracted DynamicFunction must also keep a plugin lease alive.
+    try {
+        module.unload();
+        CHECK(false);
+    } catch (const nativeweb::Error& e) {
+        CHECK(e.code() == "plugin_busy");
+    }
+    CHECK(AnyCast<int>(extracted(VariantList(2, Any(21)))) == 42);
+    extracted = nativeweb::DynamicFunction();
+    module.unload();
+    CHECK(module.unloaded());
+    CHECK(module.registrationCount() == 0u);
+    module.unload();
+}
+
+void testExplicitUnloadQueuedCall(const std::string& pluginPath)
+{
+    nativeweb::detail::BindingRegistry registry;
+    nativeweb::detail::PluginModule module(pluginPath, registry);
+    nativeweb::detail::Callable callable = registry.find("sample.slow_add");
+    nativeweb::detail::WorkerPool pool(1);
+    std::promise<void> release;
+    std::shared_future<void> blocked = release.get_future().share();
+    std::promise<void> started;
+    CHECK(pool.post([&]() { started.set_value(); blocked.wait(); }));
+    CHECK(started.get_future().wait_for(std::chrono::seconds(3)) ==
+        std::future_status::ready);
+
+    std::promise<int> response;
+    std::future<int> result = response.get_future();
+    const VariantList args(2, Any(21));
+    CHECK(pool.post([callable, args, &response]() {
+        try {
+            response.set_value(AnyCast<int>(callable.invoke(args)));
+        } catch (...) {
+            response.set_exception(std::current_exception());
+        }
+    }));
+    callable = nativeweb::detail::Callable();
+    try {
+        module.unload();
+        CHECK(false);
+    } catch (const nativeweb::Error& e) {
+        CHECK(e.code() == "plugin_busy");
+    }
+    CHECK(!registry.has("sample.slow_add"));
+    release.set_value();
+    CHECK(result.wait_for(std::chrono::seconds(3)) == std::future_status::ready);
+    CHECK(result.get() == 42);
+    pool.shutdown();
+    module.unload();
+    CHECK(module.unloaded());
+}
+
 void testAbiMismatch(
     const std::string& badPluginPath)
 {
@@ -326,6 +396,9 @@ int main(
 
     testRunningTaskRetainsModuleLease(
         argv[1]);
+
+    testExplicitUnloadRetainedCall(argv[1]);
+    testExplicitUnloadQueuedCall(argv[1]);
 
     testAbiMismatch(
         argv[2]);

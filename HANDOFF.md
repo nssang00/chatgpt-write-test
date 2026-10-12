@@ -4,6 +4,16 @@
 
 > 목표: 이전 대화를 읽지 않아도 이 저장소만으로 현재 방향, 완료 상태, 다음 작업을 파악하고 바로 개발을 계속할 수 있어야 한다.
 
+## 2026-10-13 autonomous integration checkpoint (read before proceeding)
+
+- Development PR: https://github.com/nssang00/chatgpt-write-test/pull/7 (`nativeweb/autonomous-integration`); do not merge to `main` without approval.
+- Latest **local ZIP** remains the authoritative plugin-object, lifecycle, factory-argument, and browser-E2E source lineage. GitHub PR has not yet imported these 35 changed/new files due to environment Git DNS limitation. See `docs/ISSUE_LOG.md` NW-003/NW-004.
+- New independent workstream: CMake-installed **Core SDK**, `NativeWeb::Core` target, `NativeWebConfig.cmake`, relocatable install, external C++11 consumer, and pure-C plugin ABI header consumer.
+- Linux local package: 21/21 Release CTest, installed consumer 1/1 and relocated consumer 1/1; pure-C header compilation success.
+- GitHub Actions Installed SDK Consumer run 38312754407 succeeded on Linux and Windows against the **earlier baseline Core snapshot**, not yet the updated plugin object runtime.
+- Real CEF/WebView2 plugin E2E remains pending; no success claim without actual browser runner logs.
+- Resume the source sync to branch first when file-to-GitHub code transport is available. Keep independent tasks running and log blocked ones.
+
 ## 1. 프로젝트 한 줄 정의
 
 **NativeWeb은 기존 native application과 C/C++ 자산을 유지하면서 UI를 Web 기술로 만들 수 있게 하는 desktop runtime/platform이다.**
@@ -733,3 +743,94 @@ Core regression의 `plugin.module`은 Ubuntu/Windows에서 실제 shared library
 4. safe unload state / `plugin_busy`
 5. explicit overload helper
 6. TS metadata generation
+
+## 18. 2026-10-12 plugin object methods and safe unload update
+
+Supersedes the *pending* statuses for object factories and conservative unload
+in sections 13–16 above. Detailed contract: `docs/PLUGIN_OBJECT_LIFETIME.md`.
+
+- ABI v1 has optional `register_object_factory` **and** `register_object_method`
+  append-only host fields, checked by `struct_size`.
+- Actual Linux SO plugin object methods (add/value/error/slow call), object
+  ownership, concurrent release, and conservative explicit unload are covered
+  by `plugin.object_factory`.
+- `plugin.module` covers retained callables, dynamicFunction extraction, and
+  worker-pool queued calls during quiesce/unload.
+- Linux C++11 build and 19/19 CTest regression tests passed locally.
+- New changes are not verified in Windows/CEF/WebView2 CI.
+- Next: connect plugin manager/factories to WebView object runtime and test
+  `xytron.*` object creation in real browser; plugin method dispatch/runtime
+  is ready but the WebView exposure path remains pending.
+
+## 2026-10-13: WebView plugin facade integration (local package)
+
+- Added `WebView::loadPlugin(path)` to register C ABI plugin functions on the WebView's bridge registry.
+- Added `WebView::bindPluginFactory(method, pluginId, relativeType)` to expose a zero-argument plugin object factory to `xytron.<method>()`. Results are `NativeObjectHandle`, already serialized into JS object proxies by the existing CEF/WebView2 bridge.
+- Added `WebView::createPluginObject(pluginId, relativeType)` and `WebView::unloadPlugin(pluginId)`, with existing `plugin_busy` semantics.
+- `plugin.webview_facade` regression covers module load, factory binding, live-object busy unload, release, successful unload.
+- Linux C++11: 20/20 CTest passed. Browser/Windows end-to-end not yet run.
+- LIMITATIONS: C ABI v1 factories have zero arguments; `camera.open("CAM-01")` requires an ABI extension. Plugin manager operations must currently be serialized by the embedding application (not thread-safe). Duplicate plugin IDs discovered after construction need preflight validation before production use. Real CEF/WebView2 browser invocation still needs E2E tests.
+
+### Continuation: argument-aware object factories (2026-10-13)
+
+- Added size-gated `nw_host_api_v1::register_object_factory_args` with C ABI
+  `nw_plugin_create_object_args_v1`; older zero-argument factory callbacks remain valid.
+- `PluginModule::createObject` and `WebView::createPluginObject` accept optional
+  `VariantList` arguments; factory bindings forward JS arguments.
+- Serialized `WebView` plugin-manager operations with `pluginsMutex_`.
+- Extended shared-library regression fixture for argument-aware factory
+  creation and argument errors. Linux C++11 build + CTest 20/20 passed.
+- Remaining: pre-registration duplicate-ID validation, callback lifetime
+  hardening, actual CEF/WebView2 browser E2E and Windows DLL CI.
+
+
+### Continuation: duplicate ID and async callback lifetime (2026-10-13)
+
+- `PluginModule` accepts a host-side ID pre-registration validator. `WebView`
+  checks duplicate IDs under `pluginsMutex_` after `init`/descriptor validation
+  but before `register_api()` can overwrite existing bridge bindings.
+- WorkerPool callbacks for `__native_object.call`, `__native_object.release`
+  and bound plugin factories own a shared `ObjectBridgeState`; none holds a raw
+  `WebView::Impl*`. Closing it prevents late object creation; in-flight native
+  methods retain object and plugin-library leases.
+- Added `plugin.async_lifetime` regression with fake browser, destroying a
+  `WebView` during a slow SO method and while a slow SO factory is active.
+  `plugin.webview_facade` also checks duplicate registration count and
+  competing multi-threaded loads.
+- Linux C++11 CTest: 21/21 passed (locally, no browser engines).
+- Still TODO: real CEF/WebView2 JS E2E, Windows DLL build/CI, stress/sanitizer
+  verification across platforms, plugin-owned background threads and events.
+- This is a **local ZIP source snapshot**, not a new upstream Git commit.
+  `SNAPSHOT_SHA.txt` refers to the original upstream baseline only.
+
+### Continuation: real-browser plugin object E2E harness (2026-10-13)
+
+- Added `--plugin-path=<SO-or-DLL>` to both existing CEF and WebView2 browser
+  integration executables; in this mode a real plugin is loaded before the
+  browser initializes, and JS-facing factory + busy/unload checks are bound.
+- Added shared `tests/integration/cef/plugin_bridge_test.html` page for
+  argument-aware creation, methods, structured errors, busy/quiesce,
+  disposal, and final unload.
+- Standalone CEF/WebView2 integration CMake builds a real shared-library
+  fixture from `tests/plugin/object_factory_plugin.cpp`, and exposes the
+  `browser.plugin_object_lifecycle` CTest target.
+- Added a cross-platform runner `tools/run_browser_plugin_e2e.py`, which
+  requires actual binaries and expected checkpoints; see
+  `docs/BROWSER_PLUGIN_E2E.md`.
+- This local environment does not contain an extracted CEF SDK nor a Windows
+  WebView2 runtime, so browser E2E is **not claimed as passing** here.
+- Next: run E2E on existing Linux/Windows CEF and Windows WebView2 CI runners
+  with real SDKs, review any engine-specific failures, and add Windows DLL
+  diagnostics/stress coverage.
+- Included `.github/workflows/browser-plugin-e2e.yml` (Linux CEF, Windows CEF,
+  Windows WebView2) with pinned SDK bootstraps and browser CTest execution.
+  The new workflow has not been run on GitHub; do **not** mark CI green yet.
+
+### 2026-10-13: Autonomous execution and Release-regression repair
+
+- Adopted `docs/EXECUTION_PLAN.md`, `docs/ISSUE_LOG.md`, and `docs/ACCEPTANCE_CRITERIA.md`: log/triage failures, continue unrelated work, ask only for material approvals, keep `main` unchanged.
+- Rebuilt latest ZIP in Linux C++11 **Release** and found 2/21 failing regressions (`plugin.object_factory`, `plugin.webview_facade`) because side-effecting `assert(...)` expressions disappeared under `NDEBUG`.
+- Replaced `assert` with unconditional `NW_REQUIRE` in all three plugin regression files via `test_require.hpp`; Release build and CTest now **21/21 pass**, plugin tests repeated 10 times, plus Debug CTest 21/21, verified locally. Product runtime not modified by this repair.
+- Outstanding: latest ZIP source still needs to be ported into GitHub development branch before actual browser CI, and CEF/WebView2 E2E remains unverified.
+
+- GitHub integration tracking branch: `nativeweb/autonomous-integration`, draft PR #7 (docs-only at this stage; latest ZIP code not yet synced).

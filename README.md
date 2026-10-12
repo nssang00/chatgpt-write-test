@@ -142,6 +142,20 @@ Latest verified code head: `b876a74726e33609d3603ec572c6c8d03ab592e8`.
 
 Callable/signature metadata, generation-safe registration ownership, real DLL/SO SharedLibrary, C ABI v1 PluginModule, queued/running task module lease, native-object owner-lease foundation, C++ Plugin/PluginApi wrapper와 `NATIVEWEB_PLUGIN` convenience까지 기존 WebView public API 변경 없이 검증됐다. Plugin-created native object ABI와 safe hot-unload는 아직 미완료다.
 
+## Installed Core SDK (first packaging slice)
+
+```sh
+cmake -S . -B build-sdk -DNATIVEWEB_BUILD_TESTS=OFF -DCMAKE_INSTALL_PREFIX=/tmp/nativeweb-sdk
+cmake --build build-sdk --config Release
+cmake --install build-sdk --config Release
+cmake -S examples/sdk_consumer -B build-consumer -DCMAKE_PREFIX_PATH=/tmp/nativeweb-sdk
+cmake --build build-consumer --config Release
+ctest --test-dir build-consumer -C Release --output-on-failure
+```
+
+The exported CMake target is `NativeWeb::Core`. This does not yet package
+CEF or WebView2 engines. See [SDK packaging](docs/SDK_PACKAGING.md).
+
 ## Start here
 
 새 세션이나 새 개발자는 **반드시 [HANDOFF.md](HANDOFF.md)부터 읽는다.**

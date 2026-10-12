@@ -137,3 +137,28 @@ add_test(
         nativeweb_cpp_plugin_wrapper_regression
         $<TARGET_FILE:nativeweb_test_cpp_plugin>
 )
+
+add_library(nativeweb_test_object_factory_plugin SHARED object_factory_plugin.cpp)
+target_include_directories(nativeweb_test_object_factory_plugin PRIVATE ${PROJECT_SOURCE_DIR}/include)
+set_target_properties(nativeweb_test_object_factory_plugin PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED YES CXX_EXTENSIONS NO)
+add_executable(nativeweb_object_factory_regression object_factory_regression.cpp)
+target_link_libraries(nativeweb_object_factory_regression PRIVATE NativeWeb::Core)
+target_include_directories(nativeweb_object_factory_regression PRIVATE ${PROJECT_SOURCE_DIR}/src)
+set_target_properties(nativeweb_object_factory_regression PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED YES CXX_EXTENSIONS NO)
+add_test(NAME plugin.object_factory COMMAND nativeweb_object_factory_regression $<TARGET_FILE:nativeweb_test_object_factory_plugin>)
+
+add_executable(nativeweb_webview_plugin_regression webview_plugin_regression.cpp)
+target_link_libraries(nativeweb_webview_plugin_regression PRIVATE NativeWeb::Core)
+target_include_directories(nativeweb_webview_plugin_regression PRIVATE ${PROJECT_SOURCE_DIR}/src)
+set_target_properties(nativeweb_webview_plugin_regression PROPERTIES
+    CXX_STANDARD 11 CXX_STANDARD_REQUIRED YES CXX_EXTENSIONS NO)
+add_test(NAME plugin.webview_facade COMMAND nativeweb_webview_plugin_regression
+    $<TARGET_FILE:nativeweb_test_object_factory_plugin>)
+
+add_executable(nativeweb_plugin_async_lifetime_regression plugin_async_lifetime_regression.cpp)
+target_link_libraries(nativeweb_plugin_async_lifetime_regression PRIVATE NativeWeb::Core)
+target_include_directories(nativeweb_plugin_async_lifetime_regression PRIVATE ${PROJECT_SOURCE_DIR}/src)
+set_target_properties(nativeweb_plugin_async_lifetime_regression PROPERTIES
+    CXX_STANDARD 11 CXX_STANDARD_REQUIRED YES CXX_EXTENSIONS NO)
+add_test(NAME plugin.async_lifetime COMMAND nativeweb_plugin_async_lifetime_regression
+    $<TARGET_FILE:nativeweb_test_object_factory_plugin>)

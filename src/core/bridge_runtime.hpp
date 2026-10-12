@@ -129,6 +129,8 @@ public:
         const std::string& eventName,
         const Any& payload) const;
 
+    BindingRegistry& bindingRegistry() { return bindings_; }
+
     void shutdown();
 
     std::size_t pendingCount() const;

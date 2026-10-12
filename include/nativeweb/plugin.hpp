@@ -6,6 +6,7 @@
 #include "nativeweb/plugin_abi.h"
 
 #include <cstring>
+#include <cstddef>
 #include <exception>
 #include <limits>
 #include <memory>
@@ -461,7 +462,8 @@ private:
         if (
             !host_ ||
             host_->struct_size <
-                sizeof(nw_host_api_v1) ||
+                offsetof(nw_host_api_v1, register_function) +
+                    sizeof(host_->register_function) ||
             host_->abi_version !=
                 NATIVEWEB_PLUGIN_ABI_V1 ||
             !host_->register_function ||

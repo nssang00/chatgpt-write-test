@@ -72,6 +72,19 @@ public:
     void load(const std::string& source);
     void reload();
 
+    // Loads a C ABI plugin and registers its ordinary function bindings.
+    // Returns the plugin's declared id. Works before WebView::create().
+    std::string loadPlugin(const std::string& path);
+    // Exposes a native object factory as an asynchronous xytron.* method.
+    void bindPluginFactory(const std::string& method,
+                           const std::string& pluginId,
+                           const std::string& relativeType);
+    NativeObjectHandle createPluginObject(const std::string& pluginId,
+                                          const std::string& relativeType,
+                                          const VariantList& args = VariantList());
+    // Returns plugin_busy while native objects or calls are active.
+    void unloadPlugin(const std::string& pluginId);
+
     // Dynamic primitive API. Typed bind below adapts ordinary C++ callables to
     // this canonical Any/VariantList contract.
     void bind(const std::string& method, const DynamicFunction& function);

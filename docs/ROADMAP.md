@@ -185,18 +185,20 @@ Host layer가 application framework로 커지면 설계를 다시 검토한다.
 - [x] stable versioned C ABI v1 function-call baseline
 - [ ] embedded plugin descriptor (id/version/ABI/runtime/capabilities)
 - [x] queued/running task/module lifetime coupling
-- [ ] native object/module lifetime coupling
+- [x] native object/module lifetime coupling (Linux SO validated; Windows DLL pending)
   - [x] ObjectRegistry/NativeObjectRuntime owner-lease foundation
-  - [ ] real plugin-created native object ABI/lifetime regression
+  - [x] real plugin-created native object ABI/lifetime regression (Linux)
 - [x] C++ wrapper
 - [x] `NATIVEWEB_PLUGIN` macro/export convenience
 - [x] plugin namespace registration
 - [x] callable/module lifetime coupling
-- [ ] conservative unload / plugin_busy policy
+- [x] PluginModule conservative unload / plugin_busy baseline
+- [ ] WebView plugin manager integration and browser E2E tests
 - [x] real DLL Windows regression
 - [x] real SO Linux regression
 - [x] binary function argument/result baseline
-- [ ] native object/event plugin support
+- [x] C ABI v1 object factory and instance-method support (internal runtime)
+- [ ] plugin event support and WebView factory exposure
 - [x] ABI compatibility validation baseline
 - [ ] TypeScript declaration generation
 - [ ] missing-dependency diagnostics
