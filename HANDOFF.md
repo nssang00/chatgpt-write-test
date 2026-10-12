@@ -4,15 +4,15 @@
 
 > 목표: 이전 대화를 읽지 않아도 이 저장소만으로 현재 방향, 완료 상태, 다음 작업을 파악하고 바로 개발을 계속할 수 있어야 한다.
 
-## 2026-10-13 autonomous integration checkpoint (read before proceeding)
+## 2026-10-13 verified GitHub integration checkpoint (read first)
 
-- Development PR: https://github.com/nssang00/chatgpt-write-test/pull/7 (`nativeweb/autonomous-integration`); do not merge to `main` without approval.
-- Latest **local ZIP** remains the authoritative plugin-object, lifecycle, factory-argument, and browser-E2E source lineage. GitHub PR has not yet imported these 35 changed/new files due to environment Git DNS limitation. See `docs/ISSUE_LOG.md` NW-003/NW-004.
-- New independent workstream: CMake-installed **Core SDK**, `NativeWeb::Core` target, `NativeWebConfig.cmake`, relocatable install, external C++11 consumer, and pure-C plugin ABI header consumer.
-- Linux local package: 21/21 Release CTest, installed consumer 1/1 and relocated consumer 1/1; pure-C header compilation success.
-- GitHub Actions Installed SDK Consumer run 38312754407 succeeded on Linux and Windows against the **earlier baseline Core snapshot**, not yet the updated plugin object runtime.
-- Real CEF/WebView2 plugin E2E remains pending; no success claim without actual browser runner logs.
-- Resume the source sync to branch first when file-to-GitHub code transport is available. Keep independent tasks running and log blocked ones.
+- Canonical development branch: `nativeweb/autonomous-integration`, Draft PR [#7](https://github.com/nssang00/chatgpt-write-test/pull/7); source ZIP has been synchronized. Keep `main` unchanged until explicit merge approval.
+- Verified source commit: `b2f1ced3e59cd1ba77bbb912f336d889e692ecad`. Browser plugin E2E [38322633033](https://github.com/nssang00/chatgpt-write-test/actions/runs/38322633033) PASSED on Linux CEF, Windows CEF (full parallel all-target build), and Windows WebView2. This is real JS/native plugin lifecycle execution, not a mock.
+- Same commit: Linux/Windows Core Regression [38322632990](https://github.com/nssang00/chatgpt-write-test/actions/runs/38322632990) SUCCESS, Installed Core SDK Consumer [38322633018](https://github.com/nssang00/chatgpt-write-test/actions/runs/38322633018) SUCCESS, Platform Smoke [38322632977](https://github.com/nssang00/chatgpt-write-test/actions/runs/38322632977) SUCCESS.
+- Local latest plugin source: Linux C++11 Release 21/21; AddressSanitizer full 21/21; Release full suite ×10 = 210 passes; plugin object factory / WebView facade / async lifetime ×40 each = 120 passes.
+- NW-002/NW-007/NW-008/NW-009 browser CI blockers are resolved, details retained in `docs/ISSUE_LOG.md`. Windows CEF extraction now uses 7-Zip (small offline fixture + pinned archive SHA check), with shared runtime asset copies serialized in CMake.
+- This is **not product release completion**. Remaining release gates include a default-deny capability/permission security policy and tests, plugin-owned events/listeners, cross-engine SDK/runtime distribution packaging, and broader planned Desktop integration features.
+- Next: first tackle the security capability/permission default and browser-origin boundaries; keep the Draft PR and only request user approval for incompatible API/behavior decisions or final merge/release.
 
 ## 1. 프로젝트 한 줄 정의
 

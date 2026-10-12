@@ -62,3 +62,11 @@ Issues should be appended, not silently discarded. A blocked task does not block
 - In tests/integration/cef/CMakeLists.txt, primary bridge is sole owner of COPY_FILES and multi-WebView depends on it for resource ordering.
 - Windows E2E now runs a full parallel CEF integration build (both executables + plugin fixture) to exercise the corrected dependency graph.
 - Only a passing full Windows CEF compile and real browser JS E2E can close NW-009.
+
+## 2026-10-13 closure checkpoint — VERIFIED
+- **NW-002** Real-browser plugin E2E: RESOLVED for Linux CEF, Windows CEF, Windows WebView2 in GitHub Actions run 38322633033 (source b2f1ced3). This covers the defined plugin-object scenario, not the entire future browser test matrix.
+- **NW-007** Linux CEF ICU startup context: RESOLVED; actual browser E2E PASS in run 38322633033.
+- **NW-008** Windows CEF tar extraction timeout: RESOLVED; 7-Zip archive fixture, pinned archive extraction, configure, build, and E2E PASS in run 38322633033.
+- **NW-009** Shared Windows CEF runtime copy race: RESOLVED; full parallel CEF all-target build and browser E2E PASS in run 38322633033 after making multi-WebView depend on the sole runtime-copy owning bridge target.
+- C++11 Core Regression run 38322632990, Installed SDK Consumer run 38322633018, Platform Smoke run 38322632977 all SUCCESS on the same commit.
+- Remaining independent release blockers: default-deny security/capability policy, full engine runtime packaging and other product roadmap milestones. Do not mark the whole product done.
