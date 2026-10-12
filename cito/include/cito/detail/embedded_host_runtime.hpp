@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cito/detail/host_runtime_core.hpp>
+#include <cito/detail/request_reply_core.hpp>
 
 #include <atomic>
 #include <memory>
@@ -26,9 +27,13 @@ public:
     HostRuntimeCore& host() noexcept { return host_; }
     const HostRuntimeCore& host() const noexcept { return host_; }
 
+    RequestReplyCore& requests() noexcept { return requests_; }
+    const RequestReplyCore& requests() const noexcept { return requests_; }
+
 private:
     std::atomic<AppId> next_app_id_{1};
     HostRuntimeCore host_;
+    RequestReplyCore requests_;
 };
 
 // Must be out-of-line so an executable and libcito share one registry.
