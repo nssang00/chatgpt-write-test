@@ -50,3 +50,10 @@ Issues should be appended, not silently discarded. A blocked task does not block
 - Runs 38315301893, 38315497991, 38315691707: pinned 144 MB archive downloaded and SHA1 ce9d951914e79f179e224f3ba9d55d9363696efe verified; tar.exe -xjf then stalled until 45-minute job timeout before build.
 - Change: split bzip2 and tar extraction using installed 7-Zip; keep SHA1 checks, add offline fixture and a per-step 20-minute timeout.
 - Pending evidence: fixture, archive extraction, Windows CEF compile, and real JS lifecycle E2E must all pass. Fixture success alone is not a browser pass.
+
+## NW-009 Windows CEF CI concurrent runtime-file copy — FIX SUBMITTED / E2E PENDING
+- Priority: P1; occurred after NW-008 extraction succeeded.
+- Run 38321964829 Windows CEF compiled/linked two integration executables in parallel. Both CMake COPY_FILES post-build rules copy the same Resources/locales folder to build/cef/bin; cmake -E copy_directory on nativeweb_cef_multi_webview_integration returned exit code 1 (MSB3073).
+- Root cause inference: concurrent post-build copies to the shared bin directory; source distribution layout was verified and bridge executable linked successfully.
+- Fix: browser plugin E2E job explicitly builds only nativeweb_cef_bridge_integration and nativeweb_plugin_browser_fixture, sequentially. Multi-WebView executable is unrelated to this E2E; its separate existing CI remains unchanged.
+- Next: rerun real Windows CEF browser and verify all JS checkpoints; full parallel-target build race remains worth a separate CMake fix if all-target builds are required.
