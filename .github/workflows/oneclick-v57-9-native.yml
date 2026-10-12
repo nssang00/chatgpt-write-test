@@ -1,10 +1,10 @@
-name: OneClick v58.4.1 Validated Regression Baseline Gate
+name: OneClick v58.4.2 Regression Verdict Fix Gate
 
 on:
   workflow_dispatch:
   push:
     branches:
-      - ci/oneclick-v58-4-1
+      - ci/oneclick-v58-4-2
     paths:
       - '.github/workflows/oneclick-v57-9-native.yml'
       - 'ci/v58.2-runtime/**'
@@ -15,6 +15,7 @@ on:
       - 'ci/v58.3-release/**'
       - 'ci/v58.4-ga/**'
       - 'ci/v58.4.1-regression/**'
+      - 'ci/v58.4.2-regression/**'
       - 'ci/v58-release/**'
 
 permissions:
@@ -147,6 +148,11 @@ jobs:
         shell: pwsh
         run: |
           .\ci\v58.4.1-regression\baseline_contract.ps1
+
+      - name: Verify v58.4.2 regression verdict semantics
+        shell: pwsh
+        run: |
+          .\ci\v58.4.2-regression\verdict_fix_contract.ps1
 
       - name: Reconstruct exact v58.2 Runtime source
         shell: pwsh
@@ -303,7 +309,7 @@ jobs:
         if: ${{ always() }}
         shell: pwsh
         run: |
-          "## v58.4.1 Validated Regression Baseline + Runtime exact-source gate" | Out-File $env:GITHUB_STEP_SUMMARY -Append
+          "## v58.4.2 Regression Verdict Fix + Runtime exact-source gate" | Out-File $env:GITHUB_STEP_SUMMARY -Append
           "" | Out-File $env:GITHUB_STEP_SUMMARY -Append
           "- Payload SHA-256 verified" | Out-File $env:GITHUB_STEP_SUMMARY -Append
           "- Native x64 clean build" | Out-File $env:GITHUB_STEP_SUMMARY -Append
@@ -315,7 +321,7 @@ jobs:
         if: ${{ always() }}
         uses: actions/upload-artifact@v4
         with:
-          name: oneclick-v58-4-1-regression-baseline-gate
+          name: oneclick-v58-4-2-regression-verdict-fix-gate
           path: |
             results/
             payload-sha256.txt
