@@ -4,6 +4,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <span>
 #include <string_view>
 #include <unordered_map>
@@ -24,11 +25,6 @@ struct UdpEndpoint {
 struct UdpSend {
     UdpEndpoint endpoint{};
     std::vector<std::uint8_t> bytes;
-};
-
-struct UdpPublishResult {
-    HostPublishResult delivery;
-    std::vector<UdpSend> sends;
 };
 
 class UdpRuntimeAdapter {
@@ -269,40 +265,33 @@ public:
         return expired.size();
     }
 
-    UdpPublishResult publish(
+    template <class Send>
+    HostPublishResult publish(
         const InterestKey& key,
         std::string_view resource,
-        std::span<const std::uint8_t> payload) {
-        UdpPublishResult result;
+        std::span<const std::uint8_t> payload,
+        Send&& send) {
+        return host_.publish(
+            key,
+            resource,
+            payload,
+            [&](DestinationId destination,
+                std::span<const std::uint8_t>
+                    packet) {
+                const auto endpoint =
+                    data_endpoints_.find(
+                        destination);
 
-        result.delivery =
-            host_.publish(
-                key,
-                resource,
-                payload,
-                [&](DestinationId destination,
-                    std::span<const std::uint8_t>
-                        packet) {
-                    const auto endpoint =
-                        data_endpoints_.find(
-                            destination);
+                if (endpoint ==
+                    data_endpoints_.end()) {
+                    return false;
+                }
 
-                    if (endpoint ==
-                        data_endpoints_.end()) {
-                        return false;
-                    }
-
-                    result.sends.push_back(
-                        UdpSend{
-                            endpoint->second,
-                            std::vector<
-                                std::uint8_t>(
-                                packet.begin(),
-                                packet.end())});
-                    return true;
-                });
-
-        return result;
+                return std::invoke(
+                    send,
+                    endpoint->second,
+                    packet);
+            });
     }
 
     std::size_t receive_data(

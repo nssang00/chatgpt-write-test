@@ -190,34 +190,42 @@ int main() {
         5> hello{
             'h','e','l','l','o'};
 
+    std::size_t udp_send_calls = 0;
+
     const auto published =
         pub_udp.publish(
             position,
             "drone_17",
-            hello);
+            hello,
+            [&](const auto& endpoint,
+                auto packet) {
+                ++udp_send_calls;
+
+                assert(
+                    endpoint.ipv4 ==
+                    pos_control.ipv4);
+                assert(
+                    endpoint.port ==
+                    48111);
+
+                assert(
+                    pos_udp.receive_data(
+                        packet,
+                        "drone_17") ==
+                    1);
+                return true;
+            });
 
     assert(
-        published.delivery.local_delivered ==
+        published.local_delivered ==
         0);
     assert(
-        published.delivery.remote_sent ==
+        published.remote_sent ==
         1);
     assert(
-        published.delivery.packet_encodes ==
+        published.packet_encodes ==
         1);
-    assert(published.sends.size() == 1);
-    assert(
-        published.sends[0].endpoint.ipv4 ==
-        pos_control.ipv4);
-    assert(
-        published.sends[0].endpoint.port ==
-        48111);
-
-    assert(
-        pos_udp.receive_data(
-            published.sends[0].bytes,
-            "drone_17") ==
-        1);
+    assert(udp_send_calls == 1);
 
     assert(pos_received == 1);
     assert(bat_received == 0);
@@ -230,11 +238,15 @@ int main() {
         pub_udp.publish(
             unrelated,
             "drone_18",
-            hello);
+            hello,
+            [&](const auto&, auto) {
+                assert(false);
+                return true;
+            });
 
-    assert(none.delivery.delivered() == 0);
-    assert(none.delivery.packet_encodes == 0);
-    assert(none.sends.empty());
+    assert(none.delivered() == 0);
+    assert(none.packet_encodes == 0);
+    assert(udp_send_calls == 1);
 
     return 0;
 }

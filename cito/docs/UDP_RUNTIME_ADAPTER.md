@@ -34,7 +34,7 @@ Restart and lease expiry clear coordinator-owned address state. Route replacemen
 
 ## Data path
 
-For outbound data, `HostRuntimeCore` checks exact remote destinations first. If none exist, there is no CTD1 framing and no UDP send. If destinations exist, CTD1 is encoded once and the same packet bytes are fanned out.
+For outbound data, `HostRuntimeCore` checks exact remote destinations first. If none exist, there is no CTD1 framing and no UDP send. If destinations exist, CTD1 is encoded once and the adapter invokes the socket-send callback with the same non-owning packet span for each destination. The production path therefore does not build one payload vector per destination.
 
 Inbound CTD1 uses `DataPacketView` and then local exact DemandKey delivery; the payload is not copied by the packet decoder.
 
