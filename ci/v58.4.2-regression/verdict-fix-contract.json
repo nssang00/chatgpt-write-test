@@ -1,0 +1,11 @@
+{
+  "harnessVersion": "58.4.2",
+  "productRuntimeChanged": false,
+  "fixes": [
+    "MULTI_WEBVIEW close-isolation intentionally closed view may have textureCreated=false; open views still require textureCreated=true and all views require softwareFrames=0.",
+    "Run-ValidatedBaselineRegression must emit exactly one Boolean to caller; child PowerShell stdout must be routed to host output so a failed baseline deterministically gates final summary/status."
+  ],
+  "expectedRegressionCases": 8,
+  "expectedNegativeGuards": 50,
+  "policy": "Validation-only correction. Product Runtime/Native must remain unchanged. A baseline regression failure must always make the final OneClick result fail."
+}
