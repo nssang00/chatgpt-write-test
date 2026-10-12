@@ -1,10 +1,10 @@
-name: OneClick v58.4.2 Regression Verdict Fix Gate
+name: OneClick v58.4.4 GPU Counter Validation Gate
 
 on:
   workflow_dispatch:
   push:
     branches:
-      - ci/oneclick-v58-4-2
+      - ci/oneclick-v58-4-4
     paths:
       - '.github/workflows/oneclick-v57-9-native.yml'
       - 'ci/v58.2-runtime/**'
@@ -16,6 +16,7 @@ on:
       - 'ci/v58.4-ga/**'
       - 'ci/v58.4.1-regression/**'
       - 'ci/v58.4.2-regression/**'
+      - 'ci/v58.4.4-validation/**'
       - 'ci/v58-release/**'
 
 permissions:
@@ -153,6 +154,11 @@ jobs:
         shell: pwsh
         run: |
           .\ci\v58.4.2-regression\verdict_fix_contract.ps1
+
+      - name: Verify v58.4.4 GPU counter sampling contract
+        shell: pwsh
+        run: |
+          .\ci\v58.4.4-validation\gpu_sampler_contract.ps1
 
       - name: Reconstruct exact v58.2 Runtime source
         shell: pwsh
@@ -309,7 +315,7 @@ jobs:
         if: ${{ always() }}
         shell: pwsh
         run: |
-          "## v58.4.2 Regression Verdict Fix + Runtime exact-source gate" | Out-File $env:GITHUB_STEP_SUMMARY -Append
+          "## v58.4.4 GPU Counter Validation + Runtime exact-source gate" | Out-File $env:GITHUB_STEP_SUMMARY -Append
           "" | Out-File $env:GITHUB_STEP_SUMMARY -Append
           "- Payload SHA-256 verified" | Out-File $env:GITHUB_STEP_SUMMARY -Append
           "- Native x64 clean build" | Out-File $env:GITHUB_STEP_SUMMARY -Append
@@ -321,7 +327,7 @@ jobs:
         if: ${{ always() }}
         uses: actions/upload-artifact@v4
         with:
-          name: oneclick-v58-4-2-regression-verdict-fix-gate
+          name: oneclick-v58-4-4-gpu-validation-gate
           path: |
             results/
             payload-sha256.txt

@@ -1,0 +1,15 @@
+{
+  "harnessVersion": "58.4.4",
+  "sourceArchive": "company_webview_cef_oneclick_v58_4_4_gpu_counter_validation_fix.zip",
+  "runAllPs1Sha256": "606db91ef5ebe1eb6b82c851c4f3e3e28d60c30a422d889bd696f9b9119dcd36",
+  "extractedSamplerSha256": "7d72d0692be3161b0a1a2f102e7e360778c31b63d3039adaf795f5b8a8068c35",
+  "stage2": {
+    "version": "58.4.4",
+    "regressionPassed": 8,
+    "regressionTotal": 8,
+    "gpuValidSamples": 61,
+    "gpuAttempts": 70
+  },
+  "scope": "CI tests extracted exact GPU sampling function and inherited native gate; does not replace Unity/Windows Full OneClick",
+  "baseline": "58.3"
+}
