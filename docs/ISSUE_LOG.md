@@ -44,3 +44,9 @@ Issues should be appended, not silently discarded. A blocked task does not block
 - Hypothesis: different Chromium subprocess launch context caused ICU resource/FD handling failure; not confirmed until real-browser rerun.
 - Fix in 0af8c271: pass `--no-sandbox`, launch from the CEF runtime bin directory. Python syntax passed; local fake executable smoke confirmed cwd, flag, and checkpoint parsing. Fake executable is NOT evidence of real browser functionality.
 - Verification: actual SDK-backed browser rerun 38315301893 is in progress. If it still fails, collect the CEF job logs and investigate startup/ICU resource descriptors further. Do not mark PASS without job evidence.
+
+## NW-008 Windows CEF SDK extraction stalls in tar.exe — FIX SUBMITTED / CI PENDING
+- Priority: P1; Windows CEF actual-browser E2E blocked, while Linux CEF and Windows WebView2 succeeded.
+- Runs 38315301893, 38315497991, 38315691707: pinned 144 MB archive downloaded and SHA1 ce9d951914e79f179e224f3ba9d55d9363696efe verified; tar.exe -xjf then stalled until 45-minute job timeout before build.
+- Change: split bzip2 and tar extraction using installed 7-Zip; keep SHA1 checks, add offline fixture and a per-step 20-minute timeout.
+- Pending evidence: fixture, archive extraction, Windows CEF compile, and real JS lifecycle E2E must all pass. Fixture success alone is not a browser pass.

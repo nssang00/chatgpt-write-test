@@ -48,8 +48,13 @@ jobs:
           key: cef-windows64-144.0.36-g78619fd-runtime-v2
           restore-keys: |
             cef-windows64-144.0.36-g78619fd
+      - name: Verify Windows CEF archive extractor
+        shell: pwsh
+        timeout-minutes: 3
+        run: ./tools/test_expand_cef_archive_windows.ps1
       - name: Download pinned Windows CEF
         shell: pwsh
+        timeout-minutes: 20
         run: |
           $cef = & ./tools/bootstrap_windows.ps1 | Select-Object -Last 1
           "CEF_ROOT=$cef" >> $env:GITHUB_ENV

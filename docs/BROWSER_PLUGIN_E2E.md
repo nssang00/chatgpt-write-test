@@ -66,3 +66,12 @@ must only be recorded after a real SDK-backed engine run.
 E2E in Linux CEF, Windows CEF, and Windows WebView2 environments. This is a
 new, **unexecuted** workflow; it will run on a matching PR or by manual
 workflow dispatch after the source is committed to a GitHub repository.
+
+## Windows CEF archive extraction troubleshooting
+Windows CEF CI previously downloaded and SHA1-verified the pinned 144 MB
+minimal archive but stalled for 45 minutes during tar.exe -xjf extraction.
+The Windows bootstrap now invokes tools/expand_cef_archive_windows.ps1,
+which uses 7-Zip for the bzip2 and tar layers and deletes the intermediate tar.
+A separate offline Windows fixture tests the extractor first and the workflow
+caps real extraction at 20 minutes. The expected checksum and runtime layout
+checks remain mandatory. This is a proposed fix until real Windows CEF E2E passes.

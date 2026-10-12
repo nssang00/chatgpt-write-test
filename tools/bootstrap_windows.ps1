@@ -51,8 +51,10 @@ if (-not (Test-Path (Join-Path $CefRoot "CMakeLists.txt"))) {
         Remove-Item -Recurse -Force $CefRoot
     }
 
-    tar.exe -xjf $ArchivePath -C $ExtractDir
-    if ($LASTEXITCODE -ne 0) { throw "CEF extraction failed" }
+    & (Join-Path $PSScriptRoot "expand_cef_archive_windows.ps1") -ArchivePath $ArchivePath -ExtractDir $ExtractDir
+    if (-not (Test-Path (Join-Path $CefRoot "CMakeLists.txt"))) {
+        throw "CEF extraction completed but root CMakeLists.txt is missing: $CefRoot"
+    }
 } else {
     Write-Host "Using extracted CEF: $CefRoot"
 }
