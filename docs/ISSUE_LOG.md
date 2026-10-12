@@ -57,3 +57,8 @@ Issues should be appended, not silently discarded. A blocked task does not block
 - Root cause inference: concurrent post-build copies to the shared bin directory; source distribution layout was verified and bridge executable linked successfully.
 - Fix: browser plugin E2E job explicitly builds only nativeweb_cef_bridge_integration and nativeweb_plugin_browser_fixture, sequentially. Multi-WebView executable is unrelated to this E2E; its separate existing CI remains unchanged.
 - Next: rerun real Windows CEF browser and verify all JS checkpoints; full parallel-target build race remains worth a separate CMake fix if all-target builds are required.
+
+## NW-009 Underlying CMake runtime staging race — FIX SUBMITTED / FULL BUILD CI PENDING
+- In tests/integration/cef/CMakeLists.txt, primary bridge is sole owner of COPY_FILES and multi-WebView depends on it for resource ordering.
+- Windows E2E now runs a full parallel CEF integration build (both executables + plugin fixture) to exercise the corrected dependency graph.
+- Only a passing full Windows CEF compile and real browser JS E2E can close NW-009.

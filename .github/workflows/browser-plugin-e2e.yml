@@ -61,12 +61,9 @@ jobs:
       - name: Configure CEF integration
         shell: pwsh
         run: cmake -S tests/integration/cef -B build/cef "-DCEF_ROOT=$env:CEF_ROOT"
-      - name: Build Windows CEF browser E2E target
+      - name: Verify Windows CEF full parallel integration build
         shell: pwsh
-        run: cmake --build build/cef --config Release --target nativeweb_cef_bridge_integration --parallel 4
-      - name: Build Windows CEF plugin fixture
-        shell: pwsh
-        run: cmake --build build/cef --config Release --target nativeweb_plugin_browser_fixture --parallel 4
+        run: cmake --build build/cef --config Release --parallel 4
       - name: Run real browser plugin E2E
         shell: pwsh
         run: ctest --test-dir build/cef -C Release -R '^browser.plugin_object_lifecycle$' --output-on-failure

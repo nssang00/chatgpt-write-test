@@ -219,19 +219,11 @@ set_target_properties(${MULTI_TARGET} PROPERTIES
   RUNTIME_OUTPUT_DIRECTORY_RELEASE "${CEF_TARGET_OUT_DIR}"
 )
 
-COPY_FILES(
-  "${MULTI_TARGET}"
-  "${CEF_BINARY_FILES}"
-  "${CEF_BINARY_DIR}"
-  "${CEF_TARGET_OUT_DIR}"
-)
-
-COPY_FILES(
-  "${MULTI_TARGET}"
-  "${CEF_RESOURCE_FILES}"
-  "${CEF_RESOURCE_DIR}"
-  "${CEF_TARGET_OUT_DIR}"
-)
+# Both executables share one runtime directory. Running two CEF COPY_FILES
+# post-build rules in parallel races on bin/locales under MSBuild (NW-009).
+# The bridge target owns the runtime copy; multi-WebView depends on it so
+# building multi-WebView also finishes runtime deployment first.
+add_dependencies(${MULTI_TARGET} ${TARGET})
 
 # Real SO/DLL used by --plugin-path E2E. Never replace with a mock module.
 add_library(nativeweb_plugin_browser_fixture SHARED
