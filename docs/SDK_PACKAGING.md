@@ -1,7 +1,8 @@
 # NativeWeb Core installed SDK verification
 
 The first SDK packaging milestone exports engine-neutral `NativeWeb::Core`
-with public C++11 headers. It does **not** constitute a full CEF or WebView2
+with public C++11 headers, plus a separately compiled pure-C ABI-header
+consumer. It does **not** constitute a full CEF or WebView2
 runtime distribution.
 
 ```sh
