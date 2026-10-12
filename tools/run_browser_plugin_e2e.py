@@ -36,6 +36,11 @@ def main():
 
     command = [str(executable), '--url=' + html.as_uri(),
                '--plugin-path=' + str(plugin)]
+    if args.engine == 'cef':
+        # Chromium subprocess startup resolves ICU data and locale resources
+        # relative to the runtime executable directory. Match the existing
+        # CEF bridge CI contract on Linux and explicitly disable sandboxing.
+        command.insert(1, '--no-sandbox')
     if args.engine == 'cef' and sys.platform.startswith('linux') and not os.getenv('DISPLAY'):
         from shutil import which
         if not which('xvfb-run'):
@@ -45,6 +50,8 @@ def main():
     print('Browser E2E:', args.engine, flush=True)
     print('Command:', command, flush=True)
     kwargs = {}
+    if args.engine == 'cef':
+        kwargs['cwd'] = str(bin_dir)
     if os.name == 'posix':
         kwargs['start_new_session'] = True
     process = subprocess.Popen(command, stdout=subprocess.PIPE,
