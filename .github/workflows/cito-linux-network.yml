@@ -50,9 +50,11 @@ jobs:
 
       - name: Sanitizer configure
         run: |
+          SAN_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer"
           cmake -S cito -B build-cito-sanitize -G Ninja \
             -DCMAKE_BUILD_TYPE=Debug \
-            -DCMAKE_CXX_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer"
+            -DCMAKE_C_FLAGS="$SAN_FLAGS" \
+            -DCMAKE_CXX_FLAGS="$SAN_FLAGS"
 
       - name: Sanitizer build
         run: cmake --build build-cito-sanitize -j2
@@ -61,7 +63,10 @@ jobs:
         env:
           ASAN_OPTIONS: detect_leaks=1
           UBSAN_OPTIONS: print_stacktrace=1
-        run: ctest --test-dir build-cito-sanitize -L regression --output-on-failure
+        # The native C ABI is sanitizer-tested by cito_c_api_tests. Loading a
+        # sanitized shared library into the stock unsanitized Python runtime
+        # produces an ASan loader-order failure before Cito code runs.
+        run: ctest --test-dir build-cito-sanitize -L regression -E "^cito_python_smoke$" --output-on-failure
 
       - name: Three-node network namespace smoke
         shell: bash

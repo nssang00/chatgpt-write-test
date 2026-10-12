@@ -7,6 +7,7 @@
 #include <functional>
 #include <optional>
 #include <span>
+#include <stdexcept>
 #include <type_traits>
 #include <utility>
 
@@ -91,6 +92,11 @@ DeliveryResult deliver_best_effort(
                     payload());
                 ++result.udp;
                 break;
+
+            case TransportKind::QuicDatagram:
+            case TransportKind::QuicStream:
+                throw std::logic_error(
+                    "Cito BestEffort locality path received a secure remote transport");
         }
     }
 
