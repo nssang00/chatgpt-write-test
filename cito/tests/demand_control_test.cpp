@@ -151,5 +151,19 @@ int main() {
     }
     assert(invalid_limit);
 
+    bool zero_progress_failed = false;
+    try {
+        cito::DemandSnapshotBatch bad{
+            7,
+            {11, 9, 1},
+            0,
+            {}};
+        (void)cito::encode_snapshot_batch(
+            bad);
+    } catch (const std::invalid_argument&) {
+        zero_progress_failed = true;
+    }
+    assert(zero_progress_failed);
+
     return 0;
 }

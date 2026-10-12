@@ -428,7 +428,10 @@ encode_snapshot_batch(
     if (static_cast<std::uint64_t>(
             message.offset) +
             message.keys.size() >
-        message.stamp.key_count) {
+        message.stamp.key_count ||
+        (message.keys.empty() &&
+         message.offset <
+             message.stamp.key_count)) {
         throw std::invalid_argument(
             "Cito demand control: invalid snapshot batch range");
     }
@@ -518,7 +521,10 @@ decode_snapshot_batch(
         static_cast<std::uint64_t>(
             message.offset) +
             count >
-        message.stamp.key_count) {
+        message.stamp.key_count ||
+        (count == 0 &&
+         message.offset <
+             message.stamp.key_count)) {
         throw std::runtime_error(
             "Cito demand control: invalid snapshot batch range");
     }

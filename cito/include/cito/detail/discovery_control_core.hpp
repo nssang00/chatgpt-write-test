@@ -227,13 +227,22 @@ public:
             return false;
         }
 
-        for (auto& [coordinator, requested] :
-             requested_routes_) {
+        for (auto requested_it =
+                 requested_routes_.begin();
+             requested_it !=
+                 requested_routes_.end();) {
+            const auto coordinator =
+                requested_it->first;
+            auto& requested =
+                requested_it->second;
             const auto incarnation =
                 host_.coordinator_incarnation(
                     coordinator);
 
             if (!incarnation) {
+                requested_it =
+                    requested_routes_.erase(
+                        requested_it);
                 continue;
             }
 
@@ -242,6 +251,7 @@ public:
 
             if (request_it ==
                 requested.end()) {
+                ++requested_it;
                 continue;
             }
 
@@ -255,6 +265,14 @@ public:
                 none);
             requested.erase(
                 request_it);
+
+            if (requested.empty()) {
+                requested_it =
+                    requested_routes_.erase(
+                        requested_it);
+            } else {
+                ++requested_it;
+            }
         }
 
         return true;
