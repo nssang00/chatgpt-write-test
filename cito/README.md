@@ -47,13 +47,23 @@ See `docs/TESTING.md` for the local-first and GitHub Actions test policy.
 
 ## Current status
 
-P0 is intentionally same-process only. It validates the public mental model and lifecycle before discovery or transport code is added.
+The project has moved beyond the original same-process P0:
 
-Locally verified with:
-- GCC 14.2
-- Clang 17
-- CMake 3.31
-- CTest
+- exact Type+Resource local dispatch
+- OMG IDL subset + generated direct static codec
+- DynamicData/reference wire interoperability
+- demand-summary discovery and direct route selection
+- same-host multi-process SHM smoke
+- UDP network-namespace discovery/data smokes
+- bounded selective-NACK reliability prototype
+- 200-host demand-index structural scale gate
+- stable C ABI v1 foundation
+- Python binding over the C ABI
+- optional MsQuic integration with real QUIC stream + DATAGRAM namespace smoke
+
+The C ABI/Python binding currently expose the same-process raw `type_id + resource + bytes` common boundary. QUIC is validated as a real optional transport backend, but neither is yet fully wired into the normal distributed `Context` path. Those integrations remain part of the v1 completion gate rather than being represented as finished production support.
+
+See `docs/V1_SCOPE.md` for the exact target and completion criteria.
 
 ## Build
 
