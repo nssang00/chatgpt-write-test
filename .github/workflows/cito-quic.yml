@@ -29,6 +29,9 @@ jobs:
         run: |
           curl -fsSL https://packages.microsoft.com/ubuntu/24.04/prod/pool/main/libm/libmsquic/libmsquic_2.6.1_amd64.deb -o /tmp/libmsquic.deb
           sudo dpkg -i /tmp/libmsquic.deb
+          sudo curl -fsSL https://raw.githubusercontent.com/microsoft/msquic/v2.6.1/src/inc/msquic.h -o /usr/local/include/msquic.h
+          sudo curl -fsSL https://raw.githubusercontent.com/microsoft/msquic/v2.6.1/src/inc/msquic_posix.h -o /usr/local/include/msquic_posix.h
+          sudo curl -fsSL https://raw.githubusercontent.com/microsoft/msquic/v2.6.1/src/inc/quic_sal_stub.h -o /usr/local/include/quic_sal_stub.h
       - name: Configure and build QUIC smoke
         run: |
           cmake -S cito -B build-quic -G Ninja -DCMAKE_BUILD_TYPE=Debug -DCITO_ENABLE_MSQUIC=ON
