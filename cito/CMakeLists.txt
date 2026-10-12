@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(cito LANGUAGES CXX)
+project(cito LANGUAGES C CXX)
 
 find_package(Threads REQUIRED)
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
@@ -8,6 +8,13 @@ add_library(cito INTERFACE)
 target_include_directories(cito INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_compile_features(cito INTERFACE cxx_std_20)
 target_link_libraries(cito INTERFACE Threads::Threads)
+
+add_library(cito_c SHARED src/c_api.cpp)
+target_include_directories(cito_c PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_compile_features(cito_c PRIVATE cxx_std_20)
+target_compile_definitions(cito_c PRIVATE CITO_C_BUILD)
+target_link_libraries(cito_c PRIVATE Threads::Threads)
+set_target_properties(cito_c PROPERTIES OUTPUT_NAME cito)
 
 include(CTest)
 if(BUILD_TESTING)
@@ -39,6 +46,22 @@ if(BUILD_TESTING)
   cito_add_test(cito_best_effort_delivery_tests tests/best_effort_delivery_test.cpp "unit;latency;regression")
   cito_add_test(cito_reliability_tests tests/reliability_test.cpp "unit;latency;regression")
   cito_add_test(cito_reliable_packet_tests tests/reliable_packet_test.cpp "unit;latency;regression")
+  cito_add_test(cito_host_scale_200_tests tests/host_scale_200_test.cpp "smoke;latency;scale;regression")
+
+  add_executable(cito_c_api_tests tests/c_api_test.c)
+  target_link_libraries(cito_c_api_tests PRIVATE cito_c)
+  target_compile_options(cito_c_api_tests PRIVATE -Wall -Wextra -Wpedantic)
+  add_test(NAME cito_c_api_tests COMMAND cito_c_api_tests)
+  set_tests_properties(cito_c_api_tests PROPERTIES LABELS "unit;smoke;regression")
+
+  add_test(
+    NAME cito_python_smoke
+    COMMAND ${CMAKE_COMMAND} -E env
+            CITO_LIBRARY=$<TARGET_FILE:cito_c>
+            PYTHONPATH=${CMAKE_CURRENT_SOURCE_DIR}/python
+            ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_python_binding.py)
+  set_tests_properties(cito_python_smoke PROPERTIES LABELS "smoke;regression")
 
   cito_add_test(cito_public_api_smoke tests/public_api_smoke.cpp "smoke;regression")
   cito_add_test(cito_interest_scale_tests tests/interest_scale_test.cpp "smoke;regression")
