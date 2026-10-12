@@ -120,6 +120,17 @@ if(BUILD_TESTING)
       ${GENERATED_PY_DIR}/position.py
       ${GENERATED_PY_DIR}/telemetry.py)
 
+  add_test(
+    NAME cito_python_typed_smoke
+    COMMAND ${CMAKE_COMMAND} -E env
+            CITO_LIBRARY=$<TARGET_FILE:cito_c>
+            PYTHONPATH=${CMAKE_CURRENT_SOURCE_DIR}/python:${GENERATED_PY_DIR}
+            ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_python_typed_binding.py)
+  set_tests_properties(
+    cito_python_typed_smoke
+    PROPERTIES LABELS "smoke;regression")
+
   add_executable(cito_idl_static_smoke
     tests/idl_static_smoke.cpp
     ${GENERATED_DIR}/position.hpp)

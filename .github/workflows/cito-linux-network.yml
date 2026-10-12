@@ -66,7 +66,7 @@ jobs:
         # The native C ABI is sanitizer-tested by cito_c_api_tests. Loading a
         # sanitized shared library into the stock unsanitized Python runtime
         # produces an ASan loader-order failure before Cito code runs.
-        run: ctest --test-dir build-cito-sanitize -L regression -E "^cito_python_smoke$" --output-on-failure
+        run: ctest --test-dir build-cito-sanitize -L regression -E "^cito_python_.*$" --output-on-failure
 
       - name: Three-node network namespace smoke
         shell: bash
