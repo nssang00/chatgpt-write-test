@@ -37,3 +37,10 @@ Issues should be appended, not silently discarded. A blocked task does not block
 - Fix: restored both scripts, pin.env, probe_linux.sh, SNAPSHOT_SHA.txt in commit 5b8e75b2. Source-list and blob parity verified.
 - Windows WebView2 passed independent of CEF bootstrap. Follow-up run 38314779373 started; both CEF jobs in progress at this checkpoint.
 - Do not label CEF E2E passed until successful job/checkpoint evidence is available.
+
+## NW-007 Linux CEF ICU startup crash — FIX IMPLEMENTED, BROWSER RETEST PENDING
+- Priority: P1 runtime E2E. Runner 38314779373 compiled Linux CEF and plugin fixture successfully but the actual browser test exited 133 at startup: `Invalid file descriptor to ICU data received` (`base/i18n/icu_util.cc:232`); none of the four JS plugin checkpoints were reached.
+- Comparison: previously passing CEF bridge CI starts the executable with its runtime bin directory as cwd and passes `--no-sandbox`. The new Python E2E runner omitted both.
+- Hypothesis: different Chromium subprocess launch context caused ICU resource/FD handling failure; not confirmed until real-browser rerun.
+- Fix in 0af8c271: pass `--no-sandbox`, launch from the CEF runtime bin directory. Python syntax passed; local fake executable smoke confirmed cwd, flag, and checkpoint parsing. Fake executable is NOT evidence of real browser functionality.
+- Verification: actual SDK-backed browser rerun 38315301893 is in progress. If it still fails, collect the CEF job logs and investigate startup/ICU resource descriptors further. Do not mark PASS without job evidence.
