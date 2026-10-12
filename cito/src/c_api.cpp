@@ -7,6 +7,7 @@
 #include <memory>
 #include <new>
 #include <span>
+#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <utility>

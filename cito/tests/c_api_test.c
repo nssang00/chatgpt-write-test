@@ -47,5 +47,20 @@ int main(void) {
     assert(delivered == 0);
     assert(cito_context_run(ctx) == CITO_STATUS_OK);
     cito_context_destroy(ctx);
+
+    /* Subscription destruction after Context destruction must be safe. */
+    cito_context_t* short_ctx = NULL;
+    cito_subscription_t* long_sub = NULL;
+    assert(cito_context_create(
+        "acme", 4,
+        &short_ctx) == CITO_STATUS_OK);
+    assert(cito_context_subscribe(
+        short_ctx, 200,
+        "late", 4,
+        cb, &s,
+        &long_sub) == CITO_STATUS_OK);
+    cito_context_destroy(short_ctx);
+    cito_subscription_destroy(long_sub);
+
     return 0;
 }
