@@ -49,8 +49,12 @@ Lifecycle
   stop/close
 ```
 
-`on()` remains a compatibility alias during the API transition. New examples
-and tests use `subscribe()`.
+`subscribe()` registrations are owned by the `Context`: ignoring the returned
+handle keeps the subscription active until Context shutdown. The returned
+handle exists for explicit early `close()`.
+
+`on()` remains a compatibility **scoped/RAII** helper with its original
+lifetime semantics. New examples and tests use `subscribe()`.
 
 ## Progressive disclosure
 

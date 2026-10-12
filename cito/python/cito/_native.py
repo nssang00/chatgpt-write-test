@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import ctypes
 import os
+import weakref
 from pathlib import Path
 from typing import Any, Callable
 
@@ -147,16 +148,27 @@ class Subscription:
         self,
         handle: ctypes.c_void_p,
         callback: _CALLBACK,
+        close_on_del: bool = True,
+        on_close: Callable[["Subscription"], None] | None = None,
     ):
         self._handle = handle
         self._callback = callback
+        self._close_on_del = close_on_del
+        self._on_close = on_close
 
     def close(self) -> None:
-        if self._handle:
-            _lib.cito_subscription_destroy(
-                self._handle)
-            self._handle = (
-                ctypes.c_void_p())
+        if not self._handle:
+            return
+
+        _lib.cito_subscription_destroy(
+            self._handle)
+        self._handle = (
+            ctypes.c_void_p())
+
+        on_close = self._on_close
+        self._on_close = None
+        if on_close is not None:
+            on_close(self)
 
     def __enter__(self):
         return self
@@ -165,7 +177,8 @@ class Subscription:
         self.close()
 
     def __del__(self) -> None:
-        self.close()
+        if self._close_on_del:
+            self.close()
 
 
 class Context:
@@ -185,19 +198,31 @@ class Context:
                 ctypes.byref(handle)))
 
         self._handle = handle
+        self._subscriptions: set[
+            Subscription] = set()
 
     def close(self) -> None:
-        if self._handle:
-            _lib.cito_context_destroy(
-                self._handle)
-            self._handle = (
-                ctypes.c_void_p())
+        if not self._handle:
+            return
 
-    def subscribe_raw(
+        # Persistent subscribe() registrations belong to the Context.
+        # Close native subscription handles before the Context handle.
+        for subscription in tuple(
+                self._subscriptions):
+            subscription.close()
+        self._subscriptions.clear()
+
+        _lib.cito_context_destroy(
+            self._handle)
+        self._handle = (
+            ctypes.c_void_p())
+
+    def _subscribe_raw(
         self,
         type_id: int,
         handler: Callable[[bytes], None],
-        resource: str = "",
+        resource: str,
+        persistent: bool,
     ) -> Subscription:
         raw, buffer = _text(resource)
 
@@ -230,9 +255,40 @@ class Context:
                 ctypes.byref(
                     subscription)))
 
-        return Subscription(
+        if not persistent:
+            return Subscription(
+                subscription,
+                callback)
+
+        owner = weakref.ref(self)
+
+        def release(
+            item: Subscription,
+        ) -> None:
+            context = owner()
+            if context is not None:
+                context._subscriptions.discard(
+                    item)
+
+        result = Subscription(
             subscription,
-            callback)
+            callback,
+            close_on_del=False,
+            on_close=release)
+        self._subscriptions.add(result)
+        return result
+
+    def subscribe_raw(
+        self,
+        type_id: int,
+        handler: Callable[[bytes], None],
+        resource: str = "",
+    ) -> Subscription:
+        return self._subscribe_raw(
+            type_id,
+            handler,
+            resource,
+            persistent=True)
 
     def subscribe(
         self,
@@ -277,11 +333,12 @@ class Context:
         handler: Callable[[bytes], None],
         resource: str = "",
     ) -> Subscription:
-        """Compatibility alias for subscribe_raw()."""
-        return self.subscribe_raw(
+        """Compatibility scoped subscription. Prefer subscribe_raw()."""
+        return self._subscribe_raw(
             type_id,
             handler,
-            resource)
+            resource,
+            persistent=False)
 
     def on(
         self,
@@ -289,10 +346,36 @@ class Context:
         handler: Callable[[Any], None],
         resource: str = "",
     ) -> Subscription:
-        """Compatibility alias for subscribe()."""
-        return self.subscribe(
+        """Compatibility scoped subscription. Prefer subscribe()."""
+        if isinstance(
             message_type,
-            handler,
+            int):
+            return self.on_raw(
+                message_type,
+                handler,
+                resource)
+
+        type_id = getattr(
+            message_type,
+            "TYPE_ID",
+            None)
+        decode = getattr(
+            message_type,
+            "decode",
+            None)
+
+        if (
+            type_id is None or
+            not callable(decode)
+        ):
+            raise TypeError(
+                "Cito on() expects a generated "
+                "message type or integer TypeId")
+
+        return self.on_raw(
+            int(type_id),
+            lambda payload: handler(
+                decode(payload)),
             resource)
 
     def has_demand(

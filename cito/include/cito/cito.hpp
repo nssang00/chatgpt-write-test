@@ -25,8 +25,10 @@ public:
     Subscription() = default;
 
     explicit Subscription(
-        std::function<void()> close)
-        : close_(std::move(close)) {}
+        std::function<void()> close,
+        bool close_on_destroy = true)
+        : close_(std::move(close)),
+          close_on_destroy_(close_on_destroy) {}
 
     Subscription(const Subscription&) = delete;
     Subscription& operator=(
@@ -34,19 +36,35 @@ public:
 
     Subscription(
         Subscription&& other) noexcept
-        : close_(std::move(other.close_)) {}
+        : close_(std::move(other.close_)),
+          close_on_destroy_(
+              other.close_on_destroy_) {
+        other.close_on_destroy_ = false;
+    }
 
     Subscription& operator=(
         Subscription&& other) noexcept {
         if (this != &other) {
-            close();
-            close_ = std::move(other.close_);
+            if (close_on_destroy_) {
+                close();
+            } else {
+                close_ = {};
+            }
+
+            close_ =
+                std::move(other.close_);
+            close_on_destroy_ =
+                other.close_on_destroy_;
+            other.close_on_destroy_ =
+                false;
         }
         return *this;
     }
 
     ~Subscription() {
-        close();
+        if (close_on_destroy_) {
+            close();
+        }
     }
 
     void close() {
@@ -57,6 +75,7 @@ public:
 
 private:
     std::function<void()> close_;
+    bool close_on_destroy_{true};
 };
 
 class Context {
@@ -436,34 +455,48 @@ public:
 
     template <class T, class F>
     Subscription subscribe(F&& handler) {
-        return subscribe<T>("", std::forward<F>(handler));
+        return subscribe<T>(
+            "",
+            std::forward<F>(handler));
     }
 
     template <class T, class F>
-    Subscription subscribe(std::string resource, F&& handler) {
-        const auto id = state_->add<T>(
-            std::move(resource), std::forward<F>(handler));
-        std::weak_ptr<State> weak = state_;
+    Subscription subscribe(
+        std::string resource,
+        F&& handler) {
+        const auto id =
+            state_->add<T>(
+                std::move(resource),
+                std::forward<F>(handler));
 
-        return Subscription(
-            [weak = std::move(weak), id] {
-                if (const auto state = weak.lock()) {
-                    state->remove(id);
-                }
-            });
+        // Intent-first subscribe(): ignoring the returned handle must not
+        // unsubscribe at the end of the statement. The Context owns the
+        // registration; the handle is only for explicit early close().
+        return make_subscription(
+            id,
+            false);
     }
 
-    // Compatibility alias. New Cito code should use subscribe().
+    // Compatibility API: on() keeps the original scoped/RAII lifetime.
     template <class T, class F>
     Subscription on(F&& handler) {
-        return subscribe<T>(std::forward<F>(handler));
+        return on<T>(
+            "",
+            std::forward<F>(handler));
     }
 
-    // Compatibility alias. New Cito code should use subscribe().
     template <class T, class F>
-    Subscription on(std::string resource, F&& handler) {
-        return subscribe<T>(
-            std::move(resource), std::forward<F>(handler));
+    Subscription on(
+        std::string resource,
+        F&& handler) {
+        const auto id =
+            state_->add<T>(
+                std::move(resource),
+                std::forward<F>(handler));
+
+        return make_subscription(
+            id,
+            true);
     }
 
     template <class T>
@@ -481,6 +514,22 @@ public:
     void run() noexcept {}
 
 private:
+    Subscription make_subscription(
+        std::size_t id,
+        bool close_on_destroy) {
+        std::weak_ptr<State> weak =
+            state_;
+
+        return Subscription(
+            [weak = std::move(weak), id] {
+                if (const auto state =
+                        weak.lock()) {
+                    state->remove(id);
+                }
+            },
+            close_on_destroy);
+    }
+
     std::string scope_;
     std::shared_ptr<State> state_;
 };

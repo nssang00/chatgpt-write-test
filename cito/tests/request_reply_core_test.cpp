@@ -150,7 +150,7 @@ int main() {
     core.start(
         3,
         get_status,
-        {},
+        request_payload,
         [](RequestStatus,
            std::span<
                const std::uint8_t>) {});
@@ -163,7 +163,7 @@ int main() {
     core.start(
         3,
         get_status,
-        {},
+        request_payload,
         [](RequestStatus,
            std::span<
                const std::uint8_t>) {});

@@ -31,6 +31,25 @@ def main() -> None:
         cito.Context("acme") as publisher,
         cito.Context("other") as isolated,
     ):
+        # subscribe() is Context-owned: ignoring the returned handle must
+        # keep demand and callback state alive.
+        ignored_received: list[
+            position.Position] = []
+        subscriber.subscribe(
+            position.Position,
+            ignored_received.append,
+            "ignored")
+
+        assert publisher.has_demand(
+            position.Position,
+            "ignored")
+        assert (
+            publisher.publish(
+                value,
+                "ignored") ==
+            1)
+        assert ignored_received == [value]
+
         sub = subscriber.subscribe(
             position.Position,
             received.append,
@@ -76,6 +95,15 @@ def main() -> None:
         assert not publisher.has_demand(
             position.Position,
             "drone_17")
+
+        # Legacy on() remains scoped/RAII-compatible.
+        subscriber.on(
+            position.Position,
+            lambda _: None,
+            "scoped")
+        assert not publisher.has_demand(
+            position.Position,
+            "scoped")
 
         assert (
             publisher.publish(
