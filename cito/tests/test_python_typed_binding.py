@@ -31,7 +31,7 @@ def main() -> None:
         cito.Context("acme") as publisher,
         cito.Context("other") as isolated,
     ):
-        sub = subscriber.on(
+        sub = subscriber.subscribe(
             position.Position,
             received.append,
             "drone_17")

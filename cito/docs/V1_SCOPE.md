@@ -111,3 +111,14 @@ The next integration sequence is:
 7. add Windows C ABI/runtime/QUIC/SHM compatibility gates.
 
 v1 is complete only when those public-runtime integration gates, Windows compatibility, and the definition above are all green.
+
+
+## Public API convergence milestone
+
+The public vocabulary is fixed around Publish/Subscribe
+(`publish`/`subscribe`) and planned Request/Reply
+(`request`/`handle`). The embedded host runtime registry now belongs in one
+compiled shared core so C++, C ABI and Python cannot accidentally own separate
+process runtimes across a DSO boundary. IDL-generated direct-codec C++ Contexts
+are attached to that shared runtime while preserving same-Context object-native
+delivery and zero serialization for self-only demand.

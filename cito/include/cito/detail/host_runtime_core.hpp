@@ -184,6 +184,31 @@ public:
             has_remote_demand(key);
     }
 
+    bool has_local_demand_except(
+        AppId source,
+        const InterestKey& key) const noexcept {
+        const auto& local =
+            local_apps_.lookup(key);
+
+        for (const auto app : local) {
+            if (app != source) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    bool has_demand_except(
+        AppId source,
+        const InterestKey& key) const noexcept {
+        return
+            has_local_demand_except(
+                source,
+                key) ||
+            has_remote_demand(key);
+    }
+
     DemandSummaryStamp local_stamp(
         std::uint64_t incarnation) const {
         return host_interests_.stamp(
@@ -390,6 +415,56 @@ public:
         return delivered;
     }
 
+    std::size_t deliver_local_except(
+        AppId source,
+        const InterestKey& key,
+        std::string_view resource,
+        std::span<const std::uint8_t> payload) {
+        const auto& local =
+            local_apps_.lookup(key);
+
+        if (local.empty()) {
+            return 0;
+        }
+
+        std::vector<AppId> app_ids(
+            local.begin(),
+            local.end());
+
+        std::size_t delivered = 0;
+        ++app_dispatch_depth_;
+
+        try {
+            for (const auto app :
+                 app_ids) {
+                if (app == source) {
+                    continue;
+                }
+
+                const auto it =
+                    apps_.find(app);
+
+                if (
+                    it == apps_.end() ||
+                    !it->second.active) {
+                    continue;
+                }
+
+                delivered +=
+                    it->second.deliver(
+                        key.type,
+                        resource,
+                        payload);
+            }
+        } catch (...) {
+            finish_app_dispatch();
+            throw;
+        }
+
+        finish_app_dispatch();
+        return delivered;
+    }
+
     template <class RemoteSend>
     HostPublishResult publish(
         const InterestKey& key,
@@ -400,6 +475,52 @@ public:
 
         result.local_delivered =
             deliver_local(
+                key,
+                resource,
+                payload);
+
+        const auto& remote =
+            remote_routes_.lookup(key);
+
+        if (remote.empty()) {
+            return result;
+        }
+
+        const auto packet =
+            encode_data_packet(
+                key,
+                payload);
+
+        result.packet_encodes = 1;
+
+        for (const auto destination :
+             remote) {
+            if (std::invoke(
+                    remote_send,
+                    destination,
+                    std::span<
+                        const std::uint8_t>(
+                        packet.data(),
+                        packet.size()))) {
+                ++result.remote_sent;
+            }
+        }
+
+        return result;
+    }
+
+    template <class RemoteSend>
+    HostPublishResult publish_from(
+        AppId source,
+        const InterestKey& key,
+        std::string_view resource,
+        std::span<const std::uint8_t> payload,
+        RemoteSend&& remote_send) {
+        HostPublishResult result;
+
+        result.local_delivered =
+            deliver_local_except(
+                source,
                 key,
                 resource,
                 payload);

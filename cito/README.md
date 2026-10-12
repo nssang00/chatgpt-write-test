@@ -7,7 +7,7 @@ Cito is a lightweight typed messaging runtime focused on a very small applicatio
 ```cpp
 cito::Context ctx;
 
-ctx.on<Position>([](const Position& p) {
+ctx.subscribe<Position>([](const Position& p) {
     // use p
 });
 
@@ -19,7 +19,7 @@ Optional isolation and resource identifiers stay opt-in:
 
 ```cpp
 cito::Context ctx("acme.robotics");
-ctx.on<Position>("drone_17", handler);
+ctx.subscribe<Position>("drone_17", handler);
 ctx.publish("drone_17", position);
 ```
 
@@ -79,3 +79,13 @@ ctest --test-dir build --output-on-failure
 ```
 
 See `docs/ARCHITECTURE_CONSTITUTION.md` for the current design rules.
+
+
+## Public API vocabulary
+
+Cito is intent-first: **Publish/Subscribe** for typed data distribution and
+**Request/Reply** for one-shot command/query semantics. New code uses
+`publish()` / `subscribe()`; `on()` remains a compatibility alias.
+The planned Request/Reply verbs are `request()` / `handle()`.
+
+See `docs/PUBLIC_API.md`.

@@ -193,7 +193,7 @@ class Context:
             self._handle = (
                 ctypes.c_void_p())
 
-    def on_raw(
+    def subscribe_raw(
         self,
         type_id: int,
         handler: Callable[[bytes], None],
@@ -234,7 +234,7 @@ class Context:
             subscription,
             callback)
 
-    def on(
+    def subscribe(
         self,
         message_type: Any,
         handler: Callable[[Any], None],
@@ -243,7 +243,7 @@ class Context:
         if isinstance(
             message_type,
             int):
-            return self.on_raw(
+            return self.subscribe_raw(
                 message_type,
                 handler,
                 resource)
@@ -262,13 +262,37 @@ class Context:
             not callable(decode)
         ):
             raise TypeError(
-                "Cito on() expects a generated "
+                "Cito subscribe() expects a generated "
                 "message type or integer TypeId")
 
-        return self.on_raw(
+        return self.subscribe_raw(
             int(type_id),
             lambda payload: handler(
                 decode(payload)),
+            resource)
+
+    def on_raw(
+        self,
+        type_id: int,
+        handler: Callable[[bytes], None],
+        resource: str = "",
+    ) -> Subscription:
+        """Compatibility alias for subscribe_raw()."""
+        return self.subscribe_raw(
+            type_id,
+            handler,
+            resource)
+
+    def on(
+        self,
+        message_type: Any,
+        handler: Callable[[Any], None],
+        resource: str = "",
+    ) -> Subscription:
+        """Compatibility alias for subscribe()."""
+        return self.subscribe(
+            message_type,
+            handler,
             resource)
 
     def has_demand(

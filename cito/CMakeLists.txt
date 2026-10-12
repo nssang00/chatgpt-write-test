@@ -6,16 +6,22 @@ find_package(Python3 REQUIRED COMPONENTS Interpreter)
 
 option(CITO_ENABLE_MSQUIC "Build the optional MsQuic integration smoke" OFF)
 
+add_library(cito_core SHARED src/embedded_host_runtime.cpp)
+target_include_directories(cito_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_compile_features(cito_core PUBLIC cxx_std_20)
+target_compile_definitions(cito_core PRIVATE CITO_CORE_BUILD)
+target_link_libraries(cito_core PUBLIC Threads::Threads)
+
 add_library(cito INTERFACE)
 target_include_directories(cito INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_compile_features(cito INTERFACE cxx_std_20)
-target_link_libraries(cito INTERFACE Threads::Threads)
+target_link_libraries(cito INTERFACE cito_core Threads::Threads)
 
 add_library(cito_c SHARED src/c_api.cpp)
 target_include_directories(cito_c PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_compile_features(cito_c PRIVATE cxx_std_20)
 target_compile_definitions(cito_c PRIVATE CITO_C_BUILD)
-target_link_libraries(cito_c PRIVATE Threads::Threads)
+target_link_libraries(cito_c PRIVATE cito_core Threads::Threads)
 set_target_properties(cito_c PROPERTIES OUTPUT_NAME cito)
 
 include(CTest)
@@ -29,6 +35,7 @@ if(BUILD_TESTING)
   endfunction()
 
   cito_add_test(cito_context_tests tests/context_test.cpp "unit;regression")
+  cito_add_test(cito_shared_context_tests tests/shared_context_test.cpp "unit;latency;regression")
   cito_add_test(cito_context_index_tests tests/context_index_test.cpp "unit;latency;regression")
   cito_add_test(cito_type_tests tests/type_test.cpp "unit;regression")
   cito_add_test(cito_wire_tests tests/wire_test.cpp "unit;regression")
@@ -61,6 +68,12 @@ if(BUILD_TESTING)
   target_compile_options(cito_c_api_tests PRIVATE -Wall -Wextra -Wpedantic)
   add_test(NAME cito_c_api_tests COMMAND cito_c_api_tests)
   set_tests_properties(cito_c_api_tests PROPERTIES LABELS "unit;smoke;latency;regression")
+
+  add_executable(cito_cpp_c_bridge_tests tests/cpp_c_bridge_test.cpp)
+  target_link_libraries(cito_cpp_c_bridge_tests PRIVATE cito cito_c)
+  target_compile_options(cito_cpp_c_bridge_tests PRIVATE -Wall -Wextra -Wpedantic)
+  add_test(NAME cito_cpp_c_bridge_tests COMMAND cito_cpp_c_bridge_tests)
+  set_tests_properties(cito_cpp_c_bridge_tests PROPERTIES LABELS "unit;smoke;latency;regression")
 
   add_test(
     NAME cito_python_smoke
