@@ -63,7 +63,7 @@ int main(void) {
     cito_context_destroy(peer);
     cito_context_destroy(isolated);
     assert(cito_context_publish(ctx, 100, "drone_18", 8, hello, sizeof hello, &delivered) == CITO_STATUS_OK);
-    assert(delivered == 0 && s.calls == 0);
+    assert(delivered == 0 && s.calls == 1);
     assert(cito_context_publish(ctx, 100, "drone_17", 8, hello, sizeof hello, &delivered) == CITO_STATUS_OK);
     assert(delivered == 1 && s.calls == 2 && s.type_id == 100);
     assert(strcmp(s.resource, "drone_17") == 0);

@@ -133,9 +133,9 @@ struct cito_subscription {
 
         if (const auto locked =
                 state.lock()) {
-            locked->host_
+            locked->host()
                 .remove_interest(
-                    context->state->app_id_,
+                    locked->app_id_,
                     key);
         }
     }
