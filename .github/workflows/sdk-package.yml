@@ -21,8 +21,10 @@ jobs:
         run: cmake --build build-sdk --config Release --parallel 2
       - name: Install SDK
         run: cmake --install build-sdk --config Release
+      - name: Relocate installed SDK
+        run: mv sdk-install sdk-relocated
       - name: Configure independent consumer
-        run: cmake -S examples/sdk_consumer -B build-consumer -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH=${{ github.workspace }}/sdk-install
+        run: cmake -S examples/sdk_consumer -B build-consumer -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH=${{ github.workspace }}/sdk-relocated
       - name: Build independent consumer
         run: cmake --build build-consumer --config Release --parallel 2
       - name: Run installed consumer

@@ -24,3 +24,10 @@ Issues should be appended, not silently discarded. A blocked task does not block
 - Priority: P2 infrastructure. `git clone https://github.com/nssang00/chatgpt-write-test.git` failed: `Could not resolve host: github.com`.
 - The connected GitHub integration can read/write branches and files. Local ZIP builds are not affected.
 - Next: use a permitted source-sync transport or an environment with Git network access; continue independent tests.
+
+## NW-005 Installed Core SDK packaging — IN PROGRESS
+- Priority: P2 independent workstream; does not unblock NW-002 or NW-003.
+- Source: CMake install/export, native C++11 consumer, Linux and Windows GitHub Actions in PR #7.
+- Local evidence (latest ZIP): Linux Release 21/21, install success, installed consumer 1/1, relocated-prefix consumer 1/1.
+- GitHub CI still uses the earlier main source snapshot until NW-003 is fixed. New SDK workflow verifies the packaging code path, not the missing plugin source.
+- Next: verify both Linux and Windows installed-consumer CI jobs; promote packaging gate only after successful results.

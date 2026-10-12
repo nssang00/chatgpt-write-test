@@ -11,6 +11,6 @@ A feature is not complete solely because it compiles or has a test harness.
 | Windows WebView2 E2E | Same test on real WebView2 runtime | Pending |
 | ABI / lifecycle | Compatibility, in-flight release, duplicate IDs, quiescing | Partial local verification; Windows/stress pending |
 | Security | Capability/permission defaults tested | Not complete |
-| Packaging | Install targets and clean consumer example pass | Not complete |
+| Packaging | Install targets and clean consumer example pass | Linux local install/relocate consumer 1/1 pass; Windows CI pending; Core-only SDK |
 
 Report `PASS`, `IMPLEMENTED / UNVERIFIED`, `BLOCKED`, or `REQUIRES APPROVAL` precisely. Any gate exclusion requires explicit approval.
