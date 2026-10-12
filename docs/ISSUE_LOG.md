@@ -7,7 +7,7 @@ Issues should be appended, not silently discarded. A blocked task does not block
 - Reproduction: configure and build the browser-E2E ZIP in CMake Release with tests ON, then run `ctest --output-on-failure`.
 - Failure: 19/21 pass; both failing tests throw `Plugin has live native objects or object calls`.
 - Cause: `assert(...)` contained side-effecting `runtime.release` calls. `NDEBUG` removed the release entirely. In addition, `assert(waitUntil(...))` in `plugin.async_lifetime` skipped race synchronization.
-- Local fix: shared `test_require.hpp` and unconditional `NW_REQUIRE(...)` checks in all three plugin regression sources. Retest: Linux GCC 14.2, Release 21/21 pass; 3 targeted plugin tests repeated 10 times each.
+- Local fix: shared `test_require.hpp` and unconditional `NW_REQUIRE(...)` checks in all three plugin regression sources. Retest: Linux GCC 14.2, Release 21/21 pass, Debug 21/21 pass; 3 targeted plugin tests repeated 10 times each.
 - Next: port the fixed sources to GitHub integration branch, run Windows Release CTest.
 
 ## NW-002 Real browser E2E not run — BLOCKED ON ENGINE SDK / CI
