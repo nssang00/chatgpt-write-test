@@ -359,3 +359,11 @@ callbacks still have unmet release gates. Keep PR #7 Draft, main intact.
   with `doctor` prior to invoking `xytron plugin build`.
 - Deliberately excludes complete browser/managed-runtime publishing
   dependencies; do not interpret as green desktop-platform distribution.
+
+## NW-026 CLI doctor workflow YAML quoting — FIX SUBMITTED / CI PENDING
+- On code 8d6f6151 the `xytron-cli.yml` workflow was rejected by GitHub
+  before starting jobs: a `run:` scalar began with a double quote but
+  contained unquoted trailing command arguments. This is a workflow
+  syntax error, not test failure or `doctorSdk` compilation issue.
+- Fix: use block-scalar `run: |` for the `xytron doctor --sdk`
+  invocation. Rerun both Windows/Linux CLI tests before closing.
