@@ -9,7 +9,7 @@ Two workflows are registered on the default branch:
 
 The default branch currently contains a separate NativeWeb project, **not the M5 renderer + four Seoul PBF files**. CI must not report a success without those sources.
 
-To enable a run, take the complete `M5_OL1010_4Stage_CI_Project_20261013.zip` prepared in ChatGPT and either:
+To enable a run, take the complete `project.zip` prepared in ChatGPT (same bytes as the 4-stage ZIP, filename adapted for GitHub) and either:
 
 - Commit the exact binary ZIP into this repository at `m5-ci/project.zip` (4.8 MB), or
 - Upload it to a trusted GitHub release/HTTPS location and paste that publicly retrievable HTTPS direct-download URL into the workflow's `project_archive_url` field. The URL is not a ChatGPT sandbox link.
@@ -34,7 +34,7 @@ Exact archive to upload: `M5_OL1010_4Stage_CI_Project_20261013.zip` (4,810,330 b
 
 SHA-256: `62c906b8b00bf9cf91752378e0b637aba728500198ec616ca109d62af79a9b88`
 
-Steps in GitHub UI: open repository -> **Add file** -> **Upload files** -> upload the downloaded ZIP to `m5-ci/project.zip` (ensure this *exact* path; create folder via GitHub web editor if necessary) -> Commit to `main`. A push touching `m5-ci/project.zip` launches the general CI. Alternatively start Actions -> M5 Basic Render and OL 10.10.0 CPU -> Run workflow with a trusted direct HTTPS ZIP link. The job validates the exact SHA-256 and **fails closed** if it differs.
+Steps in GitHub UI: open the `m5-ci` folder on `main` -> **Add file** -> **Upload files** -> choose the downloaded file named `project.zip` -> Commit to `main`. The resulting path must be exactly `m5-ci/project.zip`. A push touching `m5-ci/project.zip` launches the general CI. Alternatively start Actions -> M5 Basic Render and OL 10.10.0 CPU -> Run workflow with a trusted direct HTTPS ZIP link. The job validates the exact SHA-256 and **fails closed** if it differs.
 
 The ChatGPT GitHub connector can write text files but cannot push the binary ZIP. CI has **not yet run** with this archive; there are no real M5 screenshots from hosted Actions yet.
 
