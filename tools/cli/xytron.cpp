@@ -118,6 +118,23 @@ static bool safeSdkPrefix(const std::string& path) {
   }
   return true;
 }
+static void doctorSdk(const std::string& sdk) {
+  if(!safeSdkPrefix(sdk))
+    throw std::runtime_error("Unsafe/invalid SDK prefix path");
+  const std::string header=sdk+"/include/nativeweb/plugin.hpp";
+  const std::string config=sdk+"/lib/cmake/NativeWeb/NativeWebConfig.cmake";
+  const std::string alternative=sdk+"/lib64/cmake/NativeWeb/NativeWebConfig.cmake";
+  if(!exists(header))
+    throw std::runtime_error("NativeWeb plugin.hpp is missing: "+header);
+  if(!exists(config) && !exists(alternative))
+    throw std::runtime_error("NativeWeb CMake package is missing under: "+sdk);
+  std::cout<<"xytron doctor: NativeWeb headers and CMake SDK package FOUND\n";
+  if(std::system("cmake --version")!=0)
+    throw std::runtime_error("CMake is not available on PATH");
+  std::cout<<"xytron doctor: installed Core SDK + CMake PASS\n";
+  std::cout<<"Note: browser engines, Python/.NET hosts and app packaging are NOT checked\n";
+}
+
 static void pluginBuild(const std::string& id,const std::string& sdk) {
   if(!valid(id,true)) throw std::runtime_error("Invalid plugin id");
   if(!safeSdkPrefix(sdk))
@@ -221,8 +238,9 @@ static void help() {
     "  plugin new NAME --language cpp\n"
     "  plugin build NAME --sdk INSTALLED_SDK_PREFIX\n"
     "  module add NAME --language cpp|python|csharp\n"
+    "  doctor --sdk INSTALLED_SDK_PREFIX\n"
     "  --help / --version\n"
-    "  restore/run/build/test/publish/doctor: NOT IMPLEMENTED\n";
+    "  restore/run/build/test/publish: NOT IMPLEMENTED\n";
 }
 int main(int argc,char** argv) {
   try {
@@ -239,6 +257,10 @@ int main(int argc,char** argv) {
     if(argc==6&&std::string(argv[1])=="module"&&
        std::string(argv[2])=="add"&&std::string(argv[4])=="--language") {
       moduleAdd(argv[3],argv[5]);return 0;
+    }
+    if(argc==4&&std::string(argv[1])=="doctor"&&
+       std::string(argv[2])=="--sdk") {
+      doctorSdk(argv[3]);return 0;
     }
     if(argc==6&&std::string(argv[1])=="plugin"&&
        std::string(argv[2])=="build"&&std::string(argv[4])=="--sdk") {

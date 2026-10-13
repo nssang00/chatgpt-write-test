@@ -64,3 +64,16 @@ The first CLI test failed because a semicolon in a CMake test argument was
 split into multiple positional arguments (NW-021); after replacing the
 probe with an ampersand, the test passed on both OS. An installed SDK
 is required; this is not `xytron restore/run/publish`.
+
+## SDK readiness check (C++11 native CLI)
+
+`xytron doctor --sdk PREFIX` verifies the installed SDK's
+`include/nativeweb/plugin.hpp` and CMake package metadata, and runs
+`cmake --version` to check the build tool exists on PATH. An absent
+SDK/unsafe path returns a nonzero diagnostic instead of claiming success.
+The bootstrap CLI workflow calls `doctor` on the freshly installed
+Core SDK, before building the DLL/SO through `xytron plugin build`.
+
+Doctor validates **Core SDK only**; it explicitly warns that browser engine
+distribution, Python/.NET hosts, standalone app shell and publish
+dependencies are not checked. Full `xytron restore` is not implemented.

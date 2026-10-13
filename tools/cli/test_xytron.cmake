@@ -48,6 +48,7 @@ bad(1 plugin new ../../escape --language cpp)
 bad(1 plugin new camera --language python)
 bad(2 run)
 bad(2 publish)
+bad(1 doctor --sdk invalid)
 # No implicit installation: a build attempt without SDK has to fail;
 # a malicious SDK prefix must be rejected before executing a shell.
 bad(1 plugin build camera --sdk "invalid&echo")

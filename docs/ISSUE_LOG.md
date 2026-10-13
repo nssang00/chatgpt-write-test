@@ -351,3 +351,11 @@ callbacks still have unmet release gates. Keep PR #7 Draft, main intact.
   `checkpoint: security-same-entry-iframe-blocked` and NEVER output
   `security-UNTRUSTED-CALL-EXECUTED`. This is one additional negative
   scenario, **not** closure of origin/permission policy NW-014.
+
+## NW-025 Core SDK readiness diagnostics via xytron doctor — CI PENDING
+- Implemented `xytron doctor --sdk PREFIX`, failing on missing
+  plugin headers, CMake SDK config or missing CMake executable.
+- Windows/Linux CLI workflow now checks freshly installed Core SDK
+  with `doctor` prior to invoking `xytron plugin build`.
+- Deliberately excludes complete browser/managed-runtime publishing
+  dependencies; do not interpret as green desktop-platform distribution.
