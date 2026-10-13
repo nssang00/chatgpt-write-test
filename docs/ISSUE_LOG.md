@@ -285,3 +285,12 @@ callbacks still have unmet release gates. Keep PR #7 Draft, main intact.
   already treats missing-frame-response as safe (no native invocation).
 - Still requires WebView2 frame-owned messaging/capability machinery for
   deterministic per-frame error responses and same-URL iframe isolation.
+
+## NW-019 negative iframe E2E fixture strengthening — CI PENDING
+- Child document sends a separate `security-probe-ready` handshake BEFORE
+  attempting its native request. The host parent rejects missing ready, so a
+  missing local file or malformed iframe cannot make a 7-second timeout count
+  as a passing denied-native-call test.
+- Runner still rejects any actual `security-UNTRUSTED-CALL-EXECUTED`
+  native-side checkpoint. No-bridge/no-response only passes for an iframe
+  whose separate document demonstrably executed.

@@ -37,17 +37,23 @@
     securityFrame.src = "plugin_untrusted_child.html";
     securityFrame.style.display = "none";
     const childResult = new Promise(resolve => {
+      let frameReady = false;
       const timer = setTimeout(() => {
         window.removeEventListener("message", onChildMessage);
-        resolve("no-response");
+        resolve(frameReady ? "no-response" : "frame-never-loaded");
       }, 7000);
       function onChildMessage(event) {
-        if (event.source !== securityFrame.contentWindow ||
-            !event.data || event.data.kind !== "nativeweb-security-probe")
+        if (event.source !== securityFrame.contentWindow || !event.data)
+          return;
+        if (event.data.kind === "nativeweb-security-probe-ready") {
+          frameReady = true;
+          return;
+        }
+        if (event.data.kind !== "nativeweb-security-probe")
           return;
         clearTimeout(timer);
         window.removeEventListener("message", onChildMessage);
-        resolve(event.data.outcome);
+        resolve(frameReady ? event.data.outcome : "missing-probe-ready");
       }
       window.addEventListener("message", onChildMessage);
     });
