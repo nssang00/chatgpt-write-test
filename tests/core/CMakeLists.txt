@@ -276,3 +276,11 @@ set_target_properties(nativeweb_binding_registry_regression PROPERTIES
     CXX_EXTENSIONS NO
 )
 add_test(NAME core.binding_registry COMMAND nativeweb_binding_registry_regression)
+
+# One Main plus N language-agnostic Modules, with C++11 RAII lifecycle.
+add_executable(nativeweb_module_registry_regression module_registry_regression.cpp)
+target_link_libraries(nativeweb_module_registry_regression PRIVATE NativeWeb::Core)
+target_include_directories(nativeweb_module_registry_regression PRIVATE ${PROJECT_SOURCE_DIR}/src)
+set_target_properties(nativeweb_module_registry_regression PROPERTIES
+    CXX_STANDARD 11 CXX_STANDARD_REQUIRED YES CXX_EXTENSIONS NO)
+add_test(NAME core.module_registry COMMAND nativeweb_module_registry_regression)
