@@ -2,7 +2,7 @@
 
 **This directory currently contains documentation only, not the renderer and PBF fixtures.**
 
-Upload the exact `M5_OL1010_4Stage_CI_Project_20261013.zip` into **this folder** via GitHub's **Add file > Upload files** on the `main` branch, so it becomes `m5-ci/project.zip`. Do not unzip the archive in GitHub.
+Download the separately provided **`project.zip`** (this has the exact bytes of `M5_OL1010_4Stage_CI_Project_20261013.zip`, only the filename differs). While viewing **this `m5-ci` folder** on `main`, choose **Add file > Upload files**, upload `project.zip`, and commit. The destination must be **`m5-ci/project.zip`**. Do not unzip it.
 
 - File size: **4,810,330 bytes**
 - SHA256: `62c906b8b00bf9cf91752378e0b637aba728500198ec616ca109d62af79a9b88`
