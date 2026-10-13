@@ -48,5 +48,41 @@ bad(1 plugin new ../../escape --language cpp)
 bad(1 plugin new camera --language python)
 bad(2 run)
 bad(2 publish)
-bad(2 module add erp --language csharp)
+# A single Python Main may have C++, Python and C# feature modules.
+function(in_project project)
+  execute_process(COMMAND "${XYTRON}" ${ARGN}
+    WORKING_DIRECTORY "${TEST_ROOT}/${project}"
+    RESULT_VARIABLE rc OUTPUT_VARIABLE out ERROR_VARIABLE err)
+  if(NOT rc EQUAL 0)
+    message(FATAL_ERROR "Module command failed ${ARGN} rc=${rc}: ${out} ${err}")
+  endif()
+endfunction()
+in_project(ai_app module add camera --language cpp)
+in_project(ai_app module add agent --language python)
+in_project(ai_app module add erp --language csharp)
+foreach(p modules/camera/module.cpp
+          modules/agent/module.py
+          modules/erp/Module.csproj)
+  if(NOT EXISTS "${TEST_ROOT}/ai_app/${p}")
+    message(FATAL_ERROR "Missing generated Module: ${p}")
+  endif()
+endforeach()
+file(READ "${TEST_ROOT}/ai_app/xytron.json expanded)
+foreach(name camera agent erp)
+  if(NOT expanded MATCHES "\"id\":\"${name}\"")
+    message(FATAL_ERROR "Missing Module ${name} in manifest")
+  endif()
+endforeach()
+execute_process(COMMAND "${XYTRON}" module add camera --language cpp
+  WORKING_DIRECTORY "${TEST_ROOT}/ai_app" RESULT_VARIABLE duplicate)
+if(NOT duplicate EQUAL 1)
+  message(FATAL_ERROR "Duplicate Module id was accepted")
+endif()
+execute_process(COMMAND "${XYTRON}" module add ../../bad --language python
+  WORKING_DIRECTORY "${TEST_ROOT}/ai_app" RESULT_VARIABLE traversal)
+if(NOT traversal EQUAL 1)
+  message(FATAL_ERROR "Path traversal was accepted")
+endif()
+bad(1 module add erp --language csharp)
+
 message(STATUS "Xytron bootstrap CLI scaffold PASS")

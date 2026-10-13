@@ -17,3 +17,18 @@ Scaffold matrix in [GitHub Actions 38334300772](https://github.com/nssang00/chat
 - [CLI #38334609335](https://github.com/nssang00/chatgpt-write-test/actions/runs/38334609335) also PASS on both OS after security policy foundation was added.
 
 This is a repeatable developer-onboarding **foundation only**. No working desktop app, JS module bridge, Python/C# language host, `restore`, `run`, `publish` or CLI-managed plugin build command exists yet. The next work must test a real executable project without source tree access.
+
+## CLI `module add` bootstrap
+
+The new `xytron module add ID --language cpp|python|csharp` command runs
+inside a CLI-generated project, creates embedded Module source/descriptor
+and appends it to `xytron.json` while preserving the original single Main.
+A Python Main + C++/Python/C# feature Module combination is exercised
+by the CLI's Windows/Linux CTest. This is a **scaffolding operation**;
+module loading, JS dispatch and real mixed-language app execution remain
+unimplemented.
+
+The implementation intentionally accepts only the CLI-produced manifest
+layout, rejects unknown user-edited Module records and refuses duplicate
+IDs or directory overwrites. A general versioned JSON schema parser and
+atomic manifest save are required before production-grade CLI release.

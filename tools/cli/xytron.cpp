@@ -1,6 +1,7 @@
 // Native C++11 bootstrap CLI: project/plugin scaffolding, not runtime.
 #include <fstream>
 #include <iostream>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <sys/stat.h>
@@ -101,12 +102,92 @@ static void plugin(const std::string& id) {
     "# Stable C ABI, no Core linking into plugin.\n");
   std::cout<<"Created C++ plugin scaffold: "<<p<<"\n";
 }
+
+static void moduleAdd(const std::string& id, const std::string& lang) {
+  if(!valid(id,true)) throw std::runtime_error("Invalid feature Module id");
+  if(lang!="cpp"&&lang!="python"&&lang!="csharp")
+    throw std::runtime_error("Module must be cpp, python or csharp");
+  std::ifstream in("xytron.json", std::ios::binary);
+  if(!in) throw std::runtime_error("Run module add inside a xytron project");
+  std::ostringstream ss;ss<<in.rdbuf();
+  const std::string doc=ss.str();
+  if(doc.size()>1024*1024) throw std::runtime_error("Manifest too large");
+  const std::string key="\"modules\": [";
+  const std::size_t begin=doc.find(key);
+  if(begin==std::string::npos ||
+     doc.find(key,begin+1)!=std::string::npos ||
+     doc.find("\"schemaVersion\": 1")==std::string::npos ||
+     doc.find("\"main\": {")==std::string::npos)
+    throw std::runtime_error("Unsupported xytron.json format");
+  const std::size_t open=begin+key.size()-1;
+  const std::size_t close=doc.find(']',open+1);
+  if(close==std::string::npos || doc.find("\n}",close)==std::string::npos)
+    throw std::runtime_error("Malformed Modules manifest array");
+  const std::string items=doc.substr(open+1,close-open-1);
+  // Accept exactly the canonical inline records emitted by this CLI.
+  // Hand-authored manifests must use a future schema-aware JSON editor.
+  std::size_t cursor=0;
+  while(cursor<items.size()) {
+    if(items[cursor]==' ' || items[cursor]=='\n' || items[cursor]==',')
+      {++cursor;continue;}
+    const std::string prefix="{\"id\":\"";
+    if(items.compare(cursor,prefix.size(),prefix)!=0)
+      throw std::runtime_error("Unsupported Module record structure");
+    const std::size_t startId=cursor+prefix.size();
+    const std::size_t endId=items.find('"',startId);
+    if(endId==std::string::npos) throw std::runtime_error("Invalid Module record");
+    const std::string existing=items.substr(startId,endId-startId);
+    if(!valid(existing,true)) throw std::runtime_error("Invalid existing Module id");
+    if(existing==id) throw std::runtime_error("Module id already exists: "+id);
+    const std::size_t end=items.find('}',endId);
+    if(end==std::string::npos) throw std::runtime_error("Invalid Module object");
+    const std::string item=items.substr(cursor,end+1-cursor);
+    if(item.find("\"delivery\":\"embedded\",\"path\":\"modules/"+existing+"\"")==std::string::npos ||
+       item.find("\"language\":\"")==std::string::npos)
+      throw std::runtime_error("Unrecognized Module item");
+    cursor=end+1;
+  }
+  const std::string path="modules/"+id;
+  if(exists(path)) throw std::runtime_error("Module already exists: "+id);
+  dir("modules",false);
+  dir(path,true);
+  file(path+"/module.json", "{\"schemaVersion\":1,\"id\":"+q(id)+
+    ",\"role\":\"feature\",\"language\":"+q(lang)+
+    ",\"delivery\":\"embedded\"}\n");
+  if(lang=="cpp")
+    file(path+"/module.cpp","// Module scaffold only; JS dispatch TODO.\n"
+      "#include <string>\nstd::string hello(){return \"hello\";}\n");
+  else if(lang=="python")
+    file(path+"/module.py","# Module scaffold only; JS dispatch TODO.\n"
+      "async def hello():\n    return 'hello'\n");
+  else {
+    file(path+"/Module.cs","// Module scaffold only; JS dispatch TODO.\n"
+      "public static class Module { public static string Hello() => \"hello\"; }\n");
+    file(path+"/Module.csproj","<Project Sdk=\"Microsoft.NET.Sdk\">"
+      "<PropertyGroup><TargetFramework>net8.0</TargetFramework>"
+      "</PropertyGroup></Project>\n");
+  }
+  const std::string item="{\"id\":"+q(id)+",\"language\":"+q(lang)+
+    ",\"delivery\":\"embedded\",\"path\":"+q(path)+"}";
+  const std::string updated=doc.substr(0,close)+
+    (items.empty()?"":",")+item+doc.substr(close);
+  // Validate and create generated source before writing project metadata.
+  // Transactional writes / generalized JSON migration remain follow-up.
+  std::ofstream out("xytron.json",std::ios::binary|std::ios::trunc);
+  if(!out) throw std::runtime_error("Cannot update xytron.json");
+  out<<updated;out.close();
+  if(!out) throw std::runtime_error("Failed to save xytron.json");
+  std::cout<<"Added "<<lang<<" feature Module "<<id
+           <<" (scaffold only, not loaded by runtime)\n";
+}
+
 static void help() {
   std::cout<<"xytron bootstrap CLI (partial)\n"
     "  new desktop NAME --backend cpp|python|csharp\n"
     "  plugin new NAME --language cpp\n"
+    "  module add NAME --language cpp|python|csharp\n"
     "  --help / --version\n"
-    "  restore/run/build/test/publish/doctor/module add/plugin build: NOT IMPLEMENTED\n";
+    "  restore/run/build/test/publish/doctor/plugin build: NOT IMPLEMENTED\n";
 }
 int main(int argc,char** argv) {
   try {
@@ -119,6 +200,10 @@ int main(int argc,char** argv) {
     if(argc==6&&std::string(argv[1])=="new"&&
        std::string(argv[2])=="desktop"&&std::string(argv[4])=="--backend") {
       desktop(argv[3],argv[5]);return 0;
+    }
+    if(argc==6&&std::string(argv[1])=="module"&&
+       std::string(argv[2])=="add"&&std::string(argv[4])=="--language") {
+      moduleAdd(argv[3],argv[5]);return 0;
     }
     if(argc==6&&std::string(argv[1])=="plugin"&&
        std::string(argv[2])=="new"&&std::string(argv[4])=="--language") {

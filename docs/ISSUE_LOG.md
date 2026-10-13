@@ -152,3 +152,13 @@ Issues should be appended, not silently discarded. A blocked task does not block
   invoke native code on remote sources or navigated to other pages. This is
   intentional default-deny as approved, but explicit opt-in capability must
   be implemented before product release. CI success must be verified.
+
+## NW-015 xytron module add only edits bootstrap canonical manifest — OPEN / P2
+- This implementation supports inserting feature Modules of cpp/python/csharp
+  into CLI-generated `xytron.json` with one Main. It rejects unknown manifest
+  layouts instead of silently changing user-owned files.
+- Limitation: no full JSON schema parser, transactional filesystem update,
+  production backend start/stop or module-to-module transport.
+- CLI regression exercises 3-language manifest, duplicate names, unsafe IDs
+  and absence of a project; keep release gates A1-MOD-07 and A1-CLI-06 OPEN
+  until actual mixed-language JS E2E.
