@@ -1,4 +1,4 @@
-// v58.5.2 isolated experimental Unity HWND bridge: single-view only, Windows x64.
+// v58.5.2 r3 isolated experimental Unity HWND bridge: single-view only, Windows x64.
 // Do not ship: cross-thread HWND parenting and Unity focus/IME require real Stage2 verification.
 #include <windows.h>
 #include <wrl.h>
@@ -25,6 +25,7 @@ std::atomic<int> g_status{0}; // 0 idle, 1 starting, 2 ready, 3 closing, <0 fail
 std::atomic<int> g_error{0};
 std::atomic<int> g_pongs{0};
 std::atomic<int> g_acks{0};
+std::atomic<int> g_shutdownPhase{0}; // 0 live, 1 requested, 2 WM_CLOSE, 3 cleaning, 4 COM closed, 5 STA ending, 6 worker ended, 7 joined
 std::atomic<bool> g_stop{false};
 std::atomic<bool> g_visible{true};
 // The following COM objects are ONLY accessed on the dedicated STA thread.
@@ -39,6 +40,7 @@ void Fail(int code) {
     if(host && IsWindow(host)) PostMessageW(host, WM_CLOSE, 0, 0);
 }
 void CleanupOnSta() {
+    g_shutdownPhase.store(3);
     if(g_webview && g_hasMessageHandler) {
         g_webview->remove_WebMessageReceived(g_webMessageToken);
         g_hasMessageHandler=false;
@@ -48,6 +50,7 @@ void CleanupOnSta() {
         g_controller->Close();
         g_controller.Reset();
     }
+    g_shutdownPhase.store(4);
 }
 void ResizeWebView() {
     if(!g_controller) return;
@@ -137,6 +140,7 @@ LRESULT CALLBACK HostProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         if(g_controller) g_controller->put_IsVisible(g_visible.load() ? TRUE : FALSE);
         return 0;
       case WM_CLOSE:
+        g_shutdownPhase.store(2);
         DestroyWindow(hwnd); return 0;
       case WM_DESTROY:
         CleanupOnSta();
@@ -182,10 +186,12 @@ void Worker() {
     }
     // The parent may destroy the child on its own, so always perform cleanup on STA.
     CleanupOnSta();
+    g_shutdownPhase.store(5);
     g_host.store(nullptr);
     g_threadId.store(0);
     CoUninitialize();
     if(g_status.load()>0) g_status.store(0);
+    g_shutdownPhase.store(6);
 }
 }
 extern "C" {
@@ -198,7 +204,7 @@ __declspec(dllexport) int __cdecl WV2Pilot_Open(void* parentHandle,int x,int y,i
     if(g_thread.joinable() || g_status.load()!=0) return -12; // singleton, not product multi-view
     g_parent=parent;
     { std::lock_guard<std::mutex> lock(g_lock); g_rect={x,y,width,height}; }
-    g_error.store(0); g_pongs.store(0); g_acks.store(0); g_stop.store(false); g_visible.store(true);
+    g_error.store(0); g_pongs.store(0); g_acks.store(0); g_shutdownPhase.store(0); g_stop.store(false); g_visible.store(true);
     g_status.store(1);
     try { g_thread=std::thread(Worker); }
     catch(...) { g_status.store(0); g_error.store(-13); return -13; }
@@ -227,20 +233,35 @@ __declspec(dllexport) int __cdecl WV2Pilot_GetState() { return g_status.load(); 
 __declspec(dllexport) int __cdecl WV2Pilot_GetLastError() { return g_error.load(); }
 __declspec(dllexport) int __cdecl WV2Pilot_GetPongCount() { return g_pongs.load(); }
 __declspec(dllexport) int __cdecl WV2Pilot_GetAckCount() { return g_acks.load(); }
+__declspec(dllexport) int __cdecl WV2Pilot_GetShutdownPhase() {
+    return g_shutdownPhase.load();
+}
+// Request an asynchronous shutdown while the Unity Player UI is still running.
+__declspec(dllexport) int __cdecl WV2Pilot_RequestClose() {
+    if(!g_thread.joinable()) return 0;
+    if(g_stop.exchange(true)) return 0; // one shutdown request only
+    g_shutdownPhase.store(1);
+    if(g_status.load()>0) g_status.store(3);
+    HWND host=g_host.load();
+    if(host && IsWindow(host)) {
+        if(PostMessageW(host,WM_CLOSE,0,0)) return 0;
+    }
+    DWORD tid=g_threadId.load();
+    if(tid && PostThreadMessageW(tid,WM_QUIT,0,0)) return 0;
+    // If thread startup is still pending, Worker checks g_stop after CreateWindowEx.
+    return tid == 0 ? 0 : -32;
+}
 __declspec(dllexport) int __cdecl WV2Pilot_Close(unsigned timeoutMs) {
     if(!g_thread.joinable()) { g_status.store(0); return 0; }
-    g_stop.store(true);
-    HWND host=g_host.load();
-    if(host && IsWindow(host)) PostMessageW(host,WM_CLOSE,0,0);
-    else {
-        DWORD tid=g_threadId.load();
-        if(tid) PostThreadMessageW(tid,WM_QUIT,0,0);
-    }
+    int request=WV2Pilot_RequestClose();
+    if(request!=0 && request!=-32) return request;
     DWORD wait=WaitForSingleObject(g_thread.native_handle(), timeoutMs);
-    if(wait!=WAIT_OBJECT_0) return -30; // keep thread handle; do not detach or unload DLL
+    if(wait==WAIT_TIMEOUT) return -30;
+    if(wait!=WAIT_OBJECT_0) return -31; // WAIT_FAILED; preserve worker handle
     g_thread.join();
     g_status.store(0);
     g_parent=nullptr;
+    g_shutdownPhase.store(7);
     return 0;
 }
 }

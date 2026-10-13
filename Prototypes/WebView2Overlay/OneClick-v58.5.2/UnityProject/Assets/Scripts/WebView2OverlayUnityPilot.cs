@@ -15,6 +15,7 @@ namespace Company.WebView.Prototypes
         private IntPtr playerHwnd;
         private bool started;
         private bool readyLogged;
+        private bool closeAttempted;
         private RectInt lastBounds = new RectInt(0, 0, 0, 0);
         private RECT lastWindowRect;
         private bool hadWindowRect;
@@ -121,7 +122,8 @@ namespace Company.WebView.Prototypes
         private void OnDestroy() { StopPilot(); }
         private void StopPilot()
         {
-            if(!started) return;
+            if(!started || closeAttempted) return;
+            closeAttempted=true;
             int rc=WV2Pilot_Close(5000);
             if(rc!=0) Debug.LogError("WV2 Pilot close timeout/failure "+rc+"; DO NOT unload native DLL");
             else started=false;

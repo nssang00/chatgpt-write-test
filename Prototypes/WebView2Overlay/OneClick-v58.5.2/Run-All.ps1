@@ -93,6 +93,9 @@ try{
   $summary.runtime=$data
   Assert ($data.harnessVersion -eq '58.5.2') 'Wrong runtime harness version'
   Assert ($data.status -eq 'PASS_AUTO') "Runtime failed: $($data.error), status $($data.status)"
+  Assert ($data.testRevision -eq 'r3') 'Wrong player telemetry revision'
+  Assert ($data.shutdownJoined -eq $true -and $data.shutdownResult -eq 0 -and $data.shutdownPhase -eq 7 -and $data.stateAfterShutdown -eq 0) 'Native WebView2 worker shutdown was not joined'
+  if((Get-Content -LiteralPath $playLog -Raw -Encoding UTF8) -match 'WV2 Pilot close timeout/failure'){throw 'Player reported a WebView2 shutdown timeout'}
   Assert ($proc.ExitCode -eq 0) "Unity Player exited $($proc.ExitCode)"
   $summary.status='PENDING_MANUAL';$summary.autoChecks='PASS';$summary.stage='COMPLETE_AUTO'
   $exit=0
@@ -106,7 +109,11 @@ try{
  $summary | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $sum -Encoding UTF8
  $zip="$out.zip"
  try {
-  Compress-Archive -Path (Join-Path $out '*') -DestinationPath $zip -Force -CompressionLevel Optimal
+  # Never upload Player binaries or WebView2 user data profile (history, cookies, cache).
+  # The prior r2 ZIP included a live EBWebView profile; r3 only archives reports/logs.
+  $safe=@('summary.json','unity-editor-build.log','unity-player.log','player-runtime-evidence.json') |
+    ForEach-Object { Join-Path $out $_ } | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf }
+  Compress-Archive -LiteralPath $safe -DestinationPath $zip -Force -CompressionLevel Optimal
   Write-Host "Upload result ZIP: $zip"
  }catch{Write-Warning "Results ZIP failed: $_"}
  Write-Host "Final: $($summary.status). Manual IME/DPI/focus checks remain even if automatic checks PASS."

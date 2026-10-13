@@ -8,18 +8,20 @@ cs=(r/'UnityProject/Assets/Scripts/WebView2OverlayUnityPilot.cs').read_text(enco
 tele=(r/'UnityProject/Assets/Scripts/WebView2OneClickTelemetry.cs').read_text(encoding='utf-8')
 build=(r/'UnityProject/Assets/Editor/WebView2OneClickBuilder.cs').read_text(encoding='utf-8')
 ps=(r/'Run-All.ps1').read_text(encoding='utf-8')
-for x in ['g_acks.fetch_add(1)','WV2Pilot_GetAckCount','probe-ack','COINIT_APARTMENTTHREADED','GetWindowThreadProcessId']:
+for x in ['g_acks.fetch_add(1)','WV2Pilot_GetAckCount','probe-ack','COINIT_APARTMENTTHREADED','GetWindowThreadProcessId','WV2Pilot_RequestClose','WV2Pilot_GetShutdownPhase','g_shutdownPhase.store(7)']:
  assert x in cpp,x
 for x in ['enablePilot = false','WV2Pilot_Close','OnApplicationQuit','GetActiveWindow']:
  assert x in cs,x
 assert 'current!=lastBounds' not in cs, 'Unity 2022.3 RectInt has no != operator'
 for x in ['current.x != lastBounds.x', 'current.y != lastBounds.y', 'current.width != lastBounds.width', 'current.height != lastBounds.height']:
  assert x in cs, 'RectInt comparison must use coordinates: '+x
-for x in ['PASS_AUTO','FAIL_AUTO','ackCount','Application.Quit','pilotReportPath']:
+for x in ['PASS_AUTO','FAIL_AUTO','ackCount','Application.Quit','pilotReportPath','shutdownJoined','shutdownWaitSeconds','shutdownPhase==7','WV2Pilot_Close(0)']:
  assert x in tele,x
 for x in ['BuildPipeline.BuildPlayer','2022.3.62f3','StandaloneWindows64','ApplyModifiedPropertiesWithoutUndo']:
  assert x in build,x
-for x in ['Get-FileHash','SHA256SUMS.txt','PENDING_MANUAL','Compress-Archive','-executeMethod WebView2OneClickBuilder.Build']:
+for x in ['Get-FileHash','SHA256SUMS.txt','PENDING_MANUAL','Compress-Archive','-executeMethod WebView2OneClickBuilder.Build','shutdownJoined','-LiteralPath $safe']:
  assert x in ps,x
+assert 'closeAttempted=true' in cs, 'Prevent repeated 5s shutdown retries'
+assert 'Join-Path $out \'*\'' not in ps, 'Do not upload WebView2 user profile or Player binaries'
 assert '%~dp0.' in (r/'Run-All.cmd').read_text(encoding='utf-8')
 print('v58.5.2 OneClick static isolation + runtime evidence contract PASS')
