@@ -284,3 +284,13 @@ target_include_directories(nativeweb_module_registry_regression PRIVATE ${PROJEC
 set_target_properties(nativeweb_module_registry_regression PROPERTIES
     CXX_STANDARD 11 CXX_STANDARD_REQUIRED YES CXX_EXTENSIONS NO)
 add_test(NAME core.module_registry COMMAND nativeweb_module_registry_regression)
+
+add_executable(nativeweb_native_permission_regression
+    native_permission_policy_regression.cpp)
+target_link_libraries(nativeweb_native_permission_regression PRIVATE NativeWeb::Core)
+target_include_directories(nativeweb_native_permission_regression
+    PRIVATE ${PROJECT_SOURCE_DIR}/src)
+set_target_properties(nativeweb_native_permission_regression PROPERTIES
+    CXX_STANDARD 11 CXX_STANDARD_REQUIRED YES CXX_EXTENSIONS NO)
+add_test(NAME core.native_permission_policy
+    COMMAND nativeweb_native_permission_regression)
