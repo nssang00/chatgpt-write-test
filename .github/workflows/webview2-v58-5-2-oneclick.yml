@@ -75,6 +75,11 @@ jobs:
         run: |
           & 'dist/WebView2-OneClick-v58.5.2/Run-All.ps1' -BundleRoot 'dist/WebView2-OneClick-v58.5.2' -SelfTest
           if($LASTEXITCODE -ne 0){throw 'OneClick package selftest failed'}
+      - name: Remove CI-only self-test outputs from user package
+        shell: pwsh
+        run: |
+          $results='dist/WebView2-OneClick-v58.5.2/results'
+          if(Test-Path -LiteralPath $results){Remove-Item -LiteralPath $results -Recurse -Force}
       - name: Scope notice
         shell: pwsh
         run: |
