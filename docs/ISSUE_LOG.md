@@ -162,3 +162,11 @@ Issues should be appended, not silently discarded. A blocked task does not block
 - CLI regression exercises 3-language manifest, duplicate names, unsafe IDs
   and absence of a project; keep release gates A1-MOD-07 and A1-CLI-06 OPEN
   until actual mixed-language JS E2E.
+
+## NW-016 Xytron module-add CMake regression script parse typo — FIX SUBMITTED, CI PENDING
+- CLI workflow run 38336055684, Ubuntu job fails `Scaffold regression`
+  before invoking the CLI: `tools/cli/test_xytron.cmake:70` lacked a
+  closing double quote in `file(READ "${TEST_ROOT}/ai_app/xytron.json" expanded)`.
+- Fix: restore closing quote and rerun independent Ubuntu/Windows CLI CI.
+- Scope: CLI smoke test script only; Core and actual browser E2E are not
+  blocked. No success claim until rerun actually passes.

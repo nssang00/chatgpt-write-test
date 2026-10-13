@@ -67,7 +67,7 @@ foreach(p modules/camera/module.cpp
     message(FATAL_ERROR "Missing generated Module: ${p}")
   endif()
 endforeach()
-file(READ "${TEST_ROOT}/ai_app/xytron.json expanded)
+file(READ "${TEST_ROOT}/ai_app/xytron.json" expanded)
 foreach(name camera agent erp)
   if(NOT expanded MATCHES "\"id\":\"${name}\"")
     message(FATAL_ERROR "Missing Module ${name} in manifest")
