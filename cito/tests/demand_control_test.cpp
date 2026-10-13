@@ -95,13 +95,18 @@ int main() {
         11,
         keys[0],
         {
-            {91, 48001},
-            {92, 48002}}};
+            {91, 48001, 4431},
+            {92, 48002, 4432}}};
+
+    const auto route_bytes =
+        cito::encode_route_batch(
+            routes);
+
+    assert(route_bytes[3] == '5');
 
     const auto route_roundtrip =
         cito::decode_route_batch(
-            cito::encode_route_batch(
-                routes));
+            route_bytes);
 
     assert(
         route_roundtrip.incarnation ==
@@ -113,6 +118,57 @@ int main() {
         route_roundtrip.endpoints[1]
             .destination ==
         92);
+    assert(
+        route_roundtrip.endpoints[0]
+            .data_port ==
+        48001);
+    assert(
+        route_roundtrip.endpoints[0]
+            .quic_port ==
+        4431);
+
+    // CTR4 remains decodable: its old reserved u16 maps to quic_port=0.
+    cito::RouteBatch legacy_routes{
+        7,
+        11,
+        keys[0],
+        {{93, 48003, 0}}};
+
+    auto legacy_bytes =
+        cito::encode_route_batch(
+            legacy_routes);
+
+    legacy_bytes[3] = '4';
+
+    const auto legacy_roundtrip =
+        cito::decode_route_batch(
+            legacy_bytes);
+
+    assert(
+        legacy_roundtrip.endpoints.size() ==
+        1);
+    assert(
+        legacy_roundtrip.endpoints[0]
+            .data_port ==
+        48003);
+    assert(
+        legacy_roundtrip.endpoints[0]
+            .quic_port ==
+        0);
+
+    bool empty_transport_failed = false;
+    try {
+        cito::RouteBatch bad_routes{
+            7,
+            11,
+            keys[0],
+            {{94, 0, 0}}};
+        (void)cito::encode_route_batch(
+            bad_routes);
+    } catch (const std::invalid_argument&) {
+        empty_transport_failed = true;
+    }
+    assert(empty_transport_failed);
 
     std::array<cito::InterestKey, 33> many{};
     const cito::DemandSummaryStamp stamp{

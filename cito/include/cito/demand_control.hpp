@@ -45,6 +45,7 @@ struct RouteRequest {
 struct RouteEndpoint {
     DestinationId destination{};
     std::uint16_t data_port{};
+    std::uint16_t quic_port{};
 };
 
 struct RouteBatch {
@@ -611,6 +612,21 @@ encode_route_batch(
             "Cito demand control: route batch too large");
     }
 
+    for (const auto& endpoint :
+         message.endpoints) {
+        if (
+            endpoint.destination == 0 ||
+            (
+                endpoint.data_port == 0 &&
+                endpoint.quic_port == 0
+            )) {
+            throw std::invalid_argument(
+                "Cito demand control: route endpoint has no transport");
+        }
+    }
+
+    // CTR5 keeps the same 12-byte endpoint footprint as CTR4. The u16 that
+    // was reserved in CTR4 now carries the QUIC port.
     std::vector<std::uint8_t> out;
     out.reserve(
         48 +
@@ -619,7 +635,7 @@ encode_route_batch(
     demand_control_detail::write_magic(
         out,
         'R',
-        '4');
+        '5');
     demand_control_detail::write_u64(
         out,
         message.coordinator);
@@ -647,7 +663,7 @@ encode_route_batch(
             endpoint.data_port);
         demand_control_detail::write_u16(
             out,
-            0);
+            endpoint.quic_port);
     }
 
     return out;
@@ -655,11 +671,21 @@ encode_route_batch(
 
 inline RouteBatch decode_route_batch(
     std::span<const std::uint8_t> bytes) {
-    demand_control_detail::check_magic(
-        bytes,
-        'R',
-        '4',
-        48);
+    if (
+        bytes.size() < 48 ||
+        bytes[0] != 'C' ||
+        bytes[1] != 'T' ||
+        bytes[2] != 'R' ||
+        (
+            bytes[3] != '4' &&
+            bytes[3] != '5'
+        )) {
+        throw std::runtime_error(
+            "Cito demand control: invalid route batch");
+    }
+
+    const bool legacy_v4 =
+        bytes[3] == '4';
 
     std::size_t pos = 4;
     RouteBatch message;
@@ -680,11 +706,14 @@ inline RouteBatch decode_route_batch(
         demand_control_detail::read_u16(
             bytes,
             pos);
-    (void)demand_control_detail::read_u16(
-        bytes,
-        pos);
+    const auto header_reserved =
+        demand_control_detail::read_u16(
+            bytes,
+            pos);
 
-    if (count > kMaxRouteBatch ||
+    if (
+        header_reserved != 0 ||
+        count > kMaxRouteBatch ||
         bytes.size() !=
             48 +
                 static_cast<std::size_t>(
@@ -708,9 +737,33 @@ inline RouteBatch decode_route_batch(
             demand_control_detail::read_u16(
                 bytes,
                 pos);
-        (void)demand_control_detail::read_u16(
-            bytes,
-            pos);
+
+        const auto transport_port =
+            demand_control_detail::read_u16(
+                bytes,
+                pos);
+
+        if (legacy_v4) {
+            if (transport_port != 0) {
+                throw std::runtime_error(
+                    "Cito demand control: invalid CTR4 reserved field");
+            }
+            endpoint.quic_port = 0;
+        } else {
+            endpoint.quic_port =
+                transport_port;
+        }
+
+        if (
+            endpoint.destination == 0 ||
+            (
+                endpoint.data_port == 0 &&
+                endpoint.quic_port == 0
+            )) {
+            throw std::runtime_error(
+                "Cito demand control: route endpoint has no transport");
+        }
+
         message.endpoints.push_back(
             endpoint);
     }

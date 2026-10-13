@@ -27,7 +27,7 @@ int main() {
     const std::array<
         cito::RouteEndpoint,
         1> endpoints{{
-            {77, 48010}}};
+            {77, 48010, 4433}}};
 
     sub_udp.set_local_route_endpoints(
         endpoints);
@@ -115,6 +115,15 @@ int main() {
     assert(
         pub_udp.data_endpoint(77)->port ==
         48010);
+    assert(
+        pub_udp.quic_endpoint(77) !=
+        nullptr);
+    assert(
+        pub_udp.quic_endpoint(77)->ipv4 ==
+        sub_source.ipv4);
+    assert(
+        pub_udp.quic_endpoint(77)->port ==
+        4433);
 
     // Recreate the route, then withdraw it through the advertised summary.
     assert(
@@ -122,6 +131,9 @@ int main() {
             key));
     assert(
         pub_udp.data_endpoint(77) ==
+        nullptr);
+    assert(
+        pub_udp.quic_endpoint(77) ==
         nullptr);
 
     sends =
@@ -175,6 +187,9 @@ int main() {
             key).empty());
     assert(
         pub_udp.data_endpoint(77) ==
+        nullptr);
+    assert(
+        pub_udp.quic_endpoint(77) ==
         nullptr);
 
     return 0;

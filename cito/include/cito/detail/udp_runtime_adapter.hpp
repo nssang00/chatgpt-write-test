@@ -179,7 +179,10 @@ public:
 
         if (
             family == 'R' &&
-            version == '4') {
+            (
+                version == '4' ||
+                version == '5'
+            )) {
             const auto batch =
                 decode_route_batch(
                     bytes);
@@ -333,6 +336,19 @@ public:
                 : &it->second;
     }
 
+    const UdpEndpoint* quic_endpoint(
+        DestinationId destination) const noexcept {
+        const auto it =
+            quic_endpoints_.find(
+                destination);
+
+        return
+            it ==
+                quic_endpoints_.end()
+                ? nullptr
+                : &it->second;
+    }
+
     DiscoveryControlCore& control()
         noexcept {
         return control_;
@@ -415,11 +431,23 @@ private:
                     endpoint.destination];
             ++refs;
 
-            data_endpoints_[
-                endpoint.destination] =
-                UdpEndpoint{
-                    ipv4,
-                    endpoint.data_port};
+            if (
+                endpoint.data_port != 0) {
+                data_endpoints_[
+                    endpoint.destination] =
+                    UdpEndpoint{
+                        ipv4,
+                        endpoint.data_port};
+            }
+
+            if (
+                endpoint.quic_port != 0) {
+                quic_endpoints_[
+                    endpoint.destination] =
+                    UdpEndpoint{
+                        ipv4,
+                        endpoint.quic_port};
+            }
 
             next.push_back(
                 endpoint.destination);
@@ -457,6 +485,8 @@ private:
                 destination_refs_.erase(
                     ref);
                 data_endpoints_.erase(
+                    destination);
+                quic_endpoints_.erase(
                     destination);
             }
         }
@@ -540,6 +570,10 @@ private:
     std::unordered_map<
         DestinationId,
         UdpEndpoint> data_endpoints_;
+
+    std::unordered_map<
+        DestinationId,
+        UdpEndpoint> quic_endpoints_;
 
     std::unordered_map<
         DestinationId,

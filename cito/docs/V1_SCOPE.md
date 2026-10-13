@@ -200,3 +200,16 @@ correlation value. Cancel, peer loss, handler-app teardown, explicit request
 destruction, and raw C Context destruction all clean up the corresponding
 local/transport state. Raw C Context destruction preserves the existing rule
 that requester callbacks are suppressed during teardown.
+
+
+## CTR5 transport-aware route endpoints
+
+Route discovery now has a backward-readable CTR5 endpoint format that
+advertises separate UDP data and QUIC ports while retaining CTR4 decoding.
+The endpoint footprint stays 12 bytes. UdpRuntimeAdapter caches both transport
+endpoints and removes both through the existing route/lease lifecycle.
+
+RequestSessionLifecycleCore consumes exact request-handler routes and QUIC
+endpoint metadata to emit loop-owned Connect/Disconnect actions, including
+endpoint changes, connect retry, handler withdrawal, and route expiry. Actual
+MsQuic session objects remain the next concrete attachment layer.
