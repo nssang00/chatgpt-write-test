@@ -75,11 +75,11 @@ browser host disguised as a component.
 
 | ID | Test case | Scope | Current state |
 | --- | --- | --- | --- |
-| A1-MOD-01 | Register exactly one Main; Main may be cpp/python/csharp | Core C++11 + CI | NOT IMPLEMENTED |
-| A1-MOD-02 | Additional Modules accept all languages independent of Main | Core C++11 + CI | NOT IMPLEMENTED |
-| A1-MOD-03 | Duplicate module IDs, invalid reserved IDs and second Main return stable codes | Core C++11 + CI | NOT IMPLEMENTED |
-| A1-MOD-04 | RAII token removal, module destruction/expired registry and replacement safety | Core Release/ASan | NOT IMPLEMENTED |
-| A1-MOD-05 | Registry is app-scoped; same IDs in different apps do not collide | Core C++11 + CI | NOT IMPLEMENTED |
+| A1-MOD-01 | Register exactly one Main; Main may be cpp/python/csharp | Core C++11 + CI | CORE Windows/Linux PASS: 38334300674; runtime E2E pending |
+| A1-MOD-02 | Additional Modules accept all languages independent of Main | Core C++11 + CI | CORE Windows/Linux PASS: 38334300674; runtime E2E pending |
+| A1-MOD-03 | Duplicate module IDs, invalid reserved IDs and second Main return stable codes | Core C++11 + CI | CORE Windows/Linux PASS: 38334300674; runtime E2E pending |
+| A1-MOD-04 | RAII token removal, module destruction/expired registry and replacement safety | Core Release/ASan | CORE Windows/Linux PASS: 38334300674; new-test ASan pending |
+| A1-MOD-05 | Registry is app-scoped; same IDs in different apps do not collide | Core C++11 + CI | CORE Windows/Linux PASS: 38334300674; runtime E2E pending |
 | A1-MOD-06 | Plugin `delivery=plugin` is Module, but embedded feature Module is not independent package; manifest/build rejection of mismatch | CLI + Runtime E2E | NOT IMPLEMENTED |
 | A1-MOD-07 | Main Python + C++ camera Plugin + C# ERP Module coexist, JS calls identical, actual backend-to-backend request/reply, callbacks/events | Win/Linux actual-browser E2E | NOT IMPLEMENTED |
 | A1-MOD-08 | Module-to-module permissions not implicit; forged calls denied by Core even when Main initiates | three browser engines | NOT IMPLEMENTED |
@@ -89,6 +89,12 @@ browser host disguised as a component.
 These are additive to verified plugin object E2E, and do not replace
 application-shell, Python/C# actual backend, security, packaging or embedded
 control release gates.
+
+## Verified implementation slices, not yet product E2E
+
+- Module Registry Core test passes on Ubuntu and Windows: [Core Regression 38334300674](https://github.com/nssang00/chatgpt-write-test/actions/runs/38334300674). This verifies A1-MOD-01..05 at metadata/RAII level; A1-MOD-06..09 require real runtime and remain blocked.
+- Native xytron CLI scaffold and CLI-generated C++ plugin DLL/SO compilation against installed SDK pass on both systems: [Xytron CLI 38334470209](https://github.com/nssang00/chatgpt-write-test/actions/runs/38334470209). It does NOT pass full A1-CLI-01/05 or end-user publish.
+- Exact-method/frame default-deny C++ policy primitive passes on Linux/Windows: [Core Regression 38334609344](https://github.com/nssang00/chatgpt-write-test/actions/runs/38334609344). Actual engine security boundary is NOT IMPLEMENTED/VERIFIED; A1-SEC-01..07 remain blocked.
 
 ## Failure workflow
 

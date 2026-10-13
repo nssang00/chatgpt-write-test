@@ -309,7 +309,9 @@ Qt QLibrary, Boost.DLL, POCO SharedLibrary의 공통 low-level 역할을 참고�
 
 ## D-032: First usable SDK scope includes real native host and distribution
 
-**Status: Accepted — project owner, 2026-10-13**
+**Status: SUPERSEDED in part by D-033–D-042 — owner 2026-10-13**
+
+The original paragraph's deferral of CLI/formal host controls was replaced by later explicit owner requirements: standalone shell, CLI, initial MFC/WinForms/WPF components, Main + mixed-language Modules and Python/C# actual backends. Preserve as historical context only.
 
 Scope A replaces the prior Core + Plugin SDK-only first-completion proposal.
 The first deliverable must have secure, reproducible Windows/Linux native-host

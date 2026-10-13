@@ -8,6 +8,20 @@ NativeWeb(Xytron)은 **Electron/Tauri형 데스크톱 앱 플랫폼**으로, **�
 
 현재 저장소는 **Core/Plugin 런타임과 Linux/Windows CEF·Windows WebView2의 실제 브라우저 E2E를 통과한 기반 단계**다. 첫 완성 목표에는 **보안, CLI 새 프로젝트 생성/다운로드/빌드/실행/배포, 양방향 플러그인 콜백, Python·C# 최소 wrapper, Win32·GTK3 Host Adapter, 엔진 포함 배포**를 포함한다 (승인된 Scope A). 기존 E2E 성공만으로 출시 완료로 판정하지 않는다.
 
+## Current partial development foundation (not product-complete)
+
+- Main/Module Registry C++11, app-scoped IDs and safe lifetime:
+  [Core CI 38334300674](https://github.com/nssang00/chatgpt-write-test/actions/runs/38334300674) — Linux/Windows success.
+- Native xytron CLI scaffolds cpp/python/csharp and creates C++ plugin source;
+  generated DLL/SO builds from installed SDK:
+  [CLI CI 38334470209](https://github.com/nssang00/chatgpt-write-test/actions/runs/38334470209) — Linux/Windows success.
+- Default-deny exact method/frame Core policy foundation:
+  [Core CI 38334609344](https://github.com/nssang00/chatgpt-write-test/actions/runs/38334609344) — Linux/Windows success. **Not wired to actual browser requests**.
+- App shell/menus, real mixed-language hosts, reverse plugin callbacks,
+  xytron run/restore/publish and full origin-based browser security are
+  **not implemented**. See [bootstrap CLI](docs/XYTRON_CLI.md) and
+  [security foundation](docs/NATIVE_PERMISSION_POLICY.md).
+
 ## Main Backend, Modules, Plugins
 
 - **One Main Backend** (cpp/python/csharp) is the application's logical

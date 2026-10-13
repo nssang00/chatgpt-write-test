@@ -121,3 +121,17 @@ Issues should be appended, not silently discarded. A blocked task does not block
 - Next parallel tracks: internal registry tests, CLI scaffold tests,
   native security design/negative tests. Document any blocker without
   stopping unrelated tracks.
+
+## NW-014 Native security policy foundation lacks browser dispatch integration — OPEN / P0 RELEASE BLOCKER
+- Scope: WebView JS → C++ call authorization for Linux CEF, Windows CEF and Windows WebView2.
+- Observation: `NativePermissionPolicy` in 27bf2489 implements exact-method, verified-frame, navigation-scoped **Core decisions only**. On the same SHA Core CI 38334609344 passes Windows/Linux.
+- Impact: **do not claim origin security**; actual CEF/WebView2 bridge has not been connected to host-verified identity. A malicious/untrusted document potentially reaches the native bridge despite a correct isolated policy.
+- Prerequisite: inspect the real IPC receiver and navigation/frame events; never allow JS to forge `engineVerified`, origin or frame identity.
+- Repro/tests required: A1-SEC-01..07 on actual browsers (trusted local, untrusted remote/file, nested frames, redirects/reloads, raw transport forgery, exact method grants); include plugin object methods and backend-to-backend permissions.
+- Status: OPEN. Independent CLI/Module Registry work has continued. No security waiver or release requested.
+
+## 2026-10-13 partial implementation checkpoint — VERIFIED SLICES
+- Module Registry C++11 Core metadata + lifecycle: `bf67b567`; Core Regression 38334300674 Linux and Windows PASS.
+- Native xytron CLI app/plugin scaffolds: `091a57f4`; CLI 38334300772 PASS both OS. Real generated C++ DLL/SO compilation against installed SDK: CLI 38334470209 PASS both OS.
+- Exact-method and trusted-frame policy unit contract: `27bf2489`; Core Regression 38334609344 PASS both OS. Still NOT connected to real browser native-dispatch pipeline; NW-014 remains OPEN.
+- Full Module Dispatcher, cross-language backend runtime, app menus, controls, real xytron run/publish remain NOT IMPLEMENTED and keep their existing release gates.

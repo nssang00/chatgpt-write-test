@@ -16,6 +16,9 @@ Plugin SDK-only target is insufficient. See [RELEASE_SCOPE_A.md](RELEASE_SCOPE_A
 | Windows WebView2 plugin object E2E | PASS | CI 38322633033 |
 | Linux lifetime/ASan | PASS for covered tests | Linux ASan 21/21; repeated regression evidence in HANDOFF |
 | Relocatable Core SDK consumer | PASS for Core only | Linux/Windows CI 38322633018 |
+| App-scoped Main/Module Registry foundation | CORE verified (not JS routing) | Linux/Windows Core Regression 38334300674 |
+| Native xytron scaffolds + generated C++ plugin compile | PASS for scaffolding and DLL/SO build only | CLI CI 38334470209, both OS |
+| Exact method / frame policy value foundation | CORE verified (not actual CEF/WebView2 enforcement) | Core Regression 38334609344, both OS |
 
 ## New compulsory Scope A1 gates
 

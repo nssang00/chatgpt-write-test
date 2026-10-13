@@ -4,6 +4,14 @@
 
 > 목표: 이전 대화를 읽지 않아도 이 저장소만으로 현재 방향, 완료 상태, 다음 작업을 파악하고 바로 개발을 계속할 수 있어야 한다.
 
+## 2026-10-13 verified three-track implementation checkpoint (latest)
+
+- **Core Module Registry** `bf67b567`: internal per-app one Main + feature Modules, cpp/python/csharp metadata, plugin delivery marker, duplicate/invalid-ID rejection, generation-safe RAII and concurrent registration. **Linux/Windows Core CI PASS** [38334300674](https://github.com/nssang00/chatgpt-write-test/actions/runs/38334300674). Not connected to JS routing or language runtime yet.
+- **xytron CLI bootstrap** `091a57f4`: native C++11 executable generates Main project scaffolds for cpp/python/csharp and independent C++ Plugin project. Real generated plugin DLL/SO compilation with installed Core passes on Linux/Windows [38334470209](https://github.com/nssang00/chatgpt-write-test/actions/runs/38334470209). No app run, restore, publish or real backend transport yet.
+- **Native permission policy** `27bf2489`: exact-grant/frame/navigation Core policy unit tests passed on Linux/Windows [38334609344](https://github.com/nssang00/chatgpt-write-test/actions/runs/38334609344). **NOT connected to CEF/WebView2 dispatch**; this is NOT a security fix for untrusted content. See NW-014.
+- Source branch `nativeweb/autonomous-integration`, Draft PR #7, `main` untouched. CI and issues stay independent, release approval not requested.
+- Next independent tracks: browser-verified origin/frame authorization, Module Registry→Bridge dispatch, CLI module add + real run/restore, plugin→JS event/callback ABI, real Python/C# hosts and standalone shell.
+
 ## 2026-10-13 owner-accepted Main/Module/Plugin hierarchy (latest)
 
 - **One logical Main Backend + 0..N feature Modules** in the same app.
