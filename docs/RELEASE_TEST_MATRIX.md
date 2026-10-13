@@ -142,3 +142,17 @@ a malicious real page/frame could not trigger a native side effect.
 A1-SEC-01..07. In WebView2 a child without injected bridge API is safe,
 but its lack of a structured permission response is not equivalent to
 engine-verified origin+frame capability enforcement.
+
+### Latest executable source evidence for security negative test
+
+The **stronger iframe-ready negative test** (not just the first version)
+passes in [38343177515](https://github.com/nssang00/chatgpt-write-test/actions/runs/38343177515)
+on Linux CEF, Windows CEF and Windows WebView2. On the same source revision,
+[38343176992](https://github.com/nssang00/chatgpt-write-test/actions/runs/38343176992)
+passes both operating systems for `xytron plugin build`,
+[38343176859](https://github.com/nssang00/chatgpt-write-test/actions/runs/38343176859)
+passes Linux/Windows Core, and [38343176874](https://github.com/nssang00/chatgpt-write-test/actions/runs/38343176874)
+passes the installed Core SDK consumer.
+
+All tests in A1-SEC-01..07 are **not complete**. A1-SEC-08 specifically
+verifies one independent child-file native-side-effect denial case.

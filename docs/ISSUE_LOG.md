@@ -311,3 +311,14 @@ callbacks still have unmet release gates. Keep PR #7 Draft, main intact.
 - **NW-022 code implemented, negative E2E rerun pending**: WebView2
   child-frame denial not posted to the main page's pending Promise;
   38343177515 tracks stronger browser test.
+
+## 2026-10-13 final verification: latest hardened fixture + WebView2 child denial
+
+**Executable source `4ff17af2fb6d1d1e2752acec7e25ea7d52f35f5d`**
+- [Real browser #38343177515](https://github.com/nssang00/chatgpt-write-test/actions/runs/38343177515): Linux CEF, Windows CEF, Windows WebView2 **ALL SUCCESS**. This specifically includes the independent iframe ready handshake, attempted native side effect and forbidden-checkpoint absence, plus legacy C++ Plugin E2E.
+- [Core #38343176859](https://github.com/nssang00/chatgpt-write-test/actions/runs/38343176859): Ubuntu/Windows **PASS**, Module Bridge/Registry/trusted document methods.
+- [CLI #38343176992](https://github.com/nssang00/chatgpt-write-test/actions/runs/38343176992): Ubuntu/Windows **PASS**, real `xytron plugin build` compiles generated DLL/SO with installed SDK.
+- [Installed SDK #38343176874](https://github.com/nssang00/chatgpt-write-test/actions/runs/38343176874): Ubuntu/Windows **PASS** (Core consumer only).
+- NW-019 first negative actual browser side-effect case: VERIFIED for *different-file child iframe*. NW-022 wrong-frame reply hardening: VERIFIED against same E2E and Win WebView2. NW-020 actual plugin build VERIFIED, NW-021 test argument fix CLOSED.
+- **NW-014 P0 security BLOCKER STILL OPEN**: Only a targeted negative test, not all origins, same-source frames, lifecycle and per-method grants. No release waiver or security claim beyond tested scenario.
+

@@ -80,3 +80,11 @@ This is **limited coverage**, not final security completion: same-URL
 iframes, native object call authorization, source/canonical resource trust,
 per-method grant revocation, backend-to-backend calls, navigation races
 and remote network pages still have open negative tests in NW-014.
+
+### Confirmed latest 3-engine security regression
+
+Source `4ff17af2`: [E2E 38343177515](https://github.com/nssang00/chatgpt-write-test/actions/runs/38343177515)
+**PASS Linux CEF / Windows CEF / Windows WebView2** with the required
+child ready signal, forbidden-call side effect assertion, and normal
+plugin lifecycle. NW-022 mitigation against WebView2 misdirected child
+denial is in this passing source. This is **not** closure of NW-014.

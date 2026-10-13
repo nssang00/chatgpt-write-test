@@ -75,3 +75,12 @@ full installer/code signing. Existing APIs must not be removed.
 host integration or engine-inclusive package PASS. A release gate may only be
 excluded by explicit approval. The current GitHub PR stays draft; `main`
 and external releases require approval.
+
+### 2026-10-13 latest executable CI evidence
+
+At `4ff17af2`: Browser negative child-frame scenario and original
+plugin lifecycle 3-engine E2E [38343177515](https://github.com/nssang00/chatgpt-write-test/actions/runs/38343177515)
+PASS; C++11 Core Linux/Windows [38343176859](https://github.com/nssang00/chatgpt-write-test/actions/runs/38343176859)
+PASS; native `xytron plugin build` + generated DLL/SO Linux/Windows
+[38343176992](https://github.com/nssang00/chatgpt-write-test/actions/runs/38343176992)
+PASS. This is incremental verification, **not first-usable-SDK release acceptance**.
