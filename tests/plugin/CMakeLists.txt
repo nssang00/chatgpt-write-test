@@ -177,8 +177,8 @@ endif()
 add_library(nativeweb_test_xytron_function_plugin SHARED xytron_function_plugin.cpp)
 target_include_directories(nativeweb_test_xytron_function_plugin PRIVATE ${PROJECT_SOURCE_DIR}/include)
 target_compile_definitions(nativeweb_test_xytron_function_plugin PRIVATE
-    XYTRON_PLUGIN_ID="${_fixture_id}"
-    XYTRON_PLUGIN_VERSION="${_fixture_version}")
+    XYTRON_PLUGIN_ID=\"${_fixture_id}\"
+    XYTRON_PLUGIN_VERSION=\"${_fixture_version}\")
 set_target_properties(nativeweb_test_xytron_function_plugin PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED YES CXX_EXTENSIONS NO)
 add_executable(nativeweb_xytron_function_regression xytron_function_regression.cpp)
 target_link_libraries(nativeweb_xytron_function_regression PRIVATE NativeWeb::Core)

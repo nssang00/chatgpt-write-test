@@ -457,3 +457,12 @@ callbacks still have unmet release gates. Keep PR #7 Draft, main intact.
   Legacy NATIVEWEB_PLUGIN source and ABI v1 intentionally preserved.
 - A1-BIND-01 is not VERIFIED until Windows/Linux binary+CLI CI PASS.
   Full class/property fluent API remains A1-BIND-03 blocker.
+
+## NW-029 B0 build-system follow-up — FIX SUBMITTED / CI PENDING
+- Install `include/xytron` along with existing `include/nativeweb`;
+  otherwise a CLI-generated C++ plugin cannot find its new public shim
+  when building against an installed SDK.
+- Preserve literal quoted string preprocessor definitions for the
+  test fixture plugin ID/version rather than passing bare identifiers.
+- Windows/Linux CTest and real installed-SDK CLI binary compilation are
+  required to close this initial B0 gate.

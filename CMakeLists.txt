@@ -68,6 +68,7 @@ install(TARGETS nativeweb_core EXPORT NativeWebTargets
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
     INCLUDES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
 install(DIRECTORY include/nativeweb DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+install(DIRECTORY include/xytron DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
 
 configure_package_config_file(
     cmake/NativeWebConfig.cmake.in
