@@ -49,6 +49,10 @@ jobs:
             echo "::error::M5 source and fixtures are NOT in this repository. Add m5-ci/project.zip or provide project_archive_url. No fake PASS."
             exit 2
           fi
+          if [ -f /tmp/m5-project.zip ]; then
+            actual=$(sha256sum /tmp/m5-project.zip | cut -d' ' -f1)
+            [ "$actual" = "62c906b8b00bf9cf91752378e0b637aba728500198ec616ca109d62af79a9b88" ] || { echo "::error::M5 ZIP SHA256 mismatch (expected pinned restore baseline)"; exit 2; }
+          fi
           testdir=$(find "$PWD/m5-ci-run-project" -type f -name diag-app.js -printf '%h\n' | head -1)
           [ -n "$testdir" ] || { echo "::error::diag-app.js missing"; exit 2; }
           for f in package.json run-m5-ci-render-gate.mjs run-m5-uninstrumented-benchmark.mjs; do
