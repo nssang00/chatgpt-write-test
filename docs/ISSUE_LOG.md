@@ -475,3 +475,8 @@ callbacks still have unmet release gates. Keep PR #7 Draft, main intact.
   native permission enforcement. Keep A1-BIND-06/07 PARTIAL only.
 - C# uses .NET 8; Python local test uses 3.11. Full runtime/manifest,
   argument coercion and object lifetime remain next slices.
+
+## NW-031 CLI-generated plugin.json identity and actual DLL/SO load — CI PENDING
+- Added nativeweb_generated_xytron_plugin_regression to load generated
+  camera binary via C ABI; verify ID/version, call and cleanup.
+- Windows/Linux CLI workflow runs it after building the real DLL/SO.

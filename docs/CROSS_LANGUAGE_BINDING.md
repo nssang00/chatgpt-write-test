@@ -183,3 +183,12 @@ and generalized PluginManager catalog are **not** B0 features.
   surfaces without a browser engine. Neither is connected to managed
   backend process/JS transport/permissions yet; A1-BIND-06/07 remain
   PARTIAL when tests pass. No claim of live cross-language plugins.
+
+### CLI-generated plugin ABI end-to-end verification
+
+The CI workflow compiles a plugin created by `xytron plugin new` and
+`xytron plugin build --sdk`, loads the generated DLL/SO with
+`PluginModule`, validates `plugin.json` name/version, invokes
+`camera.hello()`, and confirms safe unregister. A compile-only plugin
+test does NOT substitute for this binary load test. Real JS/ESM
+imports remain a separate gate.

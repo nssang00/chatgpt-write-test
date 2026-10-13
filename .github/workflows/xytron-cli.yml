@@ -30,3 +30,9 @@ jobs:
         run: cmake -S build-cli/xytron-cli-smoke/plugins/camera -B build-cli/generated-camera -DCMAKE_PREFIX_PATH="${{ github.workspace }}/build-cli/sdk"
       - name: Build real plugin DLL or SO from generated template
         run: cmake --build build-cli/generated-camera --config Release
+
+      - name: Compile generated plugin loader regression
+        run: cmake --build build-cli --config Release --target nativeweb_generated_xytron_plugin_regression
+      - name: Load CLI generated DLL or SO and invoke real C ABI
+        run: |
+          cmake -E chdir . "${{ github.workspace }}/build-cli/tests/plugin/${{ matrix.os == 'windows-latest' && 'Release/nativeweb_generated_xytron_plugin_regression.exe' || 'nativeweb_generated_xytron_plugin_regression' }}" "${{ github.workspace }}/build-cli/xytron-cli-smoke/plugins/camera/build/${{ matrix.os == 'windows-latest' && 'Release/camera.dll' || 'libcamera.so' }}"

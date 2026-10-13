@@ -186,3 +186,13 @@ target_include_directories(nativeweb_xytron_function_regression PRIVATE ${PROJEC
 set_target_properties(nativeweb_xytron_function_regression PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED YES CXX_EXTENSIONS NO)
 add_test(NAME plugin.xytron_function_binding COMMAND nativeweb_xytron_function_regression
     $<TARGET_FILE:nativeweb_test_xytron_function_plugin>)
+
+
+# Invoked by xytron-cli.yml AFTER CLI creates the real DLL/SO.
+add_executable(nativeweb_generated_xytron_plugin_regression
+    generated_xytron_plugin_regression.cpp)
+target_link_libraries(nativeweb_generated_xytron_plugin_regression PRIVATE NativeWeb::Core)
+target_include_directories(nativeweb_generated_xytron_plugin_regression
+    PRIVATE ${PROJECT_SOURCE_DIR}/src)
+set_target_properties(nativeweb_generated_xytron_plugin_regression PROPERTIES
+    CXX_STANDARD 11 CXX_STANDARD_REQUIRED YES CXX_EXTENSIONS NO)
