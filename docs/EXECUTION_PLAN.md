@@ -1,80 +1,74 @@
-# NativeWeb autonomous execution plan — Approved Scope A
-Updated 2026-10-13
+# NativeWeb autonomous execution plan — C/C++-first platform / Scope A
+Updated 2026-10-13 after product-identity clarification
 
-## Objective
+## Goal and developer stories
 
-Deliver a **usable, deployable SDK for embedding Web UI in existing native
-Windows/Linux applications**, not only a successful bridge/Plugin Core.
+NativeWeb is in the Electron/Tauri product category, with a C/C++ native
+backend, C++ DLL/SO plugin modules, bidirectional JS/native calls/callbacks,
+official Python + C# wrappers, and a `dotnet`-like `xweb` CLI.
 
-Canonical scope: [RELEASE_SCOPE_A.md](RELEASE_SCOPE_A.md)
-Test matrix: [RELEASE_TEST_MATRIX.md](RELEASE_TEST_MATRIX.md)
-Acceptance: [ACCEPTANCE_CRITERIA.md](ACCEPTANCE_CRITERIA.md)
-Source of truth: Draft PR #7, `nativeweb/autonomous-integration` branch.
+**Story 1 — New app:** `xweb new` → `xweb restore` → `xweb run` →
+C++ plugin and JS callbacks → `xweb build`/`xweb publish` → standalone app.
 
-## Completed baseline: A0 (verified, not product completion)
+**Story 2 — Existing app:** install SDK → embed Win32/GTK3 WebView →
+use the *same* plugin/bridge from local UI → build/distribute.
 
-- C++11 Linux and Windows Core Regression passed, run 38322632990.
-- Real Linux CEF, Windows CEF and Windows WebView2 plugin E2E passed,
-  run 38322633033 on commit b2f1ced3.
-- Installed **Core-only** SDK C++11 + pure-C ABI consumer CI passed,
-  run 38322633018; engine SDK distribution remains pending.
-- Full Linux ASan 21/21, Linux Release 21/21 and repeated lifecycle tests
-  passed per current handoff. Do not substitute these for host/security tests.
+**Story 3 — Other languages:** Python and C# basic wrappers load the
+same runtime contract and demonstrate native calls, errors, lifetime and
+callback behavior. Wrappers are not merely subprocess Sidecars.
 
-## Work sequence: dependency-driven, no ungrounded dates
+See `PRODUCT_VISION.md`, `RELEASE_SCOPE_A.md`,
+`RELEASE_TEST_MATRIX.md`, `ACCEPTANCE_CRITERIA.md`.
 
-| Milestone | Output | Exit gate | Status |
+## A0 existing verified foundation
+
+- Linux/Windows C++11 Core Regression: CI 38322632990 PASS.
+- Linux CEF, Windows CEF, Windows WebView2 JS→plugin object E2E:
+  CI 38322633033 PASS.
+- Installed relocatable **Core-only** C++11 and C ABI consumer:
+  CI 38322633018 PASS.
+- Existing C++→JS `execute()`/Core events tests are **not** equivalent to
+  full plugin-owned callback/event ABI coverage.
+
+## Workstreams (independent tracks may run concurrently)
+
+| Track | Planned work | Mandatory test gate | State |
 | --- | --- | --- | --- |
-| A0 Baseline | Core + plugin + all browser backends & CI | Existing three-engine plugin E2E | VERIFIED |
-| A1 Security foundation | Origin/trust model, authorization at native dispatch, exact capability/permission grants | A1-SEC-01 through A1-SEC-07 on all three engines | NOT STARTED |
-| A2 Host integration | Minimal Win32 HWND and Linux GTK3 host adapters/examples | A1-HOST-01 through A1-HOST-03 | NOT STARTED |
-| A3 Engine and SDK distribution | Portable SDK bundle, engine/runtime resources, plugin fixture, clean relocation/consumer | A1-DIST-01 through A1-DIST-04 | CORE-ONLY BASELINE |
-| A4 Release validation | End-to-end quickstart, negative security, stress/ASan, runtime failure paths, documentation | All required matrix gates; no unapproved exclusion | NOT STARTED |
-| A5 Approval and delivery | Versioned deliverable and release notes | Explicit approval for main merge/public release | WAIT FOR APPROVAL |
+| P0 Secure bridge | Trusted packaged UI; host-supplied frame/origin identity; per-method grants; navigation invalidation | A1-SEC-01–07 on 3 real engines | NOT STARTED |
+| P1 Bidirectional plugin callbacks | Plugin→JS named invoke/event, async results, event subscription/unsubscribe, callback lifetimes across reload/destroy/unload | A1-CB-01–05 | NOT STARTED |
+| P2 CLI and new-app workflow | xweb new/restore/run/build/test/publish/doctor + plugin new/build, versioned manifest, SDK download/cache | A1-CLI-01–05 | NOT STARTED |
+| P3 Embeddable native hosts | Minimal Win32 HWND + Linux GTK3 host examples, real bridge/plugin | A1-HOST-01–03 | NOT STARTED |
+| P4 Official language wrappers | Python & C# minimal stable-C-boundary calls, async/error/callback/lifetime example | A1-WRAP-01–03 | NOT STARTED |
+| P5 Engine packaging | Portable SDK artifacts, CEF resources/ICU, WebView2 Evergreen diagnostics, third-party notices | A1-DIST-01–04 | CORE-ONLY BASELINE |
+| P6 Release validation | Both stories from fresh machines, negative security, unload stress, reproducibility | All required release matrix cases | NOT STARTED |
+| P7 Approval | Versioned deliverables / changelog / draft PR review | Explicit authorization to merge/publish | REQUIRES APPROVAL |
 
-### A1: security implementation order
-1. Define the trust boundary and default local packaged-content ownership
-   (avoid blanket `file://` or localhost trust).
-2. Add an engine-independent authorization decision at the **host dispatch**
-   boundary with request/frame identity supplied by the engine, not JS.
-3. Plumb navigation and frame identity from CEF and WebView2, revoke scope on
-   navigation/reload/destroy. Block non-main frames by default.
-4. Add typed per-method/plugin capability grants with explicit narrow opt-in.
-5. Add failing security tests first, then fixes; verify real engines and
-   preserve positive local app behavior.
+## Dependency-aware order
 
-### A2: host adoption
-- Win32: existing HWND, lifecycle, resize/focus; Windows WebView2 automatic
-  engine with tested CEF override. Keep wrappers thin.
-- GTK3: existing window/widget lifecycle with Linux CEF.
-- Each sample calls a normal `bind()` function and an actual object factory
-  from a DLL/SO; test fresh app startup and repeated shutdown.
+1. Start **secure native dispatch policy** and minimal **CLI manifest/
+   command skeleton** in separate changes. Define failing security tests.
+2. Implement **plugin→JS callback/event vertical slice** and C ABI lifetime
+   rules without weakening unload/worker guarantees.
+3. In parallel, implement Win32/GTK3 embedding and Python/C# wrapper
+   proofs against the tested native Core.
+4. Connect CLI restore/build/run to installable engine SDK packaging and
+   plugin fixture; test both new-project and existing-host paths.
+5. Gate release using actual Windows/Linux host/browser/plugin/CLI/wrapper
+   CI, clean consumer and negative security tests, not only Core CTest.
+6. Deliver a release candidate for approval; do not merge/publish unapproved.
 
-### A3: packaging and adoption
-- Separate engine-neutral `NativeWeb::Core` from backend distribution.
-- Produce reproducible Windows and Linux SDK artifacts with CMake imports,
-  headers, plugins, CEF resources, and WebView2 runtime detection.
-- Compile/run relocated installed consumers and actual host samples with
-  source-tree dependencies unavailable.
-- Include redistributable third-party license/notice checks. No binary
-  publication until redistribution is permitted.
+CLI usability is a **core product requirement**, not a late optional add-on.
+Extended CLI ecosystems/templates and full wrapper API parity remain future
+milestones, but their *minimum working vertical slices* are release gates.
 
-### A4: acceptance and documentation
-- All security negative cases and host E2E must pass in a CI matrix.
-- Include no-engine/invalid-runtime, missing plugin, incompatibility and
-  partial shutdown error paths.
-- Preserve core tests, browser E2E and Linux ASan; add host lifecycle stress.
-- Write a clean-machine quickstart and reproduce it in CI.
-- Avoid marking completed work solely from test-harness implementation.
+## Operating policy
 
-## Execution policy
-
-- Record a blocker with impact in `docs/ISSUE_LOG.md`; independent work
-  continues (e.g. packaging metadata while browser CI is blocked).
-- Implementation -> failing test (where possible) -> fix -> focused test ->
-  whole affected regression/real-engine CI -> evidence/issue closure.
-- State precisely: VERIFIED, IMPLEMENTED/UNVERIFIED, BLOCKED, REQUIRES APPROVAL.
-- Work on a development branch/PR, keep `main` intact. No release without
-  approval; avoid unnecessary intermediate confirmation requests.
-- If authorization or API compatibility choices require scope expansion,
-  document alternatives and only then request the specific approval.
+- On failure, log reproduction, observed/expected, environment, impact,
+  severity, and fix/CI evidence in `ISSUE_LOG.md`; keep independent tasks
+  progressing.
+- Follow: implement → focused regression → real browser/host/CLI smoke →
+  full affected CI matrix → issue close with run URLs.
+- Never claim mock/fixture-only success as real end-user functionality.
+- Keep Draft PR #7, do not modify `main` or publish without approval.
+- Request approval only for material breaking ABI/API, unsafe permission
+  changes, material scope or expense, and final merge/release.

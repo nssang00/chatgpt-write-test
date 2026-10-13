@@ -76,3 +76,18 @@ Issues should be appended, not silently discarded. A blocked task does not block
 - Found: README/HANDOFF/ROADMAP sections still prioritized previously completed plugin-object tasks and Core-only deliverables, whereas owner approved **Scope A** on 2026-10-13.
 - Resolution: create release scope and testcase matrix; replace execution/acceptance gates; update roadmap header, README, decisions and handoff. Existing test evidence preserved, not reclassified as host/security PASS.
 - Next: implement security A1-SEC tests first. Verify doc-only commit in Draft PR #7; code CI need not be interpreted as new functional validation.
+
+## NW-011 Product positioning lost first-class platform requirements — FIXED (docs only)
+- Severity: P1 planning gap, no runtime incident.
+- Owner clarified product identity on 2026-10-13: Electron/Tauri-category
+  desktop app platform with C/C++ native backend, first-class Python/C#
+  wrappers, bidirectional C++ plugin JS bridge, and .NET-like xweb CLI for
+  dependency download/new/build/run/test/publish.
+- Former Scope A excluded CLI and deferred callback/plugin events, wrappers
+  and greenfield apps; this contradicted the actual product target.
+- Resolution: docs/PRODUCT_VISION.md and D-033–D-036, Scope A, release
+  matrix, execution plan, roadmap, README/HANDOFF/architecture updated.
+- Implementation state unchanged: CLI, wrappers and full plugin callback
+  gates are **NOT IMPLEMENTED**; no CI PASS is claimed for the doc change.
+- Next: develop security + CLI skeleton independently; add failing plugin
+  callback tests before implementing bridge/ABI changes.

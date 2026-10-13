@@ -1,16 +1,23 @@
-# NativeWeb Roadmap
+# NativeWeb Roadmap — Electron/Tauri category, C/C++ first
 
-> **2026-10-13 product direction: Scope A approved.** The first completion
-> target is a **usable Windows/Linux NativeWeb SDK for existing native apps**,
-> not a Core + Plugin library-only milestone. See
-> [Scope A](RELEASE_SCOPE_A.md), [execution plan](EXECUTION_PLAN.md),
-> [acceptance gates](ACCEPTANCE_CRITERIA.md) and
-> [test matrix](RELEASE_TEST_MATRIX.md).
+> **2026-10-13 owner-confirmed product vision:** full desktop app platform
+> with C/C++ primary backend, plugin-based bidirectional JS↔native callbacks,
+> official Python/C# wrappers, and `dotnet`-style `xweb` CLI for
+> new/restore/run/build/test/publish.
 >
-> **Priority order now:** security boundary → Win32/GTK3 embedded host samples
-> → engine-inclusive relocatable distribution → clean-machine release gate.
-> The detailed Phase 0–10 inventory below is retained as an implementation
-> and long-term feature backlog, **not** the first-deliverable execution order.
+> The first usable release **requires BOTH** a new CLI-generated desktop app
+> and a thin existing native host embedding path, not just a WebView SDK.
+> Priority: secure bridge and CLI skeleton → plugin callbacks + host/wrapper
+> slices → engine packaging → complete product smoke.
+>
+> Source of truth: [Product vision](PRODUCT_VISION.md),
+> [Scope A](RELEASE_SCOPE_A.md),
+> [Execution plan](EXECUTION_PLAN.md),
+> [Acceptance criteria](ACCEPTANCE_CRITERIA.md) and
+> [Release test matrix](RELEASE_TEST_MATRIX.md).
+>
+> The historical Phase 0–10 inventory below is a feature backlog, NOT a
+> prescription to postpone first-release CLI or wrappers until Phase 9.
 
 이 문서는 우선순위 문서다. 날짜 약속이 아니라 dependency와 개발 순서를 나타낸다.
 
@@ -220,7 +227,7 @@ Host layer가 application framework로 커지면 설계를 다시 검토한다.
 
 - [ ] isolated plugin host process
 
-## Phase 8 — Sidecar
+## Phase 8 — Sidecar (optional process model; distinct from official Python/C# wrappers)
 
 - [ ] process lifecycle abstraction
 - [ ] transport protocol
@@ -232,7 +239,7 @@ Host layer가 application framework로 커지면 설계를 다시 검토한다.
 - [ ] example Node service
 - [ ] example .NET/Rust service
 
-## Phase 9 — CLI / developer experience
+## Phase 9 — CLI / developer experience (MVP moved into first release)
 
 Working CLI name: `xweb` (final brand not fixed).
 
@@ -246,7 +253,7 @@ Working CLI name: `xweb` (final brand not fixed).
 - [ ] `xweb permission`
 - [ ] `xweb plugin`
 
-`engine = auto`가 기본이다.
+`engine = auto`가 기본이다. **최소 xweb CLI의 new/restore/run/build/test/publish/doctor/plugin new/build는 Scope A 필수**, 이 Phase에는 고급 CLI 확장을 남긴다.
 
 ## Phase 10 — Code - OSS benchmark
 

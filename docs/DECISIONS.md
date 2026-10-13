@@ -321,3 +321,42 @@ The existing decisions D-001 through D-031 remain in force, especially
 C++11 compatibility, `Engine::Auto`, stable C ABI, direct `xytron` API and
 thin host layer. Do not merge into `main` or publish without approval.
 See `docs/RELEASE_SCOPE_A.md` and `docs/ACCEPTANCE_CRITERIA.md`.
+
+## D-033: Product category and backend language (owner-confirmed)
+
+**Status: Accepted — 2026-10-13**
+
+NativeWeb competes in the Electron/Tauri *desktop application platform*
+category. The primary native backend is **C/C++**, not mandatory Node.js
+or Rust. Existing app embedding and fresh native app creation are **both
+first-class product paths**. C++11 Core baseline stays unchanged.
+
+## D-034: Bidirectional plugin JS bridge is product-core
+
+**Status: Accepted — 2026-10-13**
+
+A C++ DLL/SO plugin should not be limited to functions invoked from JS;
+it must also call JS and deliver callbacks/events asynchronously with
+typed/error semantics, lifecycle-safe references, cancellation/unsubscribe
+and module ownership constraints. Preserve the stable versioned C ABI.
+
+## D-035: Official Python and C# wrappers
+
+**Status: Accepted — 2026-10-13**
+
+Python and C#/.NET wrappers are first-class SDK access paths to the native
+Core (including async, objects and callbacks). Optional Sidecar service
+execution is a separate architecture, not a replacement for wrappers.
+The first deliverable includes minimal tested wrapper vertical slices;
+full SDK API parity follows incrementally.
+
+## D-036: .NET-like CLI is first-class development workflow
+
+**Status: Accepted — 2026-10-13**
+
+A simple command-line workflow for project creation, SDK and browser
+dependency acquisition, build, run, test, publish and plugin development is
+a defining product feature. The `xweb` command name is provisional.
+The first usable product requires a working CLI vertical slice; treating
+CLI as optional long-term documentation contradicts the product vision.
+Commands must manage versions/cache reproducibly and report actionable errors.

@@ -4,6 +4,31 @@
 
 > 목표: 이전 대화를 읽지 않아도 이 저장소만으로 현재 방향, 완료 상태, 다음 작업을 파악하고 바로 개발을 계속할 수 있어야 한다.
 
+## 2026-10-13 owner-confirmed full product identity (read first)
+
+- NativeWeb/Xytron is an **Electron/Tauri-category desktop application
+  platform**, with **C/C++ native backend** (no required Node.js/Rust backend).
+  It is neither just a WebView SDK nor only an embeddable legacy-UI adapter.
+- **First-class new-app and existing-host workflows**: CLI creates a new
+  C/C++-backed desktop app; Win32/GTK3 adapters embed into existing projects.
+- **Plugin is product-core**: versioned DLL/SO C ABI, direct JS calls **both
+  directions**, async JS↔native callbacks/events, lifecycle-safe unsubscribe,
+  ownership and error propagation. Existing JS→plugin object E2E is only
+  the current verified foundation; plugin-owned callback ABI remains undone.
+- **Official language wrappers**: Python and C#/.NET are Core API wrappers,
+  **not only Sidecars**. Initial wrapper integration tests are required for
+  the first usable product; full parity is a later phase.
+- **.NET-like CLI mandatory early**: `xweb new`, `restore` (SDK/engine
+  download/cache), `run`, `build`, `test`, `publish`, `doctor`,
+  `plugin new/build`. Syntax is product target, not working feature yet.
+- Canonical docs: `docs/PRODUCT_VISION.md`,
+  `docs/RELEASE_SCOPE_A.md`, `docs/EXECUTION_PLAN.md`,
+  `docs/RELEASE_TEST_MATRIX.md`, `docs/ACCEPTANCE_CRITERIA.md`.
+  See D-033 through D-036 in `docs/DECISIONS.md`.
+- Keep verified Linux CEF, Windows CEF and Windows WebView2 plugin E2E
+  runs as foundation, **not product completion**; Draft PR #7 only,
+  `main` unchanged, release/merge subject to explicit approval.
+
 ## 2026-10-13 approved product direction: Scope A (read first)
 
 - **Approved by project owner:** first completion target is a **usable SDK in existing native Windows/Linux apps** — not merely Core + Plugin SDK.
@@ -11,7 +36,9 @@
 - Priority: security at native dispatch with default-deny external/iframe → Win32/GTK3 thin embedding → engine-inclusive SDK packaging → full clean-environment acceptance.
 - Canonical plan: `docs/RELEASE_SCOPE_A.md`, `docs/EXECUTION_PLAN.md`, `docs/RELEASE_TEST_MATRIX.md`, `docs/ACCEPTANCE_CRITERIA.md`.
 - Existing core+3-engine E2E passes remain valid **foundation evidence only**, not release completion. No `main` merge/public release until specifically approved.
-- Other host adapters, large Desktop API surface, CLI, Sidecar, advanced binary are deferred from the **first deliverable**, but retain the longer-term roadmap.
+- Other formal host adapters, full Desktop API parity, advanced CLI services,
+  full Python/C# wrapper parity, Sidecar and advanced binary are deferred;
+  **minimum CLI and Python/C# wrappers plus plugin callbacks are required**.
 
 ## 2026-10-13 verified GitHub integration checkpoint (read first)
 

@@ -24,6 +24,29 @@ those boundaries. A mock or header-only compile does not satisfy an E2E gate.
 | A1-LIFE-01 | Rapid open/close, simultaneous objects, in-flight destroy/unload: no UAF, no permanent busy | Required | Required | Required | PARTIAL: Core regressions |
 | A1-DOC-01 | Follow quickstart in clean CI environment; package licensed and reproducible | Required | Required | Required | NOT IMPLEMENTED |
 
+## Additional product-core gates — platform, plugins, CLI and wrappers
+
+| ID | Tested user workflow / expected result | Required platform | Status |
+| --- | --- | --- | --- |
+| A1-CB-01 | Actual plugin invokes named JS callback; JS returns value asynchronously to plugin without blocking browser UI thread | Linux CEF, Win CEF, Win WebView2 | NOT IMPLEMENTED |
+| A1-CB-02 | Plugin emits event; JS subscribes/unsubscribes; no delivery after unsubscribe or navigation | all 3 browsers | NOT IMPLEMENTED |
+| A1-CB-03 | JS can pass callback reference/token to plugin as explicitly supported; callback can be invoked or rejected safely | all 3 browsers | NOT IMPLEMENTED |
+| A1-CB-04 | Callback error/rejection propagates across C ABI as structured code/message, handles out-of-order completion | all 3 browsers | NOT IMPLEMENTED |
+| A1-CB-05 | Plugin unload/reload and WebView destroy revoke live callback tokens without UAF/deadlock | all 3 browsers + ASan when available | NOT IMPLEMENTED |
+| A1-CLI-01 | From empty workdir, `xweb new desktop hello --backend cpp` creates a valid new native desktop app | Windows and Linux | NOT IMPLEMENTED |
+| A1-CLI-02 | `xweb restore` resolves/pins/downloads required SDK and browser engine, reuses cache, handles offline/error cases | Windows and Linux | NOT IMPLEMENTED |
+| A1-CLI-03 | `xweb run` builds/launches real browser+plugin app with JS↔C++ callback test and auto engine | Windows and Linux | NOT IMPLEMENTED |
+| A1-CLI-04 | `xweb build`, `xweb test`, `xweb publish` build/test/package runnable app without manual CMake SDK editing | Windows and Linux | NOT IMPLEMENTED |
+| A1-CLI-05 | `xweb plugin new/build` creates valid versioned C ABI DLL/SO; `xweb doctor` diagnoses missing compiler/engine | Windows and Linux | NOT IMPLEMENTED |
+| A1-WRAP-01 | Python wrapper attaches to Core and invokes typed native/JS action with structured async success/error | Linux and Windows target matrix | NOT IMPLEMENTED |
+| A1-WRAP-02 | C#/.NET wrapper attaches to same Core and exposes Task-style async/error, correct handle disposal | Windows, with Linux parity where supported | NOT IMPLEMENTED |
+| A1-WRAP-03 | Python and C# callbacks/handles remain safe across WebView destroy and runtime/plugin shutdown | Wrapper-specific CI + actual browser path | NOT IMPLEMENTED |
+| A1-PRODUCT-01 | Generated new app and separately embedded host app use the same NativeWeb core/engine/bridge/plugin API | Windows and Linux | NOT IMPLEMENTED |
+
+**Existing JS→plugin factory E2E PASS does not satisfy A1-CB cases.**
+C++→JS Core calls already exist but must be exercised from a separately loaded
+plugin and through the intended callback C ABI.
+
 ## Failure workflow
 
 For each failure record: test ID; exact command and SHA; OS, compiler,

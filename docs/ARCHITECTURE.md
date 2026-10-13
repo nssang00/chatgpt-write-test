@@ -2,9 +2,9 @@
 
 ## Product position
 
-NativeWeb은 GUI toolkit이 아니라 **Web UI for native applications runtime/platform**이다.
+NativeWeb은 **Electron/Tauri와 같은 데스크톱 애플리케이션 플랫폼**이며, GUI toolkit이나 단순 WebView wrapper가 아니다. 백엔드의 중심은 C/C++이고, Python·C#/.NET은 공식 wrapper 대상이다.
 
-목표는 기존 native backend와 application structure를 최대한 유지하면서 HTML/CSS/JavaScript UI를 사용할 수 있게 하는 것이다.
+새 C/C++ 백엔드 데스크톱 앱 생성과 기존 native 앱 embedding을 모두 지원한다. CLI는 .NET과 비슷하게 프로젝트 생성·의존성 restore·build·run·test·publish를 다루는 첫 번째 개발 경험이다. 제품 계약은 [PRODUCT_VISION.md](PRODUCT_VISION.md)를 참고한다.
 
 ```text
 Web frontend
@@ -284,6 +284,14 @@ webView.Load("index.html");
 장기적으로 Visual Studio Designer Toolbox 지원을 고려한다.
 
 ## Plugin architecture
+
+The plugin bridge is bidirectional: JavaScript calls native DLL/SO methods,
+and plugin code invokes JavaScript or emits subscribed events/callbacks with
+async results and safe lifetime. The current JS→native object path is verified;
+the reverse plugin callback/event ABI is a first-release requirement that is
+not yet implemented.
+
+
 
 ROS2 pluginlib처럼 shared library를 runtime에서 발견/로드하는 경험을 목표로 한다.
 

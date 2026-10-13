@@ -2,9 +2,9 @@
 
 > **Modern Web UI for native applications.**
 
-NativeWeb은 기존 C/C++ application과 native SDK를 유지하면서 UI를 HTML/CSS/JavaScript로 만들 수 있게 하는 desktop runtime/platform을 목표로 한다.
+NativeWeb(Xytron)은 **Electron/Tauri와 같은 범주의 데스크톱 앱 개발 플랫폼**으로, **C/C++를 주요 native backend**로 사용한다. HTML/CSS/JavaScript 프론트엔드와 C/C++ 앱을 결합해 **새 앱을 만들거나 기존 앱에 내장**할 수 있으며, 공식 Python·C# wrapper도 지원하는 것이 제품 목표다.
 
-현재 저장소는 **Core/Plugin 런타임과 Linux/Windows CEF·Windows WebView2의 실제 브라우저 E2E를 통과한 기반 단계**다. 첫 완성 목표는 **보안, 최소 Win32·GTK3 Host Adapter, 엔진 포함 배포 패키지와 실사용 샘플까지 갖춘 SDK (승인된 Scope A)**이다. 기존 E2E 성공만으로 출시 완료로 판정하지 않는다.
+현재 저장소는 **Core/Plugin 런타임과 Linux/Windows CEF·Windows WebView2의 실제 브라우저 E2E를 통과한 기반 단계**다. 첫 완성 목표에는 **보안, CLI 새 프로젝트 생성/다운로드/빌드/실행/배포, 양방향 플러그인 콜백, Python·C# 최소 wrapper, Win32·GTK3 Host Adapter, 엔진 포함 배포**를 포함한다 (승인된 Scope A). 기존 E2E 성공만으로 출시 완료로 판정하지 않는다.
 
 ## Why
 
@@ -27,7 +27,29 @@ Web UI
   -> C/C++ SDK
 ```
 
-Python, Node.js, .NET, Rust, Go, Java 등이 더 자연스러운 경우에는 plugin 또는 sidecar로 함께 사용할 수 있다.
+**Python 및 C#/.NET**은 동일한 NativeWeb Core를 다루는 **공식 wrapper 대상**이다 (현재 구현/검증 전). Python/.NET을 Sidecar만으로 처리하지 않는다. Node/Rust 등의 별도 프로세스 Sidecar는 고급 선택지다.
+
+## CLI-first development experience (planned)
+
+The `xweb` UX is a **required product goal**. The commands below are
+**target syntax, not yet working commands**:
+
+```sh
+xweb new desktop hello --backend cpp
+cd hello
+xweb restore
+xweb run
+xweb build --configuration release
+xweb test
+xweb publish --runtime win-x64
+xweb plugin new camera --language cpp
+xweb plugin build camera
+xweb doctor
+```
+
+The CLI manages pinned engine/SDK dependencies and a reproducible manifest;
+manual CEF/WebView2 archive assembly is not the default user experience.
+See [product vision](docs/PRODUCT_VISION.md).
 
 ## Developer experience
 
@@ -90,9 +112,11 @@ NativeWeb은 기존 GUI framework를 대체하지 않는다.
 
 ## Native plugins
 
-핵심 장기 기능:
+핵심 제품 기능:
 
-> **Build a DLL/SO. Drop it into the app. Call it from the Web.**
+> **Build a DLL/SO. Call native from JS, and call JS back from native.**
+
+플러그인 소유 콜백/이벤트의 **완성은 아직 미검증**이며, 첫 완성본에 포함하는 필수 작업이다.
 
 ROS2 pluginlib와 비슷한 사용 경험을 목표로 하되, NativeWeb에서는 shared library가 곧 Web API namespace로 연결된다.
 
@@ -156,14 +180,17 @@ CEF or WebView2 engines. See [SDK packaging](docs/SDK_PACKAGING.md).
 - [Target project structure](docs/PROJECT_STRUCTURE.md)
 - [Contribution rules](CONTRIBUTING.md)
 
-## Immediate next work — approved Scope A
+## Immediate next work — product-aligned
 
-1. Secure the JS-to-native boundary (trusted packaged app origin, native-side default deny, frame/navigation/method scopes).
-2. Add real Win32 + GTK3 embedded host examples and lifecycle/plug-in E2E.
-3. Package engine-backed relocatable SDK/runtime for clean Windows/Linux consumers; check redistribution notices.
-4. Run the full acceptance matrix and prepare a candidate deliverable for explicit merge/release approval.
+1. Secure native dispatch boundary; cross-origin/iframe/method negative tests.
+2. Implement C++ DLL/SO plugin-to-JavaScript callback/event lifetime path.
+3. Create minimum xweb CLI for new/restore/run/build/test/publish, plugin new/build.
+4. Add greenfield desktop app and Win32/GTK3 embedded host E2E.
+5. Build initial Python/C# official wrapper smoke tests.
+6. Distribute engine-inclusive runtime SDK, test clean installs and publish.
 
-See [execution plan](docs/EXECUTION_PLAN.md) and [release gates](docs/ACCEPTANCE_CRITERIA.md).
+See [product vision](docs/PRODUCT_VISION.md) and
+[first release test matrix](docs/RELEASE_TEST_MATRIX.md).
 
 ## Repository note
 
