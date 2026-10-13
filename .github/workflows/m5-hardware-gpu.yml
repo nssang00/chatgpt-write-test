@@ -6,10 +6,6 @@ on:
         description: "HTTPS ZIP URL of M5 4-stage test project (optional if m5-ci/project.zip is committed)"
         type: string
         required: false
-      run_full:
-        description: "Include full 4/8-layer and 8-style benchmark (longer)"
-        type: boolean
-        default: true
 permissions:
   contents: read
 concurrency:
