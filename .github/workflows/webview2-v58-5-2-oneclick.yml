@@ -1,7 +1,7 @@
-name: WebView2 v58.5.2 Windows OneClick r5 wrapper hotfix
+name: WebView2 v58.5.2 Stage2 Korean Manual Review
 on:
   push:
-    branches: [feature/webview2-overlay-v58-5-2-oneclick]
+    branches: [feature/webview2-overlay-v58-5-2-oneclick, feature/webview2-overlay-v58-5-2-stage2-review]
     paths:
       - 'Prototypes/WebView2Overlay/OneClick-v58.5.2/**'
       - '.github/workflows/webview2-v58-5-2-oneclick.yml'
@@ -17,6 +17,9 @@ jobs:
       - name: Static OneClick isolation contract
         shell: pwsh
         run: python Prototypes/WebView2Overlay/OneClick-v58.5.2/verify_contract.py
+      - name: Stage2 Korean manual review source contract
+        shell: pwsh
+        run: python Prototypes/WebView2Overlay/OneClick-v58.5.2/Validation/verify_manual_review.py
       - name: PowerShell syntax gate
         shell: pwsh
         run: |
@@ -24,6 +27,10 @@ jobs:
           $path=(Resolve-Path 'Prototypes/WebView2Overlay/OneClick-v58.5.2/Run-All.ps1').Path
           [System.Management.Automation.Language.Parser]::ParseFile($path,[ref]$tokens,[ref]$errors) | Out-Null
           if($errors.Count){throw "PowerShell syntax: $errors"}
+          $tokens=$null;$errors=$null
+          $review=(Resolve-Path 'Prototypes/WebView2Overlay/OneClick-v58.5.2/Review-Stage2.ps1').Path
+          [System.Management.Automation.Language.Parser]::ParseFile($review,[ref]$tokens,[ref]$errors) | Out-Null
+          if($errors.Count){throw "Stage2 review script PowerShell syntax: $errors"}
       - name: Compile runtime telemetry C# (Editor and Windows Player defines)
         shell: pwsh
         run: |
@@ -74,7 +81,7 @@ jobs:
           $src='Prototypes/WebView2Overlay/OneClick-v58.5.2'
           $dst='dist/WebView2-OneClick-v58.5.2'
           New-Item -ItemType Directory -Force $dst | Out-Null
-          foreach($file in @('Run-All.cmd','Run-All.ps1','README_FIRST.md','MANUAL_CHECKLIST.md')){Copy-Item "$src/$file" "$dst/$file"}
+          foreach($file in @('Run-All.cmd','Run-All.ps1','README_FIRST.md','MANUAL_CHECKLIST.md','Review-Stage2.cmd','Review-Stage2.ps1','STAGE2_MANUAL_GUIDE_KO.md')){Copy-Item "$src/$file" "$dst/$file"}
           Copy-Item "$src/UnityProject" "$dst/UnityProject" -Recurse
           $plugin="$dst/UnityProject/Assets/Plugins/x86_64"
           New-Item -ItemType Directory -Force $plugin | Out-Null
@@ -90,6 +97,11 @@ jobs:
         run: |
           & 'dist/WebView2-OneClick-v58.5.2/Run-All.ps1' -BundleRoot 'dist/WebView2-OneClick-v58.5.2' -SelfTest
           if($LASTEXITCODE -ne 0){throw 'OneClick package selftest failed'}
+      - name: Stage2 review script self-test (no Unity runtime)
+        shell: pwsh
+        run: |
+          & 'dist/WebView2-OneClick-v58.5.2/Review-Stage2.ps1' -BundleRoot 'dist/WebView2-OneClick-v58.5.2' -SelfTest
+          if($LASTEXITCODE -ne 0){throw 'Stage2 review script self-test failed'}
       - name: Remove CI-only self-test outputs from user package
         shell: pwsh
         run: |
@@ -99,9 +111,9 @@ jobs:
         shell: pwsh
         run: |
           "## v58.5.2 CI native build PASS, Unity player NOT executed" >> $env:GITHUB_STEP_SUMMARY
-          "Run Run-All.cmd locally with Unity 2022.3.62f3; PENDING_MANUAL is not full Stage2 PASS." >> $env:GITHUB_STEP_SUMMARY
+          "Run Review-Stage2.cmd locally for human R01-R09 checks; self-reported manual checks do not grant formal Stage2 PASS." >> $env:GITHUB_STEP_SUMMARY
       - uses: actions/upload-artifact@v4
         with:
-          name: webview2-v58-5-2-windows-oneclick-r5-wrapper-fix
+          name: webview2-v58-5-2-stage2-review-kit
           path: dist/WebView2-OneClick-v58.5.2/
           if-no-files-found: error

@@ -1,3 +1,7 @@
+# Stage2 review
+
+Follow STAGE2_MANUAL_GUIDE_KO.md in Korean. Run Review-Stage2.cmd to record R01-R09 observations. Formal acceptance is always pending independent review.
+
 # v58.5.2 manual acceptance sheet
 Complete after automatic PENDING_MANUAL. Record evidence/screenshots.
 - [ ] WebView2 is visible inside Unity Player HWND; no black/white empty content.

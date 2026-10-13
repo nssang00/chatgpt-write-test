@@ -32,3 +32,7 @@ PASS_AUTO in r3 requires WebView2 native STA thread join with `shutdownPhase==7`
 
 ### r5 result-wrapper correction (2026-10-13)
 The first r5 Windows Player report passed the native/Unity gates: automatic Unicode fixture echo acknowledgment, ping/pong, zero rejected frames, and STA shutdown join. Its outer Run-All.ps1 falsely returned FAIL with "Wrong player telemetry revision" because it still expected r3 rather than r5. This hotfix reads the expected revision from the SHA-256-validated packaged C# telemetry source instead of duplicating a stale literal. It does not change the DLL, page, Native Echo, or Player runtime semantics. Re-running Unity is **not required to reinterpret the already-uploaded 20261013-225056 result**; manual Hangul IME and typed text Echo remain pending.
+
+### Stage2 Korean manual reviewer (separate validated source branch)
+
+Stage2 review kit (no native or Unity C# changes). Double-click Review-Stage2.cmd, read STAGE2_MANUAL_GUIDE_KO.md, type START, use the visible Unity Player for 180 seconds to perform R01-R09, then record each P/F/N answer in the console. The tool saves results/stage2-review-*.zip with the user-reported checklist plus minimal logs. It does not record input text/screenshots/browser profile and never emits a formal Stage2 PASS. Upload the review ZIP plus 2-4 redacted screenshots and repeated-shutdown evidence.
