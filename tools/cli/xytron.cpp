@@ -1,4 +1,5 @@
 // Native C++11 bootstrap CLI: project/plugin scaffolding, not runtime.
+#include <cstdlib>
 #include <fstream>
 #include <iostream>
 #include <sstream>
@@ -103,6 +104,39 @@ static void plugin(const std::string& id) {
   std::cout<<"Created C++ plugin scaffold: "<<p<<"\n";
 }
 
+// The CLI invokes CMake for a user-authored, locally trusted plugin tree.
+// Validate the *entire* SDK prefix before shelling out so no command syntax
+// can be injected through a raw CLI argument.
+static bool safeSdkPrefix(const std::string& path) {
+  if(path.empty() || path.size()>700) return false;
+  for(std::size_t i=0;i<path.size();++i) {
+    const char c=path[i];
+    if(!((c>='a'&&c<='z')||(c>='A'&&c<='Z')||
+         (c>='0'&&c<='9')||c=='_'||c=='-'||
+         c=='/'||c=='\\'||c=='.'||c==':'||c==' '))
+      return false;
+  }
+  return true;
+}
+static void pluginBuild(const std::string& id,const std::string& sdk) {
+  if(!valid(id,true)) throw std::runtime_error("Invalid plugin id");
+  if(!safeSdkPrefix(sdk))
+    throw std::runtime_error("Unsafe/invalid SDK prefix path");
+  const std::string source="plugins/"+id;
+  const std::string cmake=source+"/CMakeLists.txt";
+  if(!exists(cmake))
+    throw std::runtime_error("Missing plugin CMakeLists.txt: "+cmake);
+  const std::string output=source+"/build";
+  const std::string configure="cmake -S \""+source+
+    "\" -B \""+output+"\" \"-DCMAKE_PREFIX_PATH="+sdk+"\"";
+  if(std::system(configure.c_str())!=0)
+    throw std::runtime_error("CMake plugin configuration failed");
+  const std::string compile="cmake --build \""+output+"\" --config Release";
+  if(std::system(compile.c_str())!=0)
+    throw std::runtime_error("CMake plugin build failed");
+  std::cout<<"Xytron plugin build: PASS ("<<id<<")\n";
+}
+
 static void moduleAdd(const std::string& id, const std::string& lang) {
   if(!valid(id,true)) throw std::runtime_error("Invalid feature Module id");
   if(lang!="cpp"&&lang!="python"&&lang!="csharp")
@@ -185,9 +219,10 @@ static void help() {
   std::cout<<"xytron bootstrap CLI (partial)\n"
     "  new desktop NAME --backend cpp|python|csharp\n"
     "  plugin new NAME --language cpp\n"
+    "  plugin build NAME --sdk INSTALLED_SDK_PREFIX\n"
     "  module add NAME --language cpp|python|csharp\n"
     "  --help / --version\n"
-    "  restore/run/build/test/publish/doctor/plugin build: NOT IMPLEMENTED\n";
+    "  restore/run/build/test/publish/doctor: NOT IMPLEMENTED\n";
 }
 int main(int argc,char** argv) {
   try {
@@ -204,6 +239,10 @@ int main(int argc,char** argv) {
     if(argc==6&&std::string(argv[1])=="module"&&
        std::string(argv[2])=="add"&&std::string(argv[4])=="--language") {
       moduleAdd(argv[3],argv[5]);return 0;
+    }
+    if(argc==6&&std::string(argv[1])=="plugin"&&
+       std::string(argv[2])=="build"&&std::string(argv[4])=="--sdk") {
+      pluginBuild(argv[3],argv[5]);return 0;
     }
     if(argc==6&&std::string(argv[1])=="plugin"&&
        std::string(argv[2])=="new"&&std::string(argv[4])=="--language") {

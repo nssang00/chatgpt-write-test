@@ -256,3 +256,12 @@ callbacks still have unmet release gates. Keep PR #7 Draft, main intact.
   structured permission_denied response; frame-specific backend event
   support is a separate remaining security test. This is **one negative
   test case**, not blanket closure of NW-014.
+
+## NW-020 Native plugin build subcommand with installed SDK — IMPLEMENTED / CI PENDING
+- `xytron plugin build ID --sdk PREFIX` invokes CMake on the CLI-generated
+  plugin project to produce a real DLL/SO; validates names and SDK prefix
+  characters before launching the command.
+- Workflow `xytron-cli.yml` additionally exercises the CLI subcommand on
+  Windows/Linux using the freshly installed Core SDK.
+- SDK restore/download, signing, language host, app packaging and
+  untrusted third-party plugin build sandboxing remain unimplemented.

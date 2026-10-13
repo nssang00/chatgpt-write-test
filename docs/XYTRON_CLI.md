@@ -39,3 +39,18 @@ atomic manifest save are required before production-grade CLI release.
 Windows and Ubuntu in [CLI 38336744554](https://github.com/nssang00/chatgpt-write-test/actions/runs/38336744554).
 The test script typo NW-016 was fixed; no live Python/.NET module
 process runs as part of this command. Real shell/run/publish is pending.
+
+## Native `xytron plugin build` implemented (2026-10-13)
+
+`xytron plugin build camera --sdk /installed/nativeweb/prefix` invokes
+CMake configure/build in the generated `plugins/camera` tree against a
+previously installed NativeWeb Core SDK. The code builds an **actual C++
+DLL/SO**, not an example-text file. SDK prefix arguments are bounded and
+reject shell metacharacters; Module IDs are constrained to strict ASCII.
+The workflow now tests the **CLI command** on both Windows and Linux,
+in addition to the existing direct CMake build.
+
+The SDK is still supplied explicitly. `xytron restore` (download),
+automatic CLI plugin SDK discovery, signing, C ABI runtime loading,
+`xytron run` and `xytron publish` are separate open deliverables.
+Do not confuse this build command with application deployment.

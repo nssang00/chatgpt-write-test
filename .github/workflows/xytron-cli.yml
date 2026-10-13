@@ -21,6 +21,8 @@ jobs:
         run: cmake --build build-cli --config Release --target nativeweb_core
       - name: Install generated SDK
         run: cmake --install build-cli --config Release --prefix "${{ github.workspace }}/build-cli/sdk"
+      - name: Compile generated plugin through native xytron CLI
+        run: cmake -E chdir build-cli/xytron-cli-smoke "${{ github.workspace }}/build-cli/${{ matrix.os == 'windows-latest' && 'Release/xytron.exe' || 'xytron' }}" plugin build camera --sdk "${{ github.workspace }}/build-cli/sdk"
       - name: Configure plugin from xytron scaffold
         run: cmake -S build-cli/xytron-cli-smoke/plugins/camera -B build-cli/generated-camera -DCMAKE_PREFIX_PATH="${{ github.workspace }}/build-cli/sdk"
       - name: Build real plugin DLL or SO from generated template
