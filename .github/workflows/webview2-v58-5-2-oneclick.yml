@@ -1,0 +1,87 @@
+name: WebView2 v58.5.2 Windows OneClick
+on:
+  push:
+    branches: [feature/webview2-overlay-v58-5-2-oneclick]
+    paths:
+      - 'Prototypes/WebView2Overlay/OneClick-v58.5.2/**'
+      - '.github/workflows/webview2-v58-5-2-oneclick.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  windows-x64:
+    runs-on: windows-2022
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Static OneClick isolation contract
+        shell: pwsh
+        run: python Prototypes/WebView2Overlay/OneClick-v58.5.2/verify_contract.py
+      - name: PowerShell syntax gate
+        shell: pwsh
+        run: |
+          $tokens=$null;$errors=$null
+          $path=(Resolve-Path 'Prototypes/WebView2Overlay/OneClick-v58.5.2/Run-All.ps1').Path
+          [System.Management.Automation.Language.Parser]::ParseFile($path,[ref]$tokens,[ref]$errors) | Out-Null
+          if($errors.Count){throw "PowerShell syntax: $errors"}
+      - name: Install pinned stable WebView2 SDK
+        shell: pwsh
+        run: |
+          nuget install Microsoft.Web.WebView2 -Version 1.0.4258.31 -OutputDirectory "$env:RUNNER_TEMP/wv2sdk" -NonInteractive
+          if($LASTEXITCODE -ne 0){throw 'NuGet failed'}
+      - name: Configure MSVC x64
+        shell: pwsh
+        run: |
+          $sdk=Join-Path $env:RUNNER_TEMP 'wv2sdk/Microsoft.Web.WebView2.1.0.4258.31'
+          cmake -S Prototypes/WebView2Overlay/OneClick-v58.5.2/Native -B build-wv2-oneclick -G 'Visual Studio 17 2022' -A x64 "-DWEBVIEW2_SDK_ROOT=$sdk"
+          if($LASTEXITCODE -ne 0){throw 'CMake configure failed'}
+      - name: MSVC Release DLL
+        shell: pwsh
+        run: |
+          cmake --build build-wv2-oneclick --config Release --clean-first
+          if($LASTEXITCODE -ne 0){throw 'MSVC build failed'}
+          if(-not(Test-Path 'build-wv2-oneclick/Release/CompanyWebView2OverlayPilot.dll')){throw 'DLL missing'}
+      - name: Verify native exports
+        shell: pwsh
+        run: |
+          $v=Join-Path ([Environment]::GetFolderPath('ProgramFilesX86')) 'Microsoft Visual Studio/Installer/vswhere.exe'
+          $vs=(& $v -latest -products '*' -property installationPath | Select-Object -First 1)
+          if(-not $vs){throw 'Visual Studio missing'}
+          $tools=Get-ChildItem (Join-Path $vs 'VC/Tools/MSVC') -Directory | Sort-Object Name -Descending | Select-Object -First 1
+          $dumpbin=Join-Path $tools.FullName 'bin/Hostx64/x64/dumpbin.exe'
+          $exports=(& $dumpbin /exports 'build-wv2-oneclick/Release/CompanyWebView2OverlayPilot.dll' | Out-String)
+          foreach($name in @('WV2Pilot_Open','WV2Pilot_Close','WV2Pilot_GetState','WV2Pilot_GetPongCount','WV2Pilot_GetAckCount')){
+            if($exports -notmatch $name){throw "Missing ABI export $name"}
+          }
+      - name: Assemble runnable OneClick folder with DLL
+        shell: pwsh
+        run: |
+          $src='Prototypes/WebView2Overlay/OneClick-v58.5.2'
+          $dst='dist/WebView2-OneClick-v58.5.2'
+          New-Item -ItemType Directory -Force $dst | Out-Null
+          foreach($file in @('Run-All.cmd','Run-All.ps1','README_FIRST.md','MANUAL_CHECKLIST.md')){Copy-Item "$src/$file" "$dst/$file"}
+          Copy-Item "$src/UnityProject" "$dst/UnityProject" -Recurse
+          $plugin="$dst/UnityProject/Assets/Plugins/x86_64"
+          New-Item -ItemType Directory -Force $plugin | Out-Null
+          Copy-Item 'build-wv2-oneclick/Release/CompanyWebView2OverlayPilot.dll' "$plugin/"
+          $base=(Resolve-Path $dst).Path
+          Get-ChildItem $dst -Recurse -File | Sort-Object FullName | ForEach-Object {
+            $name=$_.FullName.Substring($base.Length+1).Replace('\','/')
+            $hash=(Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+            "$hash  $name"
+          } | Set-Content "$dst/SHA256SUMS.txt" -Encoding UTF8
+      - name: OneClick immutable file self-test
+        shell: pwsh
+        run: |
+          & 'dist/WebView2-OneClick-v58.5.2/Run-All.ps1' -BundleRoot 'dist/WebView2-OneClick-v58.5.2' -SelfTest
+          if($LASTEXITCODE -ne 0){throw 'OneClick package selftest failed'}
+      - name: Scope notice
+        shell: pwsh
+        run: |
+          "## v58.5.2 CI native build PASS, Unity player NOT executed" >> $env:GITHUB_STEP_SUMMARY
+          "Run Run-All.cmd locally with Unity 2022.3.62f3; PENDING_MANUAL is not full Stage2 PASS." >> $env:GITHUB_STEP_SUMMARY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: webview2-v58-5-2-windows-oneclick
+          path: dist/WebView2-OneClick-v58.5.2/
+          if-no-files-found: error
