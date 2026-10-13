@@ -169,3 +169,18 @@ This is a transport baseline, not yet a claim that public Context performs
 remote Request/Reply automatically. The remaining public-path work is to attach
 discovery route readiness, QUIC session management, deadlines, and Context
 request lifecycle to the same loop/runtime.
+
+
+## Public C++ remote Request/Reply bridge
+
+The C++ Context request path now prefers an exact same-process handler and,
+when none exists, can use a discovered request-handler route through
+RequestNetworkAdapter. The adapter selects a ready reliable session
+deterministically, keeps no-ready-session requests at encode zero, and routes
+CTX1 replies back into the same RequestReplyCore correlation state.
+
+Cumulative regression covers cancellation, Context destruction, session loss,
+peer loss, late replies, and local-handler priority. Concrete automatic MsQuic
+session creation is not yet attached to the public Context; the current
+two-node MsQuic CTX1 smoke and public in-memory bridge are separate validated
+layers.

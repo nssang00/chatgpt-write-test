@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cito/detail/host_runtime_core.hpp>
+#include <cito/detail/request_network_adapter.hpp>
 #include <cito/detail/request_reply_core.hpp>
 
 #include <atomic>
@@ -20,6 +21,11 @@ namespace cito::detail {
 
 class EmbeddedHostRuntime {
 public:
+    EmbeddedHostRuntime()
+        : request_network_(
+              host_,
+              requests_) {}
+
     AppId allocate_app_id() noexcept {
         return next_app_id_.fetch_add(1, std::memory_order_relaxed);
     }
@@ -30,10 +36,19 @@ public:
     RequestReplyCore& requests() noexcept { return requests_; }
     const RequestReplyCore& requests() const noexcept { return requests_; }
 
+    RequestNetworkAdapter& request_network() noexcept {
+        return request_network_;
+    }
+
+    const RequestNetworkAdapter& request_network() const noexcept {
+        return request_network_;
+    }
+
 private:
     std::atomic<AppId> next_app_id_{1};
     HostRuntimeCore host_;
     RequestReplyCore requests_;
+    RequestNetworkAdapter request_network_;
 };
 
 // Must be out-of-line so an executable and libcito share one registry.

@@ -368,6 +368,11 @@ struct RequestTransportSend {
     std::vector<std::uint8_t> bytes;
 };
 
+struct OutboundRequestState {
+    DestinationId destination{};
+    AppId requester_app{};
+};
+
 struct InboundRequestKey {
     RequestPeerId peer{};
     RequestId request_id{};
@@ -445,10 +450,46 @@ public:
             return std::nullopt;
         }
 
-        const auto destination =
+        return start_to(
+            requester_app,
+            key,
             *std::min_element(
                 destinations.begin(),
-                destinations.end());
+                destinations.end()),
+            payload,
+            std::move(completion));
+    }
+
+    std::optional<
+        RequestTransportSend>
+    start_to(
+        AppId requester_app,
+        const RequestKey& key,
+        DestinationId destination,
+        std::span<const std::uint8_t>
+            payload,
+        Completion completion) {
+        if (!completion) {
+            throw std::invalid_argument(
+                "Cito remote request completion is empty");
+        }
+
+        const auto capability =
+            request_handler_interest_key(
+                key);
+
+        if (
+            destination == 0 ||
+            !host_.remote_destinations(
+                capability)
+                 .contains(
+                     destination)) {
+            completion(
+                RequestStatus::
+                    Unavailable,
+                {});
+            return std::nullopt;
+        }
 
         const auto started =
             requests_.start_remote(
@@ -465,7 +506,9 @@ public:
 
             outbound_.emplace(
                 started.id,
-                destination);
+                OutboundRequestState{
+                    destination,
+                    requester_app});
 
             return RequestTransportSend{
                 destination,
@@ -581,7 +624,8 @@ public:
 
         if (
             it == outbound_.end() ||
-            it->second != peer) {
+            it->second.destination !=
+                peer) {
             return false;
         }
 
@@ -630,7 +674,7 @@ public:
         }
 
         const auto destination =
-            it->second;
+            it->second.destination;
 
         outbound_.erase(it);
 
@@ -649,6 +693,62 @@ public:
             std::move(bytes)};
     }
 
+    std::vector<
+        RequestTransportSend>
+    cancel_requests(
+        AppId requester_app) {
+        std::vector<RequestId> ids;
+
+        for (const auto& [id, state] :
+             outbound_) {
+            if (
+                state.requester_app ==
+                requester_app) {
+                ids.push_back(id);
+            }
+        }
+
+        std::vector<
+            RequestTransportSend>
+            sends;
+        sends.reserve(ids.size());
+
+        for (const auto id : ids) {
+            auto send =
+                cancel(id);
+
+            if (send) {
+                sends.push_back(
+                    std::move(
+                        *send));
+            }
+        }
+
+        return sends;
+    }
+
+    bool fail_request(
+        RequestId request_id,
+        RequestStatus status =
+            RequestStatus::
+                Unavailable) {
+        const auto it =
+            outbound_.find(
+                request_id);
+
+        if (it == outbound_.end()) {
+            return false;
+        }
+
+        outbound_.erase(it);
+
+        return requests_.
+            complete_remote(
+                request_id,
+                status,
+                {});
+    }
+
     std::size_t fail_destination(
         DestinationId destination,
         RequestStatus status =
@@ -656,9 +756,11 @@ public:
                 Unavailable) {
         std::vector<RequestId> ids;
 
-        for (const auto& [id, target] :
+        for (const auto& [id, state] :
              outbound_) {
-            if (target == destination) {
+            if (
+                state.destination ==
+                destination) {
                 ids.push_back(id);
             }
         }
@@ -672,6 +774,25 @@ public:
         }
 
         return ids.size();
+    }
+
+    std::size_t drop_peer(
+        RequestPeerId peer) {
+        std::size_t removed = 0;
+
+        for (auto it =
+                 inbound_.begin();
+             it != inbound_.end();) {
+            if (it->peer != peer) {
+                ++it;
+                continue;
+            }
+
+            it = inbound_.erase(it);
+            ++removed;
+        }
+
+        return removed;
     }
 
     std::size_t outbound_count()
@@ -690,7 +811,8 @@ private:
 
     std::unordered_map<
         RequestId,
-        DestinationId> outbound_;
+        OutboundRequestState>
+        outbound_;
 
     std::unordered_set<
         InboundRequestKey,

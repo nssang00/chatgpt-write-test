@@ -143,6 +143,9 @@ private:
         }
 
         ~State() {
+            runtime_->request_network()
+                .cancel_requests(
+                    app_id_);
             runtime_->requests()
                 .cancel_requests(
                     app_id_);
@@ -371,9 +374,108 @@ private:
 
             auto& requests =
                 runtime_->requests();
+            auto& network =
+                runtime_->
+                    request_network();
 
-            // Demand check comes before serialization.
-            if (!requests.has_handler(
+            auto completion =
+                [result_state](
+                    detail::RequestStatus
+                        status,
+                    std::span<
+                        const std::uint8_t>
+                        response) {
+                    if (
+                        status !=
+                        detail::
+                            RequestStatus::
+                                Ok) {
+                        result_state->
+                            finish(
+                                Result<
+                                    ReplyT>::
+                                    failure(
+                                        status));
+                        return;
+                    }
+
+                    try {
+                        auto value =
+                            StaticCodec<
+                                ReplyT>::
+                                decode(
+                                    response);
+
+                        result_state->
+                            finish(
+                                Result<
+                                    ReplyT>::
+                                    success(
+                                        std::move(
+                                            value)));
+                    } catch (...) {
+                        result_state->
+                            finish(
+                                Result<
+                                    ReplyT>::
+                                    failure(
+                                        RequestStatus::
+                                            Internal));
+                    }
+                };
+
+            // Prefer an exact same-process handler. This preserves the
+            // lowest-latency path and the existing deterministic local
+            // handler selection rule.
+            if (requests.has_handler(
+                    key)) {
+                const auto payload =
+                    StaticCodec<RequestT>::
+                        encode(value);
+
+                const auto started =
+                    requests.start(
+                        app_id_,
+                        key,
+                        std::span<
+                            const std::uint8_t>(
+                            payload.data(),
+                            payload.size()),
+                        completion);
+
+                if (
+                    started.dispatched &&
+                    !result_state->ready()) {
+                    std::weak_ptr<
+                        detail::
+                            EmbeddedHostRuntime>
+                        weak_runtime =
+                            runtime_;
+
+                    result_state->cancel_ =
+                        [weak_runtime =
+                             std::move(
+                                 weak_runtime),
+                         id = started.id] {
+                            const auto runtime =
+                                weak_runtime
+                                    .lock();
+
+                            return
+                                runtime &&
+                                runtime->
+                                    requests()
+                                    .cancel(id);
+                        };
+                }
+
+                return request;
+            }
+
+            // Remote demand must already have a route and an attached
+            // session before serialization. No ready receiver/session keeps
+            // the no-interest fast path at encode zero.
+            if (!network.can_send(
                     key)) {
                 result_state->finish(
                     Result<ReplyT>::
@@ -387,79 +489,38 @@ private:
                 StaticCodec<RequestT>::
                     encode(value);
 
-            std::weak_ptr<
-                detail::EmbeddedHostRuntime>
-                weak_runtime =
-                    runtime_;
-
             const auto started =
-                requests.start(
+                network.start(
                     app_id_,
                     key,
                     std::span<
                         const std::uint8_t>(
                         payload.data(),
                         payload.size()),
-                    [result_state](
-                        detail::RequestStatus
-                            status,
-                        std::span<
-                            const std::uint8_t>
-                            response) {
-                        if (
-                            status !=
-                            detail::
-                                RequestStatus::
-                                    Ok) {
-                            result_state->
-                                finish(
-                                    Result<
-                                        ReplyT>::
-                                        failure(
-                                            status));
-                            return;
-                        }
-
-                        try {
-                            auto value =
-                                StaticCodec<
-                                    ReplyT>::
-                                    decode(
-                                        response);
-
-                            result_state->
-                                finish(
-                                    Result<
-                                        ReplyT>::
-                                        success(
-                                            std::move(
-                                                value)));
-                        } catch (...) {
-                            result_state->
-                                finish(
-                                    Result<
-                                        ReplyT>::
-                                        failure(
-                                            RequestStatus::
-                                                Internal));
-                        }
-                    });
+                    completion);
 
             if (
-                started.dispatched &&
+                started.request_id != 0 &&
                 !result_state->ready()) {
+                std::weak_ptr<
+                    detail::
+                        EmbeddedHostRuntime>
+                    weak_runtime =
+                        runtime_;
+
                 result_state->cancel_ =
                     [weak_runtime =
                          std::move(
                              weak_runtime),
-                     id = started.id] {
+                     id = started.request_id] {
                         const auto runtime =
                             weak_runtime
                                 .lock();
 
                         return
                             runtime &&
-                            runtime->requests()
+                            runtime->
+                                request_network()
                                 .cancel(id);
                     };
             }
