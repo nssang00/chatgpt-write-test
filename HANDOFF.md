@@ -4,6 +4,14 @@
 
 > 목표: 이전 대화를 읽지 않아도 이 저장소만으로 현재 방향, 완료 상태, 다음 작업을 파악하고 바로 개발을 계속할 수 있어야 한다.
 
+## Important parallel main updates (2026-10-13)
+
+Main has independently moved to `7951ba62625c0deb305fc2f99fc04b0c7f23dd19`
+(five M5 CI docs/workflow commits after the previous base). Development
+PR #7 is still Draft and divergent. Do not claim `main` is unchanged;
+this work made no main branch merge, and final integration needs a fresh
+base compatibility check plus owner approval (NW-023).
+
 ## 2026-10-13 final verification: latest hardened fixture + WebView2 child denial
 
 **Executable source `4ff17af2fb6d1d1e2752acec7e25ea7d52f35f5d`**

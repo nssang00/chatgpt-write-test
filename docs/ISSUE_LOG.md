@@ -322,3 +322,17 @@ callbacks still have unmet release gates. Keep PR #7 Draft, main intact.
 - NW-019 first negative actual browser side-effect case: VERIFIED for *different-file child iframe*. NW-022 wrong-frame reply hardening: VERIFIED against same E2E and Win WebView2. NW-020 actual plugin build VERIFIED, NW-021 test argument fix CLOSED.
 - **NW-014 P0 security BLOCKER STILL OPEN**: Only a targeted negative test, not all origins, same-source frames, lifecycle and per-method grants. No release waiver or security claim beyond tested scenario.
 
+
+## NW-023 main branch advanced independently — MONITOR / P2 MERGE READINESS
+- Observed 2026-10-13: `main` is now
+  `7951ba62625c0deb305fc2f99fc04b0c7f23dd19`, +5 commits since
+  previous development base `43639459c97044feed1d2f8020979f589c99ef96`.
+  The changes shown in the comparison are M5 CI workflow/docs
+  (`.github/M5-CI-README.md`, M5 workflow YAML), unrelated to the
+  current NativeWeb plugin/bridge feature scope.
+- GitHub compare latest main vs development head reports DIVERGED,
+  development branch ahead 44 / behind 5. This assistant has made no
+  `main` merge/rebase or publish. PR #7 remains Draft.
+- Before final integration, re-evaluate base compatibility/CI and obtain
+  explicit owner approval for main merge/release. This is not a blocker
+  for independent security, CLI, language-host or shell work.
