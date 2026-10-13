@@ -56,7 +56,8 @@ Any invokeBoundRequest(
 } // namespace
 
 BridgeRuntime::BridgeRuntime()
-    : asyncState_(new AsyncDispatchState())
+    : modules_(new ModuleRegistry()),
+      asyncState_(new AsyncDispatchState())
 {
 }
 
@@ -85,6 +86,54 @@ RegistrationToken BridgeRuntime::registerBinding(
     return bindings_.registerBinding(
         method,
         callable);
+}
+
+ModuleRegistration BridgeRuntime::registerModule(
+    const ModuleDescriptor& descriptor)
+{
+    return modules_->registerModule(descriptor);
+}
+
+void BridgeRuntime::bindModuleMethod(
+    const std::string& moduleId,
+    const std::string& relativeMethod,
+    const Callable& handler)
+{
+    if (relativeMethod.empty() || relativeMethod[0] == '.' ||
+        relativeMethod.find("..") != std::string::npos ||
+        relativeMethod.find('*') != std::string::npos ||
+        relativeMethod.find("__") != std::string::npos ||
+        relativeMethod.find("constructor") != std::string::npos)
+        throw Error("invalid_method", "Invalid Module method name");
+
+    for (std::size_t i = 0; i < relativeMethod.size(); ++i)
+    {
+        const char ch = relativeMethod[i];
+        if (!((ch >= 'a' && ch <= 'z') ||
+              (ch >= 'A' && ch <= 'Z') ||
+              (ch >= '0' && ch <= '9') ||
+              ch == '_' || ch == '.'))
+            throw Error("invalid_method", "Invalid Module method name");
+    }
+    if (!handler)
+        throw Error("invalid_method", "Empty Module method handler");
+
+    const std::uint64_t generation = modules_->generation(moduleId);
+    if (!generation)
+        throw Error("module_not_found", "Module is not registered: " + moduleId);
+
+    const std::string name = moduleId + "." + relativeMethod;
+    if (bindings_.has(name))
+        throw Error("duplicate_method", "Method is already bound: " + name);
+
+    const std::shared_ptr<ModuleRegistry> modules = modules_;
+    bindings_.bind(name, Callable(DynamicFunction(
+        [modules, moduleId, generation, handler](const VariantList& args) -> Any {
+            if (modules->generation(moduleId) != generation)
+                throw Error("module_unavailable",
+                            "Module was unloaded or replaced: " + moduleId);
+            return handler.invoke(args);
+        })));
 }
 
 bool BridgeRuntime::unbind(const std::string& method)
@@ -292,6 +341,7 @@ void BridgeRuntime::shutdown()
 
     events_.clear();
 
+    modules_->clear();
     bindings_.clear();
 }
 

@@ -44,6 +44,7 @@ public:
     ModuleRegistration registerModule(const ModuleDescriptor& descriptor);
     bool unregisterModule(const std::string& id);
     bool has(const std::string& id) const;
+    std::uint64_t generation(const std::string& id) const;
     bool find(const std::string& id, ModuleDescriptor* output) const;
     bool hasMain() const;
     std::string mainId() const;

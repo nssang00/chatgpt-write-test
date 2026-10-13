@@ -102,6 +102,14 @@ bool ModuleRegistry::has(const std::string& id) const
     return state_->modules.count(id) != 0;
 }
 
+std::uint64_t ModuleRegistry::generation(const std::string& id) const
+{
+    std::lock_guard<std::mutex> lock(state_->mutex);
+    const std::map<std::string, Entry>::const_iterator it =
+        state_->modules.find(id);
+    return it == state_->modules.end() ? 0 : it->second.generation;
+}
+
 bool ModuleRegistry::find(const std::string& id,
                           ModuleDescriptor* output) const
 {

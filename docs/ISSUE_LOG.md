@@ -170,3 +170,18 @@ Issues should be appended, not silently discarded. A blocked task does not block
 - Fix: restore closing quote and rerun independent Ubuntu/Windows CLI CI.
 - Scope: CLI smoke test script only; Core and actual browser E2E are not
   blocked. No success claim until rerun actually passes.
+
+## NW-017 Module Registry → BridgeRuntime qualified-call dispatch — IMPLEMENTED / CI PENDING
+- Internal `BridgeRuntime::registerModule` and `bindModuleMethod` bind
+  app-scoped cpp/python/csharp Module descriptors to the same JS request
+  envelope method namespace (e.g. camera.capture). This is a first
+  language-neutral dispatch **hook**, not live Python/.NET execution.
+- `ModuleRegistry::generation(id)` guarantees a stale function handler
+  cannot be invoked when its Module was removed and a replacement
+  with the same ID re-registers. `core.module_bridge` exercises calls,
+  duplicate handling, removal, replacement, shutdown.
+- Important: this does not yet lease actual dynamically loaded code during
+  an in-flight callback. Plugins need explicit shared-library leases and
+  cancellation/worker lifetime handling before connecting unloadable ABI
+  method handlers. Real JS/browser, Python/.NET hosts and native
+  authorization integration remain pending.

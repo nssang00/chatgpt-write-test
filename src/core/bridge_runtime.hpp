@@ -2,6 +2,7 @@
 #define NATIVEWEB_BRIDGE_RUNTIME_HPP_INCLUDED
 
 #include "core/binding_registry.hpp"
+#include "core/module_registry.hpp"
 #include "core/bridge_message.hpp"
 #include "core/event_dispatcher.hpp"
 #include "core/pending_call_registry.hpp"
@@ -91,6 +92,14 @@ public:
         const std::string& method,
         const Callable& callable);
 
+    // First stage of language-neutral module methods. These callbacks
+    // must own their executable code for the duration of in-flight calls.
+    // Python/.NET process adapters and DLL/SO unload leases come later.
+    ModuleRegistration registerModule(const ModuleDescriptor& descriptor);
+    void bindModuleMethod(const std::string& moduleId,
+                          const std::string& relativeMethod,
+                          const Callable& handler);
+
     bool unbind(const std::string& method);
     bool hasMethod(const std::string& method) const;
 
@@ -150,6 +159,7 @@ private:
     Callable findMethod(const std::string& method) const;
 
     BindingRegistry bindings_;
+    std::shared_ptr<ModuleRegistry> modules_;
     PendingCallRegistry pending_;
     EventDispatcher events_;
     std::shared_ptr<AsyncDispatchState> asyncState_;

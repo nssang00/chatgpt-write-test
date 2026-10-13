@@ -304,3 +304,10 @@ set_target_properties(nativeweb_trusted_document_regression PROPERTIES
     CXX_STANDARD 11 CXX_STANDARD_REQUIRED YES CXX_EXTENSIONS NO)
 add_test(NAME core.trusted_document
     COMMAND nativeweb_trusted_document_regression)
+
+add_executable(nativeweb_module_bridge_regression module_bridge_regression.cpp)
+target_link_libraries(nativeweb_module_bridge_regression PRIVATE NativeWeb::Core)
+target_include_directories(nativeweb_module_bridge_regression PRIVATE ${PROJECT_SOURCE_DIR}/src)
+set_target_properties(nativeweb_module_bridge_regression PROPERTIES
+    CXX_STANDARD 11 CXX_STANDARD_REQUIRED YES CXX_EXTENSIONS NO)
+add_test(NAME core.module_bridge COMMAND nativeweb_module_bridge_regression)
