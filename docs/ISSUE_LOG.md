@@ -336,3 +336,18 @@ callbacks still have unmet release gates. Keep PR #7 Draft, main intact.
 - Before final integration, re-evaluate base compatibility/CI and obtain
   explicit owner approval for main merge/release. This is not a blocker
   for independent security, CLI, language-host or shell work.
+
+## NW-024 Same trusted-entry URL reused in nested frame — NEGATIVE E2E PENDING
+- A nested iframe loading the **exact same file:/// entry URL** has
+  native API methods in the renderer, but is not an authorized top-level
+  document. A different-file frame test is insufficient to demonstrate
+  correct engine main-frame identity handling.
+- Expand real browser Plugin E2E with a second frame probe loading its own
+  `plugin_bridge_test.html` URL. The script detects `window !== window.top`,
+  reports a ready handshake, tries the real side-effectful native
+  checkpoint and reports outcome; original trusted parent also remains
+  capable of calling native bridge APIs.
+- Each of Linux CEF / Windows CEF / Windows WebView2 must output
+  `checkpoint: security-same-entry-iframe-blocked` and NEVER output
+  `security-UNTRUSTED-CALL-EXECUTED`. This is one additional negative
+  scenario, **not** closure of origin/permission policy NW-014.

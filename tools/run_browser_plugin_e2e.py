@@ -72,7 +72,8 @@ def main():
         return 124
 
     print(output, end='')
-    markers = ('checkpoint: security-untrusted-frame-blocked',
+    markers = ('checkpoint: security-same-entry-iframe-blocked',
+               'checkpoint: security-untrusted-frame-blocked',
                'checkpoint: plugin-js-verified',
                'checkpoint: plugin-busy-verified',
                'checkpoint: plugin-unloaded',

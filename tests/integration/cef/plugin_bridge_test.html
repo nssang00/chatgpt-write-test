@@ -4,6 +4,27 @@
 <body>
 <script>
 (async function () {
+  if (window !== window.top) {
+    // Deliberately reload the SAME trusted entry in a child frame.
+    // Its engine-supplied main-frame identity must differ, even when
+    // its URL string and content are byte-for-byte identical.
+    window.parent.postMessage({ kind: "nativeweb-security-probe-ready" }, "*");
+    let outcome = "no-bridge";
+    try {
+      if (typeof xytron !== "undefined") {
+        await xytron.test.checkpoint("security-UNTRUSTED-CALL-EXECUTED");
+        outcome = "allowed";
+      }
+    } catch (error) {
+      outcome = String(error).includes("permission_denied")
+        ? "denied" : "unexpected-error:" + String(error);
+    }
+    window.parent.postMessage({
+      kind: "nativeweb-security-probe",
+      outcome: outcome
+    }, "*");
+    return;
+  }
   async function fail(message) {
     try { await xytron.invoke("test.fail", String(message)); }
     catch (_) { /* the WebView may already be closing */ }
@@ -33,38 +54,45 @@
     // Actual second local document (not the trusted entry). Try to call
     // the real native checkpoint from a child frame. There must be no
     // native-side side effect even if the engine injects the bridge API.
-    const securityFrame = document.createElement("iframe");
-    securityFrame.src = "plugin_untrusted_child.html";
-    securityFrame.style.display = "none";
-    const childResult = new Promise(resolve => {
-      let frameReady = false;
-      const timer = setTimeout(() => {
-        window.removeEventListener("message", onChildMessage);
-        resolve(frameReady ? "no-response" : "frame-never-loaded");
-      }, 7000);
-      function onChildMessage(event) {
-        if (event.source !== securityFrame.contentWindow || !event.data)
-          return;
-        if (event.data.kind === "nativeweb-security-probe-ready") {
-          frameReady = true;
-          return;
+    async function probeChild(src) {
+      const frame = document.createElement("iframe");
+      frame.src = src;
+      frame.style.display = "none";
+      const childResult = new Promise(resolve => {
+        let frameReady = false;
+        const timer = setTimeout(() => {
+          window.removeEventListener("message", onChildMessage);
+          resolve(frameReady ? "no-response" : "frame-never-loaded");
+        }, 7000);
+        function onChildMessage(event) {
+          if (event.source !== frame.contentWindow || !event.data)
+            return;
+          if (event.data.kind === "nativeweb-security-probe-ready") {
+            frameReady = true;
+            return;
+          }
+          if (event.data.kind !== "nativeweb-security-probe")
+            return;
+          clearTimeout(timer);
+          window.removeEventListener("message", onChildMessage);
+          resolve(frameReady ? event.data.outcome : "missing-probe-ready");
         }
-        if (event.data.kind !== "nativeweb-security-probe")
-          return;
-        clearTimeout(timer);
-        window.removeEventListener("message", onChildMessage);
-        resolve(frameReady ? event.data.outcome : "missing-probe-ready");
-      }
-      window.addEventListener("message", onChildMessage);
-    });
-    document.body.appendChild(securityFrame);
-    const securityOutcome = await childResult;
-    securityFrame.remove();
-    ensure(securityOutcome === "denied" ||
-           securityOutcome === "no-bridge" ||
-           securityOutcome === "no-response",
-           "untrusted child frame reached native API: " + securityOutcome);
+        window.addEventListener("message", onChildMessage);
+      });
+      document.body.appendChild(frame);
+      const outcome = await childResult;
+      frame.remove();
+      ensure(outcome === "denied" ||
+             outcome === "no-bridge" ||
+             outcome === "no-response",
+             "untrusted child frame " + src + " reached native API: " + outcome);
+    }
+    // A different local file and the exact same trusted entry must both
+    // fail to invoke a native-side method from a non-main frame.
+    await probeChild("plugin_untrusted_child.html");
     await xytron.test.checkpoint("security-untrusted-frame-blocked");
+    await probeChild("plugin_bridge_test.html");
+    await xytron.test.checkpoint("security-same-entry-iframe-blocked");
     await xytron.test.checkpoint("plugin-js-verified");
 
     ensure(await xytron.test.plugin.busy() === true,

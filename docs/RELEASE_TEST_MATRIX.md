@@ -156,3 +156,5 @@ passes the installed Core SDK consumer.
 
 All tests in A1-SEC-01..07 are **not complete**. A1-SEC-08 specifically
 verifies one independent child-file native-side-effect denial case.
+
+| A1-SEC-10 | Same exact trusted entry URL loaded in a nested iframe must never invoke a native-side `test.checkpoint`; JS proves child loaded; main still works | Real Linux/Windows CEF + Windows WebView2 E2E, checkpoint `security-same-entry-iframe-blocked` | PENDING CI; does not close method grants or navigation issues |
