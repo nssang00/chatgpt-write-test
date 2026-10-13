@@ -4,6 +4,35 @@
 
 > 목표: 이전 대화를 읽지 않아도 이 저장소만으로 현재 방향, 완료 상태, 다음 작업을 파악하고 바로 개발을 계속할 수 있어야 한다.
 
+## 2026-10-13 latest verified source checkpoint (read first)
+
+- Development branch `nativeweb/autonomous-integration` / Draft PR #7.
+  **Verified executable commit: `7e45e72bdc8a55b9ebedd48918fa232a9077e8b1`.**
+- [Browser plugin E2E 38336744516](https://github.com/nssang00/chatgpt-write-test/actions/runs/38336744516):
+  real **Linux CEF, Windows CEF and Windows WebView2 ALL PASS**.
+  CEF/WebView2 native message intake now checks engine-supplied sender
+  vs explicitly hosted local file entry; remote/unrelated source denied.
+  **NW-014 P0 remains OPEN** because full security origin/frame/method
+  grants, same-file iframe proof, negative browser E2E and native-object
+  authorization are NOT DONE.
+- [Core 38336744611](https://github.com/nssang00/chatgpt-write-test/actions/runs/38336744611):
+  Ubuntu + Windows full C++11 regression 26/26 PASS, including internal
+  ModuleRegistry → BridgeRuntime namespaced method calls and stale
+  generation rejection. Uses function stubs, NOT running Python/.NET.
+- [CLI 38336744554](https://github.com/nssang00/chatgpt-write-test/actions/runs/38336744554):
+  Ubuntu + Windows PASS. Generates `cpp/python/csharp` Main scaffolds,
+  `xytron module add` cpp/python/csharp feature scaffolds and C++ plugin
+  DLL/SO against installed SDK. Commands `run`, `restore`, `publish`,
+  `plugin build`, etc remain unimplemented. NW-015 remains open.
+- [Installed Core SDK 38336744625](https://github.com/nssang00/chatgpt-write-test/actions/runs/38336744625):
+  Ubuntu + Windows PASS. Core only, not complete engine-backed distribution.
+- NW-016 test typo FIXED, NW-018 engine linker source-list FIXED with all
+  browser regressions green. Details in `docs/ISSUE_LOG.md`.
+- Product contract remains Electron-style standalone desktop as primary,
+  embedded controls secondary, one Main + mixed cpp/python/csharp
+  Modules and independently packaged Plugins, uniform JS calls/callbacks.
+  No `main` merge or release without explicit approval.
+
 ## 2026-10-13 verified three-track implementation checkpoint (latest)
 
 - **Core Module Registry** `bf67b567`: internal per-app one Main + feature Modules, cpp/python/csharp metadata, plugin delivery marker, duplicate/invalid-ID rejection, generation-safe RAII and concurrent registration. **Linux/Windows Core CI PASS** [38334300674](https://github.com/nssang00/chatgpt-write-test/actions/runs/38334300674). Not connected to JS routing or language runtime yet.

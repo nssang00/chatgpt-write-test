@@ -198,3 +198,45 @@ Issues should be appended, not silently discarded. A blocked task does not block
   `tests/integration/cef/CMakeLists.txt`.
 - Verify all three actual browsers again before declaring resolved.
   Follow-up: centralize reusable Core source lists to avoid drift.
+
+## 2026-10-13 VERIFIED implementation milestone — code 7e45e72b
+
+- **Three actual browser engines:** Linux CEF, Windows CEF (full parallel
+  build) and Windows WebView2 E2E all PASS at
+  [browser run 38336744516](https://github.com/nssang00/chatgpt-write-test/actions/runs/38336744516).
+  The new engine-sourced local-entry guard **did not regress** the previously
+  verified JS→C++ plugin lifecycle path.
+- **Core Regression:** 26/26 cases on Ubuntu and Windows including
+  `core.module_bridge`, `core.trusted_document`,
+  `core.native_permission_policy`, `core.module_registry`;
+  [run 38336744611](https://github.com/nssang00/chatgpt-write-test/actions/runs/38336744611)
+  PASS both OS.
+- **xytron native CLI:** cpp/python/csharp app scaffolds, independent C++
+  plugin DLL/SO build from installed SDK, Python Main + C++/Python/C#
+  feature Module scaffolds, duplicate/unsafe-input tests;
+  [run 38336744554](https://github.com/nssang00/chatgpt-write-test/actions/runs/38336744554)
+  PASS on Windows and Ubuntu.
+- **Installed Core consumer:** [run 38336744625](https://github.com/nssang00/chatgpt-write-test/actions/runs/38336744625)
+  PASS both OS (Core-only, not browser-distribution release).
+- **NW-016 RESOLVED:** missing CMake string quote in a CLI test fixed
+  by 3c1bac5d; CLI run 38336144862 and 38336744554 PASS both OS.
+- **NW-018 RESOLVED:** engine Core static targets now include
+  module_registry.cpp (7e45e72b); all three real browser E2E jobs PASS
+  in 38336744516.
+- **NW-014 STILL OPEN / P0 RELEASE BLOCKER:** exact initial-file URL
+  check has 3-engine *positive* regression evidence and pure Core
+  denied-URL unit tests. This does **not** prove untrusted-frame/remote
+  negative E2E, complete method/capability grants, local root/symlink
+  canonicalization or safe native object method access. Explicit per-app
+  grants, cross-engine negative E2E and iframe-origin proof required.
+- **NW-015 STILL OPEN / P2:** CLI module-add manifest editor has
+  limited canonical schema and nontransactional writes.
+- **NW-017 PARTIALLY VERIFIED:** language-neutral in-process Module
+  handlers route through BridgeRuntime and stale generation is blocked
+  in Core tests, but actual Python/.NET processes, cross-language
+  callbacks and unload-safe plugin code leases remain unimplemented.
+
+This evidence is about the **implemented technical slices**, not
+NativeWeb product-release completion. CLI run/restore/publish, shell/menu,
+WPF/MFC/.NET host controls, Python/C# real backend and Plugin→JS
+callbacks still have unmet release gates. Keep PR #7 Draft, main intact.

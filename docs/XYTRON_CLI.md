@@ -32,3 +32,10 @@ The implementation intentionally accepts only the CLI-produced manifest
 layout, rejects unknown user-edited Module records and refuses duplicate
 IDs or directory overwrites. A general versioned JSON schema parser and
 atomic manifest save are required before production-grade CLI release.
+
+## Verified mixed-language scaffold CLI (code 7e45e72b)
+
+`xytron module add` and C++ plugin bootstrap compile tests pass on
+Windows and Ubuntu in [CLI 38336744554](https://github.com/nssang00/chatgpt-write-test/actions/runs/38336744554).
+The test script typo NW-016 was fixed; no live Python/.NET module
+process runs as part of this command. Real shell/run/publish is pending.

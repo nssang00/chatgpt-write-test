@@ -19,6 +19,9 @@ Plugin SDK-only target is insufficient. See [RELEASE_SCOPE_A.md](RELEASE_SCOPE_A
 | App-scoped Main/Module Registry foundation | CORE verified (not JS routing) | Linux/Windows Core Regression 38334300674 |
 | Native xytron scaffolds + generated C++ plugin compile | PASS for scaffolding and DLL/SO build only | CLI CI 38334470209, both OS |
 | Exact method / frame policy value foundation | CORE verified (not actual CEF/WebView2 enforcement) | Core Regression 38334609344, both OS |
+| Strict hosted local entry URL guard | Initial browser-side guard + positive JS plugin E2E PASS; negative origin/frame E2E still missing | Browser 38336744516 Linux CEF / Windows CEF / Windows WebView2 |
+| Internal Module→BridgeRuntime qualified call | In-process stub handlers + unload-generation rejection PASS; actual Python/.NET transport missing | Core 38336744611 both OS |
+| CLI embedded feature Module scaffolds | cpp/python/csharp source and manifest updates PASS; full CLI app execution missing | CLI 38336744554 both OS |
 
 ## New compulsory Scope A1 gates
 

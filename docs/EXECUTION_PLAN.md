@@ -39,9 +39,9 @@ are retained by embedded WPF/WinForms/MFC controls.
 
 | Track | Planned work | Mandatory test gate | State |
 | --- | --- | --- | --- |
-| P0 Secure bridge | Trusted packaged UI; host-supplied frame/origin identity; per-method grants; navigation invalidation | A1-SEC-01–07 on 3 real engines | NOT STARTED |
+| P0 Secure bridge | Trusted packaged UI; host-supplied frame/origin identity; per-method grants; navigation invalidation | A1-SEC-01–07 on 3 real engines | PARTIAL: exact entry URL native gate; 3-engine positive E2E, negative security pending NW-014 |
 | P1 Bidirectional plugin callbacks | Plugin→JS named invoke/event, async results, event subscription/unsubscribe, callback lifetimes across reload/destroy/unload | A1-CB-01–05 | NOT STARTED |
-| P2 CLI and new-app workflow | xytron new/restore/run/build/test/publish/doctor + plugin new/build, versioned manifest, SDK download/cache | A1-CLI-01–05 | NOT STARTED |
+| P2 CLI and new-app workflow | xytron new/restore/run/build/test/publish/doctor + plugin new/build, versioned manifest, SDK download/cache | A1-CLI-01–05 | PARTIAL: new desktop cpp/python/csharp, module add, plugin new+compiled DLL/SO; runtime commands pending |
 | P3 Standalone shell and embedded controls | Native app window/menu/context and minimum Win32, GTK3, WPF, WinForms, MFC controls | A1-SHELL-01–05 and A1-HOST-01–06 | NOT STARTED |
 | P4 Actual backend profiles and wrappers | Python & C# authored backend templates, managed runtime lifecycle, async/stream/error/callback plus wrappers | A1-BACK-01–04 and A1-WRAP-01–03 | NOT STARTED |
 | P5 Engine packaging | Portable SDK artifacts, CEF resources/ICU, WebView2 Evergreen diagnostics, third-party notices | A1-DIST-01–04 | CORE-ONLY BASELINE |
@@ -77,3 +77,12 @@ milestones, but their *minimum working vertical slices* are release gates.
 - Keep Draft PR #7, do not modify `main` or publish without approval.
 - Request approval only for material breaking ABI/API, unsafe permission
   changes, material scope or expense, and final merge/release.
+
+## CI checkpoint at commit 7e45e72b
+
+Three real browser E2E jobs PASS: 38336744516. Core Ubuntu/Windows
+PASS: 38336744611. CLI bootstrap plus generated DLL/SO and mixed
+Module scaffolds PASS: 38336744554. Installed Core consumer PASS:
+38336744625. Distinguish **unit/positive smoke** from unmet full
+negative-security, real language-host, desktop shell and distribution
+gates. NW-014 and NW-015 stay open in ISSUE_LOG.md.

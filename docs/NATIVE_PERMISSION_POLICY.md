@@ -38,3 +38,16 @@ handle authorization, module-to-module permission evaluation, real negative
 browser E2E for every denial and reload/navigation race. The exact URL
 entry restriction is intentionally conservative and may limit existing
 multi-page local-app navigation until explicit trust grants are implemented.
+
+## Three-engine positive smoke after sender-document gate
+
+[Browser plugin CI 38336744516](https://github.com/nssang00/chatgpt-write-test/actions/runs/38336744516)
+passes on Linux CEF, Windows CEF and Windows WebView2 at
+`7e45e72b`. This confirms that the exact local-entry trust gate
+is compatible with the covered real JS→native plugin lifecycle.
+
+**NW-014 stays a P0 release blocker**: no negative real-browser security
+cases yet for remote page, arbitrary file, navigation, about:blank child
+frames, WebView2 same-URL frame identity, native object authorization or
+per-method grant revocation. The separate NativePermissionPolicy Core
+primitive has not been fully integrated into actual browser dispatch.

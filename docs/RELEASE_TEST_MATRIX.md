@@ -114,3 +114,17 @@ workaround; owner or next action; retest link. Do not silently retry flakiness.
   Any proposed relaxation of default-deny is a **requires approval** decision.
 - Core events remain. Plugin-owned event ABI is tracked separately unless
   adopted into the first vertical slice.
+
+## 2026-10-13 coverage update (CI source 7e45e72b)
+
+| Coverage | Verified evidence | Does NOT satisfy |
+| --- | --- | --- |
+| Native method entry guard | `core.trusted_document` and 3-engine **positive** browser lifecycle PASS in 38336744516 | A1-SEC-01–07 real **negative** trust/origin/iframe/permission E2E |
+| Module namespace dispatch | `core.module_bridge` + Module Registry C++11, Ubuntu/Windows Core run 38336744611 PASS | A1-MOD-07 actual Python/C# hosts; secure cross-module transport; unloaded DLL lease |
+| CLI `module add` scaffolds | Python Main + cpp/python/csharp feature sources/manifests, CLI 38336744554 PASS both OS | A1-CLI-06 full runtime use and schema migration; A1-CLI run/restore/publish |
+| Independent C++ Plugin DLL/SO generation | CLI tests install Core SDK and compile generated module both OS, 38336744554 PASS | Plugin `xytron plugin build` command and runnable published desktop app |
+| Existing Plugin Browser E2E | All 3 engines 38336744516 PASS | Plugin→JS reverse callback/event ABI and full desktop app shell |
+
+The unit tests reject invalid methods, wrong main frame/source and stale
+module generations, but these tests alone are **not evidence** that
+a malicious real page/frame could not trigger a native side effect.
