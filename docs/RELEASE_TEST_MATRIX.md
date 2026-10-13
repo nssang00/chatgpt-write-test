@@ -177,13 +177,13 @@ authorization.
 
 | ID | Acceptance case | Required evidence | Status |
 | --- | --- | --- | --- |
-| A1-BIND-01 | `XYTRON_MODULE(m)` C++11 free `m.function("add", &add)`; binary ID comes from `plugin.json`, without ID in source | Win DLL + Linux SO load and call through actual C ABI | PLANNED |
+| A1-BIND-01 | `XYTRON_MODULE(m)` C++11 free `m.function("add", &add)`; binary ID comes from `plugin.json`, without ID in source | Win DLL + Linux SO load and call through actual C ABI | **B0 PASS:** Core 38481436246 / CLI 38481853765 Win+Linux |
 | A1-BIND-02 | Legacy `NATIVEWEB_PLUGIN(Type, "id")` works unchanged in same release | Old C++ ABI + real 3-engine plugin E2E | PRIOR BASELINE; rerun on new source |
 | A1-BIND-03 | C++ fluent exported class constructors, methods (const and nonconst), properties, dispose and error mapping | Real plugin object factory ABI + Core/3-engine E2E | NOT IMPLEMENTED |
 | A1-BIND-04 | `plugin.json` is sole authoritative name, file path/platform/version/runtime validated; duplicate names rejected | Parser/path traversal, mismatch, missing runtime and duplicate tests | NOT IMPLEMENTED |
 | A1-BIND-05 | Startup discovery without executing module; first import single-load and concurrent coalescing | Core/real loader tests, crash/busy/cycle/failure/unload | NOT IMPLEMENTED |
-| A1-BIND-06 | Python `@xytron.export` discovers only allowed function/class members, no private exposure | Python unit tests + eventually live managed host | NOT IMPLEMENTED |
-| A1-BIND-07 | C# `[Export]` discovers approved functions/classes/properties and maps errors | .NET unit tests + eventual live managed host | NOT IMPLEMENTED |
+| A1-BIND-06 | Python `@xytron.export` discovers only allowed function/class members, no private exposure | Python unit tests + eventually live managed host | **PARTIAL:** local discovery Windows/Linux PASS 38481659399; live host pending |
+| A1-BIND-07 | C# `[Export]` discovers approved functions/classes/properties and maps errors | .NET unit tests + eventual live managed host | **PARTIAL:** local reflection Windows/Linux PASS 38481659399; live host/error mapping pending |
 | A1-BIND-08 | JS `import { add, Player } from "game"` named imports linked from static export manifest/proxy; Promise returns correct | CEF Linux/Windows + WebView2 Windows real E2E | NOT IMPLEMENTED |
 | A1-BIND-09 | One Python Main with C++ game Plugin + C# feature module; same JS call/result/error/event and module-to-module permissions | Multi-language real Windows/Linux E2E | NOT IMPLEMENTED |
 | A1-BIND-10 | Untrusted origin/module cannot import/invoke ungranted function, class factory, method, property or event | Native dispatch negative 3-engine E2E + NW-014 closure | NOT IMPLEMENTED |
@@ -193,3 +193,22 @@ Source examples are an **API proposal** until tests prove implementation.
 B0 may pass independently of the later class, ESM, language-host and
 security release gates. C++17 `std::any` sample is not the existing
 NativeWeb C++11 ABI.
+
+### Cross-language registration baseline evidence — 2026-10-14
+
+- [Core Regression 38481436246](https://github.com/nssang00/chatgpt-write-test/actions/runs/38481436246):
+  Windows/Linux PASS. Includes real C++11 `XYTRON_MODULE` DLL/SO
+  ABI fixture: typed values, structured error, manifest-derived ID/
+  version, unregister. Legacy `NATIVEWEB_PLUGIN` regressions remain.
+- [CLI 38481853765](https://github.com/nssang00/chatgpt-write-test/actions/runs/38481853765):
+  Ubuntu/Windows PASS. Includes newly generated `plugin.json` CMake
+  build AND direct re-load of generated camera DLL/SO with method invocation.
+- [Language discovery 38481659399](https://github.com/nssang00/chatgpt-write-test/actions/runs/38481659399):
+  Python 3.11 decorator metadata and .NET 8 attribute/reflection
+  tests PASS Windows/Linux. Both are LOCAL discovery only, not actual
+  Python/.NET backend JS IPC/streaming/callbacks.
+- Browser engine regression for this source still tracked separately;
+  B0 free-function SDK tests do not prove native JS named-ESM import,
+  new class properties, method grants or real mixed-language services.
+
+A1-BIND-03..05 and A1-BIND-08..11 remain NOT IMPLEMENTED.

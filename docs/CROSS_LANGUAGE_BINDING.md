@@ -192,3 +192,25 @@ The CI workflow compiles a plugin created by `xytron plugin new` and
 `camera.hello()`, and confirms safe unregister. A compile-only plugin
 test does NOT substitute for this binary load test. Real JS/ESM
 imports remain a separate gate.
+
+## Verified first-slice evidence — 2026-10-14
+
+B0 SDK includes `include/xytron/plugin.hpp` and C++11
+`XYTRON_MODULE(m)` + `m.function`; build-time id/version come from
+plugin.json. A real standalone DLL/SO fixture is loaded by existing
+PluginModule and returns typed values/errors in
+[Core 38481436246](https://github.com/nssang00/chatgpt-write-test/actions/runs/38481436246)
+on Windows/Linux. The installed SDK new plugin template is generated,
+compiled and **loaded/called** in
+[CLI 38481853765](https://github.com/nssang00/chatgpt-write-test/actions/runs/38481853765)
+on both systems. Old `NATIVEWEB_PLUGIN` remains.
+
+B3 preliminary registration metadata: Python `@xytron.export`
+and .NET `[Export]` reflection/discovery pass on both platforms in
+[38481659399](https://github.com/nssang00/chatgpt-write-test/actions/runs/38481659399).
+These pieces have NO actual JavaScript transport. Class binding is
+still illustrative in this document, not a working
+`m.class_<Player>(...)` API. The `plugin.json` entry paths describe
+future packaged locations; the current `xytron plugin build` output
+is a CMake build directory and it does not yet install binaries under
+those entry paths (NW-032).

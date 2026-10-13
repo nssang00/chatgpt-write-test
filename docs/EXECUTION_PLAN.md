@@ -147,3 +147,23 @@ gates. NW-014 and NW-015 stay open in ISSUE_LOG.md.
 - **Isolation:** Browser E2E, Core C++11 and CLI Windows/Linux CI
   independently continue. NW-026/NW-027 were CI launch-script
   defects, not reasons to suspend browser regression work.
+
+## 2026-10-14 binding API implementation checkpoint
+
+**B0 C++11 free-function authoring PASS:** new public header
+`include/xytron/plugin.hpp`, compile-time ID/version read from
+`plugin.json`, old C ABI v1 preserved. Core and CLI Windows/Linux
+run 38481436246 / 38481853765 passed real plugin load/invoke/error.
+The generated plugin CMake needs 3.19+ JSON parser; NativeWeb Core
+remains CMake 3.16+/C++11.
+
+**B3 local registration discovery PASS (not managed language host):**
+Python `@xytron.export` and C# `[Export]` reflection metadata,
+Windows/Linux run 38481659399. No actual Python/.NET subprocess
+hosting, JS transport, callback or UI engine E2E yet.
+
+**Independent next slices:** B1 catalog/manifest strict validation and
+lazy plugin loading; B2 C++ class_/constructor/method/property on stable
+object ABI; B3 Python/.NET supervised host RPC; B4 static ESM exports;
+NW-014 full method-level native permission enforcement. Test each
+slice separately; fail-safe launcher behavior and binary leases first.

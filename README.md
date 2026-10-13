@@ -28,6 +28,21 @@ NativeWeb(Xytron)은 **Electron/Tauri형 데스크톱 앱 플랫폼**으로, **�
   **not implemented**. See [bootstrap CLI](docs/XYTRON_CLI.md) and
   [security foundation](docs/NATIVE_PERMISSION_POLICY.md).
 
+## Cross-language registration API status (2026-10-14)
+
+The accepted user developer syntax is C++ `XYTRON_MODULE(m)` (with
+`m.function` now implemented, fluent `class_` planned), C#
+`[Export]` and Python `@xytron.export`. All share a planned
+Promise-first JavaScript API regardless of language. See
+[Cross-Language Binding contract](docs/CROSS_LANGUAGE_BINDING.md)
+and [tests](docs/RELEASE_TEST_MATRIX.md).
+The C++11 free-function SDK and installed plugin binary load are
+verified on Windows/Linux [CLI 38481853765](https://github.com/nssang00/chatgpt-write-test/actions/runs/38481853765).
+Python/C# export discovery tests pass locally on both OS
+[38481659399](https://github.com/nssang00/chatgpt-write-test/actions/runs/38481659399),
+**but actual Python/.NET native JS-host RPC is not implemented**.
+Do not assume `import { Player } from "game"` works yet.
+
 ## Main Backend, Modules, Plugins
 
 - **One Main Backend** (cpp/python/csharp) is the application's logical

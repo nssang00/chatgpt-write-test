@@ -480,3 +480,26 @@ callbacks still have unmet release gates. Keep PR #7 Draft, main intact.
 - Added nativeweb_generated_xytron_plugin_regression to load generated
   camera binary via C ABI; verify ID/version, call and cleanup.
 - Windows/Linux CLI workflow runs it after building the real DLL/SO.
+
+## 2026-10-14 B0/B3 implementation and validation checkpoint
+- **NW-029 C++ free-function registration VERIFIED:** initial CLI
+  38481352637 failed to compile after source changed to
+  `#include <xytron/plugin.hpp>` because SDK install was missing
+  `include/xytron`. Fix committed `ac4008ed`, installation and
+  test macro quoting; [Core 38481436246](https://github.com/nssang00/chatgpt-write-test/actions/runs/38481436246)
+  and [CLI 38481853765](https://github.com/nssang00/chatgpt-write-test/actions/runs/38481853765)
+  PASS Ubuntu/Windows. Generated CLI camera plugin binary is loaded
+  against actual PluginModule C ABI and hello method succeeds.
+- **NW-030 Python/C# export metadata PARTIAL VERIFIED:**
+  [language CI 38481659399](https://github.com/nssang00/chatgpt-write-test/actions/runs/38481659399)
+  PASS Ubuntu/Windows for Python decorator and .NET Reflection;
+  managed process, JS bridge and callbacks remain NOT IMPLEMENTED.
+- **NW-031 generated-plugin metadata ABI VERIFIED:**
+  source `c2b4dd5a`, CLI CI 38481853765 Win/Linux PASS.
+- **NW-014 P0 still OPEN:** export registration never implies method/
+  origin/object capability grant. Same original security release gate.
+- **NW-032 NEW P2:** plugin.json entry binary paths (`bin/<rid>/...`)
+  are target packaging metadata. `xytron plugin build` currently writes
+  normal CMake build-directory binaries, not the declared RID entry;
+  publish/install/manifest validation is required before PluginManager
+  packaged lazy loading. Do not claim plugin.json entry path is deployed.

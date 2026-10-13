@@ -1,5 +1,33 @@
 # NativeWeb Session Handoff
 
+## 2026-10-14 owner-approved binding API milestone (READ FIRST)
+
+- Owner-uploaded `Xytron_Cross_Language_Plugin_Binding.md` registration
+  API adopted as the public direction. Canonical
+  `docs/CROSS_LANGUAGE_BINDING.md`, D-043..045 and A1-BIND-01..11
+  list contracts/tests/implementation gaps.
+- **C++ B0 function registration VERIFIED:** `XYTRON_MODULE(m)`,
+  `m.function`, name/version derived from plugin.json during compile,
+  old ABI + legacy NATIVEWEB_PLUGIN preserved. Win/Linux Core 38481436246
+  and CLI 38481853765 PASS; CLI-produced DLL/SO actually re-loaded
+  and invoked via PluginModule. New header must be installed from
+  `include/xytron/` (bug fixed `ac4008ed`).
+- **Python/C# registration metadata VERIFIED LOCALLY:** actual
+  `@xytron.export` decorator and `[Export]` reflection helper,
+  [CI 38481659399](https://github.com/nssang00/chatgpt-write-test/actions/runs/38481659399)
+  PASS Windows/Linux. Neither talks to actual JS Core host.
+- **Not done:** C++ fluent class_/constructor/method/property
+  (A1-BIND-03), strict PluginManager catalog/lazy-load (B1),
+  static ESM named import (B4), real Python/.NET host/async callbacks
+  (B3), NW-014 method-level native permissions, and standalone shell.
+  plugin.json RID entry is not yet copied/published by CLI (NW-032).
+- Core run [38481436246](https://github.com/nssang00/chatgpt-write-test/actions/runs/38481436246),
+  CLI run [38481853765](https://github.com/nssang00/chatgpt-write-test/actions/runs/38481853765).
+  Browser regression status should be checked for executable source
+  `c2b4dd5a`. All changes on draft PR #7, not main.
+
+
+
 ## 2026-10-14 user binding API decision (current)
 
 Uploaded `Xytron_Cross_Language_Plugin_Binding.md` establishes C++

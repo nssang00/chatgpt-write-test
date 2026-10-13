@@ -102,3 +102,23 @@ PASS. This is incremental verification, **not first-usable-SDK release acceptanc
   actual standalone app shell/menus, Python/C# backend runtime,
   `xytron restore/run/publish`, SDK+CEF/WebView2 distribution and
   host controls.
+
+## 2026-10-14 cross-language user registration slices
+
+- **Verified C++11 free function authoring B0**:
+  `XYTRON_MODULE(m) / m.function` inside actual DLL/SO;
+  plugin.json-derived name/version, no duplicated user C++ id;
+  C ABI v1 and NATIVEWEB_PLUGIN compatibility preserved.
+  [Core 38481436246](https://github.com/nssang00/chatgpt-write-test/actions/runs/38481436246)
+  and [CLI 38481853765](https://github.com/nssang00/chatgpt-write-test/actions/runs/38481853765)
+  PASS Windows/Linux, including installed SDK and real compiled
+  plugin DLL/SO load/call.
+- **Verified local authoring metadata only:** Python export decorator
+  and C# ExportAttribute reflection unit tests
+  [38481659399](https://github.com/nssang00/chatgpt-write-test/actions/runs/38481659399)
+  PASS Windows/Linux. Real language-host execution/JS RPC is a BLOCKER.
+- **Release BLOCKERS unchanged:** C++ fluent class/objects/properties,
+  PluginManager catalog/import/lifecycle, JavaScript ESM proxy,
+  Python/.NET actual hosts, NW-014 full authorization and app runtime.
+  `xytron plugin build` output is not yet packaged to plugin.json
+  platform `entry` locations (NW-032).
