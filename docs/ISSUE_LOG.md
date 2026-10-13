@@ -466,3 +466,12 @@ callbacks still have unmet release gates. Keep PR #7 Draft, main intact.
   test fixture plugin ID/version rather than passing bare identifiers.
 - Windows/Linux CTest and real installed-SDK CLI binary compilation are
   required to close this initial B0 gate.
+
+## NW-030 Python/C# local registration metadata — IMPLEMENTED / CI PENDING
+- Added native language authoring stubs `@xytron.export` and `[Export]`
+  with introspection/reflection plus independent Windows/Linux tests.
+- The registrations are only discoverable metadata; no real .NET/Python
+  managed transport, method invocation from JS, streaming, callback or
+  native permission enforcement. Keep A1-BIND-06/07 PARTIAL only.
+- C# uses .NET 8; Python local test uses 3.11. Full runtime/manifest,
+  argument coercion and object lifetime remain next slices.

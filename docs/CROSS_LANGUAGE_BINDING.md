@@ -168,3 +168,18 @@ checks propagated structured errors and registration cleanup. Old
 NATIVEWEB_PLUGIN remains supported without source changes.
 Classes/properties, ESM native named imports, runtime Python/.NET hosts
 and generalized PluginManager catalog are **not** B0 features.
+
+## B3 local authoring API foundations (independent from C++ B0)
+
+- `bindings/python/xytron/__init__.py`: actual `@xytron.export` and
+  local `discover_exports(module)` metadata enumeration. Undecorated,
+  private and alias members are not exposed. Python 3.11 unittest runs
+  separately on Windows and Linux.
+- `bindings/dotnet/Xytron.Binding`: actual `[Export]` attribute and
+  `ExportDiscovery` reflection metadata for approved public classes
+  and static methods. .NET 8 Console smoke checks names, methods,
+  properties and no unintended private API export.
+- `.github/workflows/language-bindings.yml` verifies both authoring
+  surfaces without a browser engine. Neither is connected to managed
+  backend process/JS transport/permissions yet; A1-BIND-06/07 remain
+  PARTIAL when tests pass. No claim of live cross-language plugins.
