@@ -25,6 +25,27 @@ See `PRODUCT_VISION.md`, `RELEASE_SCOPE_A.md`,
 create/update/click callbacks work in standalone mode, while host menus
 are retained by embedded WPF/WinForms/MFC controls.
 
+## Confirmed cross-language binding workstream (2026-10-14)
+
+Reference: [CROSS_LANGUAGE_BINDING.md](CROSS_LANGUAGE_BINDING.md),
+derived from owner-supplied Xytron cross-language plugin binding design.
+
+In parallel with P0 NW-014 security and P2 CLI desktop app work:
+- B0 (implement first): C++11 fluent module function-registration shim,
+  `plugin.json` as unique identity, compiled DLL/SO registration and
+  *legacy NATIVEWEB_PLUGIN compatibility* regressions.
+- B1/B2 (independent core/parser/ABI): full plugin catalog/manifest
+  validation, lazy native load, C++ fluent class constructor/method/
+  property and unloaded-object/lease tests.
+- B3 (.NET/Python): developer attribute/decorator discovery and
+  managed-language host adapters; complete real language E2E, not just
+  reflection/introspection tests.
+- B4 (browser): static ESM proxy generation and language-neutral async
+  JS calls tested on CEF Linux/Windows and WebView2 Windows.
+- B5 (app): CLI restore/run/publish and packaged desktop shell.
+Finish each slice with CI evidence; log blockers and continue separate
+workstreams without granting unsafe browser APIs.
+
 ## A0 existing verified foundation
 
 - Linux/Windows C++11 Core Regression: CI 38322632990 PASS.

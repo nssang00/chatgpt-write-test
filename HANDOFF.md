@@ -1,5 +1,20 @@
 # NativeWeb Session Handoff
 
+## 2026-10-14 user binding API decision (current)
+
+Uploaded `Xytron_Cross_Language_Plugin_Binding.md` establishes C++
+`XYTRON_MODULE(m)` / `m.function` / fluent class API, C# `[Export]`,
+Python `@xytron.export`; the JS experience must be language-neutral.
+Canonical repo adaptation: `docs/CROSS_LANGUAGE_BINDING.md`.
+Keep C++11 nativeweb::Any and versioned C ABI; use plugin.json as one
+packaged Plugin identity, with compile-time ID supplied by build tooling.
+Do not break legacy NATIVEWEB_PLUGIN; do not claim class/ESM/.NET/Python
+runtime integration until their real gate tests pass. Main remains one
+logical Module plus N feature Modules and Plugin is a packaged subtype.
+Tracked in D-043..045, A1-BIND-01..11, NW-028.
+
+
+
 이 문서는 **새 ChatGPT 세션, 새 개발자, 새 작업 브랜치가 가장 먼저 읽는 단일 인수인계 문서**다.
 
 > 목표: 이전 대화를 읽지 않아도 이 저장소만으로 현재 방향, 완료 상태, 다음 작업을 파악하고 바로 개발을 계속할 수 있어야 한다.

@@ -128,3 +128,13 @@ RAII registration/cleanup tests, C++11 Linux/Windows CI.
 The S0 registry is **not** evidence that modules already route through the
 real bridge or that Python/C#/CLI projects can execute. Those remain
 explicit NOT IMPLEMENTED release gates.
+
+## Cross-language developer binding design
+
+See [CROSS_LANGUAGE_BINDING.md](CROSS_LANGUAGE_BINDING.md). Users declare
+C++ `XYTRON_MODULE(m)`, Python `@xytron.export` or C# `[Export]`,
+with the same JS Promise methods irrespective of language. Packaged
+Plugin identity is authoritative in `plugin.json`. Main is still a
+Module; Plugin remains a packaged feature, not a separate backend role.
+Implementation gates A1-BIND-01..11 distinguish free-function C++ ABI
+proof from future class, ESM, Python/.NET host and security proofs.

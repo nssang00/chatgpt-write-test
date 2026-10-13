@@ -432,3 +432,18 @@ callbacks still have unmet release gates. Keep PR #7 Draft, main intact.
   compatibility immediately before any owner-approved merge.
 - Current feature E2E and CLI CI are for our development source
   `0c879ae0`; do not assume green CI on newly advanced `main`.
+
+## NW-028 Cross-language registration spec integration — SPEC ACCEPTED / IMPLEMENTATION IN SLICES
+- Owner-approved uploaded design: C++ XYTRON_MODULE + fluent functions/
+  classes, Python @xytron.export, C# [Export], PluginManager catalog/
+  lazy loader, common Module Registry/Invoker, JS language transparency.
+- Resolved design divergence: existing C++11 / nativeweb::Any rather than
+  literal C++17 std::any sample; Promise-first JS default; ESM static
+  export metadata required for named imports; supervised Python/.NET
+  hosts by default; PluginManager is packaged-Module manager, not Main.
+- Build-supplied plugin ID from plugin.json without repeating it in C++
+  macro; preserve NATIVEWEB_PLUGIN v1. Previous CLI module.json scaffolds
+  require controlled migration and test rather than silent renaming.
+- Implementation workstreams/tests detailed in docs/CROSS_LANGUAGE_BINDING.md
+  and A1-BIND-01..11. NW-014 per-method native permission release block
+  remains OPEN; registration is not permission.

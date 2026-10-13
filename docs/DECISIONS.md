@@ -429,3 +429,34 @@ implemented in another language provided observable contract compatibility.
 Requests are routed via app-scoped Core dispatcher and explicit capability
 checks, including backend-to-backend calls. Untrusted frames and Main do
 not get implicit cross-module rights.
+
+## D-043: Official language-specific export authoring APIs
+
+**Accepted direction — owner 2026-10-14**. Preserve the uploaded binding
+document's user-facing registration concepts: C++ `XYTRON_MODULE(m)`
+with `m.function` and later fluent `m.class_<T>`, C# `[Export]` with
+reflection and Python `@xytron.export` with introspection. All three
+produce one Module Registry/Invoker contract. Main and feature Modules
+share the same public registration behavior, regardless of language.
+
+## D-044: C++11 + C ABI compatibility and manifest single identity
+
+**Accepted implementation policy — 2026-10-14**. The uploaded sample's
+C++17 `std::any`/`if constexpr` is conceptual, not the literal Core
+implementation. Keep public NativeWeb C++11, `nativeweb::Any`, and stable
+versioned `nw_*_v1` C ABI. `plugin.json` is the *single plugin identity
+declaration*, passed to C++ compilation by the build system; no user
+plugin ID argument in `XYTRON_MODULE(m)`. Preserve existing
+`NATIVEWEB_PLUGIN(Type, "id")` ABI and source compatibility. Allow
+controlled migration of existing CLI `module.json` scaffolds.
+
+## D-045: Async JS and explicit PluginManager scope
+
+**Accepted architectural recommendation — 2026-10-14**. Default calls
+are JS Promises; native ESM named imports require static export metadata/
+generated proxy before link, while runtime implementation loading is lazy.
+PluginManager discovers/loads/leases independently packaged Modules only;
+the app-scoped Module Registry also owns Main and embedded Modules.
+Python/.NET supervised process is initial language-host default, not an
+assumption of in-process CPython or CLR embedding. Native-dispatch per-call
+grants remain required despite export markers.
