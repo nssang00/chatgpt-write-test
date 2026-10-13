@@ -17,3 +17,11 @@ jobs:
         run: cmake --build build-cli --config Release --target xytron
       - name: Scaffold regression
         run: ctest --test-dir build-cli -C Release -R "^cli.scaffold$" --output-on-failure
+      - name: Build NativeWeb Core SDK for generated plugin
+        run: cmake --build build-cli --config Release --target nativeweb_core
+      - name: Install generated SDK
+        run: cmake --install build-cli --config Release --prefix "${{ github.workspace }}/build-cli/sdk"
+      - name: Configure plugin from xytron scaffold
+        run: cmake -S build-cli/xytron-cli-smoke/plugins/camera -B build-cli/generated-camera -DCMAKE_PREFIX_PATH="${{ github.workspace }}/build-cli/sdk"
+      - name: Build real plugin DLL or SO from generated template
+        run: cmake --build build-cli/generated-camera --config Release
