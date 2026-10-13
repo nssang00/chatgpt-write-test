@@ -20,6 +20,12 @@ namespace Company.WebView.Prototypes
         [DllImport("CompanyWebView2OverlayPilot",CallingConvention=CallingConvention.Cdecl)]
         private static extern int WV2Pilot_GetAckCount();
         [DllImport("CompanyWebView2OverlayPilot",CallingConvention=CallingConvention.Cdecl)]
+        private static extern int WV2Pilot_GetFixtureEchoAckCount();
+        [DllImport("CompanyWebView2OverlayPilot",CallingConvention=CallingConvention.Cdecl)]
+        private static extern int WV2Pilot_GetManualEchoAckCount();
+        [DllImport("CompanyWebView2OverlayPilot",CallingConvention=CallingConvention.Cdecl)]
+        private static extern int WV2Pilot_GetEchoRejectedCount();
+        [DllImport("CompanyWebView2OverlayPilot",CallingConvention=CallingConvention.Cdecl)]
         private static extern int WV2Pilot_RequestClose();
         [DllImport("CompanyWebView2OverlayPilot",CallingConvention=CallingConvention.Cdecl)]
         private static extern int WV2Pilot_Close(uint timeoutMs);
@@ -30,7 +36,7 @@ namespace Company.WebView.Prototypes
         private sealed class Evidence
         {
             public string harnessVersion="58.5.2";
-            public string testRevision="r3";
+            public string testRevision="r5";
             public string status="INCOMPLETE";
             public string utc="";
             public string unityVersion="";
@@ -40,6 +46,9 @@ namespace Company.WebView.Prototypes
             public int nativeError;
             public int pingCount;
             public int ackCount;
+            public int fixtureUnicodeEchoAckCount;
+            public int manualEchoAckCount;
+            public int echoRejectedCount;
             public bool shutdownRequested;
             public bool shutdownJoined;
             public int shutdownRequestCode;
@@ -71,7 +80,7 @@ namespace Company.WebView.Prototypes
                     if(int.TryParse(args[i+1],out n)&&n>=10&&n<=300) runtimeSeconds=n;
                 }
             }
-            Debug.Log("[WV2-5852-r3] Evidence "+output);
+            Debug.Log("[WV2-5852-r5] Evidence "+output);
         }
         private void Update()
         {
@@ -87,6 +96,9 @@ namespace Company.WebView.Prototypes
                     report.nativeError=WV2Pilot_GetLastError();
                     report.pingCount=Math.Max(report.pingCount,WV2Pilot_GetPongCount());
                     report.ackCount=Math.Max(report.ackCount,WV2Pilot_GetAckCount());
+                    report.fixtureUnicodeEchoAckCount=Math.Max(report.fixtureUnicodeEchoAckCount,WV2Pilot_GetFixtureEchoAckCount());
+                    report.manualEchoAckCount=Math.Max(report.manualEchoAckCount,WV2Pilot_GetManualEchoAckCount());
+                    report.echoRejectedCount=Math.Max(report.echoRejectedCount,WV2Pilot_GetEchoRejectedCount());
                     if(state<0) report.error="Native initialization failed "+state;
                     if(Time.realtimeSinceStartup-started>=runtimeSeconds) BeginShutdown();
                 }
@@ -109,7 +121,7 @@ namespace Company.WebView.Prototypes
             shutdownStarted=Time.realtimeSinceStartup;
             report.shutdownRequested=true;
             report.shutdownRequestCode=WV2Pilot_RequestClose();
-            Debug.Log("[WV2-5852-r3] Shutdown requested: "+report.shutdownRequestCode);
+            Debug.Log("[WV2-5852-r5] Shutdown requested: "+report.shutdownRequestCode);
             if(report.shutdownRequestCode!=0)
             {
                 report.error="Native shutdown request failed "+report.shutdownRequestCode;
@@ -127,7 +139,7 @@ namespace Company.WebView.Prototypes
                 report.shutdownJoined=true;
                 report.shutdownPhase=WV2Pilot_GetShutdownPhase();
                 report.stateAfterShutdown=WV2Pilot_GetState();
-                Debug.Log("[WV2-5852-r3] Shutdown joined phase="+report.shutdownPhase);
+                Debug.Log("[WV2-5852-r5] Shutdown joined phase="+report.shutdownPhase);
                 Finish(true);
             }
             else if(code!=-30)
@@ -138,7 +150,7 @@ namespace Company.WebView.Prototypes
             else if(report.shutdownWaitSeconds>=12f)
             {
                 report.error="Native shutdown timeout: phase="+report.shutdownPhase;
-                Debug.LogError("[WV2-5852-r3] "+report.error);
+                Debug.LogError("[WV2-5852-r5] "+report.error);
                 Finish(true);
             }
         }
@@ -149,7 +161,8 @@ namespace Company.WebView.Prototypes
             finished=true;
             report.utc=DateTime.UtcNow.ToString("o");
             report.status=(report.observedReady==1 && report.pingCount>0 && report.ackCount>0 &&
-                report.nativeError==0 && report.shutdownRequested && report.shutdownJoined &&
+                report.nativeError==0 && report.fixtureUnicodeEchoAckCount>0 && report.echoRejectedCount==0 &&
+                report.shutdownRequested && report.shutdownJoined &&
                 report.shutdownResult==0 && report.stateAfterShutdown==0 &&
                 report.shutdownPhase==7 && String.IsNullOrEmpty(report.error))
                 ? "PASS_AUTO":"FAIL_AUTO";
@@ -158,9 +171,9 @@ namespace Company.WebView.Prototypes
                 string dir=Path.GetDirectoryName(output);
                 if(!String.IsNullOrEmpty(dir))Directory.CreateDirectory(dir);
                 File.WriteAllText(output,JsonUtility.ToJson(report,true));
-                Debug.Log("[WV2-5852-r3] "+report.status);
+                Debug.Log("[WV2-5852-r5] "+report.status);
             }
-            catch(Exception ex){Debug.LogError("[WV2-5852-r3] Evidence write error "+ex);}
+            catch(Exception ex){Debug.LogError("[WV2-5852-r5] Evidence write error "+ex);}
             if(quit)Application.Quit(report.status=="PASS_AUTO"?0:3);
         }
         private void OnApplicationQuit()

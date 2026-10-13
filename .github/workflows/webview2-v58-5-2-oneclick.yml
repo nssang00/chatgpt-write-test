@@ -1,4 +1,4 @@
-name: WebView2 v58.5.2 Windows OneClick r4
+name: WebView2 v58.5.2 Windows OneClick r5
 on:
   push:
     branches: [feature/webview2-overlay-v58-5-2-oneclick]
@@ -51,6 +51,11 @@ jobs:
           cmake --build build-wv2-oneclick --config Release --clean-first
           if($LASTEXITCODE -ne 0){throw 'MSVC build failed'}
           if(-not(Test-Path 'build-wv2-oneclick/Release/CompanyWebView2OverlayPilot.dll')){throw 'DLL missing'}
+      - name: Execute C++ UTF-16 Echo protocol test
+        shell: pwsh
+        run: |
+          ctest --test-dir build-wv2-oneclick -C Release --output-on-failure
+          if($LASTEXITCODE -ne 0){throw 'UTF-16 native echo protocol C++ test failed'}
       - name: Verify native exports
         shell: pwsh
         run: |
@@ -60,7 +65,7 @@ jobs:
           $tools=Get-ChildItem (Join-Path $vs 'VC/Tools/MSVC') -Directory | Sort-Object Name -Descending | Select-Object -First 1
           $dumpbin=Join-Path $tools.FullName 'bin/Hostx64/x64/dumpbin.exe'
           $exports=(& $dumpbin /exports 'build-wv2-oneclick/Release/CompanyWebView2OverlayPilot.dll' | Out-String)
-          foreach($name in @('WV2Pilot_Open','WV2Pilot_Close','WV2Pilot_GetState','WV2Pilot_GetPongCount','WV2Pilot_GetAckCount')){
+          foreach($name in @('WV2Pilot_Open','WV2Pilot_Close','WV2Pilot_GetState','WV2Pilot_GetPongCount','WV2Pilot_GetAckCount','WV2Pilot_GetFixtureEchoAckCount','WV2Pilot_GetManualEchoAckCount','WV2Pilot_GetEchoRejectedCount')){
             if($exports -notmatch $name){throw "Missing ABI export $name"}
           }
       - name: Assemble runnable OneClick folder with DLL
@@ -97,6 +102,6 @@ jobs:
           "Run Run-All.cmd locally with Unity 2022.3.62f3; PENDING_MANUAL is not full Stage2 PASS." >> $env:GITHUB_STEP_SUMMARY
       - uses: actions/upload-artifact@v4
         with:
-          name: webview2-v58-5-2-windows-oneclick-r4
+          name: webview2-v58-5-2-windows-oneclick-r5
           path: dist/WebView2-OneClick-v58.5.2/
           if-no-files-found: error

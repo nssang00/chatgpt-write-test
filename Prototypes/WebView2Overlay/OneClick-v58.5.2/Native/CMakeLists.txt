@@ -14,5 +14,14 @@ target_compile_definitions(CompanyWebView2OverlayPilot PRIVATE UNICODE _UNICODE 
 target_include_directories(CompanyWebView2OverlayPilot PRIVATE "${WV2_INC}")
 target_link_libraries(CompanyWebView2OverlayPilot PRIVATE "${WV2_LOADER}" ole32 user32)
 if(MSVC)
-  target_compile_options(CompanyWebView2OverlayPilot PRIVATE /W4 /EHsc)
+  target_compile_options(CompanyWebView2OverlayPilot PRIVATE /W4 /EHsc /utf-8)
 endif()
+
+# Native protocol verification runs on GitHub Windows, without requiring Unity or a WebView2 runtime.
+enable_testing()
+add_executable(WebView2EchoProtocolTests EchoProtocolTests.cpp)
+target_compile_features(WebView2EchoProtocolTests PRIVATE cxx_std_17)
+if(MSVC)
+  target_compile_options(WebView2EchoProtocolTests PRIVATE /W4 /EHsc /utf-8)
+endif()
+add_test(NAME utf16-native-echo COMMAND WebView2EchoProtocolTests)
