@@ -1,0 +1,19 @@
+name: Xytron CLI Bootstrap
+on:
+  pull_request:
+  workflow_dispatch:
+jobs:
+  cli:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure
+        run: cmake -S . -B build-cli -DNATIVEWEB_BUILD_TESTS=ON -DCMAKE_BUILD_TYPE=Release
+      - name: Build native CLI separately
+        run: cmake --build build-cli --config Release --target xytron
+      - name: Scaffold regression
+        run: ctest --test-dir build-cli -C Release -R "^cli.scaffold$" --output-on-failure
