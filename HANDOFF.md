@@ -4,6 +4,14 @@
 
 > 목표: 이전 대화를 읽지 않아도 이 저장소만으로 현재 방향, 완료 상태, 다음 작업을 파악하고 바로 개발을 계속할 수 있어야 한다.
 
+## Latest main branch drift — separate owner activity, 2026-10-13
+
+Main currently `5e286f965f55548727f87e08bf8186fb2f8df65c`,
+10 commits beyond the previously observed `7951ba62` (M5 CI
+workflow/docs). This development work did NOT edit main. PR #7 is
+divergent/Draft; review latest main and rerun integration CI before any
+owner-approved merge. See NW-023.
+
 ## 2026-10-13 verified same-entry iframe security and SDK doctor milestone
 
 - **Code branch:** `nativeweb/autonomous-integration` on Draft PR #7.

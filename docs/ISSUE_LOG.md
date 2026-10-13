@@ -422,3 +422,13 @@ callbacks still have unmet release gates. Keep PR #7 Draft, main intact.
 ### NW-026 and NW-027 verification closure
 - GitHub workflow YAML scalar and Windows PowerShell executable invocation
   both corrected; same run `38355060435` passes both platforms.
+
+## NW-023 main branch drift updated during independent work (2026-10-13)
+- Main now `5e286f965f55548727f87e08bf8186fb2f8df65c`
+  (10 extra commits since previously recorded `7951ba62`; comparison
+  includes M5 CI workflow and m5-ci disclosure/readme docs).
+- Latest main and `nativeweb/autonomous-integration` differ. **This work
+  did not merge/rebase/push main.** Check changed workflows and base
+  compatibility immediately before any owner-approved merge.
+- Current feature E2E and CLI CI are for our development source
+  `0c879ae0`; do not assume green CI on newly advanced `main`.
