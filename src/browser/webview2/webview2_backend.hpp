@@ -98,6 +98,7 @@ private:
     std::atomic<bool> created_;
     std::atomic<bool> closing_;
     std::string source_;
+    std::string trustedEntryUrl_;
 
     Microsoft::WRL::ComPtr<ICoreWebView2Environment> environment_;
     Microsoft::WRL::ComPtr<ICoreWebView2Controller> controller_;

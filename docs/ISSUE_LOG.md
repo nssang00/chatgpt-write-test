@@ -135,3 +135,20 @@ Issues should be appended, not silently discarded. A blocked task does not block
 - Native xytron CLI app/plugin scaffolds: `091a57f4`; CLI 38334300772 PASS both OS. Real generated C++ DLL/SO compilation against installed SDK: CLI 38334470209 PASS both OS.
 - Exact-method and trusted-frame policy unit contract: `27bf2489`; Core Regression 38334609344 PASS both OS. Still NOT connected to real browser native-dispatch pipeline; NW-014 remains OPEN.
 - Full Module Dispatcher, cross-language backend runtime, app menus, controls, real xytron run/publish remain NOT IMPLEMENTED and keep their existing release gates.
+
+## NW-014 partial browser bridge gate — IMPLEMENTED / THREE-ENGINE CI PENDING
+- The first native request boundary now compares an engine-supplied sender
+  document URL to the exact local file entry explicitly supplied at create().
+  CEF also requires the originating frame to be the main frame. WebView2
+  compares event-arg Source to the top-level WebView Source.
+- Denies remote URLs, arbitrary other local files, non-main CEF frames,
+  changes to a different URL and requests for untrusted entry schemes.
+  Returns a structured permission_denied JS response for denied requests.
+- This is not yet the final release authorization layer: WebView2 same-URL
+  iframe identity requires explicit frame-level verification, local file URL
+  canonicalization/symlinks need an app-root policy, and module/method grants
+  plus native object calls must route through NativePermissionPolicy.
+- Trust gate is a strict compatibility change for applications that used to
+  invoke native code on remote sources or navigated to other pages. This is
+  intentional default-deny as approved, but explicit opt-in capability must
+  be implemented before product release. CI success must be verified.

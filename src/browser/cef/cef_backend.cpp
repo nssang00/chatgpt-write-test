@@ -2,6 +2,7 @@
 
 #include "browser/cef/cef_value_converter.hpp"
 #include "browser/common/backend_registry.hpp"
+#include "browser/common/trusted_document.hpp"
 #include "core/bridge_message.hpp"
 #include "include/cef_process_message.h"
 #include "include/cef_render_handler.h"
@@ -348,6 +349,8 @@ void CefBackend::create(
 #endif
     }
 
+    trustedEntryUrl_ = params.source;
+
     CefBrowserSettings settings;
 
     const bool started =
@@ -483,6 +486,19 @@ bool CefBackend::onProcessMessage(
 
     const RequestId requestId =
         stringToId(list->GetString(0).ToString());
+
+    // The sender's CefFrame is engine-supplied, NOT request-payload data.
+    // Only the explicitly hosted local entry document gets bridge access.
+    if (!frame || !trustedEntryDocument(
+            trustedEntryUrl_, frame->GetURL().ToString(), frame->IsMain()))
+    {
+        postBridgeMessage(
+            makeErrorMessage(
+                requestId,
+                Error("permission_denied",
+                      "This document is not trusted to invoke native APIs")));
+        return true;
+    }
 
     const std::string method =
         list->GetString(1).ToString();

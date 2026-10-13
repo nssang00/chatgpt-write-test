@@ -44,6 +44,7 @@ private:
     BrowserBackendListener* listener_;
     CefRefPtr<Client> client_;
     CefRefPtr<CefBrowser> browser_;
+    std::string trustedEntryUrl_;
 };
 
 void registerCefBackendFactory();

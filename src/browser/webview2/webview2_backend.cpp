@@ -1,6 +1,8 @@
 #include "browser/webview2/webview2_backend.hpp"
 
 #include "browser/common/backend_registry.hpp"
+#include "browser/common/trusted_document.hpp"
+#include "core/bridge_message.hpp"
 #include "browser/webview2/webview2_bridge_script.hpp"
 #include "core/json_codec.hpp"
 #include "nativeweb/error.hpp"
@@ -143,6 +145,7 @@ void WebView2Backend::create(
         reinterpret_cast<HWND>(
             params.parent);
     source_ = params.source;
+    trustedEntryUrl_ = params.source;
     closing_.store(false);
 
     const HRESULT comResult =
@@ -333,8 +336,38 @@ HRESULT WebView2Backend::installHandlers()
                         CoTaskMemFree(json);
                         json = 0;
 
-                        listener_->onBridgeMessage(
-                            jsonToAny(utf8));
+                        const Any message = jsonToAny(utf8);
+                        const BridgeMessage parsed = parseBridgeMessage(message);
+                        if (parsed.type == BridgeMessageType::Request)
+                        {
+                            // Get the source from WebView2 event metadata; JS
+                            // must not be able to supply its own identity.
+                            LPWSTR sender = 0;
+                            LPWSTR topLevel = 0;
+                            const HRESULT senderResult = args->get_Source(&sender);
+                            const HRESULT topResult = webview_->get_Source(&topLevel);
+                            const std::string senderUrl =
+                                SUCCEEDED(senderResult) && sender
+                                    ? wideToUtf8(sender) : std::string();
+                            const std::string mainUrl =
+                                SUCCEEDED(topResult) && topLevel
+                                    ? wideToUtf8(topLevel) : std::string();
+                            if (sender) CoTaskMemFree(sender);
+                            if (topLevel) CoTaskMemFree(topLevel);
+
+                            if (!trustedEntryDocument(
+                                    trustedEntryUrl_, senderUrl, true) ||
+                                senderUrl != mainUrl)
+                            {
+                                postBridgeMessageOnUi(
+                                    makeErrorMessage(
+                                        parsed.requestId,
+                                        Error("permission_denied",
+                                              "This document is not trusted to invoke native APIs")));
+                                return S_OK;
+                            }
+                        }
+                        listener_->onBridgeMessage(message);
                     }
                     catch (...)
                     {

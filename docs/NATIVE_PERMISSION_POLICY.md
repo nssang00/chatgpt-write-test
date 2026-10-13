@@ -23,3 +23,18 @@ E2E and security review. See docs/RELEASE_TEST_MATRIX.md.
 At source `27bf2489`, [Core Regression #38334609344](https://github.com/nssang00/chatgpt-write-test/actions/runs/38334609344) passed on Linux and Windows with `core.native_permission_policy`. It tests exact method grants, trusted verified main frame, frame/navigation ID mismatch, revoke and concurrent decisions.
 
 **Outstanding P0 release blocker NW-014:** no proven wiring from CEF/WebView2 frame/origin identity to the policy and the actual native JS→C++ request dispatch. It does NOT yet prevent an untrusted page from calling a native method. When wiring, prohibit JS-supplied identity bits and authorize original object method ownership, not just the internal object operation name. Add negative real-browser tests on all three backends.
+
+## Engine native message intake: initial trust gate
+
+CEF's engine-owned originating CefFrame now must be main-frame and
+equal to the originally hosted local file URL. WebView2's event-supplied
+Source must equal both initial file entry and current top-level source.
+The bridge refuses remote/unrelated file or redirected page requests
+with permission_denied. A Core CTest exercises the pure file-entry guard.
+
+Still outstanding for A1-SEC release gate: explicit app-root canonicalization,
+same-origin frame isolation on WebView2, method-level grants, native-object
+handle authorization, module-to-module permission evaluation, real negative
+browser E2E for every denial and reload/navigation race. The exact URL
+entry restriction is intentionally conservative and may limit existing
+multi-page local-app navigation until explicit trust grants are implemented.

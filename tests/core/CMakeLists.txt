@@ -294,3 +294,13 @@ set_target_properties(nativeweb_native_permission_regression PROPERTIES
     CXX_STANDARD 11 CXX_STANDARD_REQUIRED YES CXX_EXTENSIONS NO)
 add_test(NAME core.native_permission_policy
     COMMAND nativeweb_native_permission_regression)
+
+# Native host-supplied URL / frame trust primitive, not browser-level E2E.
+add_executable(nativeweb_trusted_document_regression
+    trusted_document_regression.cpp)
+target_include_directories(nativeweb_trusted_document_regression
+    PRIVATE ${PROJECT_SOURCE_DIR}/src)
+set_target_properties(nativeweb_trusted_document_regression PROPERTIES
+    CXX_STANDARD 11 CXX_STANDARD_REQUIRED YES CXX_EXTENSIONS NO)
+add_test(NAME core.trusted_document
+    COMMAND nativeweb_trusted_document_regression)
