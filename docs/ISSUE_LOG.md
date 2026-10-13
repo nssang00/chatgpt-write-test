@@ -108,3 +108,16 @@ Issues should be appended, not silently discarded. A blocked task does not block
 - Implementation status: NOT IMPLEMENTED/UNVERIFIED for the new shell/menu,
   language backend, CLI and embedded-control gates. Do not infer test PASS
   from this documentation commit. Continue independent work.
+
+## NW-013 Main/Module/Plugin naming and scope ambiguity — SPEC RESOLVED
+- P2 architecture clarity. Owner accepted: exactly one logical Main Backend
+  plus feature Modules; Plugin is an independently deployable Module type.
+  Any Module can use cpp/python/csharp concurrently and all JS calls share
+  a common contract. The Core is not a privileged Main module.
+- Recorded in D-041/D-042 and docs/MODULE_ARCHITECTURE.md with regression
+  cases A1-MOD-01..09/A1-CLI-06.
+- Full multi-language dispatch/callback E2E remains NOT IMPLEMENTED.
+  No claim of success until actual language hosts run in CI.
+- Next parallel tracks: internal registry tests, CLI scaffold tests,
+  native security design/negative tests. Document any blocker without
+  stopping unrelated tracks.

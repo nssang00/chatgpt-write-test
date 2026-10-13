@@ -11,6 +11,10 @@
 > [Scope A](RELEASE_SCOPE_A.md) ·
 > [Test matrix](RELEASE_TEST_MATRIX.md)
 >
+> Main = one logical app-scoped Module; Plugins = independently packaged
+> Modules; cpp/python/csharp coexist, not three isolated app types. See
+> [Module architecture](MODULE_ARCHITECTURE.md).
+>
 > Phase 0–10 inventory below is historical; CLI, shell and first language
 > backend templates are **first usable release** requirements, not deferred
 > until the numeric phase containing them.

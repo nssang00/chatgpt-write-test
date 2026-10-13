@@ -21,6 +21,7 @@ Plugin SDK-only target is insufficient. See [RELEASE_SCOPE_A.md](RELEASE_SCOPE_A
 
 | Gate | Definition of done | Status |
 | --- | --- | --- |
+| MAIN/MODULE/PLUGIN | One Main + 0..N mixed-language Modules, Plugin packaged subtype, unified JS namespace, authenticated cross-module routing and lifecycle | NOT COMPLETE — BLOCKER |
 | SECURITY | Native-boundary default deny for remote/untrusted docs, files, frames, redirects and ungranted methods; explicit narrow grants; real three-engine negative E2E | NOT COMPLETE — BLOCKER |
 | CLI NEW/RESTORE/RUN/BUILD/TEST/PUBLISH | Working .NET-like xytron CLI MVP from fresh project through engine/SDK download to packaged run; useful diagnostics | NOT COMPLETE — BLOCKER |
 | OS DESKTOP SHELL | Native windows, OS app/context menus, command callbacks and security tested on real browsers | NOT COMPLETE — BLOCKER |

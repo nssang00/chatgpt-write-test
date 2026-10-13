@@ -398,3 +398,32 @@ before renaming any shipped command. No CLI functionality is yet verified.
 Menu bar/menus, right-click/context popup menu, menu command and JS/backend
 callback routing, UI thread dispatch and permission checks are mandatory
 first usable app features. Full Electron desktop API parity is longer term.
+
+## D-041: One Main Backend, many Modules; Plugin is a delivery subtype
+
+**Status: Accepted — owner 2026-10-13**
+
+NativeWeb application owns **exactly one logical Main Backend**, which is
+a Module with role `main`. It may have **0..N other Modules**, implemented
+in C/C++, Python or C# concurrently. Their roles and implementations do
+not alter the common JS API contract. **Plugin is a Module configured for
+independent build/deployment/load/unload**; C++ DLL/SO is first, Python/
+C# packaged plugins may be supported later. The registry is per app,
+IDs are unique, lifetime tokens prevent stale deregistration, methods
+and cross-module calls share native-side authorization. Core remains
+the shared infrastructure, not the Main Backend.
+
+One Main is an application logical role, not an unconditional in-process
+thread or privileged bypass. Full contract: `docs/MODULE_ARCHITECTURE.md`.
+
+## D-042: Language-neutral JS namespace with authorized module routing
+
+**Status: Accepted — owner 2026-10-13**
+
+JS should not know or select whether a call targets C/C++, Python or C#,
+Main, feature Module, or independently packaged Plugin. Public methods,
+objects, callbacks, events and errors share contracts. Same API may be
+implemented in another language provided observable contract compatibility.
+Requests are routed via app-scoped Core dispatcher and explicit capability
+checks, including backend-to-backend calls. Untrusted frames and Main do
+not get implicit cross-module rights.

@@ -4,6 +4,22 @@
 
 > 목표: 이전 대화를 읽지 않아도 이 저장소만으로 현재 방향, 완료 상태, 다음 작업을 파악하고 바로 개발을 계속할 수 있어야 한다.
 
+## 2026-10-13 owner-accepted Main/Module/Plugin hierarchy (latest)
+
+- **One logical Main Backend + 0..N feature Modules** in the same app.
+  Every Main/feature is a Module; any module implementation language may
+  be cpp/python/csharp concurrently. The Core is infrastructure, NOT Main.
+- **Plugin is an independently packaged Module**, not another conflicting
+  runtime category. A C++ DLL/SO plugin is first; Python/C# plugins can
+  be packaged later. JS calls all Modules the same way.
+- App-scoped registry; unique identifiers; one Main; tokens/lifecycle,
+  authorized module-to-module routing; callback/event safety. See
+  `docs/MODULE_ARCHITECTURE.md` and D-041/D-042.
+- **Immediate independent tracks:** module registry C++11 core/tests;
+  CLI manifest/project scaffolding; native security boundary/test cases.
+  Keep any blocked track logged; do not mislabel registry-only tests
+  as real mixed-language runtime E2E.
+
 ## 2026-10-13 latest owner clarification — REQUIRED PRODUCT CONTRACT
 
 - **Not merely SDK embedding:** Electron-like standalone desktop **native OS

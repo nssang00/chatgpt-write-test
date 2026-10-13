@@ -24,12 +24,26 @@ browser SDKs. See [product vision](PRODUCT_VISION.md).
 No release number, `main` merge, or public distribution is authorized by
 this scope decision alone.
 
+## Unified module contract
+
+One Main Backend is an app-scoped logical Module. Additional C++,
+Python and C# Modules may coexist in the same app. Plugin is the
+independently packaged Module delivery mode. The JS API is identical
+regardless of the implementer language, Main/feature role and package
+form. CLI-generated single-language apps remain simple; optional mixed
+module declarations are validated and loaded by the same registry.
+
+Full architectural contract: [MODULE_ARCHITECTURE.md](MODULE_ARCHITECTURE.md).
+
 ## Required deliverables (Scope A1)
 
 1. **Core and engines:** C++11 public API, unchanged `nativeweb::WebView`
    abstraction, Linux CEF, Windows WebView2 (default when available), optional
    Windows CEF. Keep `Engine::Auto`.
-2. **Bridge and plugins:** `xytron.foo()` direct calls, `xytron.invoke()`
+2. **Main + module registry, bridge and plugins:** One logical Main,
+   0..N language-independent feature Modules, separate Plugin delivery,
+   unique IDs, safe registration/cleanup and cross-module routing.
+    `xytron.foo()` direct calls, `xytron.invoke()`
    compatibility, Promise/error mappings, typed C++ bindings, factory-returned
    native objects, stable versioned C ABI DLL/SO, conservative safe unload.
 3. **Security:** trusted *packaged app content* only by default. Deny remote

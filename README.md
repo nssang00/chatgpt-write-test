@@ -8,6 +8,18 @@ NativeWeb(Xytron)은 **Electron/Tauri형 데스크톱 앱 플랫폼**으로, **�
 
 현재 저장소는 **Core/Plugin 런타임과 Linux/Windows CEF·Windows WebView2의 실제 브라우저 E2E를 통과한 기반 단계**다. 첫 완성 목표에는 **보안, CLI 새 프로젝트 생성/다운로드/빌드/실행/배포, 양방향 플러그인 콜백, Python·C# 최소 wrapper, Win32·GTK3 Host Adapter, 엔진 포함 배포**를 포함한다 (승인된 Scope A). 기존 E2E 성공만으로 출시 완료로 판정하지 않는다.
 
+## Main Backend, Modules, Plugins
+
+- **One Main Backend** (cpp/python/csharp) is the application's logical
+  main Module; **0..N additional Modules** may implement features in
+  ANY of these languages simultaneously.
+- **Plugin = independently packaged/loaded Module**. C++ DLL/SO plugin
+  authoring is a primary convenience path, with reverse JS callbacks.
+- JavaScript `xytron.camera.capture()` calls the same API whether
+  its Module implementation is C++, Python or C#. The app-scoped Core
+  registry handles discovery, routing, permissions and lifetimes.
+- [Full architecture and testcases](docs/MODULE_ARCHITECTURE.md)
+
 ## Why
 
 기존 native 자산을 Web UI에 연결하기 위해 불필요한 중간 wrapper/runtime을 강요하지 않는 것이 핵심이다.

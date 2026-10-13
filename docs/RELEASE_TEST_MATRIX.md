@@ -71,6 +71,25 @@ external subscription credentials. OS menu E2E cannot be satisfied with an
 HTML-only menu. Embedded-control E2E cannot be satisfied by a standalone
 browser host disguised as a component.
 
+## Unified Main/Module/Plugin regression cases
+
+| ID | Test case | Scope | Current state |
+| --- | --- | --- | --- |
+| A1-MOD-01 | Register exactly one Main; Main may be cpp/python/csharp | Core C++11 + CI | NOT IMPLEMENTED |
+| A1-MOD-02 | Additional Modules accept all languages independent of Main | Core C++11 + CI | NOT IMPLEMENTED |
+| A1-MOD-03 | Duplicate module IDs, invalid reserved IDs and second Main return stable codes | Core C++11 + CI | NOT IMPLEMENTED |
+| A1-MOD-04 | RAII token removal, module destruction/expired registry and replacement safety | Core Release/ASan | NOT IMPLEMENTED |
+| A1-MOD-05 | Registry is app-scoped; same IDs in different apps do not collide | Core C++11 + CI | NOT IMPLEMENTED |
+| A1-MOD-06 | Plugin `delivery=plugin` is Module, but embedded feature Module is not independent package; manifest/build rejection of mismatch | CLI + Runtime E2E | NOT IMPLEMENTED |
+| A1-MOD-07 | Main Python + C++ camera Plugin + C# ERP Module coexist, JS calls identical, actual backend-to-backend request/reply, callbacks/events | Win/Linux actual-browser E2E | NOT IMPLEMENTED |
+| A1-MOD-08 | Module-to-module permissions not implicit; forged calls denied by Core even when Main initiates | three browser engines | NOT IMPLEMENTED |
+| A1-MOD-09 | Module unload with in-flight JS/worker callbacks, crash and restart do not leak calls or crash other Modules | Windows/Linux real engines + ASan | NOT IMPLEMENTED |
+| A1-CLI-06 | `xytron new` default creates exactly one Main; `module add` adds features without changing Main; `plugin new` creates independently delivered module | Win/Linux CLI end-to-end | NOT IMPLEMENTED |
+
+These are additive to verified plugin object E2E, and do not replace
+application-shell, Python/C# actual backend, security, packaging or embedded
+control release gates.
+
 ## Failure workflow
 
 For each failure record: test ID; exact command and SHA; OS, compiler,

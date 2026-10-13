@@ -31,6 +31,17 @@ do not initiate a sweeping rename solely from these examples.
    versioned C ABI; deploy as DLL/SO and call it from JS without manually
    wiring Chromium IPC, C++ addon code, or per-method glue.
 
+## Main backend and extension modules
+
+The application has **one logical Main Backend**, implemented in C++,
+Python or C#, plus **zero or more Modules** written in any of these
+languages at the same time. **Plugin** is an independently packaged/
+loaded Module, initially via native C++ DLL/SO. A Module's language,
+role and distribution format are independent. The same application-
+scoped registry routes calls/events/callbacks between JS and each module
+and across modules, under one security policy. See
+[MODULE_ARCHITECTURE.md](MODULE_ARCHITECTURE.md).
+
 ## First-class backend and bindings
 
 - **Primary implementation:** C/C++ runtime + C++11 SDK, both static bindings

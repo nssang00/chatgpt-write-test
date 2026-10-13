@@ -109,3 +109,16 @@ contains platform resources and valid runtime dependencies.
 Full Electron Desktop API parity, a designer, complex CLI ecosystems,
 full Python/C# API parity, advanced zero-copy and Code-OSS remain later
 phases. No `main` merge or public release without explicit approval.
+
+## Owner-approved Main/Module/Plugin relationship
+
+A desktop application has exactly one logical **Main Backend** (one
+`main` role Module) and 0..N **feature Modules**, of any language.
+A **Plugin** is an independently packaged/loaded Module. A Plugin may
+be written in C++, Python or C#; C++ DLL/SO is the first implementation.
+The common JS API has no different prefix or calling semantics for Main
+versus feature/Plugin Modules. Mixed-language feature modules can coexist
+with any Main language and can call one another through the Core dispatcher.
+
+See [unified module architecture](MODULE_ARCHITECTURE.md) for IDs, roles,
+isolation, authorization, lifecycle and test cases.
