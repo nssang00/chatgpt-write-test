@@ -27,3 +27,17 @@ Both workflows stop with an explicit error if the package is absent. The package
 Known issue from previous RTX runs: alpha-blended redraws can differ by 1 channel level even within one M5 version. Strict cross-version pixel-diff=0 is **not** proven by these checks. This Actions setup does not alter renderer source.
 
 **Do not use a performance result from a failed render gate.** A GitHub workflow file existing is not evidence that tests passed.
+
+## Pinned input artifact (2026-10-13)
+
+Exact archive to upload: `M5_OL1010_4Stage_CI_Project_20261013.zip` (4,810,330 bytes).
+
+SHA-256: `62c906b8b00bf9cf91752378e0b637aba728500198ec616ca109d62af79a9b88`
+
+Steps in GitHub UI: open repository -> **Add file** -> **Upload files** -> upload the downloaded ZIP to `m5-ci/project.zip` (ensure this *exact* path; create folder via GitHub web editor if necessary) -> Commit to `main`. A push touching `m5-ci/project.zip` launches the general CI. Alternatively start Actions -> M5 Basic Render and OL 10.10.0 CPU -> Run workflow with a trusted direct HTTPS ZIP link. The job validates the exact SHA-256 and **fails closed** if it differs.
+
+The ChatGPT GitHub connector can write text files but cannot push the binary ZIP. CI has **not yet run** with this archive; there are no real M5 screenshots from hosted Actions yet.
+
+After the general run, review the uploaded `m5-basic-render-and-ol1010-*` artifact. The CPU hotspot profiler still runs after the smoke gate passes even if the performance comparison fails, to diagnose excessive costs. An unsuccessful render gate always blocks performance measurements.
+
+For real RTX results, register a Windows x64 self-hosted runner with custom label `m5-gpu`, installed Chrome/Edge, current GPU driver, and an interactive user session (headful Chrome). Then manually run **M5 GPU Layer Feature Bench**. No hosted software rasterizer result is a substitute for a real NVIDIA benchmark.
