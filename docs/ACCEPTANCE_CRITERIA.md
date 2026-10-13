@@ -1,7 +1,6 @@
 # NativeWeb Scope A1 — first usable SDK acceptance criteria
 
-**Approved 2026-10-13:** First deliverable is an **Electron/Tauri-category desktop development
-platform with C/C++ Core** and **cpp/python/csharp user-selected app backends**.
+**Approved 2026-10-13:** First deliverable is an **Electron/Tauri-category desktop development platform with C/C++ Core** and **cpp/python/csharp user-selected app backends**.
 It supports standalone OS window/app menu/context and embedded controls,
 bidirectional plugin callbacks and redistributable engine SDK. A Core +
 Plugin SDK-only target is insufficient. See [RELEASE_SCOPE_A.md](RELEASE_SCOPE_A.md) and

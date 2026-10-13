@@ -23,8 +23,8 @@ do not initiate a sweeping rename solely from these examples.
 ## Three equally important workflows
 
 1. **New desktop application:** `xytron new` creates an executable Web UI +
-   C/C++ backend project with a ready development loop. No preexisting
-   host application required.
+   a selected `cpp`, `python` or `csharp` application backend with a ready
+   development loop. No preexisting host application required.
 2. **Embedding/migration:** a native C/C++ Win32, MFC, Qt, GTK or .NET host
    can embed the same WebView/bridge and preserve its lifecycle and backend.
 3. **Native extension:** author a small C++ plugin exporting a stable,
@@ -39,8 +39,10 @@ do not initiate a sweeping rename solely from these examples.
   app backend logic connected to JS via the Core, not only use C wrappers.
   Their high-level APIs, async mapping, object lifetimes and callbacks must
   be specified and tested. The wrappers may internally use FFI/PInvoke.
-- **Sidecar:** separate opt-in process model for services and other languages;
-  it complements but does not replace in-process Python/C# wrappers.
+- **Managed language hosting:** Python and .NET application backends may
+  run in a supervised process when isolation/runtime dependencies require
+  it, with an official native wrapper/API as appropriate. Optional Sidecars
+  for other language services are distinct from the required backend profiles.
 - **Web frontend:** HTML/CSS/JS, React/Vue/Svelte; a frontend Node-based tool
   may be optional, but is not required to implement the native backend.
 
@@ -53,7 +55,7 @@ NativeWeb bridge (request ID, thread dispatch, lifetime, security)
     ↕
 C/C++ Core and native service registry
     ↔ C++ Plugin (DLL/SO, versioned C ABI)
-    ↔ Python wrapper / C# wrapper
+    ↔ Python-authored backend / C#-authored backend / native wrappers
     ↔ optional Sidecar
 ```
 
@@ -98,8 +100,8 @@ be tested. `xytron` is a working CLI name; finalized naming remains open.
 ## First usable release and longer platform
 
 **Scope A1** includes a native standalone window with app/context menus,
-cpp/python/csharp backend templates, basic WPF/WinForms/MFC controls, and two real app experiences (new CLI-generated app and
-embedded Win32/GTK3 app), default-deny native security, actual bidirectional
+cpp/python/csharp backend templates, basic WPF/WinForms/MFC controls,
+and two real app experiences (new CLI-generated app and embedded host), default-deny native security, actual bidirectional
 plugin callback/event tests, managed engine distribution, and an initial
 Python/C# wrapper vertical slice with tested ownership/async semantics.
 Complete wrapper parity, full Desktop API breadth beyond the required

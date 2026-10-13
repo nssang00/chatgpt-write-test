@@ -29,7 +29,7 @@ Web UI
   -> C/C++ SDK
 ```
 
-**Python 및 C#/.NET**은 동일한 NativeWeb Core를 다루는 **공식 wrapper 대상**이다 (현재 구현/검증 전). Python/.NET을 Core wrapper만으로 처리하지 않으며 실제 앱 백엔드 코드도 작성할 수 있도록 한다. Node/Rust 등의 별도 프로세스 Sidecar는 고급 선택지다.
+**Python 및 C#/.NET**은 실제 앱 백엔드를 작성하는 공식 선택지이며 래퍼 API도 제공한다 (현재 구현/검증 전). Python/.NET을 Core wrapper만으로 처리하지 않으며 실제 앱 백엔드 코드도 작성할 수 있도록 한다. Node/Rust 등의 별도 프로세스 Sidecar는 고급 선택지다.
 
 ## CLI-first development experience (planned)
 

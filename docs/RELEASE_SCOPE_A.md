@@ -51,10 +51,11 @@ this scope decision alone.
    Windows WebView2 Evergreen detection/diagnostics. No source-tree reliance.
    Verify licensing notices and permitted redistribution before publishing
    engine binaries.
-6. **Real app vertical slices:** cpp, python and csharp CLI-generated
-   desktop apps and embedded controls, with actual menu/context action
-   callbacks; Windows and Linux samples load local app HTML, invoke a C++ method, create/use/dispose an object
-   from a real DLL/SO, reject an untrusted page, and exit/cleanup safely.
+6. **Real app vertical slices:** CLI-generated cpp, python and csharp
+   standalone desktop apps plus embedded controls. Validate actual native
+   menu/context-action callbacks, real backend invocation, C++ DLL/SO
+   object creation/call/dispose, denial of untrusted pages, and clean exit
+   on Windows and Linux.
 7. **.NET-like CLI:** a working `xytron` MVP with `new`, `restore`/
    dependency download, `run`, `build`, `test`, `publish`, `doctor` and
    `plugin new/build`. The same project manifest drives all commands;
@@ -78,7 +79,7 @@ this scope decision alone.
   **beyond mandatory minimal WPF/WinForms/MFC/Win32/GTK3 controls**
 - Electron-wide Desktop API parity **beyond required window/app menu/context
   menu functions**, updater, shell-level installer, code signing
-- Advanced CLI templates/registry services beyond the required xweb MVP,
+- Advanced CLI templates/registry services beyond the required xytron MVP,
   Sidecar runtime, TypeScript code generation
 - TransferBuffer/SharedBuffer zero-copy/streaming, Code - OSS benchmark
 - Dynamic plugin hot-reload guarantees beyond safe unload already specified
