@@ -93,7 +93,12 @@ try{
   $summary.runtime=$data
   Assert ($data.harnessVersion -eq '58.5.2') 'Wrong runtime harness version'
   Assert ($data.status -eq 'PASS_AUTO') "Runtime failed: $($data.error), status $($data.status)"
-  Assert ($data.testRevision -eq 'r3') 'Wrong player telemetry revision'
+  $telemetrySource=Join-Path $project 'Assets\Scripts\WebView2OneClickTelemetry.cs'
+  $telemetryText=Get-Content -LiteralPath $telemetrySource -Raw -Encoding UTF8
+  $revisionMatch=[regex]::Match($telemetryText, 'public\s+string\s+testRevision\s*=\s*"(?<version>r[0-9]+)"')
+  Assert ($revisionMatch.Success) 'Missing embedded telemetry revision in immutable source'
+  $expectedRevision=$revisionMatch.Groups['version'].Value
+  Assert ($data.testRevision -eq $expectedRevision) "Wrong player telemetry revision (expected $expectedRevision, got $($data.testRevision))"
   Assert ($data.shutdownJoined -eq $true -and $data.shutdownResult -eq 0 -and $data.shutdownPhase -eq 7 -and $data.stateAfterShutdown -eq 0) 'Native WebView2 worker shutdown was not joined'
   if((Get-Content -LiteralPath $playLog -Raw -Encoding UTF8) -match 'WV2 Pilot close timeout/failure'){throw 'Player reported a WebView2 shutdown timeout'}
   Assert ($proc.ExitCode -eq 0) "Unity Player exited $($proc.ExitCode)"
