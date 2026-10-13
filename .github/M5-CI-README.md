@@ -21,8 +21,8 @@ Both workflows stop with an explicit error if the package is absent. The package
 - Stage 0: source regression tests, including geometry clipping and offline PBF decode.
 - Stage 1: OL WebGL and M5 real *nonblank* screenshot pixels and M5 framebuffer readback. Any blank or GL error fails the gate. A nonblank result does not imply pixel-perfect parity.
 - Stage 2: no profiler and no `readPixels()` in the timing run. Cold wall, warm `renderSync()`, pan/pan-back, main-thread long tasks, and JS heap. Warm renderSync is **not** GPU frame-complete latency.
-- Stage 3: M5/OL 10.10.0 speed ratio is reported only when decoded feature counts and loaded tile counts match. Baseline source/style/resolution must stay fixed.
-- Stage 4: hardware GPU feature-cap 1, 8, 32/all; Road/Building/Water; style 1,4,8; 4/8-layer mixed tests. A separate same-context pixel-determinism probe is diagnostic, not a timing score.
+- Stage 3: M5/OL 10.10.0 speed ratio is reported only when decoded feature counts and loaded tile counts match. Baseline source/style/resolution must stay fixed. Cold p50 M5/OL ratio defaults to a strict <=1.0 target; slower runs fail the performance stage.
+- Stage 4: hardware GPU feature-cap 1, 8, 32/all; Road/Building/Water/Point (place_label); style 1,4,8; 4/8-layer mixed tests. A separate same-context pixel-determinism probe is diagnostic, not a timing score.
 
 Known issue from previous RTX runs: alpha-blended redraws can differ by 1 channel level even within one M5 version. Strict cross-version pixel-diff=0 is **not** proven by these checks. This Actions setup does not alter renderer source.
 
