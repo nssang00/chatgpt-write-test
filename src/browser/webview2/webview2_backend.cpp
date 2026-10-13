@@ -360,7 +360,12 @@ HRESULT WebView2Backend::installHandlers()
                                     trustedEntryUrl_, senderUrl, true) ||
                                 senderUrl != mainUrl)
                             {
-                                if (parsed.type == BridgeMessageType::Request)
+                                // WebView2::PostWebMessageAsJson targets the
+                                // top-level document. Never send a child
+                                // frame's error there: its request id could
+                                // collide with a legitimate main-frame call.
+                                if (parsed.type == BridgeMessageType::Request &&
+                                    senderUrl == mainUrl)
                                     postBridgeMessageOnUi(
                                         makeErrorMessage(
                                             parsed.requestId,

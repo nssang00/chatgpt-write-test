@@ -273,3 +273,15 @@ callbacks still have unmet release gates. Keep PR #7 Draft, main intact.
   invalid-path rejection exit 1. The CLI source compiled on both systems.
 - Test fixture changed to `invalid&echo` (still forbidden shell character
   but no CMake list splitting). CI rerun required before closing issue.
+
+## NW-022 WebView2 subframe error response targeted top-level document — FIX SUBMITTED
+- WebView2 engine's `PostWebMessageAsJson` sends its response to the main
+  document, not to arbitrary nested frames. Returning permission_denied
+  for an untrusted child request using that API could collide with a
+  legitimate main-document pending Promise's numeric request ID.
+- Restrict denial responses to untrusted *top-level sender* requests
+  (`senderUrl == mainUrl`). Drop child requests without forwarding or
+  replying to another document. Actual browser iframe side-effect test
+  already treats missing-frame-response as safe (no native invocation).
+- Still requires WebView2 frame-owned messaging/capability machinery for
+  deterministic per-frame error responses and same-URL iframe isolation.
