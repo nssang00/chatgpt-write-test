@@ -61,7 +61,7 @@ int main() {
     expectValue(runtime,"camera.capture",99);
 
     runtime.shutdown();
-    CHECK(request(runtime,"app.status").errorCode == "module_unavailable");
+    CHECK(request(runtime,"app.status").errorCode == "method_not_found");
     if(failures) return 1;
     std::cout << "Module methods across BridgeRuntime: PASS\n";
     return 0;
