@@ -1,4 +1,4 @@
-name: WebView2 v58.5.2 Windows OneClick r3
+name: WebView2 v58.5.2 Windows OneClick r4
 on:
   push:
     branches: [feature/webview2-overlay-v58-5-2-oneclick]
@@ -24,6 +24,16 @@ jobs:
           $path=(Resolve-Path 'Prototypes/WebView2Overlay/OneClick-v58.5.2/Run-All.ps1').Path
           [System.Management.Automation.Language.Parser]::ParseFile($path,[ref]$tokens,[ref]$errors) | Out-Null
           if($errors.Count){throw "PowerShell syntax: $errors"}
+      - name: Compile runtime telemetry C# (Editor and Windows Player defines)
+        shell: pwsh
+        run: |
+          $proj='Prototypes/WebView2Overlay/OneClick-v58.5.2/Validation/UnityTelemetryCompile.csproj'
+          dotnet build $proj --configuration Release --nologo -p:DefineConstants=UNITY_EDITOR
+          if($LASTEXITCODE -ne 0){throw 'Editor C# telemetry compile failed'}
+          dotnet clean $proj --configuration Release --nologo
+          if($LASTEXITCODE -ne 0){throw 'Dotnet clean failed'}
+          dotnet build $proj --configuration Release --nologo -p:DefineConstants=UNITY_STANDALONE_WIN
+          if($LASTEXITCODE -ne 0){throw 'Windows Player C# telemetry compile failed'}
       - name: Install pinned stable WebView2 SDK
         shell: pwsh
         run: |
@@ -87,6 +97,6 @@ jobs:
           "Run Run-All.cmd locally with Unity 2022.3.62f3; PENDING_MANUAL is not full Stage2 PASS." >> $env:GITHUB_STEP_SUMMARY
       - uses: actions/upload-artifact@v4
         with:
-          name: webview2-v58-5-2-windows-oneclick-r3
+          name: webview2-v58-5-2-windows-oneclick-r4
           path: dist/WebView2-OneClick-v58.5.2/
           if-no-files-found: error

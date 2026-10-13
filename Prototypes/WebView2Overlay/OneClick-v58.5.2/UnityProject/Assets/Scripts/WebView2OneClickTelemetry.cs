@@ -102,6 +102,7 @@ namespace Company.WebView.Prototypes
             Finish(true);
 #endif
         }
+#if UNITY_STANDALONE_WIN && !UNITY_EDITOR
         private void BeginShutdown()
         {
             shutdownRequested=true;
@@ -141,6 +142,7 @@ namespace Company.WebView.Prototypes
                 Finish(true);
             }
         }
+#endif
         private void Finish(bool quit)
         {
             if(finished) return;

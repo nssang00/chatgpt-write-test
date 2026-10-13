@@ -17,6 +17,8 @@ for x in ['current.x != lastBounds.x', 'current.y != lastBounds.y', 'current.wid
  assert x in cs, 'RectInt comparison must use coordinates: '+x
 for x in ['PASS_AUTO','FAIL_AUTO','ackCount','Application.Quit','pilotReportPath','shutdownJoined','shutdownWaitSeconds','shutdownPhase==7','WV2Pilot_Close(0)']:
  assert x in tele,x
+assert '#if UNITY_STANDALONE_WIN && !UNITY_EDITOR\n        private void BeginShutdown()' in tele, 'Shutdown methods must not compile in editor'
+assert '#endif\n        private void Finish(bool quit)' in tele, 'Close Windows-only method guard before Finish'
 for x in ['BuildPipeline.BuildPlayer','2022.3.62f3','StandaloneWindows64','ApplyModifiedPropertiesWithoutUndo']:
  assert x in build,x
 for x in ['Get-FileHash','SHA256SUMS.txt','PENDING_MANUAL','Compress-Archive','-executeMethod WebView2OneClickBuilder.Build','shutdownJoined','-LiteralPath $safe']:
