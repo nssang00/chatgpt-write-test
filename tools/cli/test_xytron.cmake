@@ -50,7 +50,7 @@ bad(2 run)
 bad(2 publish)
 # No implicit installation: a build attempt without SDK has to fail;
 # a malicious SDK prefix must be rejected before executing a shell.
-bad(1 plugin build camera --sdk "invalid;echo PWN")
+bad(1 plugin build camera --sdk "invalid&echo")
 bad(1 plugin build ../../escape --sdk missing)
 # A single Python Main may have C++, Python and C# feature modules.
 function(in_project project)

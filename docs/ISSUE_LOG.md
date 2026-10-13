@@ -265,3 +265,11 @@ callbacks still have unmet release gates. Keep PR #7 Draft, main intact.
   Windows/Linux using the freshly installed Core SDK.
 - SDK restore/download, signing, language host, app packaging and
   untrusted third-party plugin build sandboxing remain unimplemented.
+
+## NW-021 Plugin build invalid-SDK test argument split by CMake — FIX SUBMITTED
+- CLI run 38342700294 failed Ubuntu + Windows during `cli.scaffold`.
+  Test supplied `invalid;echo PWN` and CMake expanded `;...` into two
+  positional arguments, causing CLI usage exit 2 instead of the expected
+  invalid-path rejection exit 1. The CLI source compiled on both systems.
+- Test fixture changed to `invalid&echo` (still forbidden shell character
+  but no CMake list splitting). CI rerun required before closing issue.
