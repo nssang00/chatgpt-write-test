@@ -122,3 +122,22 @@ compiled shared core so C++, C ABI and Python cannot accidentally own separate
 process runtimes across a DSO boundary. IDL-generated direct-codec C++ Contexts
 are attached to that shared runtime while preserving same-Context object-native
 delivery and zero serialization for self-only demand.
+
+
+## Request/Reply public baseline
+
+The type-first Request/Reply baseline now includes:
+
+- `request RequestType returns ReplyType;` generated relation metadata;
+- C++ `ctx.request()` / `ctx.handle()` on the shared process runtime;
+- stable C ABI request/handler/reply/cancel primitives;
+- Python `await ctx.request()` / `ctx.handle()`;
+- exact scope/resource/request-type matching;
+- deterministic first-registered local handler selection;
+- no-handler typed C++/Python request fast path with zero serialization;
+- RequestId correlation, cancellation, late-reply rejection and handler-app
+  failure cleanup.
+
+This does not yet claim remote Request/Reply. Same-host SHM and remote QUIC
+routing must be attached to the same RequestReplyCore and pass real namespace
+gates before that claim is made.

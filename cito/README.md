@@ -89,3 +89,49 @@ Cito is intent-first: **Publish/Subscribe** for typed data distribution and
 The planned Request/Reply verbs are `request()` / `handle()`.
 
 See `docs/PUBLIC_API.md`.
+
+
+## Type-first Request/Reply
+
+Cito Request/Reply uses the same Context, type identity, and process runtime as
+Publish/Subscribe.
+
+C++:
+
+```cpp
+ctx.handle<GetStatus>(
+    "drone_17",
+    [](const GetStatus&) {
+        return Status{...};
+    });
+
+auto result =
+    co_await ctx.request(
+        "drone_17",
+        GetStatus{...});
+```
+
+Python:
+
+```python
+ctx.handle(
+    GetStatus,
+    get_status,
+    resource="drone_17",
+)
+
+status = await ctx.request(
+    GetStatus(drone_id="drone_17"),
+    resource="drone_17",
+)
+```
+
+IDL records only the typed relationship:
+
+```idl
+request GetStatus returns Status;
+```
+
+No service, stub, channel, endpoint, or transport object is required. The
+current public Request/Reply path is same-process; SHM/QUIC attachment remains
+a separate completion gate.

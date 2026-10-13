@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import ctypes
 import os
 import weakref
@@ -18,6 +19,32 @@ _CALLBACK = ctypes.CFUNCTYPE(
     _U8P,
     ctypes.c_size_t,
 )
+
+_REQUEST_HANDLER_CALLBACK = ctypes.CFUNCTYPE(
+    None,
+    ctypes.c_void_p,
+    ctypes.c_uint64,
+    ctypes.c_uint64,
+    _CHARP,
+    ctypes.c_size_t,
+    _U8P,
+    ctypes.c_size_t,
+)
+
+_REQUEST_COMPLETION_CALLBACK = ctypes.CFUNCTYPE(
+    None,
+    ctypes.c_void_p,
+    ctypes.c_int,
+    _U8P,
+    ctypes.c_size_t,
+)
+
+_REQUEST_OK = 0
+_REQUEST_CANCELLED = 1
+_REQUEST_UNAVAILABLE = 2
+_REQUEST_INVALID_ARGUMENT = 3
+_REQUEST_DEADLINE_EXCEEDED = 4
+_REQUEST_INTERNAL = 5
 
 
 def _load() -> ctypes.CDLL:
@@ -77,6 +104,68 @@ _lib.cito_subscription_destroy.argtypes = [
     ctypes.c_void_p,
 ]
 
+_lib.cito_context_handle.argtypes = [
+    ctypes.c_void_p,
+    ctypes.c_uint64,
+    _CHARP,
+    ctypes.c_size_t,
+    _REQUEST_HANDLER_CALLBACK,
+    ctypes.c_void_p,
+    ctypes.POINTER(ctypes.c_void_p),
+]
+_lib.cito_context_handle.restype = (
+    ctypes.c_int)
+
+_lib.cito_handler_destroy.argtypes = [
+    ctypes.c_void_p,
+]
+
+_lib.cito_context_has_handler.argtypes = [
+    ctypes.c_void_p,
+    ctypes.c_uint64,
+    _CHARP,
+    ctypes.c_size_t,
+    ctypes.POINTER(ctypes.c_int),
+]
+_lib.cito_context_has_handler.restype = (
+    ctypes.c_int)
+
+_lib.cito_context_request.argtypes = [
+    ctypes.c_void_p,
+    ctypes.c_uint64,
+    _CHARP,
+    ctypes.c_size_t,
+    _U8P,
+    ctypes.c_size_t,
+    _REQUEST_COMPLETION_CALLBACK,
+    ctypes.c_void_p,
+    ctypes.POINTER(ctypes.c_void_p),
+]
+_lib.cito_context_request.restype = (
+    ctypes.c_int)
+
+_lib.cito_request_cancel.argtypes = [
+    ctypes.c_void_p,
+    ctypes.POINTER(ctypes.c_int),
+]
+_lib.cito_request_cancel.restype = (
+    ctypes.c_int)
+
+_lib.cito_request_destroy.argtypes = [
+    ctypes.c_void_p,
+]
+
+_lib.cito_context_reply.argtypes = [
+    ctypes.c_void_p,
+    ctypes.c_uint64,
+    ctypes.c_int,
+    _U8P,
+    ctypes.c_size_t,
+    ctypes.POINTER(ctypes.c_int),
+]
+_lib.cito_context_reply.restype = (
+    ctypes.c_int)
+
 _lib.cito_context_has_demand.argtypes = [
     ctypes.c_void_p,
     ctypes.c_uint64,
@@ -126,6 +215,52 @@ def _check(status: int) -> None:
             if raw
             else str(status)
         ))
+
+
+class RequestError(RuntimeError):
+    def __init__(
+        self,
+        status: int,
+        message: str,
+    ):
+        super().__init__(message)
+        self.status = status
+
+
+class Cancelled(RequestError):
+    pass
+
+
+class Unavailable(RequestError):
+    pass
+
+
+class DeadlineExceeded(RequestError):
+    pass
+
+
+def _request_error(
+    status: int,
+) -> RequestError:
+    if status == _REQUEST_CANCELLED:
+        return Cancelled(
+            status,
+            "Cito request cancelled")
+    if status == _REQUEST_UNAVAILABLE:
+        return Unavailable(
+            status,
+            "Cito request handler unavailable")
+    if status == _REQUEST_DEADLINE_EXCEEDED:
+        return DeadlineExceeded(
+            status,
+            "Cito request deadline exceeded")
+    if status == _REQUEST_INVALID_ARGUMENT:
+        return RequestError(
+            status,
+            "Cito request invalid argument")
+    return RequestError(
+        status,
+        "Cito request failed internally")
 
 
 def abi_version() -> int:
@@ -181,6 +316,69 @@ class Subscription:
             self.close()
 
 
+class HandlerRegistration:
+    def __init__(
+        self,
+        handle: ctypes.c_void_p,
+        callback: _REQUEST_HANDLER_CALLBACK,
+        on_close: Callable[["HandlerRegistration"], None] | None = None,
+    ):
+        self._handle = handle
+        self._callback = callback
+        self._on_close = on_close
+
+    def close(self) -> None:
+        if not self._handle:
+            return
+        _lib.cito_handler_destroy(
+            self._handle)
+        self._handle = ctypes.c_void_p()
+        on_close = self._on_close
+        self._on_close = None
+        if on_close is not None:
+            on_close(self)
+
+    def __del__(self) -> None:
+        # handle() registrations belong to Context lifetime.
+        pass
+
+
+class _NativeRequest:
+    def __init__(
+        self,
+        handle: ctypes.c_void_p,
+        callback: _REQUEST_COMPLETION_CALLBACK,
+        on_close: Callable[["_NativeRequest"], None] | None = None,
+    ):
+        self._handle = handle
+        self._callback = callback
+        self._on_close = on_close
+
+    def cancel(self) -> bool:
+        if not self._handle:
+            return False
+        cancelled = ctypes.c_int()
+        _check(
+            _lib.cito_request_cancel(
+                self._handle,
+                ctypes.byref(cancelled)))
+        return bool(cancelled.value)
+
+    def close(self) -> None:
+        if not self._handle:
+            return
+        _lib.cito_request_destroy(
+            self._handle)
+        self._handle = ctypes.c_void_p()
+        on_close = self._on_close
+        self._on_close = None
+        if on_close is not None:
+            on_close(self)
+
+    def __del__(self) -> None:
+        self.close()
+
+
 class Context:
     def __init__(
         self,
@@ -200,10 +398,25 @@ class Context:
         self._handle = handle
         self._subscriptions: set[
             Subscription] = set()
+        self._handlers: set[
+            HandlerRegistration] = set()
+        self._requests: set[
+            _NativeRequest] = set()
 
     def close(self) -> None:
         if not self._handle:
             return
+
+        for request in tuple(
+                self._requests):
+            request.cancel()
+            request.close()
+        self._requests.clear()
+
+        for handler in tuple(
+                self._handlers):
+            handler.close()
+        self._handlers.clear()
 
         # Persistent subscribe() registrations belong to the Context.
         # Close native subscription handles before the Context handle.
@@ -377,6 +590,300 @@ class Context:
             lambda payload: handler(
                 decode(payload)),
             resource)
+
+    def has_handler(
+        self,
+        request_type_or_id: Any,
+        resource: str = "",
+    ) -> bool:
+        type_id = (
+            request_type_or_id
+            if isinstance(
+                request_type_or_id,
+                int)
+            else getattr(
+                request_type_or_id,
+                "TYPE_ID",
+                None))
+
+        if type_id is None:
+            raise TypeError(
+                "Cito has_handler() expects "
+                "a generated request type or integer TypeId")
+
+        raw, buffer = _text(resource)
+        result = ctypes.c_int()
+
+        _check(
+            _lib.cito_context_has_handler(
+                self._handle,
+                int(type_id),
+                ctypes.cast(
+                    buffer,
+                    _CHARP),
+                len(raw),
+                ctypes.byref(result)))
+
+        return bool(result.value)
+
+    def _reply_raw(
+        self,
+        request_id: int,
+        status: int,
+        payload: bytes = b"",
+    ) -> bool:
+        data = bytes(payload)
+        payload_buffer = (
+            (ctypes.c_uint8 * len(data))
+            .from_buffer_copy(data)
+            if data
+            else
+            (ctypes.c_uint8 * 1)())
+        accepted = ctypes.c_int()
+
+        _check(
+            _lib.cito_context_reply(
+                self._handle,
+                int(request_id),
+                int(status),
+                ctypes.cast(
+                    payload_buffer,
+                    _U8P),
+                len(data),
+                ctypes.byref(accepted)))
+
+        return bool(accepted.value)
+
+    def handle(
+        self,
+        request_type: Any,
+        handler: Callable[[Any], Any],
+        resource: str = "",
+    ) -> HandlerRegistration:
+        type_id = getattr(
+            request_type,
+            "TYPE_ID",
+            None)
+        decode = getattr(
+            request_type,
+            "decode",
+            None)
+        reply_type = getattr(
+            request_type,
+            "REPLY_TYPE",
+            None)
+
+        if (
+            type_id is None or
+            not callable(decode) or
+            reply_type is None
+        ):
+            raise TypeError(
+                "Cito handle() expects a generated "
+                "request type with REPLY_TYPE")
+
+        raw, buffer = _text(resource)
+
+        def bridge(
+            _user: int,
+            request_id: int,
+            _request_type: int,
+            _resource: _CHARP,
+            _resource_size: int,
+            payload: _U8P,
+            payload_size: int,
+        ) -> None:
+            try:
+                request = decode(
+                    ctypes.string_at(
+                        payload,
+                        payload_size))
+                response = handler(request)
+
+                if asyncio.iscoroutine(
+                        response) or hasattr(
+                            response,
+                            "__await__"):
+                    raise TypeError(
+                        "async Cito handlers are not enabled yet")
+
+                if not isinstance(
+                    response,
+                    reply_type):
+                    raise TypeError(
+                        "Cito handler returned the wrong reply type")
+
+                self._reply_raw(
+                    request_id,
+                    _REQUEST_OK,
+                    response.encode())
+            except Exception:
+                try:
+                    self._reply_raw(
+                        request_id,
+                        _REQUEST_INTERNAL)
+                except Exception:
+                    pass
+
+        callback = _REQUEST_HANDLER_CALLBACK(
+            bridge)
+        handle = ctypes.c_void_p()
+
+        _check(
+            _lib.cito_context_handle(
+                self._handle,
+                int(type_id),
+                ctypes.cast(
+                    buffer,
+                    _CHARP),
+                len(raw),
+                callback,
+                None,
+                ctypes.byref(handle)))
+
+        owner = weakref.ref(self)
+
+        def release(
+            item: HandlerRegistration,
+        ) -> None:
+            context = owner()
+            if context is not None:
+                context._handlers.discard(
+                    item)
+
+        result = HandlerRegistration(
+            handle,
+            callback,
+            release)
+        self._handlers.add(result)
+        return result
+
+    async def request(
+        self,
+        message: Any,
+        resource: str = "",
+    ) -> Any:
+        type_id = getattr(
+            message,
+            "TYPE_ID",
+            None)
+        encode = getattr(
+            message,
+            "encode",
+            None)
+        reply_type = getattr(
+            message,
+            "REPLY_TYPE",
+            None)
+
+        if (
+            type_id is None or
+            not callable(encode) or
+            reply_type is None or
+            not callable(
+                getattr(
+                    reply_type,
+                    "decode",
+                    None))
+        ):
+            raise TypeError(
+                "Cito request() expects a generated "
+                "request message with REPLY_TYPE")
+
+        # Preserve the Cito no-demand fast path: no handler means no encode.
+        if not self.has_handler(
+                int(type_id),
+                resource):
+            raise Unavailable(
+                _REQUEST_UNAVAILABLE,
+                "Cito request handler unavailable")
+
+        data = bytes(encode())
+        raw, buffer = _text(resource)
+        payload_buffer = (
+            (ctypes.c_uint8 * len(data))
+            .from_buffer_copy(data)
+            if data
+            else
+            (ctypes.c_uint8 * 1)())
+
+        loop = asyncio.get_running_loop()
+        future = loop.create_future()
+
+        def bridge(
+            _user: int,
+            status: int,
+            payload: _U8P,
+            payload_size: int,
+        ) -> None:
+            response = ctypes.string_at(
+                payload,
+                payload_size)
+
+            def finish() -> None:
+                if future.done():
+                    return
+                if status == _REQUEST_OK:
+                    try:
+                        future.set_result(
+                            reply_type.decode(
+                                response))
+                    except Exception as exc:
+                        future.set_exception(
+                            RequestError(
+                                _REQUEST_INTERNAL,
+                                f"Cito reply decode failed: {exc}"))
+                else:
+                    future.set_exception(
+                        _request_error(status))
+
+            loop.call_soon_threadsafe(
+                finish)
+
+        callback = _REQUEST_COMPLETION_CALLBACK(
+            bridge)
+        native_handle = ctypes.c_void_p()
+
+        _check(
+            _lib.cito_context_request(
+                self._handle,
+                int(type_id),
+                ctypes.cast(
+                    buffer,
+                    _CHARP),
+                len(raw),
+                ctypes.cast(
+                    payload_buffer,
+                    _U8P),
+                len(data),
+                callback,
+                None,
+                ctypes.byref(
+                    native_handle)))
+
+        owner = weakref.ref(self)
+
+        def release(
+            item: _NativeRequest,
+        ) -> None:
+            context = owner()
+            if context is not None:
+                context._requests.discard(
+                    item)
+
+        native = _NativeRequest(
+            native_handle,
+            callback,
+            release)
+        self._requests.add(native)
+
+        try:
+            return await future
+        except asyncio.CancelledError:
+            native.cancel()
+            raise
+        finally:
+            native.close()
 
     def has_demand(
         self,

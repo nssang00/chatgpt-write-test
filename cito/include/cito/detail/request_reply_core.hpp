@@ -341,6 +341,28 @@ public:
         return true;
     }
 
+    bool complete_from(
+        AppId handler_app,
+        RequestId id,
+        RequestStatus status,
+        std::span<const std::uint8_t>
+            payload) {
+        const auto it =
+            pending_.find(id);
+
+        if (
+            it == pending_.end() ||
+            it->second.handler_app !=
+                handler_app) {
+            return false;
+        }
+
+        return complete(
+            id,
+            status,
+            payload);
+    }
+
     bool cancel(
         RequestId id) {
         return complete(

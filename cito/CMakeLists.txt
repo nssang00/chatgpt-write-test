@@ -71,6 +71,12 @@ if(BUILD_TESTING)
   add_test(NAME cito_c_api_tests COMMAND cito_c_api_tests)
   set_tests_properties(cito_c_api_tests PROPERTIES LABELS "unit;smoke;latency;regression")
 
+  add_executable(cito_c_request_api_tests tests/c_request_api_test.c)
+  target_link_libraries(cito_c_request_api_tests PRIVATE cito_c)
+  target_compile_options(cito_c_request_api_tests PRIVATE -Wall -Wextra -Wpedantic)
+  add_test(NAME cito_c_request_api_tests COMMAND cito_c_request_api_tests)
+  set_tests_properties(cito_c_request_api_tests PROPERTIES LABELS "unit;smoke;latency;regression")
+
   add_executable(cito_cpp_c_bridge_tests tests/cpp_c_bridge_test.cpp)
   target_link_libraries(cito_cpp_c_bridge_tests PRIVATE cito cito_c)
   target_compile_options(cito_cpp_c_bridge_tests PRIVATE -Wall -Wextra -Wpedantic)
@@ -151,6 +157,17 @@ if(BUILD_TESTING)
             ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_python_typed_binding.py)
   set_tests_properties(
     cito_python_typed_smoke
+    PROPERTIES LABELS "smoke;latency;regression")
+
+  add_test(
+    NAME cito_python_request_reply_smoke
+    COMMAND ${CMAKE_COMMAND} -E env
+            CITO_LIBRARY=$<TARGET_FILE:cito_c>
+            PYTHONPATH=${CMAKE_CURRENT_SOURCE_DIR}/python:${GENERATED_PY_DIR}
+            ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_python_request_reply.py)
+  set_tests_properties(
+    cito_python_request_reply_smoke
     PROPERTIES LABELS "smoke;latency;regression")
 
   add_executable(cito_idl_static_smoke
