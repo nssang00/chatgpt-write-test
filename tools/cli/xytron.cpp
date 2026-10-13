@@ -86,21 +86,40 @@ static void plugin(const std::string& id) {
   dir("plugins",false);
   const std::string p="plugins/"+id;
   dir(p,true);
-  file(p+"/module.json","{\"schemaVersion\":1,\"id\":"+q(id)+
-    ",\"role\":\"feature\",\"language\":\"cpp\",\"delivery\":\"plugin\"}\n");
-  file(p+"/plugin.cpp","#include \"nativeweb/plugin.hpp\"\n"
-    "#include <string>\nclass GeneratedPlugin : public nativeweb::Plugin {\n"
-    "public: void registerApi(nativeweb::PluginApi& api) override {\n"
-    "  api.bind(\"hello\", [](){return std::string(\"hello\");});\n"
-    "}};\nNATIVEWEB_PLUGIN(GeneratedPlugin, "+q(id)+")\n");
+  file(p+"/plugin.json",
+    "{\n  \"schemaVersion\": 1,\n  \"name\": "+q(id)+
+    ",\n  \"version\": \"1.0.0\",\n  \"runtime\": \"native\",\n"
+    "  \"entry\": {\n"
+    "    \"win-x64\": \"bin/win-x64/"+id+".dll\",\n"
+    "    \"linux-x64\": \"bin/linux-x64/lib"+id+".so\"\n"
+    "  }\n}\n");
+  file(p+"/plugin.cpp","#include \"xytron/plugin.hpp\"\n"
+    "#include <string>\n"
+    "static std::string hello() { return std::string(\"hello\"); }\n"
+    "XYTRON_MODULE(m) {\n  m.function(\"hello\", &hello);\n}\n");
   file(p+"/CMakeLists.txt",
-    "cmake_minimum_required(VERSION 3.16)\nproject("+id+" LANGUAGES CXX)\n"
+    "cmake_minimum_required(VERSION 3.19)\n"
+    "project(xytron_native_plugin LANGUAGES CXX)\n"
+    "file(READ \"${CMAKE_CURRENT_SOURCE_DIR}/plugin.json\" _manifest)\n"
+    "string(JSON _id ERROR_VARIABLE _id_err GET \"${_manifest}\" name)\n"
+    "string(JSON _ver ERROR_VARIABLE _ver_err GET \"${_manifest}\" version)\n"
+    "string(JSON _runtime ERROR_VARIABLE _rt_err GET \"${_manifest}\" runtime)\n"
+    "if(_id_err OR _ver_err OR _rt_err OR NOT _runtime STREQUAL \"native\")\n"
+    "  message(FATAL_ERROR \"Invalid plugin.json\")\n"
+    "endif()\n"
+    "if(NOT _id MATCHES \"^[a-z][a-z0-9_]*$\" OR\n"
+    "   NOT _ver MATCHES \"^[0-9]+[.][0-9]+[.][0-9]+$\")\n"
+    "  message(FATAL_ERROR \"Invalid plugin ID/version\")\n"
+    "endif()\n"
     "find_package(NativeWeb CONFIG REQUIRED)\n"
     "get_target_property(_inc NativeWeb::Core INTERFACE_INCLUDE_DIRECTORIES)\n"
-    "add_library("+id+" SHARED plugin.cpp)\n"
-    "target_include_directories("+id+" PRIVATE ${_inc})\n"
-    "set_target_properties("+id+" PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED YES)\n"
-    "# Stable C ABI, no Core linking into plugin.\n");
+    "add_library(${_id} SHARED plugin.cpp)\n"
+    "target_include_directories(${_id} PRIVATE ${_inc})\n"
+    "target_compile_definitions(${_id} PRIVATE\n"
+    "  XYTRON_PLUGIN_ID=\\\"${_id}\\\"\n"
+    "  XYTRON_PLUGIN_VERSION=\\\"${_ver}\\\")\n"
+    "set_target_properties(${_id} PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED YES)\n"
+    "# Stable C ABI v1; never link Core into plugin DLL/SO.\n");
   std::cout<<"Created C++ plugin scaffold: "<<p<<"\n";
 }
 

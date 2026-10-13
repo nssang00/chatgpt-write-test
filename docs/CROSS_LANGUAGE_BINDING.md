@@ -152,3 +152,19 @@ navigation/revocation and three-engine negative E2E are complete.
 
 The gates in [RELEASE_TEST_MATRIX.md](RELEASE_TEST_MATRIX.md) separate
 implemented unit/ABI slices from real managed-language/browser success.
+
+## Implemented B0 C++ function registration (source; CI pending)
+
+`include/xytron/plugin.hpp` provides C++11 `XYTRON_MODULE(m)` +
+`m.function()` as a shim onto the original
+`nativeweb_plugin_init_v1` and `nativeweb::PluginApi::bind`. The ID
+and semantic version originate in plugin.json and are injected at
+compile time by generated CMake (requires CMake 3.19+ for JSON).
+The Core build remains CMake 3.16+ / C++11. CLI-created plugin source
+does not repeat its plugin name and no duplicate module.json is written.
+
+New C++11 regression loads a real DLL/SO, invokes typed functions,
+checks propagated structured errors and registration cleanup. Old
+NATIVEWEB_PLUGIN remains supported without source changes.
+Classes/properties, ESM native named imports, runtime Python/.NET hosts
+and generalized PluginManager catalog are **not** B0 features.

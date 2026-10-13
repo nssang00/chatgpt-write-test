@@ -162,3 +162,27 @@ set_target_properties(nativeweb_plugin_async_lifetime_regression PROPERTIES
     CXX_STANDARD 11 CXX_STANDARD_REQUIRED YES CXX_EXTENSIONS NO)
 add_test(NAME plugin.async_lifetime COMMAND nativeweb_plugin_async_lifetime_regression
     $<TARGET_FILE:nativeweb_test_object_factory_plugin>)
+
+
+# New C++11 developer-facing XYTRON_MODULE function registration.
+# Compile-time ID/version derived from one plugin.json (not user source).
+file(READ "${CMAKE_CURRENT_SOURCE_DIR}/xytron_function_plugin.json" _manifest)
+string(REGEX MATCH "\"name\"[ \t]*:[ \t]*\"([a-z][a-z0-9_]*)\"" _id_match "${_manifest}")
+set(_fixture_id "${CMAKE_MATCH_1}")
+string(REGEX MATCH "\"version\"[ \t]*:[ \t]*\"([0-9]+[.][0-9]+[.][0-9]+)\"" _version_match "${_manifest}")
+set(_fixture_version "${CMAKE_MATCH_1}")
+if(NOT _fixture_id OR NOT _fixture_version)
+    message(FATAL_ERROR "Invalid binding plugin fixture metadata")
+endif()
+add_library(nativeweb_test_xytron_function_plugin SHARED xytron_function_plugin.cpp)
+target_include_directories(nativeweb_test_xytron_function_plugin PRIVATE ${PROJECT_SOURCE_DIR}/include)
+target_compile_definitions(nativeweb_test_xytron_function_plugin PRIVATE
+    XYTRON_PLUGIN_ID="${_fixture_id}"
+    XYTRON_PLUGIN_VERSION="${_fixture_version}")
+set_target_properties(nativeweb_test_xytron_function_plugin PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED YES CXX_EXTENSIONS NO)
+add_executable(nativeweb_xytron_function_regression xytron_function_regression.cpp)
+target_link_libraries(nativeweb_xytron_function_regression PRIVATE NativeWeb::Core)
+target_include_directories(nativeweb_xytron_function_regression PRIVATE ${PROJECT_SOURCE_DIR}/src)
+set_target_properties(nativeweb_xytron_function_regression PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED YES CXX_EXTENSIONS NO)
+add_test(NAME plugin.xytron_function_binding COMMAND nativeweb_xytron_function_regression
+    $<TARGET_FILE:nativeweb_test_xytron_function_plugin>)

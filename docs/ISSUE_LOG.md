@@ -447,3 +447,13 @@ callbacks still have unmet release gates. Keep PR #7 Draft, main intact.
 - Implementation workstreams/tests detailed in docs/CROSS_LANGUAGE_BINDING.md
   and A1-BIND-01..11. NW-014 per-method native permission release block
   remains OPEN; registration is not permission.
+
+## NW-029 Initial XYTRON_MODULE C++11 function adapter — SOURCE SUBMITTED, CI PENDING
+- New public shim maps module `m.function` registrations to stable
+  C ABI v1, loads test DLL/SO with real PluginModule, checks return
+  values, errors, module ID and destructor cleanup.
+- New CLI plugin template uses plugin.json sole ID, CMake 3.19+ JSON
+  extraction to generate binary descriptor without repeating ID in C++.
+  Legacy NATIVEWEB_PLUGIN source and ABI v1 intentionally preserved.
+- A1-BIND-01 is not VERIFIED until Windows/Linux binary+CLI CI PASS.
+  Full class/property fluent API remains A1-BIND-03 blocker.

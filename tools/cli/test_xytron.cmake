@@ -27,7 +27,7 @@ ok(new desktop erp_app --backend csharp)
 ok(plugin new camera --language cpp)
 foreach(p cpp_app/backend/main.cpp ai_app/backend/main.py
           erp_app/backend/Program.cs erp_app/backend/MainBackend.csproj
-          plugins/camera/module.json plugins/camera/plugin.cpp
+          plugins/camera/plugin.json plugins/camera/plugin.cpp
           plugins/camera/CMakeLists.txt)
   if(NOT EXISTS "${TEST_ROOT}/${p}")
     message(FATAL_ERROR "Missing generated file: ${p}")
@@ -37,8 +37,8 @@ file(READ "${TEST_ROOT}/ai_app/xytron.json" manifest)
 if(NOT manifest MATCHES "\"language\": \"python\"")
   message(FATAL_ERROR "Main backend manifest missing: ${manifest}")
 endif()
-file(READ "${TEST_ROOT}/plugins/camera/module.json" m)
-if(NOT m MATCHES "\"delivery\":\"plugin\"")
+file(READ "${TEST_ROOT}/plugins/camera/plugin.json" m)
+if(NOT m MATCHES "\"runtime\": \"native\"")
   message(FATAL_ERROR "Plugin subtype missing: ${m}")
 endif()
 bad(1 new desktop cpp_app --backend cpp)
