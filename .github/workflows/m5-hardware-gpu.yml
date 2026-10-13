@@ -18,7 +18,7 @@ jobs:
     timeout-minutes: 90
     env:
       CHROME_HEADLESS: "0"
-      SOURCE_URL: ${{ inputs.project_archive_url || vars.M5_PROJECT_ARCHIVE_URL }}
+      SOURCE_URL: ${{ inputs.project_archive_url || secrets.M5_PROJECT_ARCHIVE_URL || vars.M5_PROJECT_ARCHIVE_URL }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
