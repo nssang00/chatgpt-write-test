@@ -45,6 +45,10 @@ jobs:
           } else {
             throw 'M5 source/fixtures missing. Commit m5-ci/project.zip or pass project_archive_url.'
           }
+          if (Test-Path $archive) {
+            $actual = (Get-FileHash $archive -Algorithm SHA256).Hash.ToLowerInvariant()
+            if ($actual -ne '62c906b8b00bf9cf91752378e0b637aba728500198ec616ca109d62af79a9b88') { throw 'M5 ZIP SHA256 mismatch; upload the exact pinned project ZIP' }
+          }
           $project = Get-ChildItem $dest -Filter diag-app.js -File -Recurse | Select-Object -First 1
           if (-not $project) { throw 'diag-app.js missing from archive' }
           $root = $project.Directory.FullName
