@@ -84,3 +84,21 @@ PASS; C++11 Core Linux/Windows [38343176859](https://github.com/nssang00/chatgpt
 PASS; native `xytron plugin build` + generated DLL/SO Linux/Windows
 [38343176992](https://github.com/nssang00/chatgpt-write-test/actions/runs/38343176992)
 PASS. This is incremental verification, **not first-usable-SDK release acceptance**.
+
+## Incremental CI evidence — same-entry iframe and SDK readiness
+
+- Verified nested frame reloading *identical entry HTML*, with
+  executable JS handshake and forbidden native side-effect assertion:
+  [all-engine browser E2E 38354623946](https://github.com/nssang00/chatgpt-write-test/actions/runs/38354623946)
+  PASSED.
+- Real `xytron doctor --sdk` checking installed Core SDK and CMake:
+  [Linux+Windows CLI 38355060435](https://github.com/nssang00/chatgpt-write-test/actions/runs/38355060435)
+  PASSED, alongside `xytron plugin build` and real DLL/SO build.
+- Other tested foundational tracks remain green: Core
+  [38355060575](https://github.com/nssang00/chatgpt-write-test/actions/runs/38355060575),
+  installed Core consumer
+  [38355060701](https://github.com/nssang00/chatgpt-write-test/actions/runs/38355060701).
+- **Still blocking full acceptance:** NW-014 full permission enforcement,
+  actual standalone app shell/menus, Python/C# backend runtime,
+  `xytron restore/run/publish`, SDK+CEF/WebView2 distribution and
+  host controls.

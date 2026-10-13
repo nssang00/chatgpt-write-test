@@ -77,3 +77,16 @@ Core SDK, before building the DLL/SO through `xytron plugin build`.
 Doctor validates **Core SDK only**; it explicitly warns that browser engine
 distribution, Python/.NET hosts, standalone app shell and publish
 dependencies are not checked. Full `xytron restore` is not implemented.
+
+## Verified `xytron doctor --sdk` (Core-only) — 2026-10-13
+
+Run `xytron doctor --sdk /path/to/installed/NativeWeb`. The native
+C++11 CLI verifies plugin C++ headers, installed CMake NativeWeb package
+and `cmake --version` availability; missing SDK/config or an unsafe
+path returns nonzero. It does **not** install or verify browser engine
+binaries, Python/.NET hosts, OS-native app shell or `xytron publish`.
+
+GitHub Actions [CLI 38355060435](https://github.com/nssang00/chatgpt-write-test/actions/runs/38355060435)
+PASS Ubuntu+Windows and still actually compiles the CLI-generated C++ DLL/SO.
+First workflow attempts had YAML and PowerShell syntax problems
+(NW-026/NW-027); both are fixed in the verified run.

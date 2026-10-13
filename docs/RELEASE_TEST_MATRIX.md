@@ -158,3 +158,17 @@ All tests in A1-SEC-01..07 are **not complete**. A1-SEC-08 specifically
 verifies one independent child-file native-side-effect denial case.
 
 | A1-SEC-10 | Same exact trusted entry URL loaded in a nested iframe must never invoke a native-side `test.checkpoint`; JS proves child loaded; main still works | Real Linux/Windows CEF + Windows WebView2 E2E, checkpoint `security-same-entry-iframe-blocked` | PENDING CI; does not close method grants or navigation issues |
+
+## Latest verified additional test coverage (code through 0c879ae0)
+
+| ID | Verification | Evidence | Scope limitation |
+| --- | --- | --- | --- |
+| A1-SEC-10 | **SAME trusted entry HTML in a child iframe** gets a ready handshake; child native checkpoint attempt causes no native effect while top-level still can invoke Plugin | [Real browser 38354623946](https://github.com/nssang00/chatgpt-write-test/actions/runs/38354623946) Linux CEF / Windows CEF / Windows WebView2 PASS | Same source does not imply method-level permission, navigation/revocation or arbitrary frame-proof security |
+| A1-CLI-09 | `xytron doctor --sdk PREFIX` verifies Core header + CMake config + CMake executable on Windows/Linux and fails for missing SDK | [CLI 38355060435](https://github.com/nssang00/chatgpt-write-test/actions/runs/38355060435) PASS both OS | Does not check engine/runtime assets, Python/.NET environment, standalone apps or publish |
+| REG-CORE | Existing C++11 Core behavior remains green | [Core 38355060575](https://github.com/nssang00/chatgpt-write-test/actions/runs/38355060575) PASS both OS | Not product E2E |
+| REG-SDK | Core package consumed after installation | [Installed Consumer 38355060701](https://github.com/nssang00/chatgpt-write-test/actions/runs/38355060701) PASS both OS | Core-only |
+
+**Do not close NW-014:** A1-SEC-10 tests one specific nested-frame
+scenario but does not implement or verify complete method-level capability
+permissions, origin canonicalization, navigation epochs or callback
+authorization.

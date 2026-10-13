@@ -8,6 +8,12 @@ NativeWeb(Xytron)은 **Electron/Tauri형 데스크톱 앱 플랫폼**으로, **�
 
 현재 저장소는 **Core/Plugin 런타임과 Linux/Windows CEF·Windows WebView2의 실제 브라우저 E2E를 통과한 기반 단계**다. 첫 완성 목표에는 **보안, CLI 새 프로젝트 생성/다운로드/빌드/실행/배포, 양방향 플러그인 콜백, Python·C# 최소 wrapper, Win32·GTK3 Host Adapter, 엔진 포함 배포**를 포함한다 (승인된 Scope A). 기존 E2E 성공만으로 출시 완료로 판정하지 않는다.
 
+## Latest tested security and developer CLI slices (2026-10-13)
+
+- [Actual 3-browser E2E 38354623946](https://github.com/nssang00/chatgpt-write-test/actions/runs/38354623946): same trusted entry HTML loaded in **child frame** cannot invoke the native test checkpoint; main-page JS→C++ plugin lifecycle still passes.
+- [Windows/Linux CLI 38355060435](https://github.com/nssang00/chatgpt-write-test/actions/runs/38355060435): native `xytron doctor --sdk PREFIX` confirms installed **Core** SDK + CMake; `xytron plugin build` creates real DLL/SO.
+- **These are incremental features.** Actual `xytron restore/run/publish`, desktop window/menu shell, first-class Python/C# process hosting and full origin/method security are not yet released or complete.
+
 ## Current partial development foundation (not product-complete)
 
 - Main/Module Registry C++11, app-scoped IDs and safe lifetime:

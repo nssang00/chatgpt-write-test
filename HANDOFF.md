@@ -4,6 +4,40 @@
 
 > 목표: 이전 대화를 읽지 않아도 이 저장소만으로 현재 방향, 완료 상태, 다음 작업을 파악하고 바로 개발을 계속할 수 있어야 한다.
 
+## 2026-10-13 verified same-entry iframe security and SDK doctor milestone
+
+- **Code branch:** `nativeweb/autonomous-integration` on Draft PR #7.
+  Same-entry negative browser test `dfaabf0e`, doctor feature
+  `8d6f6151`, fixed YAML quoting `913a775e` and PowerShell invocation
+  `0c879ae0`.
+- **Real same-entry frame security test:** a child loads the **identical
+  trusted HTML entry**, proves it executed, attempts `xytron.test.checkpoint`
+  and the test rejects any forbidden native side effect. Original
+  different-file iframe probe and plugin-object E2E still run.
+  [Browser CI 38354623946](https://github.com/nssang00/chatgpt-write-test/actions/runs/38354623946)
+  **PASS: Linux CEF / Windows CEF / Windows WebView2.** NW-024 VERIFIED
+  for this scenario only; NW-014 P0 still OPEN.
+- **Native `xytron doctor --sdk PREFIX`:** checks real installed
+  `include/nativeweb/plugin.hpp`, NativeWeb CMake package and `cmake`
+  availability. [CLI CI 38355060435](https://github.com/nssang00/chatgpt-write-test/actions/runs/38355060435)
+  **PASS: Windows and Ubuntu**, including doctor, source scaffolds,
+  `xytron plugin build` and actual installed-SDK DLL/SO generation.
+  NW-025 VERIFIED for Core SDK only; NW-026 YAML and NW-027 PowerShell
+  workflow issues corrected and CI green.
+- [Core Regression 38355060575](https://github.com/nssang00/chatgpt-write-test/actions/runs/38355060575)
+  **PASS Windows + Ubuntu**; [Installed Core consumer
+  38355060701](https://github.com/nssang00/chatgpt-write-test/actions/runs/38355060701)
+  **PASS both OS**.
+- **Not complete:** `NativePermissionPolicy` not fully bound to
+  browser-origin authentication and exact method authorization.
+  Real negative method-denial, remote and navigation tests, object
+  capability checks and race/revocation remain open. CLI Core doctor
+  does **not** validate or download CEF, WebView2, Python or .NET
+  engines/hosts. `xytron run`, `restore`, `publish`, native desktop
+  shell/menus and language hosts are not implemented yet.
+- PR #7 remains Draft. No main merge/release. Main independently
+  advanced earlier (NW-023), and integration needs owner approval.
+
 ## Important parallel main updates (2026-10-13)
 
 Main has independently moved to `7951ba62625c0deb305fc2f99fc04b0c7f23dd19`

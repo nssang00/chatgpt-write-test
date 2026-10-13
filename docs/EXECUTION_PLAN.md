@@ -108,3 +108,21 @@ gates. NW-014 and NW-015 stay open in ISSUE_LOG.md.
    for all module-to-module traffic.
 4. All changes remain on `nativeweb/autonomous-integration`,
    PR #7 Draft; no `main` merge or release without explicit approval.
+
+## 2026-10-13 next verified incremental slices
+
+- **Security:** Same exact trusted entry reloaded as nested iframe,
+  real native checkpoint call attempted and blocked across all three
+  browsers [38354623946](https://github.com/nssang00/chatgpt-write-test/actions/runs/38354623946).
+  Next priority remains **app-scoped grant-based native dispatch**, verified
+  origin/frame/navigation identity, object method permissions,
+  controlled reload/redirect behavior and real negative E2E.
+- **Developer CLI:** `xytron doctor --sdk PREFIX` implemented and
+  Windows/Ubuntu verified [38355060435](https://github.com/nssang00/chatgpt-write-test/actions/runs/38355060435).
+  Use it as an independent prerequisite diagnostic for SDK+plugin build,
+  not as proof of final engine-inclusive runtime package. Next:
+  reproducible `restore`, actual runnable standalone host shell,
+  published distribution, Python/C# hosting.
+- **Isolation:** Browser E2E, Core C++11 and CLI Windows/Linux CI
+  independently continue. NW-026/NW-027 were CI launch-script
+  defects, not reasons to suspend browser regression work.

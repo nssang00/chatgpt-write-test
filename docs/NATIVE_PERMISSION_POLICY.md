@@ -88,3 +88,18 @@ Source `4ff17af2`: [E2E 38343177515](https://github.com/nssang00/chatgpt-write-t
 child ready signal, forbidden-call side effect assertion, and normal
 plugin lifecycle. NW-022 mitigation against WebView2 misdirected child
 denial is in this passing source. This is **not** closure of NW-014.
+
+## Same-entry reloaded as an untrusted frame — 2026-10-13
+
+A secondary `iframe` loading the **identical** `plugin_bridge_test.html`
+document is not entitled to main-frame native access even though its
+file URL matches the app entry. The JS test detects child context,
+posts a ready signal, attempts an unauthorized native checkpoint, and
+reports whether the call was denied. Trusted main requires safe result
+and logs `security-same-entry-iframe-blocked`. Runner fails on any
+forbidden native checkpoint. Real-browser evidence:
+[38354623946](https://github.com/nssang00/chatgpt-write-test/actions/runs/38354623946)
+PASS Linux CEF + Windows CEF + Windows WebView2.
+
+**NW-014 is NOT closed.** This checks one more frame boundary, not
+the full method/permission/canonical trusted-root/navigation contract.
