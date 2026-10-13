@@ -30,3 +30,25 @@ Future milestones attach:
 4. deadline timer integration on the single event loop;
 5. same-host SHM and remote QUIC request/reply envelopes;
 6. handler selection policies beyond the documented deterministic v1 rule.
+
+
+## Handler capability demand
+
+Request/Reply handler availability is advertised through the existing
+three-part demand index without confusing it with ordinary Pub/Sub demand.
+
+For a request `TypeId`, Cito derives a deterministic internal capability
+TypeId tagged as `cito.request.handler.v1` and advertises:
+
+```text
+ScopeId + ResourceId + request_handler_capability_type(RequestTypeId)
+```
+
+The public `DemandKey` / `InterestKey` shape stays unchanged. A normal
+subscriber to `GetStatus` therefore cannot be mistaken for a
+`GetStatus` Request/Reply handler.
+
+Handler registration adds this capability interest; explicit handler close or
+Context destruction removes it. Existing snapshot, candidate-host, route,
+lease and restart machinery can therefore discover handler hosts without a
+second RPC discovery subsystem.

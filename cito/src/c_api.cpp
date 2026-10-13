@@ -232,9 +232,11 @@ struct cito_subscription {
 struct cito_handler {
     cito_handler(
         std::weak_ptr<ContextState> state,
-        cito::detail::HandlerToken token)
+        cito::detail::HandlerToken token,
+        cito::InterestKey capability)
         : state(std::move(state)),
-          token(token) {}
+          token(token),
+          capability(capability) {}
 
     ~cito_handler() {
         close();
@@ -252,11 +254,16 @@ struct cito_handler {
             locked->requests()
                 .unregister_handler(
                     token);
+            locked->host()
+                .remove_interest(
+                    locked->app_id_,
+                    capability);
         }
     }
 
     std::weak_ptr<ContextState> state;
     cito::detail::HandlerToken token{};
+    cito::InterestKey capability{};
     bool active{true};
 };
 
@@ -470,6 +477,11 @@ cito_status_t cito_context_handle(
                 request_type_id,
                 resource_text);
 
+        const auto capability =
+            cito::detail::
+                request_handler_interest_key(
+                    key);
+
         const auto token =
             state->requests()
                 .register_handler(
@@ -500,10 +512,33 @@ cito_status_t cito_context_handle(
                     });
 
         try {
+            const auto interest =
+                state->host()
+                    .add_interest(
+                        state->app_id_,
+                        capability);
+
+            if (!interest.changed) {
+                throw std::logic_error(
+                    "Cito request handler demand registration failed");
+            }
+        } catch (...) {
+            state->requests()
+                .unregister_handler(
+                    token);
+            throw;
+        }
+
+        try {
             *out = new cito_handler(
                 state,
-                token);
+                token,
+                capability);
         } catch (...) {
+            state->host()
+                .remove_interest(
+                    state->app_id_,
+                    capability);
             state->requests()
                 .unregister_handler(
                     token);

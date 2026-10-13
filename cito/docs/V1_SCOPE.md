@@ -141,3 +141,13 @@ The type-first Request/Reply baseline now includes:
 This does not yet claim remote Request/Reply. Same-host SHM and remote QUIC
 routing must be attached to the same RequestReplyCore and pass real namespace
 gates before that claim is made.
+
+
+### Request handler discovery identity
+
+Request/Reply handlers now publish a deterministic internal handler-capability
+DemandKey through the same HostRuntimeCore summaries used by Publish/Subscribe.
+The capability TypeId is distinct from the raw request TypeId, so a normal
+subscriber to a request message is not treated as an RPC handler. Unit
+regression covers selective remote candidate/route discovery for this
+capability; remote request payload/reply transport is still a later gate.

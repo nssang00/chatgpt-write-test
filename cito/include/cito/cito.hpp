@@ -246,6 +246,11 @@ private:
                 make_request_key<RequestT>(
                     resource);
 
+            const auto capability =
+                detail::
+                    request_handler_interest_key(
+                        key);
+
             auto token =
                 runtime_->requests()
                     .register_handler(
@@ -298,6 +303,24 @@ private:
                             }
                         });
 
+            try {
+                const auto interest =
+                    runtime_->host()
+                        .add_interest(
+                            app_id_,
+                            capability);
+
+                if (!interest.changed) {
+                    throw std::logic_error(
+                        "Cito request handler demand registration failed");
+                }
+            } catch (...) {
+                runtime_->requests()
+                    .unregister_handler(
+                        token);
+                throw;
+            }
+
             std::weak_ptr<
                 detail::EmbeddedHostRuntime>
                 weak_runtime =
@@ -307,6 +330,8 @@ private:
                 [weak_runtime =
                      std::move(
                          weak_runtime),
+                 app_id = app_id_,
+                 capability,
                  token] {
                     if (const auto runtime =
                             weak_runtime
@@ -314,6 +339,10 @@ private:
                         runtime->requests()
                             .unregister_handler(
                                 token);
+                        runtime->host()
+                            .remove_interest(
+                                app_id,
+                                capability);
                     }
                 });
         }

@@ -35,6 +35,51 @@ struct RequestKeyHash {
     }
 };
 
+inline TypeId request_handler_capability_type(
+    TypeId request_type) noexcept {
+    // Internal demand identity for "a handler exists for RequestT".
+    // Keep this distinct from ordinary Pub/Sub demand for RequestT while
+    // preserving the canonical 3-part InterestKey shape.
+    constexpr std::uint64_t basis =
+        14695981039346656037ull;
+    constexpr std::uint64_t prime =
+        1099511628211ull;
+    constexpr char tag[] =
+        "cito.request.handler.v1";
+
+    auto hash = basis;
+
+    for (std::size_t i = 0;
+         i + 1 < sizeof(tag);
+         ++i) {
+        hash ^=
+            static_cast<
+                unsigned char>(
+                tag[i]);
+        hash *= prime;
+    }
+
+    for (int i = 0; i < 8; ++i) {
+        hash ^=
+            static_cast<std::uint8_t>(
+                (request_type >>
+                 (i * 8)) &
+                0xffu);
+        hash *= prime;
+    }
+
+    return hash;
+}
+
+inline InterestKey request_handler_interest_key(
+    const RequestKey& key) noexcept {
+    return {
+        key.scope,
+        key.resource,
+        request_handler_capability_type(
+            key.request_type)};
+}
+
 enum class RequestStatus : std::uint8_t {
     Ok = 0,
     Cancelled = 1,

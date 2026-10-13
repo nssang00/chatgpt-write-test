@@ -101,6 +101,43 @@ int main() {
 
     cito::Context requester("acme");
 
+    const cito::detail::RequestKey request_key{
+        cito::stable_name_id("acme"),
+        cito::stable_name_id("robot_1"),
+        cito::static_type_ref<Ping>()
+            .type_id()};
+
+    const auto capability =
+        cito::detail::
+            request_handler_interest_key(
+                request_key);
+
+    const cito::InterestKey ordinary_key{
+        request_key.scope,
+        request_key.resource,
+        request_key.request_type};
+
+    auto runtime =
+        cito::detail::
+            acquire_embedded_host_runtime();
+
+    cito::Context ordinary_subscriber(
+        "acme");
+    auto ordinary_subscription =
+        ordinary_subscriber
+            .subscribe<Ping>(
+                "robot_1",
+                [](const Ping&) {});
+
+    assert(
+        runtime->host()
+            .has_local_demand(
+                ordinary_key));
+    assert(
+        !runtime->host()
+             .has_local_demand(
+                 capability));
+
     PingCodec::encodes = 0;
     auto missing =
         requester.request(
@@ -119,14 +156,20 @@ int main() {
 
     cito::Context provider("acme");
 
-    provider.handle<Ping>(
-        "robot_1",
-        [](const Ping& ping) {
-            return Pong{
-                static_cast<
-                    std::uint8_t>(
-                    ping.value + 1)};
-        });
+    auto provider_handler =
+        provider.handle<Ping>(
+            "robot_1",
+            [](const Ping& ping) {
+                return Pong{
+                    static_cast<
+                        std::uint8_t>(
+                        ping.value + 1)};
+            });
+
+    assert(
+        runtime->host()
+            .has_local_demand(
+                capability));
 
     PingCodec::encodes = 0;
     PingCodec::decodes = 0;
@@ -149,6 +192,19 @@ int main() {
     assert(PingCodec::decodes == 1);
     assert(PongCodec::encodes == 1);
     assert(PongCodec::decodes == 1);
+
+    provider_handler.close();
+
+    assert(
+        !runtime->host()
+             .has_local_demand(
+                 capability));
+    assert(
+        runtime->host()
+            .has_local_demand(
+                ordinary_key));
+
+    ordinary_subscription.close();
 
     return 0;
 }
