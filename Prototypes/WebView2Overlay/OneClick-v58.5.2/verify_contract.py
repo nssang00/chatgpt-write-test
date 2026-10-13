@@ -34,7 +34,7 @@ for x in ['Get-FileHash','SHA256SUMS.txt','PENDING_MANUAL','Compress-Archive','-
  assert x in ps,x
 assert 'closeAttempted=true' in cs, 'Prevent repeated 5s shutdown retries'
 assert 'Join-Path $out \'*\'' not in ps, 'Do not upload WebView2 user profile or Player binaries'
-assert `public string testRevision="r5";` in tele, 'Packaged player must be r5 Unicode Echo'
+assert 'public string testRevision="r5";' in tele, 'Packaged player must be r5 Unicode Echo'
 assert 'revisionMatch=[regex]::Match' in ps and '$revisionMatch.Groups[\'version\'].Value' in ps, 'OneClick must derive telemetry revision from checksum-pinned C# source'
 assert "($data.testRevision -eq 'r3')" not in ps, 'Stale r3 wrapper revision must be forbidden'
 assert '%~dp0.' in (r/'Run-All.cmd').read_text(encoding='utf-8')
