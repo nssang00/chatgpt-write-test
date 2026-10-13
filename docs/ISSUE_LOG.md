@@ -367,3 +367,12 @@ callbacks still have unmet release gates. Keep PR #7 Draft, main intact.
   syntax error, not test failure or `doctorSdk` compilation issue.
 - Fix: use block-scalar `run: |` for the `xytron doctor --sdk`
   invocation. Rerun both Windows/Linux CLI tests before closing.
+
+## NW-027 PowerShell quoted executable invocation in doctor CI — FIX SUBMITTED
+- After NW-026 YAML fix, Ubuntu CLI job PASS, Windows failed
+  (run 38354857320) with PowerShell `Unexpected token 'doctor'`
+  because quoted exe path on a command line requires special invocation.
+- Align with already working Windows plugin-build workflow by launching
+  via `cmake -E chdir . PATH_TO_XYTRON doctor --sdk PREFIX`.
+  C++ doctor program and installed SDK were compiled/installed normally.
+- Rerun Windows/Linux CLI CI before marking doctor verified.
