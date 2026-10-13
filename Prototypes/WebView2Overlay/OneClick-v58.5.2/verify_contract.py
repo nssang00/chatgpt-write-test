@@ -12,6 +12,9 @@ for x in ['g_acks.fetch_add(1)','WV2Pilot_GetAckCount','probe-ack','COINIT_APART
  assert x in cpp,x
 for x in ['enablePilot = false','WV2Pilot_Close','OnApplicationQuit','GetActiveWindow']:
  assert x in cs,x
+assert 'current!=lastBounds' not in cs, 'Unity 2022.3 RectInt has no != operator'
+for x in ['current.x != lastBounds.x', 'current.y != lastBounds.y', 'current.width != lastBounds.width', 'current.height != lastBounds.height']:
+ assert x in cs, 'RectInt comparison must use coordinates: '+x
 for x in ['PASS_AUTO','FAIL_AUTO','ackCount','Application.Quit','pilotReportPath']:
  assert x in tele,x
 for x in ['BuildPipeline.BuildPlayer','2022.3.62f3','StandaloneWindows64','ApplyModifiedPropertiesWithoutUndo']:

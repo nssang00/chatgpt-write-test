@@ -102,7 +102,12 @@ namespace Company.WebView.Prototypes
             if(GetClientRect(playerHwnd,out client))
             {
                 RectInt current=PixelBounds(client);
-                if(current!=lastBounds) { WV2Pilot_SetBounds(current.x,current.y,current.width,current.height);lastBounds=current; }
+                if(current.x != lastBounds.x || current.y != lastBounds.y ||
+                   current.width != lastBounds.width || current.height != lastBounds.height)
+                {
+                    WV2Pilot_SetBounds(current.x, current.y, current.width, current.height);
+                    lastBounds=current;
+                }
             }
             RECT windowRect;
             if(GetWindowRect(playerHwnd,out windowRect))
