@@ -1,5 +1,17 @@
 # NativeWeb Roadmap
 
+> **2026-10-13 product direction: Scope A approved.** The first completion
+> target is a **usable Windows/Linux NativeWeb SDK for existing native apps**,
+> not a Core + Plugin library-only milestone. See
+> [Scope A](RELEASE_SCOPE_A.md), [execution plan](EXECUTION_PLAN.md),
+> [acceptance gates](ACCEPTANCE_CRITERIA.md) and
+> [test matrix](RELEASE_TEST_MATRIX.md).
+>
+> **Priority order now:** security boundary → Win32/GTK3 embedded host samples
+> → engine-inclusive relocatable distribution → clean-machine release gate.
+> The detailed Phase 0–10 inventory below is retained as an implementation
+> and long-term feature backlog, **not** the first-deliverable execution order.
+
 이 문서는 우선순위 문서다. 날짜 약속이 아니라 dependency와 개발 순서를 나타낸다.
 
 ## Phase 0 — Repository foundation
@@ -185,7 +197,7 @@ Host layer가 application framework로 커지면 설계를 다시 검토한다.
 - [x] stable versioned C ABI v1 function-call baseline
 - [ ] embedded plugin descriptor (id/version/ABI/runtime/capabilities)
 - [x] queued/running task/module lifetime coupling
-- [x] native object/module lifetime coupling (Linux SO validated; Windows DLL pending)
+- [x] native object/module lifetime coupling (Linux SO and Windows DLL plugin E2E validated)
   - [x] ObjectRegistry/NativeObjectRuntime owner-lease foundation
   - [x] real plugin-created native object ABI/lifetime regression (Linux)
 - [x] C++ wrapper
@@ -193,12 +205,12 @@ Host layer가 application framework로 커지면 설계를 다시 검토한다.
 - [x] plugin namespace registration
 - [x] callable/module lifetime coupling
 - [x] PluginModule conservative unload / plugin_busy baseline
-- [ ] WebView plugin manager integration and browser E2E tests
+- [x] WebView plugin manager integration and browser E2E tests — real Linux CEF / Windows CEF / WebView2 CI 38322633033
 - [x] real DLL Windows regression
 - [x] real SO Linux regression
 - [x] binary function argument/result baseline
 - [x] C ABI v1 object factory and instance-method support (internal runtime)
-- [ ] plugin event support and WebView factory exposure
+- [ ] plugin event support (WebView factory exposure and object call E2E already validated)
 - [x] ABI compatibility validation baseline
 - [ ] TypeScript declaration generation
 - [ ] missing-dependency diagnostics

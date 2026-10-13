@@ -4,7 +4,7 @@
 
 NativeWeb은 기존 C/C++ application과 native SDK를 유지하면서 UI를 HTML/CSS/JavaScript로 만들 수 있게 하는 desktop runtime/platform을 목표로 한다.
 
-현재 저장소는 **Core runtime + Linux/Windows CEF + Windows WebView2 real browser integration 단계**다. Windows/Linux Core CI와 세 browser matrix가 GitHub Actions에서 실제 동작한다.
+현재 저장소는 **Core/Plugin 런타임과 Linux/Windows CEF·Windows WebView2의 실제 브라우저 E2E를 통과한 기반 단계**다. 첫 완성 목표는 **보안, 최소 Win32·GTK3 Host Adapter, 엔진 포함 배포 패키지와 실사용 샘플까지 갖춘 SDK (승인된 Scope A)**이다. 기존 E2E 성공만으로 출시 완료로 판정하지 않는다.
 
 ## Why
 
@@ -117,30 +117,16 @@ macro 내부에서는 versioned `nativeweb_plugin_init_v1` C ABI entry point만 
 
 ## Current verified status
 
-GitHub Actions에서 C++11 CMake/CTest smoke environment를 실제 검증했다.
+- Linux/Windows C++11 Core Regression: [CI 38322632990](https://github.com/nssang00/chatgpt-write-test/actions/runs/38322632990) — PASS.
+- Real browser plugin object lifecycle: [CI 38322633033](https://github.com/nssang00/chatgpt-write-test/actions/runs/38322633033) — Linux CEF, Windows CEF and Windows WebView2 all PASS.
+- Core SDK clean installed consumer: [CI 38322633018](https://github.com/nssang00/chatgpt-write-test/actions/runs/38322633018) — Linux/Windows PASS, **Core-only package**.
+- Full Scope A1 security, Win32/GTK3 embedded hosts and engine-inclusive distribution are **not yet complete**.
 
-| Environment | Status |
-|---|---:|
-| Ubuntu latest | ✅ |
-| Windows latest | ✅ |
-
-Initial verified workflow run:
-
-- Workflow: `Platform Smoke`
-- Run ID: `37597876713`
-- Head SHA: `c253803db28f0047128a4723a2e82862a26f7bf7`
-
-Any 기반 Core regression과 public API contract가 Windows/Ubuntu에서 통과한다. Linux CEF와 Windows WebView2 모두 public `WebView` API를 통한 실제 JS↔C++ bridge를 검증한다. 현재 공통 검증에는 `xytron.foo()` direct facade, `xytron.invoke()` compatibility, worker-pool 기반 JS→C++ 병렬 실행, RequestId 기반 typed C++ future, root C++ object binding, object/array/binary, reload, events, Promise/error mapping, multi-WebView isolation, destroy-pending, native object Proxy lifecycle가 포함된다.
-
-Latest verified code head: `b876a74726e33609d3603ec572c6c8d03ab592e8`.
-
-- Core Regression: `38107973666` — Ubuntu/Windows success
-- NativeWeb CEF Bridge: `38107973658` — real Linux CEF success
-- NativeWeb CEF Windows Bridge: `38107973662` — real Windows CEF success
-- NativeWeb WebView2 Bridge: `38107973704` — real Windows WebView2 success
-- Platform Smoke: `38107973650` — Ubuntu/Windows success
-
-Callable/signature metadata, generation-safe registration ownership, real DLL/SO SharedLibrary, C ABI v1 PluginModule, queued/running task module lease, native-object owner-lease foundation, C++ Plugin/PluginApi wrapper와 `NATIVEWEB_PLUGIN` convenience까지 기존 WebView public API 변경 없이 검증됐다. Plugin-created native object ABI와 safe hot-unload는 아직 미완료다.
+First-deliverable scope and gates:
+[Scope A](docs/RELEASE_SCOPE_A.md) ·
+[Execution plan](docs/EXECUTION_PLAN.md) ·
+[Release test matrix](docs/RELEASE_TEST_MATRIX.md) ·
+[Acceptance criteria](docs/ACCEPTANCE_CRITERIA.md).
 
 ## Installed Core SDK (first packaging slice)
 
@@ -170,16 +156,14 @@ CEF or WebView2 engines. See [SDK packaging](docs/SDK_PACKAGING.md).
 - [Target project structure](docs/PROJECT_STRUCTURE.md)
 - [Contribution rules](CONTRIBUTING.md)
 
-## Immediate next work
+## Immediate next work — approved Scope A
 
-1. plugin-created native object ABI + module lifetime regression
-2. conservative unload / `plugin_busy` state machine
-3. Windows WebView2/CEF engine-switch regression
-4. plugin descriptor runtime/capability/permission metadata
-5. security permission/capability policy
-6. TransferBuffer / SharedBuffer advanced binary transport
-7. Win32/MFC/WinForms thin host adapters
-8. TypeScript/codegen metadata 확장
+1. Secure the JS-to-native boundary (trusted packaged app origin, native-side default deny, frame/navigation/method scopes).
+2. Add real Win32 + GTK3 embedded host examples and lifecycle/plug-in E2E.
+3. Package engine-backed relocatable SDK/runtime for clean Windows/Linux consumers; check redistribution notices.
+4. Run the full acceptance matrix and prepare a candidate deliverable for explicit merge/release approval.
+
+See [execution plan](docs/EXECUTION_PLAN.md) and [release gates](docs/ACCEPTANCE_CRITERIA.md).
 
 ## Repository note
 

@@ -306,3 +306,18 @@ Static constructor registration은 user convenience implementation detail로도 
 Qt QLibrary, Boost.DLL, POCO SharedLibrary의 공통 low-level 역할을 참고해 OS library load/symbol/unload abstraction을 둔다.
 
 현재 Core에 Boost/Qt/POCO를 plugin loading을 위한 필수 dependency로 추가하지 않는다.
+
+## D-032: First usable SDK scope includes real native host and distribution
+
+**Status: Accepted — project owner, 2026-10-13**
+
+Scope A replaces the prior Core + Plugin SDK-only first-completion proposal.
+The first deliverable must have secure, reproducible Windows/Linux native-host
+embedding (minimal Win32 + GTK3), real browser+plugin behavior, engine-inclusive
+SDK bundling and clean-machine consumption. Formal other host adapters, full
+Desktop API parity, CLI and Sidecar remain subsequent milestones.
+
+The existing decisions D-001 through D-031 remain in force, especially
+C++11 compatibility, `Engine::Auto`, stable C ABI, direct `xytron` API and
+thin host layer. Do not merge into `main` or publish without approval.
+See `docs/RELEASE_SCOPE_A.md` and `docs/ACCEPTANCE_CRITERIA.md`.

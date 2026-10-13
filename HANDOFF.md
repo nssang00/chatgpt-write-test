@@ -4,6 +4,15 @@
 
 > 목표: 이전 대화를 읽지 않아도 이 저장소만으로 현재 방향, 완료 상태, 다음 작업을 파악하고 바로 개발을 계속할 수 있어야 한다.
 
+## 2026-10-13 approved product direction: Scope A (read first)
+
+- **Approved by project owner:** first completion target is a **usable SDK in existing native Windows/Linux apps** — not merely Core + Plugin SDK.
+- Required: origin/capability security; minimal Win32 and GTK3 real host examples; Linux CEF / Windows CEF+WebView2 with actual plugin objects; distributable/relocatable engine SDK; install/quickstart/negative CI tests.
+- Priority: security at native dispatch with default-deny external/iframe → Win32/GTK3 thin embedding → engine-inclusive SDK packaging → full clean-environment acceptance.
+- Canonical plan: `docs/RELEASE_SCOPE_A.md`, `docs/EXECUTION_PLAN.md`, `docs/RELEASE_TEST_MATRIX.md`, `docs/ACCEPTANCE_CRITERIA.md`.
+- Existing core+3-engine E2E passes remain valid **foundation evidence only**, not release completion. No `main` merge/public release until specifically approved.
+- Other host adapters, large Desktop API surface, CLI, Sidecar, advanced binary are deferred from the **first deliverable**, but retain the longer-term roadmap.
+
 ## 2026-10-13 verified GitHub integration checkpoint (read first)
 
 - Canonical development branch: `nativeweb/autonomous-integration`, Draft PR [#7](https://github.com/nssang00/chatgpt-write-test/pull/7); source ZIP has been synchronized. Keep `main` unchanged until explicit merge approval.

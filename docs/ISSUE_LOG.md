@@ -70,3 +70,9 @@ Issues should be appended, not silently discarded. A blocked task does not block
 - **NW-009** Shared Windows CEF runtime copy race: RESOLVED; full parallel CEF all-target build and browser E2E PASS in run 38322633033 after making multi-WebView depend on the sole runtime-copy owning bridge target.
 - C++11 Core Regression run 38322632990, Installed SDK Consumer run 38322633018, Platform Smoke run 38322632977 all SUCCESS on the same commit.
 - Remaining independent release blockers: default-deny security/capability policy, full engine runtime packaging and other product roadmap milestones. Do not mark the whole product done.
+
+## NW-010 Historical docs target first release inconsistently — FIXED (planning only)
+- Severity: P2 documentation/coordination; no executable behavior change.
+- Found: README/HANDOFF/ROADMAP sections still prioritized previously completed plugin-object tasks and Core-only deliverables, whereas owner approved **Scope A** on 2026-10-13.
+- Resolution: create release scope and testcase matrix; replace execution/acceptance gates; update roadmap header, README, decisions and handoff. Existing test evidence preserved, not reclassified as host/security PASS.
+- Next: implement security A1-SEC tests first. Verify doc-only commit in Draft PR #7; code CI need not be interpreted as new functional validation.
