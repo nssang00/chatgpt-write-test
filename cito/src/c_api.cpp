@@ -115,9 +115,13 @@ struct ContextState {
     }
 
     ~ContextState() {
-        // Requester completions are deliberately not called while the C
-        // Context is being destroyed. Handler-side pending requests are
-        // failed by unregister_app so other live apps see Unavailable.
+        // Raw C Context destruction suppresses requester callbacks. Remote
+        // correlations are abandoned locally while CTX1 Cancel is sent
+        // best-effort; handler-side work is failed by unregister_app.
+        runtime_->request_network()
+            .drop_requests(
+                app_id_);
+
         runtime_->requests()
             .unregister_app(
                 app_id_);
@@ -135,6 +139,11 @@ struct ContextState {
     cito::detail::RequestReplyCore&
     requests() noexcept {
         return runtime_->requests();
+    }
+
+    cito::detail::RequestNetworkAdapter&
+    request_network() noexcept {
+        return runtime_->request_network();
     }
 
     cito::InterestKey key(
@@ -176,6 +185,7 @@ struct RequestCallbackState {
         callback{};
     void* user_data{};
     cito::detail::RequestId id{};
+    bool remote{false};
     bool active{true};
 };
 
@@ -294,9 +304,17 @@ struct cito_request {
             local->id != 0) {
             if (const auto context =
                     local->context.lock()) {
-                context->requests()
-                    .cancel(
-                        local->id);
+                if (local->remote) {
+                    (void)context->
+                        request_network()
+                        .cancel(
+                            local->id);
+                } else {
+                    (void)context->
+                        requests()
+                        .cancel(
+                            local->id);
+                }
             }
         }
 
@@ -585,13 +603,21 @@ cito_status_t cito_context_has_handler(
                     resource,
                     resource_size);
 
+        const auto key =
+            context->state->
+                request_key(
+                    request_type_id,
+                    resource_view);
+
         *out_has_handler =
-            context->state->requests()
-                .has_handler(
-                    context->state->
-                        request_key(
-                            request_type_id,
-                            resource_view))
+            (
+                context->state->
+                    requests()
+                    .has_handler(key) ||
+                context->state->
+                    request_network()
+                    .can_send(key)
+            )
                 ? 1
                 : 0;
 
@@ -655,48 +681,91 @@ cito_status_t cito_context_request(
                     resource,
                     resource_size);
 
-        const auto started =
-            context_state->requests()
-                .start(
-                    context_state->app_id_,
-                    context_state->
-                        request_key(
-                            request_type_id,
-                            resource_view),
-                    payload_view(
-                        payload,
-                        payload_size),
-                    [callback_state](
-                        cito::detail::
-                            RequestStatus status,
-                        std::span<
-                            const std::uint8_t>
-                            response) {
-                        if (
-                            !callback_state->
-                                active) {
-                            return;
-                        }
+        const auto key =
+            context_state->
+                request_key(
+                    request_type_id,
+                    resource_view);
 
-                        callback_state->active =
-                            false;
-                        callback_state->id = 0;
+        auto completion =
+            [callback_state](
+                cito::detail::
+                    RequestStatus status,
+                std::span<
+                    const std::uint8_t>
+                    response) {
+                if (
+                    !callback_state->
+                        active) {
+                    return;
+                }
 
+                callback_state->active =
+                    false;
+                callback_state->id = 0;
+
+                callback_state->
+                    callback(
                         callback_state->
-                            callback(
-                                callback_state->
-                                    user_data,
-                                from_request_status(
-                                    status),
-                                response.data(),
-                                response.size());
-                    });
+                            user_data,
+                        from_request_status(
+                            status),
+                        response.data(),
+                        response.size());
+            };
 
         if (
-            callback_state->active &&
-            started.dispatched) {
-            callback_state->id =
-                started.id;
+            context_state->requests()
+                .has_handler(key)) {
+            const auto started =
+                context_state->requests()
+                    .start(
+                        context_state->
+                            app_id_,
+                        key,
+                        payload_view(
+                            payload,
+                            payload_size),
+                        completion);
+
+            if (
+                callback_state->active &&
+                started.dispatched) {
+                callback_state->id =
+                    started.id;
+                callback_state->remote =
+                    false;
+            }
+        } else if (
+            context_state->
+                request_network()
+                .can_send(key)) {
+            const auto started =
+                context_state->
+                    request_network()
+                    .start(
+                        context_state->
+                            app_id_,
+                        key,
+                        payload_view(
+                            payload,
+                            payload_size),
+                        completion);
+
+            if (
+                callback_state->active &&
+                started.request_id != 0) {
+                callback_state->id =
+                    started.request_id;
+                callback_state->remote =
+                    true;
+            }
+        } else {
+            completion(
+                cito::detail::
+                    RequestStatus::
+                        Unavailable,
+                {});
         }
 
         *out = request.release();
@@ -732,9 +801,15 @@ cito_status_t cito_request_cancel(
         if (const auto context =
                 state->context.lock()) {
             cancelled =
-                context->requests()
-                    .cancel(
-                        state->id);
+                state->remote
+                    ? context->
+                        request_network()
+                        .cancel(
+                            state->id)
+                    : context->
+                        requests()
+                        .cancel(
+                            state->id);
         }
     }
 
@@ -773,7 +848,7 @@ cito_status_t cito_context_reply(
     try {
         const auto accepted =
             context->state->requests()
-                .complete_from(
+                .complete_handler_reply(
                     context->state->app_id_,
                     request_id,
                     to_request_status(

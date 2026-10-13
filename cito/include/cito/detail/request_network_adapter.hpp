@@ -232,6 +232,38 @@ public:
         return packets.size();
     }
 
+    std::size_t drop_requests(
+        AppId requester_app) {
+        auto packets =
+            transport_.drop_requests(
+                requester_app);
+
+        for (auto& packet : packets) {
+            const auto session_it =
+                sessions_.find(
+                    packet.destination);
+
+            if (
+                session_it ==
+                sessions_.end()) {
+                continue;
+            }
+
+            auto send =
+                session_it->second;
+
+            try {
+                (void)send(
+                    packet.bytes);
+            } catch (...) {
+                // Requester state is already abandoned. Teardown transport
+                // cancellation is best effort.
+            }
+        }
+
+        return packets.size();
+    }
+
     bool cancel(
         RequestId request_id) {
         auto packet =

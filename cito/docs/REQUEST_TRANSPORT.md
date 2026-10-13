@@ -83,3 +83,31 @@ from the event-loop side.
 The smoke seeds an already-discovered route; handler-capability discovery is
 covered independently by DiscoveryControlCore regression. Public Context
 network attachment is still a later integration gate.
+
+
+## Local handler correlation vs wire RequestId
+
+A remote peer's CTX1 `request_id` is transport correlation only. Cito does not
+expose it directly to a local C/C++/Python handler.
+
+When a remote Request arrives, RequestReplyCore allocates a process-local
+handler correlation id and stores:
+
+```text
+local handler RequestId
+    -> handler AppId
+    -> transport reply closure
+       -> original peer/session + wire RequestId
+```
+
+This is required because two peers can both legitimately send wire
+`RequestId=1`. C/Python handlers may reply later through the stable C ABI
+using the local id, while RequestTransportCore still returns the response with
+the original wire id on the correct session.
+
+Incoming Cancel or peer loss abandons the local handler correlation. A later
+`cito_context_reply()` or retained C++ Reply closure is rejected rather than
+reviving a cancelled request.
+
+`cito_context_reply()` now resolves both same-process pending requests and
+external remote handler correlations through one handler-app-checked path.

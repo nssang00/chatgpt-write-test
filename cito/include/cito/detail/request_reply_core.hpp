@@ -96,6 +96,12 @@ struct RequestStart {
     bool dispatched{false};
 };
 
+struct ExternalDispatch {
+    RequestId handler_request_id{};
+    AppId handler_app{};
+    bool dispatched{false};
+};
+
 class RequestReplyCore {
 public:
     using Completion =
@@ -131,6 +137,11 @@ private:
         AppId requester_app{};
         AppId handler_app{};
         Completion completion;
+    };
+
+    struct ExternalPending {
+        AppId handler_app{};
+        Reply reply;
     };
 
 public:
@@ -258,6 +269,25 @@ public:
                 {});
         }
 
+        std::vector<RequestId>
+            external_pending;
+
+        for (const auto& [id, pending] :
+             external_pending_) {
+            if (pending.handler_app == app) {
+                external_pending.push_back(
+                    id);
+            }
+        }
+
+        for (const auto id :
+             external_pending) {
+            complete_external(
+                id,
+                RequestStatus::Unavailable,
+                {});
+        }
+
         return tokens.size();
     }
 
@@ -311,15 +341,16 @@ public:
             true};
     }
 
-    bool dispatch_external(
+    ExternalDispatch
+    dispatch_external(
         const RequestKey& key,
-        RequestId request_id,
+        RequestId wire_request_id,
         std::span<const std::uint8_t>
             payload,
         Reply reply) {
-        if (request_id == 0) {
+        if (wire_request_id == 0) {
             throw std::invalid_argument(
-                "Cito external request id is zero");
+                "Cito external wire request id is zero");
         }
 
         if (!reply) {
@@ -337,57 +368,55 @@ public:
             reply(
                 RequestStatus::Unavailable,
                 {});
-            return false;
+            return {};
         }
 
         const auto selected =
             bucket_it->second.front();
 
+        const auto handler_request_id =
+            next_request_id_++;
+
+        external_pending_.emplace(
+            handler_request_id,
+            ExternalPending{
+                selected.app,
+                std::move(reply)});
+
         auto handler =
             selected.handler;
 
-        // External transports have no local Pending entry, so guard the
-        // supplied reply callback here to preserve exactly-once semantics
-        // even if a handler replies and then throws.
-        auto replied =
-            std::make_shared<bool>(
-                false);
-
-        Reply guarded_reply =
-            [reply =
-                 std::move(reply),
-             replied](
+        Reply handler_reply =
+            [this,
+             handler_request_id](
                 RequestStatus status,
                 std::span<
                     const std::uint8_t>
-                    response) mutable {
-                if (*replied) {
-                    return false;
-                }
-
-                *replied = true;
-                return reply(
+                    response) {
+                return complete_external(
+                    handler_request_id,
                     status,
                     response);
             };
 
-        auto fallback_reply =
-            guarded_reply;
-
         try {
             handler(
-                request_id,
+                handler_request_id,
                 0,
                 payload,
                 std::move(
-                    guarded_reply));
+                    handler_reply));
         } catch (...) {
-            fallback_reply(
+            complete_external(
+                handler_request_id,
                 RequestStatus::Internal,
                 {});
         }
 
-        return true;
+        return {
+            handler_request_id,
+            selected.app,
+            true};
     }
 
     RequestStart start(
@@ -515,6 +544,44 @@ public:
             payload);
     }
 
+    bool complete_external(
+        RequestId id,
+        RequestStatus status,
+        std::span<const std::uint8_t>
+            payload) {
+        const auto it =
+            external_pending_.find(
+                id);
+
+        if (it ==
+            external_pending_.end()) {
+            return false;
+        }
+
+        auto reply =
+            std::move(
+                it->second.reply);
+
+        external_pending_.erase(it);
+
+        return reply(
+            status,
+            payload);
+    }
+
+    bool abandon_external(
+        RequestId id) {
+        return
+            external_pending_.erase(
+                id) != 0;
+    }
+
+    bool abandon(
+        RequestId id) {
+        return
+            pending_.erase(id) != 0;
+    }
+
     bool complete_from(
         AppId handler_app,
         RequestId id,
@@ -532,6 +599,43 @@ public:
         }
 
         return complete(
+            id,
+            status,
+            payload);
+    }
+
+    bool complete_handler_reply(
+        AppId handler_app,
+        RequestId id,
+        RequestStatus status,
+        std::span<const std::uint8_t>
+            payload) {
+        const auto local =
+            pending_.find(id);
+
+        if (
+            local != pending_.end() &&
+            local->second.handler_app ==
+                handler_app) {
+            return complete(
+                id,
+                status,
+                payload);
+        }
+
+        const auto external =
+            external_pending_.find(
+                id);
+
+        if (
+            external ==
+                external_pending_.end() ||
+            external->second.handler_app !=
+                handler_app) {
+            return false;
+        }
+
+        return complete_external(
             id,
             status,
             payload);
@@ -580,6 +684,11 @@ public:
         return handler_locators_.size();
     }
 
+    std::size_t external_pending_count()
+        const noexcept {
+        return external_pending_.size();
+    }
+
 private:
     HandlerToken next_handler_token_{1};
     RequestId next_request_id_{1};
@@ -597,6 +706,11 @@ private:
     std::unordered_map<
         RequestId,
         Pending> pending_;
+
+    std::unordered_map<
+        RequestId,
+        ExternalPending>
+        external_pending_;
 };
 
 } // namespace cito::detail

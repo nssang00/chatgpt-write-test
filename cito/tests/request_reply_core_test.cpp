@@ -349,6 +349,159 @@ int main() {
     assert(requester_completion == 0);
     assert(!requester_late(RequestStatus::Ok, {}));
 
+    // External transports receive a process-local handler correlation id.
+    // It must be distinct from the peer's wire RequestId so C/Python can
+    // safely reply even when different peers reuse the same wire id.
+    const auto external_key =
+        key(3, 30, 300);
+
+    RequestId external_handler_id = 0;
+    RequestReplyCore::Reply
+        unused_external_reply;
+
+    const auto external_handler =
+        core.register_handler(
+            40,
+            external_key,
+            [&](RequestId id,
+                AppId requester,
+                std::span<
+                    const std::uint8_t>
+                    payload,
+                RequestReplyCore::Reply
+                    reply) {
+                external_handler_id = id;
+                unused_external_reply =
+                    std::move(reply);
+                assert(requester == 0);
+                assert(payload.size() == 1);
+                assert(payload[0] == 7);
+            });
+
+    int external_replies = 0;
+    RequestStatus external_status =
+        RequestStatus::Internal;
+    std::vector<std::uint8_t>
+        external_payload;
+
+    const std::array<
+        std::uint8_t,
+        1> external_request{7};
+
+    const auto external =
+        core.dispatch_external(
+            external_key,
+            777,
+            external_request,
+            [&](RequestStatus status,
+                std::span<
+                    const std::uint8_t>
+                    payload) {
+                ++external_replies;
+                external_status = status;
+                external_payload.assign(
+                    payload.begin(),
+                    payload.end());
+                return true;
+            });
+
+    assert(external.dispatched);
+    assert(external.handler_app == 40);
+    assert(external.handler_request_id != 0);
+    assert(external.handler_request_id != 777);
+    assert(
+        external.handler_request_id ==
+        external_handler_id);
+    assert(core.external_pending_count() == 1);
+
+    const std::array<
+        std::uint8_t,
+        2> external_response{8, 9};
+
+    assert(
+        core.complete_handler_reply(
+            40,
+            external_handler_id,
+            RequestStatus::Ok,
+            external_response));
+    assert(external_replies == 1);
+    assert(external_status == RequestStatus::Ok);
+    assert(
+        external_payload ==
+        std::vector<std::uint8_t>(
+            {8, 9}));
+    assert(core.external_pending_count() == 0);
+    assert(
+        !core.complete_handler_reply(
+            40,
+            external_handler_id,
+            RequestStatus::Ok,
+            {}));
+    assert(
+        !unused_external_reply(
+            RequestStatus::Ok,
+            {}));
+
+    // Remote cancel/peer loss abandons external handler correlation without
+    // sending a second reply.
+    RequestId abandoned_external_id = 0;
+
+    const auto abandoned_external =
+        core.dispatch_external(
+            external_key,
+            778,
+            external_request,
+            [&](RequestStatus,
+                std::span<
+                    const std::uint8_t>) {
+                ++external_replies;
+                return true;
+            });
+
+    abandoned_external_id =
+        abandoned_external
+            .handler_request_id;
+
+    assert(core.external_pending_count() == 1);
+    assert(
+        core.abandon_external(
+            abandoned_external_id));
+    assert(core.external_pending_count() == 0);
+    assert(
+        !core.complete_handler_reply(
+            40,
+            abandoned_external_id,
+            RequestStatus::Ok,
+            {}));
+
+    // Destroying the handler app fails its delayed external work remotely.
+    RequestId teardown_external_id = 0;
+    int teardown_external_replies = 0;
+
+    core.dispatch_external(
+        external_key,
+        779,
+        external_request,
+        [&](RequestStatus status,
+            std::span<
+                const std::uint8_t>) {
+            ++teardown_external_replies;
+            assert(
+                status ==
+                RequestStatus::
+                    Unavailable);
+            return true;
+        });
+
+    // The handler callback above stores the newest local correlation id.
+    teardown_external_id =
+        external_handler_id;
+    assert(teardown_external_id != 0);
+    assert(core.external_pending_count() == 1);
+    assert(core.unregister_app(40) == 1);
+    assert(teardown_external_replies == 1);
+    assert(core.external_pending_count() == 0);
+
     assert(core.unregister_handler(second));
     assert(core.unregister_handler(slow));
     assert(core.unregister_handler(throwing));

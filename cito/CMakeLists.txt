@@ -87,6 +87,13 @@ if(BUILD_TESTING)
   add_test(NAME cito_cpp_c_bridge_tests COMMAND cito_cpp_c_bridge_tests)
   set_tests_properties(cito_cpp_c_bridge_tests PROPERTIES LABELS "unit;smoke;latency;regression")
 
+  add_executable(cito_cpp_c_remote_request_bridge_tests
+    tests/cpp_c_remote_request_bridge_test.cpp)
+  target_link_libraries(cito_cpp_c_remote_request_bridge_tests PRIVATE cito cito_c)
+  target_compile_options(cito_cpp_c_remote_request_bridge_tests PRIVATE -Wall -Wextra -Wpedantic)
+  add_test(NAME cito_cpp_c_remote_request_bridge_tests COMMAND cito_cpp_c_remote_request_bridge_tests)
+  set_tests_properties(cito_cpp_c_remote_request_bridge_tests PROPERTIES LABELS "unit;smoke;latency;regression")
+
   add_test(
     NAME cito_python_smoke
     COMMAND ${CMAKE_COMMAND} -E env

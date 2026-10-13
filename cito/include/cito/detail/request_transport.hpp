@@ -10,7 +10,6 @@
 #include <span>
 #include <stdexcept>
 #include <unordered_map>
-#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -549,9 +548,12 @@ public:
                 peer,
                 frame.request_id};
 
-        if (!inbound_.insert(
-                inbound_key)
-                 .second) {
+        const auto [inbound_it, inserted] =
+            inbound_.emplace(
+                inbound_key,
+                RequestId{0});
+
+        if (!inserted) {
             const auto reply =
                 encode_request_transport_reply(
                     frame.request_id,
@@ -566,7 +568,7 @@ public:
         auto reply_once =
             [this,
              inbound_key,
-             request_id =
+             wire_request_id =
                  frame.request_id,
              send_reply =
                  std::move(send_reply)](
@@ -582,7 +584,7 @@ public:
 
                 const auto reply =
                     encode_request_transport_reply(
-                        request_id,
+                        wire_request_id,
                         status,
                         payload);
 
@@ -594,13 +596,34 @@ public:
                 }
             };
 
-        return requests_.
-            dispatch_external(
+        const auto dispatched =
+            requests_.dispatch_external(
                 frame.key,
                 frame.request_id,
                 frame.payload,
                 std::move(
                     reply_once));
+
+        if (dispatched.dispatched) {
+            const auto current =
+                inbound_.find(
+                    inbound_key);
+
+            if (current !=
+                inbound_.end()) {
+                current->second =
+                    dispatched
+                        .handler_request_id;
+            }
+        } else {
+            // Missing-handler dispatch replies synchronously and normally
+            // erases the inbound key through reply_once. Be defensive if a
+            // custom sender rejected the reply.
+            inbound_.erase(
+                inbound_key);
+        }
+
+        return dispatched.dispatched;
     }
 
     bool on_reply(
@@ -653,12 +676,28 @@ public:
             return false;
         }
 
-        return
-            inbound_.erase(
-                InboundRequestKey{
-                    peer,
-                    frame.request_id}) !=
-            0;
+        const InboundRequestKey key{
+            peer,
+            frame.request_id};
+
+        const auto it =
+            inbound_.find(key);
+
+        if (it == inbound_.end()) {
+            return false;
+        }
+
+        const auto handler_request_id =
+            it->second;
+
+        inbound_.erase(it);
+
+        if (handler_request_id != 0) {
+            requests_.abandon_external(
+                handler_request_id);
+        }
+
+        return true;
     }
 
     std::optional<
@@ -727,6 +766,51 @@ public:
         return sends;
     }
 
+    std::vector<
+        RequestTransportSend>
+    drop_requests(
+        AppId requester_app) {
+        std::vector<RequestId> ids;
+
+        for (const auto& [id, state] :
+             outbound_) {
+            if (
+                state.requester_app ==
+                requester_app) {
+                ids.push_back(id);
+            }
+        }
+
+        std::vector<
+            RequestTransportSend>
+            sends;
+        sends.reserve(ids.size());
+
+        for (const auto id : ids) {
+            const auto it =
+                outbound_.find(id);
+
+            if (it == outbound_.end()) {
+                continue;
+            }
+
+            const auto destination =
+                it->second.destination;
+
+            outbound_.erase(it);
+            requests_.abandon(id);
+
+            sends.push_back(
+                RequestTransportSend{
+                    destination,
+                    id,
+                    encode_request_transport_cancel(
+                        id)});
+        }
+
+        return sends;
+    }
+
     bool fail_request(
         RequestId request_id,
         RequestStatus status =
@@ -778,21 +862,34 @@ public:
 
     std::size_t drop_peer(
         RequestPeerId peer) {
-        std::size_t removed = 0;
+        std::vector<RequestId>
+            handler_request_ids;
 
         for (auto it =
                  inbound_.begin();
              it != inbound_.end();) {
-            if (it->peer != peer) {
+            if (it->first.peer != peer) {
                 ++it;
                 continue;
             }
 
+            if (it->second != 0) {
+                handler_request_ids
+                    .push_back(
+                        it->second);
+            }
+
             it = inbound_.erase(it);
-            ++removed;
         }
 
-        return removed;
+        for (const auto id :
+             handler_request_ids) {
+            requests_.abandon_external(
+                id);
+        }
+
+        return
+            handler_request_ids.size();
     }
 
     std::size_t outbound_count()
@@ -814,8 +911,9 @@ private:
         OutboundRequestState>
         outbound_;
 
-    std::unordered_set<
+    std::unordered_map<
         InboundRequestKey,
+        RequestId,
         InboundRequestKeyHash>
         inbound_;
 };

@@ -184,3 +184,19 @@ peer loss, late replies, and local-handler priority. Concrete automatic MsQuic
 session creation is not yet attached to the public Context; the current
 two-node MsQuic CTX1 smoke and public in-memory bridge are separate validated
 layers.
+
+
+## C ABI remote Request/Reply correlation
+
+The stable C ABI now shares the RequestNetworkAdapter path used by C++
+Request/Reply. `cito_context_has_handler` reports an exact local handler or a
+ready discovered remote handler session; `cito_context_request` is
+local-first and otherwise uses CTX1 remote correlation.
+
+Remote inbound requests allocate a process-local handler RequestId rather than
+exposing the peer's wire RequestId. This allows C and Python handlers to call
+`cito_context_reply` safely when multiple peers reuse the same wire
+correlation value. Cancel, peer loss, handler-app teardown, explicit request
+destruction, and raw C Context destruction all clean up the corresponding
+local/transport state. Raw C Context destruction preserves the existing rule
+that requester callbacks are suppressed during teardown.
