@@ -10,9 +10,10 @@ required=['WV2Pilot_Open','WV2Pilot_SetBounds','WV2Pilot_Close','WV2Pilot_Notify
 for name in required: assert name in cpp, name
 for name in ['UNITY_STANDALONE_WIN && !UNITY_EDITOR','enablePilot = false','GetActiveWindow',
 'GetClientRect','WorldToScreenPoint','WV2Pilot_SetBounds','WV2Pilot_Close',
-'OnDisable','OnDestroy']:
+'OnDisable','OnApplicationQuit','OnDestroy']:
     assert name in cs,name
 assert 'WebView2LoaderStatic' in cmake and 'CMAKE_SIZEOF_VOID_P' in cmake
 assert all(x not in cpp for x in ('CefPrototype_','CefTexture','IUnityGraphics'))
 assert all(x not in cs for x in ('CompanyWebViewCefTextureProbe','CefPrototype_'))
+assert 'StopPilot(); return;' in cs, 'failure must join worker thread'
 print('v58.5.1 isolated Unity HWND pilot static API/ownership contract PASS')

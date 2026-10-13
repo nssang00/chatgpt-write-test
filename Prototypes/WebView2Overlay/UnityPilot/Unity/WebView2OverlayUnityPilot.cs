@@ -92,7 +92,7 @@ namespace Company.WebView.Prototypes
         {
             if(!started) return;
             int state=WV2Pilot_GetState();
-            if(state<0) { Debug.LogError("WV2 Pilot state failure "+state+" / "+WV2Pilot_GetLastError()); started=false; return; }
+            if(state<0) { Debug.LogError("WV2 Pilot state failure "+state+" / "+WV2Pilot_GetLastError()); StopPilot(); return; }
             if(state==2 && !readyLogged)
             {
                 readyLogged=true; Debug.Log("WV2 Pilot WebView2 ready. Ping clicks: "+WV2Pilot_GetPongCount());
@@ -111,6 +111,7 @@ namespace Company.WebView.Prototypes
             }
         }
         private void OnDisable() { StopPilot(); }
+        private void OnApplicationQuit() { StopPilot(); }
         private void OnDestroy() { StopPilot(); }
         private void StopPilot()
         {
