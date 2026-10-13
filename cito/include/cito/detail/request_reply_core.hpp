@@ -6,6 +6,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <functional>
+#include <memory>
 #include <span>
 #include <stdexcept>
 #include <unordered_map>
@@ -281,6 +282,114 @@ public:
                 : it->second.size();
     }
 
+    RequestStart start_remote(
+        AppId requester_app,
+        Completion completion) {
+        if (requester_app == 0) {
+            throw std::invalid_argument(
+                "Cito remote requester app id is zero");
+        }
+
+        if (!completion) {
+            throw std::invalid_argument(
+                "Cito remote request completion is empty");
+        }
+
+        const auto id =
+            next_request_id_++;
+
+        pending_.emplace(
+            id,
+            Pending{
+                requester_app,
+                0,
+                std::move(completion)});
+
+        return {
+            id,
+            0,
+            true};
+    }
+
+    bool dispatch_external(
+        const RequestKey& key,
+        RequestId request_id,
+        std::span<const std::uint8_t>
+            payload,
+        Reply reply) {
+        if (request_id == 0) {
+            throw std::invalid_argument(
+                "Cito external request id is zero");
+        }
+
+        if (!reply) {
+            throw std::invalid_argument(
+                "Cito external reply callback is empty");
+        }
+
+        const auto bucket_it =
+            handlers_.find(key);
+
+        if (
+            bucket_it ==
+                handlers_.end() ||
+            bucket_it->second.empty()) {
+            reply(
+                RequestStatus::Unavailable,
+                {});
+            return false;
+        }
+
+        const auto selected =
+            bucket_it->second.front();
+
+        auto handler =
+            selected.handler;
+
+        // External transports have no local Pending entry, so guard the
+        // supplied reply callback here to preserve exactly-once semantics
+        // even if a handler replies and then throws.
+        auto replied =
+            std::make_shared<bool>(
+                false);
+
+        Reply guarded_reply =
+            [reply =
+                 std::move(reply),
+             replied](
+                RequestStatus status,
+                std::span<
+                    const std::uint8_t>
+                    response) mutable {
+                if (*replied) {
+                    return false;
+                }
+
+                *replied = true;
+                return reply(
+                    status,
+                    response);
+            };
+
+        auto fallback_reply =
+            guarded_reply;
+
+        try {
+            handler(
+                request_id,
+                0,
+                payload,
+                std::move(
+                    guarded_reply));
+        } catch (...) {
+            fallback_reply(
+                RequestStatus::Internal,
+                {});
+        }
+
+        return true;
+    }
+
     RequestStart start(
         AppId requester_app,
         const RequestKey& key,
@@ -384,6 +493,26 @@ public:
             payload);
 
         return true;
+    }
+
+    bool complete_remote(
+        RequestId id,
+        RequestStatus status,
+        std::span<const std::uint8_t>
+            payload) {
+        const auto it =
+            pending_.find(id);
+
+        if (
+            it == pending_.end() ||
+            it->second.handler_app != 0) {
+            return false;
+        }
+
+        return complete(
+            id,
+            status,
+            payload);
     }
 
     bool complete_from(

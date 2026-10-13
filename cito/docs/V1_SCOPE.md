@@ -151,3 +151,21 @@ The capability TypeId is distinct from the raw request TypeId, so a normal
 subscriber to a request message is not treated as an RPC handler. Unit
 regression covers selective remote candidate/route discovery for this
 capability; remote request payload/reply transport is still a later gate.
+
+
+## Remote Request/Reply transport baseline
+
+The transport-independent remote Request/Reply layer now uses a versioned
+`CTX1` request/reply/cancel envelope. Correlation is protected by expected
+outbound DestinationId and inbound peer/session + RequestId identity, so two
+clients may safely use the same local RequestId.
+
+A real two-node MsQuic smoke sends a CTX1 request on a bidirectional QUIC
+stream, dispatches it through RequestReplyCore on the server loop, and returns
+the typed-byte reply on the same stream. MsQuic receive callbacks post bytes
+to the loop rather than owning request/discovery state.
+
+This is a transport baseline, not yet a claim that public Context performs
+remote Request/Reply automatically. The remaining public-path work is to attach
+discovery route readiness, QUIC session management, deadlines, and Context
+request lifecycle to the same loop/runtime.

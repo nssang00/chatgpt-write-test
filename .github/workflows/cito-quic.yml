@@ -7,7 +7,10 @@ on:
       - "cito/CMakeLists.txt"
       - "cito/include/cito/data_packet.hpp"
       - "cito/include/cito/detail/transport_selector.hpp"
+      - "cito/include/cito/detail/request_reply_core.hpp"
+      - "cito/include/cito/detail/request_transport.hpp"
       - "cito/tests/net/quic_msquic_node.cpp"
+      - "cito/tests/net/quic_request_node.cpp"
       - "cito/tests/transport_selector_test.cpp"
       - ".github/workflows/cito-quic.yml"
   workflow_dispatch:
@@ -45,7 +48,7 @@ jobs:
       - name: Configure and build QUIC smoke
         run: |
           cmake -S cito -B build-quic -G Ninja -DCMAKE_BUILD_TYPE=Debug -DCITO_ENABLE_MSQUIC=ON
-          cmake --build build-quic --target cito_quic_msquic_node -j2
+          cmake --build build-quic --target cito_quic_msquic_node cito_quic_request_node -j2
 
       - name: Generate test certificate
         run: |
@@ -113,3 +116,29 @@ jobs:
           test "$server_status" -eq 0
           grep -q "quic_client stream=1 datagram=1" quic-client.log
           grep -q "quic_server stream=1 datagram=1" quic-server.log
+
+          RQBIN="$GITHUB_WORKSPACE/build-quic/cito_quic_request_node"
+
+          sudo ip netns exec cito-quic-s "$RQBIN" server 4434 \
+            "$GITHUB_WORKSPACE/quic-cert.pem" "$GITHUB_WORKSPACE/quic-key.pem" \
+            >quic-request-server.log 2>&1 &
+          REQUEST_SERVER_PID=$!
+
+          sleep 0.3
+
+          request_client_status=0
+          sudo ip netns exec cito-quic-c "$RQBIN" client 10.202.0.12 4434 \
+            >quic-request-client.log 2>&1 || request_client_status=$?
+
+          request_server_status=0
+          wait "$REQUEST_SERVER_PID" || request_server_status=$?
+
+          echo "=== QUIC request client ==="
+          cat quic-request-client.log
+          echo "=== QUIC request server ==="
+          cat quic-request-server.log
+
+          test "$request_client_status" -eq 0
+          test "$request_server_status" -eq 0
+          grep -q "quic_request_client request=1 reply=1 loop=1" quic-request-client.log
+          grep -q "quic_request_server request=1 reply=1 loop=1" quic-request-server.log
