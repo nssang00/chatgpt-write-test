@@ -33,11 +33,11 @@ those boundaries. A mock or header-only compile does not satisfy an E2E gate.
 | A1-CB-03 | JS can pass callback reference/token to plugin as explicitly supported; callback can be invoked or rejected safely | all 3 browsers | NOT IMPLEMENTED |
 | A1-CB-04 | Callback error/rejection propagates across C ABI as structured code/message, handles out-of-order completion | all 3 browsers | NOT IMPLEMENTED |
 | A1-CB-05 | Plugin unload/reload and WebView destroy revoke live callback tokens without UAF/deadlock | all 3 browsers + ASan when available | NOT IMPLEMENTED |
-| A1-CLI-01 | From empty workdir, `xweb new desktop hello --backend cpp` creates a valid new native desktop app | Windows and Linux | NOT IMPLEMENTED |
-| A1-CLI-02 | `xweb restore` resolves/pins/downloads required SDK and browser engine, reuses cache, handles offline/error cases | Windows and Linux | NOT IMPLEMENTED |
-| A1-CLI-03 | `xweb run` builds/launches real browser+plugin app with JS↔C++ callback test and auto engine | Windows and Linux | NOT IMPLEMENTED |
-| A1-CLI-04 | `xweb build`, `xweb test`, `xweb publish` build/test/package runnable app without manual CMake SDK editing | Windows and Linux | NOT IMPLEMENTED |
-| A1-CLI-05 | `xweb plugin new/build` creates valid versioned C ABI DLL/SO; `xweb doctor` diagnoses missing compiler/engine | Windows and Linux | NOT IMPLEMENTED |
+| A1-CLI-01 | From empty workdir, `xytron new desktop hello --backend cpp` creates a valid new native desktop app | Windows and Linux | NOT IMPLEMENTED |
+| A1-CLI-02 | `xytron restore` resolves/pins/downloads required SDK and browser engine, reuses cache, handles offline/error cases | Windows and Linux | NOT IMPLEMENTED |
+| A1-CLI-03 | `xytron run` builds/launches real browser+plugin app with JS↔C++ callback test and auto engine | Windows and Linux | NOT IMPLEMENTED |
+| A1-CLI-04 | `xytron build`, `xytron test`, `xytron publish` build/test/package runnable app without manual CMake SDK editing | Windows and Linux | NOT IMPLEMENTED |
+| A1-CLI-05 | `xytron plugin new/build` creates valid versioned C ABI DLL/SO; `xytron doctor` diagnoses missing compiler/engine | Windows and Linux | NOT IMPLEMENTED |
 | A1-WRAP-01 | Python wrapper attaches to Core and invokes typed native/JS action with structured async success/error | Linux and Windows target matrix | NOT IMPLEMENTED |
 | A1-WRAP-02 | C#/.NET wrapper attaches to same Core and exposes Task-style async/error, correct handle disposal | Windows, with Linux parity where supported | NOT IMPLEMENTED |
 | A1-WRAP-03 | Python and C# callbacks/handles remain safe across WebView destroy and runtime/plugin shutdown | Wrapper-specific CI + actual browser path | NOT IMPLEMENTED |
@@ -46,6 +46,30 @@ those boundaries. A mock or header-only compile does not satisfy an E2E gate.
 **Existing JS→plugin factory E2E PASS does not satisfy A1-CB cases.**
 C++→JS Core calls already exist but must be exercised from a separately loaded
 plugin and through the intended callback C ABI.
+
+## Standalone OS shell, real language backends and managed controls
+
+| ID | Scenario and expected observable behavior | CI platforms | Current state |
+| --- | --- | --- | --- |
+| A1-SHELL-01 | Standalone OS window create/title/show/resize/close; JS event routing | Linux CEF, Windows WebView2/CEF | NOT IMPLEMENTED |
+| A1-SHELL-02 | Real native app menu create/update/disabled/checked/accelerator and command event | Linux + Windows | NOT IMPLEMENTED |
+| A1-SHELL-03 | Native context menu right-click/popup/selection invokes JS/backend callback; closes cleanly | Linux + Windows | NOT IMPLEMENTED |
+| A1-SHELL-04 | Untrusted page/frame cannot invoke restricted window/menu/context commands | Three engines | NOT IMPLEMENTED |
+| A1-SHELL-05 | Multi-window menu routing and dispose/close callback invalidation | Linux + Windows | NOT IMPLEMENTED |
+| A1-BACK-01 | CLI-generated `cpp` desktop app invokes real DLL/SO; plugin calls JS back | Windows + Linux | NOT IMPLEMENTED |
+| A1-BACK-02 | CLI-generated `python` desktop app invokes real Python backend and receives async/stream callbacks | Windows + Linux | NOT IMPLEMENTED |
+| A1-BACK-03 | CLI-generated `csharp` app invokes real .NET backend and receives Task/event callbacks | Windows + Linux | NOT IMPLEMENTED |
+| A1-BACK-04 | Python/.NET missing dependency, crash, shutdown, callback cancel report meaningful errors | Windows + Linux | NOT IMPLEMENTED |
+| A1-HOST-04 | MFC child control embeds WebView; real resize/focus/reload/disposal with MFC app menu unchanged | Windows WebView2/CEF | NOT IMPLEMENTED |
+| A1-HOST-05 | WinForms control embeds WebView and calls C# backend safely on correct UI dispatcher | Windows WebView2 | NOT IMPLEMENTED |
+| A1-HOST-06 | WPF component embeds WebView, respects WPF layout/dispatcher and native callback disposal | Windows WebView2 | NOT IMPLEMENTED |
+| A1-DIST-05 | xytron publish includes Python runtime/dependencies as configured; new app runs on clean host | Windows + Linux | NOT IMPLEMENTED |
+| A1-DIST-06 | xytron publish handles .NET runtime/config assets; new C# app runs on clean host | Windows + Linux | NOT IMPLEMENTED |
+
+Python LLM/AI CI uses deterministic local fake-model output instead of
+external subscription credentials. OS menu E2E cannot be satisfied with an
+HTML-only menu. Embedded-control E2E cannot be satisfied by a standalone
+browser host disguised as a component.
 
 ## Failure workflow
 

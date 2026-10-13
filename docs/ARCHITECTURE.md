@@ -20,6 +20,22 @@ Browser backend
 Native host
 ```
 
+## Application shell vs embedded control; real language backends
+
+The common C++11 Core must serve two host modes:
+- **Standalone:** OS windows with actual app menu/context menus and
+  click actions, lifecycle, JS/backend event routing; Electron-like.
+- **Embedded:** minimal WPF/WinForms/MFC/Win32/GTK3 WebView-like control
+  inside existing host windows, preserving host menu/message loop.
+
+The application logic backend is selected by CLI (`cpp`, `python`,
+`csharp`). Python LLM and .NET legacy developers write **their own
+backend code**, not only call a wrapper around C++. FFI and supervised
+language processes are internal strategies; JS Promise/callback semantics
+and permission/lifetime contracts are shared.
+
+See [product host/backend contract](PRODUCT_MODES_AND_BACKENDS.md).
+
 ## Architecture layers
 
 ### Web application

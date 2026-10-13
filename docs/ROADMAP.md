@@ -1,23 +1,19 @@
-# NativeWeb Roadmap — Electron/Tauri category, C/C++ first
+# NativeWeb Roadmap — standalone shell + embedded controls + language backends
 
-> **2026-10-13 owner-confirmed product vision:** full desktop app platform
-> with C/C++ primary backend, plugin-based bidirectional JS↔native callbacks,
-> official Python/C# wrappers, and `dotnet`-style `xweb` CLI for
-> new/restore/run/build/test/publish.
+> **Owner clarification 2026-10-13:** NativeWeb supplies both an Electron-like
+> OS app shell (windows, real app menus/context menus) and WebView2-like
+> controls for WPF/WinForms/MFC plus Win32/GTK3. The C/C++ Core is shared;
+> developers author **cpp/python/csharp backend** logic as equal profiles.
+> Canonical CLI user command is `xytron`, including new/restore/run/build/
+> test/publish and one-command C++ plugin new/build.
 >
-> The first usable release **requires BOTH** a new CLI-generated desktop app
-> and a thin existing native host embedding path, not just a WebView SDK.
-> Priority: secure bridge and CLI skeleton → plugin callbacks + host/wrapper
-> slices → engine packaging → complete product smoke.
+> [Product contract](PRODUCT_MODES_AND_BACKENDS.md) ·
+> [Scope A](RELEASE_SCOPE_A.md) ·
+> [Test matrix](RELEASE_TEST_MATRIX.md)
 >
-> Source of truth: [Product vision](PRODUCT_VISION.md),
-> [Scope A](RELEASE_SCOPE_A.md),
-> [Execution plan](EXECUTION_PLAN.md),
-> [Acceptance criteria](ACCEPTANCE_CRITERIA.md) and
-> [Release test matrix](RELEASE_TEST_MATRIX.md).
->
-> The historical Phase 0–10 inventory below is a feature backlog, NOT a
-> prescription to postpone first-release CLI or wrappers until Phase 9.
+> Phase 0–10 inventory below is historical; CLI, shell and first language
+> backend templates are **first usable release** requirements, not deferred
+> until the numeric phase containing them.
 
 이 문서는 우선순위 문서다. 날짜 약속이 아니라 dependency와 개발 순서를 나타낸다.
 
@@ -151,7 +147,7 @@ Linux   / CEF
 
 가 가능한 한 동일 public API contract를 통과한다.
 
-## Phase 5 — Thin host adapters
+## Phase 5 — Thin host adapters (MFC/WPF/WinForms basic controls in first release)
 
 - [ ] Win32
 - [ ] MFC
@@ -180,7 +176,7 @@ Host layer가 application framework로 커지면 설계를 다시 검토한다.
 - [ ] fs/path
 - [ ] process
 - [ ] notification
-- [ ] menu/context menu
+- [ ] menu/context menu — mandatory first-release native app/context APIs
 - [ ] tray
 - [ ] global shortcut
 - [ ] screen/DPI
@@ -221,7 +217,7 @@ Host layer가 application framework로 커지면 설계를 다시 검토한다.
 - [x] ABI compatibility validation baseline
 - [ ] TypeScript declaration generation
 - [ ] missing-dependency diagnostics
-- [ ] `xweb plugin new/build/inspect`
+- [ ] `xytron plugin new/build/inspect`
 
 장기:
 
@@ -241,19 +237,19 @@ Host layer가 application framework로 커지면 설계를 다시 검토한다.
 
 ## Phase 9 — CLI / developer experience (MVP moved into first release)
 
-Working CLI name: `xweb` (final brand not fixed).
+Working CLI name: `xytron` (final brand not fixed).
 
-- [ ] `xweb new`
-- [ ] `xweb run`
-- [ ] `xweb build`
-- [ ] `xweb test`
-- [ ] `xweb publish`
-- [ ] `xweb doctor`
-- [ ] `xweb engine`
-- [ ] `xweb permission`
-- [ ] `xweb plugin`
+- [ ] `xytron new`
+- [ ] `xytron run`
+- [ ] `xytron build`
+- [ ] `xytron test`
+- [ ] `xytron publish`
+- [ ] `xytron doctor`
+- [ ] `xytron engine`
+- [ ] `xytron permission`
+- [ ] `xytron plugin`
 
-`engine = auto`가 기본이다. **최소 xweb CLI의 new/restore/run/build/test/publish/doctor/plugin new/build는 Scope A 필수**, 이 Phase에는 고급 CLI 확장을 남긴다.
+`engine = auto`가 기본이다. **최소 xytron CLI의 new/restore/run/build/test/publish/doctor/plugin new/build는 Scope A 필수**, 이 Phase에는 고급 CLI 확장을 남긴다.
 
 ## Phase 10 — Code - OSS benchmark
 

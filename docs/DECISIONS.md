@@ -360,3 +360,41 @@ a defining product feature. The `xweb` command name is provisional.
 The first usable product requires a working CLI vertical slice; treating
 CLI as optional long-term documentation contradicts the product vision.
 Commands must manage versions/cache reproducibly and report actionable errors.
+
+## D-037: Dual UI host modes; native standalone shell
+
+**Status: Accepted — owner clarification 2026-10-13**
+
+The platform must support a real Electron-like native application with OS
+windows, app menus, context menus, menu command callbacks and lifecycle;
+AND WebView2-like UI controls in WPF, WinForms, MFC, Win32, GTK3. Host
+controls stay thin and reuse the identical C++ Core, bridge, security
+and plugin system. First-release basic app/context menu and minimal
+MFC/WinForms/WPF components are required, not optional future features.
+
+## D-038: cpp/python/csharp are actual backend authoring profiles
+
+**Status: Accepted — owner clarification 2026-10-13**
+
+Common runtime is C/C++11; developers choose actual application backend
+logic in C/C++, Python (especially LLM/AI) or C#/.NET (especially legacy).
+Official wrappers exist but a wrapper-only capability does not satisfy
+the Python or C# backend choice. Supervised language process/FFI transport
+is an implementation detail; JS async/callback behavior is consistent.
+
+## D-039: Canonical intended CLI command is xytron
+
+**Status: Accepted — owner clarification 2026-10-13**
+
+The user-facing CLI is `xytron` for project creation, SDK/runtime
+download and restore, run, build, test, publish and C++ plugin new/build.
+The previous `xweb` was a working name; decide alias compatibility
+before renaming any shipped command. No CLI functionality is yet verified.
+
+## D-040: Native app menus and context menus are core desktop APIs
+
+**Status: Accepted — owner clarification 2026-10-13**
+
+Menu bar/menus, right-click/context popup menu, menu command and JS/backend
+callback routing, UI thread dispatch and permission checks are mandatory
+first usable app features. Full Electron desktop API parity is longer term.

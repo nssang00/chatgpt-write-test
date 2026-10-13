@@ -4,21 +4,26 @@ Updated 2026-10-13 after product-identity clarification
 ## Goal and developer stories
 
 NativeWeb is in the Electron/Tauri product category, with a C/C++ native
-backend, C++ DLL/SO plugin modules, bidirectional JS/native calls/callbacks,
-official Python + C# wrappers, and a `dotnet`-like `xweb` CLI.
+backend, C++ DLL/SO plugins, bidirectional JS/native callbacks, OS-native app
+menus/context menus, real cpp/python/csharp application backend profiles,
+minimum WPF/WinForms/MFC controls, and a `dotnet`-like `xytron` CLI.
 
-**Story 1 — New app:** `xweb new` → `xweb restore` → `xweb run` →
-C++ plugin and JS callbacks → `xweb build`/`xweb publish` → standalone app.
+**Story 1 — New app:** `xytron new` → `xytron restore` → `xytron run` →
+C++ plugin and JS callbacks → `xytron build`/`xytron publish` → standalone app.
 
 **Story 2 — Existing app:** install SDK → embed Win32/GTK3 WebView →
 use the *same* plugin/bridge from local UI → build/distribute.
 
-**Story 3 — Other languages:** Python and C# basic wrappers load the
-same runtime contract and demonstrate native calls, errors, lifetime and
-callback behavior. Wrappers are not merely subprocess Sidecars.
+**Story 3 — AI/legacy backends:** Python LLM and C# legacy developers write
+actual application logic in their chosen language with async JS↔backend
+callbacks; native wrappers or supervised processes are internal host choices.
 
 See `PRODUCT_VISION.md`, `RELEASE_SCOPE_A.md`,
 `RELEASE_TEST_MATRIX.md`, `ACCEPTANCE_CRITERIA.md`.
+
+**Story 4 — OS app shell:** native window, app menu and context menu
+create/update/click callbacks work in standalone mode, while host menus
+are retained by embedded WPF/WinForms/MFC controls.
 
 ## A0 existing verified foundation
 
@@ -36,9 +41,9 @@ See `PRODUCT_VISION.md`, `RELEASE_SCOPE_A.md`,
 | --- | --- | --- | --- |
 | P0 Secure bridge | Trusted packaged UI; host-supplied frame/origin identity; per-method grants; navigation invalidation | A1-SEC-01–07 on 3 real engines | NOT STARTED |
 | P1 Bidirectional plugin callbacks | Plugin→JS named invoke/event, async results, event subscription/unsubscribe, callback lifetimes across reload/destroy/unload | A1-CB-01–05 | NOT STARTED |
-| P2 CLI and new-app workflow | xweb new/restore/run/build/test/publish/doctor + plugin new/build, versioned manifest, SDK download/cache | A1-CLI-01–05 | NOT STARTED |
-| P3 Embeddable native hosts | Minimal Win32 HWND + Linux GTK3 host examples, real bridge/plugin | A1-HOST-01–03 | NOT STARTED |
-| P4 Official language wrappers | Python & C# minimal stable-C-boundary calls, async/error/callback/lifetime example | A1-WRAP-01–03 | NOT STARTED |
+| P2 CLI and new-app workflow | xytron new/restore/run/build/test/publish/doctor + plugin new/build, versioned manifest, SDK download/cache | A1-CLI-01–05 | NOT STARTED |
+| P3 Standalone shell and embedded controls | Native app window/menu/context and minimum Win32, GTK3, WPF, WinForms, MFC controls | A1-SHELL-01–05 and A1-HOST-01–06 | NOT STARTED |
+| P4 Actual backend profiles and wrappers | Python & C# authored backend templates, managed runtime lifecycle, async/stream/error/callback plus wrappers | A1-BACK-01–04 and A1-WRAP-01–03 | NOT STARTED |
 | P5 Engine packaging | Portable SDK artifacts, CEF resources/ICU, WebView2 Evergreen diagnostics, third-party notices | A1-DIST-01–04 | CORE-ONLY BASELINE |
 | P6 Release validation | Both stories from fresh machines, negative security, unload stress, reproducibility | All required release matrix cases | NOT STARTED |
 | P7 Approval | Versioned deliverables / changelog / draft PR review | Explicit authorization to merge/publish | REQUIRES APPROVAL |
@@ -47,10 +52,10 @@ See `PRODUCT_VISION.md`, `RELEASE_SCOPE_A.md`,
 
 1. Start **secure native dispatch policy** and minimal **CLI manifest/
    command skeleton** in separate changes. Define failing security tests.
-2. Implement **plugin→JS callback/event vertical slice** and C ABI lifetime
+2. Implement **OS-native app/context menu shell** and **plugin→JS callback/event vertical slice** and C ABI lifetime
    rules without weakening unload/worker guarantees.
-3. In parallel, implement Win32/GTK3 embedding and Python/C# wrapper
-   proofs against the tested native Core.
+3. In parallel, implement minimal WPF/WinForms/MFC/Win32/GTK3 controls
+   and actual Python/C# app backend lifecycle templates and wrapper proofs.
 4. Connect CLI restore/build/run to installable engine SDK packaging and
    plugin fixture; test both new-project and existing-host paths.
 5. Gate release using actual Windows/Linux host/browser/plugin/CLI/wrapper

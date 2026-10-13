@@ -91,3 +91,20 @@ Issues should be appended, not silently discarded. A blocked task does not block
   gates are **NOT IMPLEMENTED**; no CI PASS is claimed for the doc change.
 - Next: develop security + CLI skeleton independently; add failing plugin
   callback tests before implementing bridge/ABI changes.
+
+## NW-012 Product requirements corrected: OS shell/menu, WPF/WinForms/MFC and backend language profiles — SPECS UPDATED
+- Priority: P1 product-definition gap, **no executable defect**.
+- Owner confirmed 2026-10-13: NativeWeb must provide both Electron-like
+  standalone native desktop app with actual menu/context menu control and
+  WebView2-like WPF/WinForms/MFC embedded controls. Python and C# are
+  full user-authored app backend profiles (AI/LLM and .NET legacy), not
+  merely wrappers; C++ plugin creation and JS reverse callbacks must be easy.
+  User-facing CLI target is `xytron` rather than prior working name `xweb`.
+- Earlier Scope A deferred these UI controls/menus and modeled Python/C#
+  mainly as wrappers; previous PASS evidence covers Core/plugin browser
+  basics but not these requirements.
+- Resolution: authoritative contract `docs/PRODUCT_MODES_AND_BACKENDS.md`;
+  revised scope, plan, test matrix, acceptance, roadmap, decisions and handoff.
+- Implementation status: NOT IMPLEMENTED/UNVERIFIED for the new shell/menu,
+  language backend, CLI and embedded-control gates. Do not infer test PASS
+  from this documentation commit. Continue independent work.

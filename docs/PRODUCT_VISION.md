@@ -1,21 +1,28 @@
 # NativeWeb / Xytron — Product vision (confirmed 2026-10-13)
 
+> **Product clarification:** [Standalone shell, embedded controls and
+> selectable backend profiles](PRODUCT_MODES_AND_BACKENDS.md) is a
+> controlling part of this vision. A user chooses `cpp`, `python`, or
+> `csharp` for their **actual backend logic**, while the common C/C++ Core
+> runs both an Electron-like desktop shell with real menus/context menus
+> and a WebView2-like embeddable control in WPF/WinForms/MFC.
+
 ## Identity and competitor category
 
 **NativeWeb is a cross-platform desktop application framework/platform in the
-same product category as Electron and Tauri, with C/C++ as the primary native
-backend.** It is *not* merely an embeddable WebView, an Electron clone, or a
+same product category as Electron and Tauri, with a C/C++ native
+Core and developer-selectable C++/Python/C# application backends.** It is *not* merely an embeddable WebView, an Electron clone, or a
 GUI widget toolkit. The browser is a frontend runtime, not the backend
 language. JavaScript/TypeScript is used for UI; users retain native C/C++
 application logic, SDKs and shared libraries.
 
 Working names: **NativeWeb** for C++ runtime/repository, **Xytron/xytron**
-for JS developer-facing API, and **xweb** for CLI. Final branding is undecided;
+for JS developer-facing API, and **xytron** for the user-facing CLI. Final branding is undecided;
 do not initiate a sweeping rename solely from these examples.
 
 ## Three equally important workflows
 
-1. **New desktop application:** `xweb new` creates an executable Web UI +
+1. **New desktop application:** `xytron new` creates an executable Web UI +
    C/C++ backend project with a ready development loop. No preexisting
    host application required.
 2. **Embedding/migration:** a native C/C++ Win32, MFC, Qt, GTK or .NET host
@@ -28,8 +35,8 @@ do not initiate a sweeping rename solely from these examples.
 
 - **Primary implementation:** C/C++ runtime + C++11 SDK, both static bindings
   and dynamic versioned C ABI plugins. No mandatory Node.js or Rust backend.
-- **Official wrappers:** Python and C#/.NET as first-class developer languages
-  calling the same underlying C API/runtime, not merely Sidecar substitutes.
+- **Language backends and wrappers:** Python and C#/.NET authors implement actual
+  app backend logic connected to JS via the Core, not only use C wrappers.
   Their high-level APIs, async mapping, object lifetimes and callbacks must
   be specified and tested. The wrappers may internally use FFI/PInvoke.
 - **Sidecar:** separate opt-in process model for services and other languages;
@@ -71,30 +78,32 @@ tests are a **foundation**, not proof of plugin-owned callback/event ABI.
 Candidate command UX (targets, NOT implemented syntax guarantees):
 
 ```sh
-xweb new desktop myapp --backend cpp
+xytron new desktop myapp --backend cpp
 cd myapp
-xweb restore              # acquire pinned SDK/engines/dependencies
-xweb run                  # build + launch with hot/dev workflow as supported
-xweb build --configuration release
-xweb test
-xweb publish --runtime win-x64
-xweb plugin new camera --language cpp
-xweb plugin build camera
-xweb doctor               # runtime/compiler/SDK diagnostics
+xytron restore              # acquire pinned SDK/engines/dependencies
+xytron run                  # build + launch with hot/dev workflow as supported
+xytron build --configuration release
+xytron test
+xytron publish --runtime win-x64
+xytron plugin new camera --language cpp
+xytron plugin build camera
+xytron doctor               # runtime/compiler/SDK diagnostics
 ```
 
 CLI principles: one project manifest, reproducible lock/pins, transparent
 diagnostics, no manual SDK archive juggling, meaningful error messages,
 release packaging based on the same manifest. Offline/cache behavior must
-be tested. `xweb` is a working CLI name; finalized naming remains open.
+be tested. `xytron` is a working CLI name; finalized naming remains open.
 
 ## First usable release and longer platform
 
-**Scope A1** includes two real app experiences (new CLI-generated app and
+**Scope A1** includes a native standalone window with app/context menus,
+cpp/python/csharp backend templates, basic WPF/WinForms/MFC controls, and two real app experiences (new CLI-generated app and
 embedded Win32/GTK3 app), default-deny native security, actual bidirectional
 plugin callback/event tests, managed engine distribution, and an initial
 Python/C# wrapper vertical slice with tested ownership/async semantics.
-Complete wrapper parity, full Desktop API breadth, designer tooling,
+Complete wrapper parity, full Desktop API breadth beyond the required
+window/menu/context baseline, designer tooling,
 advanced language integrations, hot-reload and Code-OSS compatibility remain
 later phases.
 

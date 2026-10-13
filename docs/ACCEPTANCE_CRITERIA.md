@@ -1,8 +1,8 @@
 # NativeWeb Scope A1 — first usable SDK acceptance criteria
 
 **Approved 2026-10-13:** First deliverable is an **Electron/Tauri-category desktop development
-platform powered by C/C++**. It supports new CLI-generated apps **and**
-existing native-host embedding, with Python/C# wrapper vertical slices,
+platform with C/C++ Core** and **cpp/python/csharp user-selected app backends**.
+It supports standalone OS window/app menu/context and embedded controls,
 bidirectional plugin callbacks and redistributable engine SDK. A Core +
 Plugin SDK-only target is insufficient. See [RELEASE_SCOPE_A.md](RELEASE_SCOPE_A.md) and
 [RELEASE_TEST_MATRIX.md](RELEASE_TEST_MATRIX.md).
@@ -23,10 +23,14 @@ Plugin SDK-only target is insufficient. See [RELEASE_SCOPE_A.md](RELEASE_SCOPE_A
 | Gate | Definition of done | Status |
 | --- | --- | --- |
 | SECURITY | Native-boundary default deny for remote/untrusted docs, files, frames, redirects and ungranted methods; explicit narrow grants; real three-engine negative E2E | NOT COMPLETE — BLOCKER |
-| CLI NEW/RESTORE/RUN/BUILD/TEST/PUBLISH | Working .NET-like xweb CLI MVP from fresh project through engine/SDK download to packaged run; useful diagnostics | NOT COMPLETE — BLOCKER |
+| CLI NEW/RESTORE/RUN/BUILD/TEST/PUBLISH | Working .NET-like xytron CLI MVP from fresh project through engine/SDK download to packaged run; useful diagnostics | NOT COMPLETE — BLOCKER |
+| OS DESKTOP SHELL | Native windows, OS app/context menus, command callbacks and security tested on real browsers | NOT COMPLETE — BLOCKER |
+| PYTHON BACKEND | Actual Python-written application logic from CLI project, async streaming and runtime packaging | NOT COMPLETE — BLOCKER |
+| C# BACKEND | Actual .NET-written application logic from CLI project, Task/event callbacks and runtime packaging | NOT COMPLETE — BLOCKER |
 | PLUGIN CALLBACKS | Actual DLL/SO plugin ↔ JS async callback/event/reference, error, unsubscribe and destroy/unload safety in all browsers | NOT COMPLETE — BLOCKER |
 | PYTHON/C# WRAPPERS | Python and C# initial official wrapper API with async/handle/error/callback CI cases | NOT COMPLETE — BLOCKER |
 | GREENFIELD APP | CLI-generated new native desktop app runs packaged UI+plugin on fresh Windows/Linux runtime | NOT COMPLETE — BLOCKER |
+| WPF/WINFORMS/MFC CONTROL | Real minimal embedded controls and lifecycle/dispatch tests | NOT COMPLETE — BLOCKER |
 | WIN32 HOST | Embedded native HWND sample, real Win WebView2/CEF bridge/plugin and create/resize/focus/reload/destroy verified | NOT COMPLETE — BLOCKER |
 | GTK3 HOST | Embedded GTK3 app sample, Linux CEF bridge/plugin and lifecycle verified | NOT COMPLETE — BLOCKER |
 | DISTRIBUTION | Engine-backed portable SDK, resources/runtime prerequisites, CMake install and relocatable app+plugin tests on clean Windows/Linux environments | NOT COMPLETE — BLOCKER |
@@ -39,9 +43,11 @@ Plugin SDK-only target is insufficient. See [RELEASE_SCOPE_A.md](RELEASE_SCOPE_A
 direct `xytron.foo()`, stable C ABI plugin and safe unload. Do not weaken
 security to make a smoke test green.
 
-**Deferred from this first deliverable:** formal MFC/WinForms/WPF/Qt host
-adapters, full Python/C# wrapper feature parity, advanced CLI plugin registries,
-Sidecar, full Desktop API parity, advanced shared/transfer buffer, Code - OSS,
+**Deferred from this first deliverable:** extended/designer-grade MFC/WinForms/WPF/Qt adapters
+(but not basic WPF/WinForms/MFC controls), full Python/C# wrapper parity,
+advanced CLI plugin registries,
+Sidecar, full Desktop API parity beyond native windows/menus/context menus,
+advanced shared/transfer buffer, Code - OSS,
 full installer/code signing. Existing APIs must not be removed.
 
 **Interpretation:** Real plugin E2E PASS does not imply trusted-origin policy,

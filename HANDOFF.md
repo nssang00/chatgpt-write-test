@@ -4,6 +4,24 @@
 
 > 목표: 이전 대화를 읽지 않아도 이 저장소만으로 현재 방향, 완료 상태, 다음 작업을 파악하고 바로 개발을 계속할 수 있어야 한다.
 
+## 2026-10-13 latest owner clarification — REQUIRED PRODUCT CONTRACT
+
+- **Not merely SDK embedding:** Electron-like standalone desktop **native OS
+  window + menu bar + right-click context menus + command callbacks**,
+  AND WebView2-like control inserted into **WPF, WinForms, MFC**, Win32/GTK3.
+- **Shared C/C++11 Core but selectable user-authored backend profiles:**
+  `cpp` (versioned DLL/SO plugin, JS↔native callback), `python` (real
+  Python LLM/AI backend), `csharp` (actual .NET legacy backend).
+  Wrappers-only for Python/C# do not meet this requirement.
+- **CLI user command:** `xytron` (the earlier `xweb` working name is
+  historical); developer must create, download/restore, run, build,
+  test, publish and compile C++ plugins via CLI.
+- **Release gates expanded:** native shell/menu/context, CLI backend-profile
+  E2E, WPF/WinForms/MFC embedded controls, Python/.NET runtime packaging.
+  Existing three-engine browser E2E remains a foundation PASS only.
+- Canonical: `docs/PRODUCT_MODES_AND_BACKENDS.md` and
+  `docs/RELEASE_SCOPE_A.md`; main unchanged, PR #7 draft, no release.
+
 ## 2026-10-13 owner-confirmed full product identity (read first)
 
 - NativeWeb/Xytron is an **Electron/Tauri-category desktop application
@@ -18,7 +36,7 @@
 - **Official language wrappers**: Python and C#/.NET are Core API wrappers,
   **not only Sidecars**. Initial wrapper integration tests are required for
   the first usable product; full parity is a later phase.
-- **.NET-like CLI mandatory early**: `xweb new`, `restore` (SDK/engine
+- **.NET-like CLI mandatory early**: `xytron new`, `restore` (SDK/engine
   download/cache), `run`, `build`, `test`, `publish`, `doctor`,
   `plugin new/build`. Syntax is product target, not working feature yet.
 - Canonical docs: `docs/PRODUCT_VISION.md`,
