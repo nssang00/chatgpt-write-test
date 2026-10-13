@@ -23,7 +23,7 @@ jobs:
     env:
       CHROME_HEADLESS: "1"
       M5_CHROME_EXTRA_ARGS: "--enable-webgl --use-gl=angle --use-angle=swiftshader --enable-unsafe-swiftshader"
-      SOURCE_URL: ${{ inputs.project_archive_url || vars.M5_PROJECT_ARCHIVE_URL }}
+      SOURCE_URL: ${{ inputs.project_archive_url || secrets.M5_PROJECT_ARCHIVE_URL || vars.M5_PROJECT_ARCHIVE_URL }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
