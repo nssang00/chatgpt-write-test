@@ -1,6 +1,10 @@
-# WebView2 v58.5.2 Windows OneClick (EXPERIMENTAL)
+# WebView2 v58.5.2 Windows OneClick — r1 Unity JSONSerialize hotfix (EXPERIMENTAL)
 
-1. Download the complete GitHub Actions artifact webview2-v58-5-2-windows-oneclick. It includes the native x64 DLL.
+**r1 fix:** adds Unity's built-in `com.unity.modules.jsonserialize` dependency for `JsonUtility`. This corrects the compilation failure reported in the 2026-10-13 Windows result; it does NOT constitute Player runtime validation.
+
+**Disk space:** The first log warned the Unity project drive had less than 1 GB available. Free at least 10 GB on the extraction/project drive before retrying, or extract this ZIP to another drive with sufficient free space. Use a fresh folder; do not overwrite the old generated UnityProject cache.
+
+1. Download the complete GitHub Actions artifact webview2-v58-5-2-windows-oneclick-r1. It includes the native x64 DLL.
 2. Extract to a NEW folder such as C:\wv2-v58.5.2\. Do not overwrite/copy into validated CEF v58.4.4 oneclick_bundle.
 3. Install Unity Editor 2022.3.62f3 with Windows Build Support (Mono backend), activate its license, and install Microsoft WebView2 Evergreen Runtime.
 4. Double click Run-All.cmd. It checks all package SHA256 hashes, builds a temporary Unity Windows Player, runs visible Player for 35 seconds, writes automatic evidence and exits.

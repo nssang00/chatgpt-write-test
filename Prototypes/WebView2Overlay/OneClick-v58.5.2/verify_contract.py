@@ -1,5 +1,8 @@
 from pathlib import Path
+import json
 r=Path(__file__).resolve().parent
+manifest=json.loads((r/'UnityProject/Packages/manifest.json').read_text(encoding='utf-8'))
+assert manifest['dependencies'].get('com.unity.modules.jsonserialize')=='1.0.0', 'JsonUtility requires Unity JSONSerialize built-in module'
 cpp=(r/'Native/WebView2UnityPilot.cpp').read_text(encoding='utf-8')
 cs=(r/'UnityProject/Assets/Scripts/WebView2OverlayUnityPilot.cs').read_text(encoding='utf-8')
 tele=(r/'UnityProject/Assets/Scripts/WebView2OneClickTelemetry.cs').read_text(encoding='utf-8')

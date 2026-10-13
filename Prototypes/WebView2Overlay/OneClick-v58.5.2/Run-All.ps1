@@ -53,6 +53,12 @@ try{
  Assert ([IntPtr]::Size -eq 8) 'PowerShell x64 required'
  $count=ValidatePackage
  Write-Host "[PASS] Package SHA-256 checked: $count files"
+ try {
+  $drive=[IO.DriveInfo]::new([IO.Path]::GetPathRoot($project))
+  $freeGb=[Math]::Round($drive.AvailableFreeSpace / 1GB, 2)
+  Write-Host "Unity project drive free space: $freeGb GB"
+  if($freeGb -lt 10){Write-Warning "Low disk space for Unity import/build ($freeGb GB); recommend at least 10 GB available."}
+ }catch { Write-Warning "Could not determine Unity project drive space: $_" }
  if($SelfTest){
   $summary.status='SELFTEST_PASS';$summary.notes+= 'Only file preflight checked; no Unity Player execution.'
   $exit=0
