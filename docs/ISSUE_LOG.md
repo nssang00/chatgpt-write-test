@@ -294,3 +294,20 @@ callbacks still have unmet release gates. Keep PR #7 Draft, main intact.
 - Runner still rejects any actual `security-UNTRUSTED-CALL-EXECUTED`
   native-side checkpoint. No-bridge/no-response only passes for an iframe
   whose separate document demonstrably executed.
+
+## 2026-10-13 validation rollup — security and CLI
+
+- **NW-019 PARTIAL VERIFIED**: real native request/response sender gating
+  and side-effectful wrong-file iframe test, all 3 engines CI
+  38342611291 PASS on source 022c519e. New ready-handshake source
+  4ff17af2 requires an actually loaded child; CI 38343177515 tracks.
+  Remaining: frame-owned replies, same-URL frames, page navigation and
+  deliberate forged response tests. **NW-014 remains OPEN/P0.**
+- **NW-020 VERIFIED for installed-SDK plugin build only**: native
+  `xytron plugin build` executed with real generated DLL/SO on
+  Windows/Linux CI 38343029145 PASS. SDK restore/run/publish not done.
+- **NW-021 RESOLVED**: CLI security-test argument corrected; independent
+  Windows/Linux CLI regression and real plugin build pass, run 38343029145.
+- **NW-022 code implemented, negative E2E rerun pending**: WebView2
+  child-frame denial not posted to the main page's pending Promise;
+  38343177515 tracks stronger browser test.

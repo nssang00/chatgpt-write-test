@@ -54,3 +54,13 @@ The SDK is still supplied explicitly. `xytron restore` (download),
 automatic CLI plugin SDK discovery, signing, C ABI runtime loading,
 `xytron run` and `xytron publish` are separate open deliverables.
 Do not confuse this build command with application deployment.
+
+### Verified `xytron plugin build`
+
+[Windows + Ubuntu CLI run 38343029145](https://github.com/nssang00/chatgpt-write-test/actions/runs/38343029145)
+passes all commands, including SDK installation and the **native xytron
+plugin build command** that configures and compiles an actual DLL/SO.
+The first CLI test failed because a semicolon in a CMake test argument was
+split into multiple positional arguments (NW-021); after replacing the
+probe with an ampersand, the test passed on both OS. An installed SDK
+is required; this is not `xytron restore/run/publish`.

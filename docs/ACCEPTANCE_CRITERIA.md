@@ -23,6 +23,21 @@ Plugin SDK-only target is insufficient. See [RELEASE_SCOPE_A.md](RELEASE_SCOPE_A
 | Internal Module→BridgeRuntime qualified call | In-process stub handlers + unload-generation rejection PASS; actual Python/.NET transport missing | Core 38336744611 both OS |
 | CLI embedded feature Module scaffolds | cpp/python/csharp source and manifest updates PASS; full CLI app execution missing | CLI 38336744554 both OS |
 
+## New incremental coverage (not full release gates)
+
+- **Actual unauthorized frame negative scenario:** an independently loaded
+  local iframe attempts native `test.checkpoint`. The runner fails on any
+  native side effect, and newer tests require the child script's ready
+  message before a timeout can count. Initial complete
+  [Linux CEF/Windows CEF/WebView2 run 38342611291](https://github.com/nssang00/chatgpt-write-test/actions/runs/38342611291)
+  PASS; latest handshake
+  [38343177515](https://github.com/nssang00/chatgpt-write-test/actions/runs/38343177515)
+  revalidates. All-method/iframe/navigation authorization remains BLOCKER.
+- **CLI generated DLL/SO via command:** `xytron plugin build NAME --sdk PREFIX`
+  PASSED Windows/Linux with real installed Core SDK:
+  [CLI 38343029145](https://github.com/nssang00/chatgpt-write-test/actions/runs/38343029145).
+  Core-only SDK; run/restore/publish still BLOCKER.
+
 ## New compulsory Scope A1 gates
 
 | Gate | Definition of done | Status |

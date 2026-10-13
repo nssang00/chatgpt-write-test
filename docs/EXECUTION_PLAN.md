@@ -86,3 +86,25 @@ Module scaffolds PASS: 38336744554. Installed Core consumer PASS:
 38336744625. Distinguish **unit/positive smoke** from unmet full
 negative-security, real language-host, desktop shell and distribution
 gates. NW-014 and NW-015 stay open in ISSUE_LOG.md.
+
+## 2026-10-13 workstream follow-up
+
+1. Security (P0): `022c519e` added real negative untrusted **child
+   local-file iframe** JS→native side-effect E2E, plus CEF/WebView2
+   untrusted renderer response-envelope filtering. `7bccf114` prevents
+   returning a child WebView2 denial to the top-level document;
+   `4ff17af2` requires iframe-ready. One all-engine negative run
+   [38342611291](https://github.com/nssang00/chatgpt-write-test/actions/runs/38342611291)
+   passed, but NW-014 is NOT resolved. Next: full method/capability
+   policy, canonical trusted asset roots, same-URL frame and navigation,
+   negative iframe/remote/method/object tests across three engines.
+2. CLI (parallel): `xytron plugin build ID --sdk PREFIX` now invokes
+   CMake and **actually builds** DLL/SO, run 38343029145 PASSED both
+   OS; invalid path test fixed as NW-021. Next: SDK restore/download,
+   generated standalone host/run, package/publish (required user gate).
+3. Module/Backend (parallel): Core Module Registry→BridgeRuntime exists;
+   next wire real C++ Plugin callbacks and Python/.NET out-of-process
+   language hosts, return typed errors and authenticated permissions
+   for all module-to-module traffic.
+4. All changes remain on `nativeweb/autonomous-integration`,
+   PR #7 Draft; no `main` merge or release without explicit approval.

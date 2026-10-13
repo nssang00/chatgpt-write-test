@@ -4,6 +4,43 @@
 
 > 목표: 이전 대화를 읽지 않아도 이 저장소만으로 현재 방향, 완료 상태, 다음 작업을 파악하고 바로 개발을 계속할 수 있어야 한다.
 
+## 2026-10-13 latest security/CLI workstream (read first)
+
+- Development branch `nativeweb/autonomous-integration`; [Draft PR #7](https://github.com/nssang00/chatgpt-write-test/pull/7). **No main merge or release.**
+- **Native document security:** `022c519e` gates CEF and WebView2
+  renderer-originated REQUEST, RESPONSE/ERROR envelopes, preventing a
+  second document from injecting native calls or forged responses. The
+  security browser fixture now loads a **separate local HTML iframe**,
+  actually tries an unauthorized native checkpoint and fails if the
+  forbidden native side effect appears. The child signals ready before
+  attempted invocation, so a missing iframe cannot count as passing.
+  First three-engine real-browser negative fixture **PASS**:
+  [E2E 38342611291](https://github.com/nssang00/chatgpt-write-test/actions/runs/38342611291).
+  Later `7bccf114` prevents WebView2's top-level-only response API from
+  returning a child denial to the wrong Promise, and `4ff17af2`
+  adds the required iframe-ready handshake. Latest follow-up:
+  [E2E 38343177515](https://github.com/nssang00/chatgpt-write-test/actions/runs/38343177515).
+- **Native `xytron plugin build`:** C++ plugin uses an *already installed*
+  Core SDK (`--sdk PREFIX`) and actually builds Windows DLL / Linux SO
+  by invoking CMake, with validated SDK path arguments. C++11 CLI tests
+  and generated binary build passed on both systems:
+  [CLI 38343029145](https://github.com/nssang00/chatgpt-write-test/actions/runs/38343029145).
+  The CMake semicolon-splitting test typo (NW-021) is resolved; follow-up
+  [CLI 38343176992](https://github.com/nssang00/chatgpt-write-test/actions/runs/38343176992).
+- Baseline Core 26/26, installed Core SDK and existing real plugins remain
+  green. Security docs and scope matrix updated to track **one negative
+  frame side-effect test**, not a finished policy.
+- **NW-014 stays P0 release blocking:** real method-grant authorization
+  and trust root/path canonicalization, navigation epoch, WebView2
+  same-URL frame identity, safe native object handles, and remaining
+  cross-engine negative tests are NOT COMPLETE. Also `xytron restore/run/publish`,
+  Python/.NET real language hosts, native app shell/menus and Plugin→JS
+  callbacks remain unimplemented product scope.
+- Next independent tracks: full caller/permission binding at dispatch,
+  frame-specific WebView2 controls, actual Module→language-host transport,
+  CLI restore/run + app shell. Plugin build is no longer a totally
+  unimplemented command, but is only a supplied-SDK compile step.
+
 ## 2026-10-13 latest verified source checkpoint (read first)
 
 - Development branch `nativeweb/autonomous-integration` / Draft PR #7.

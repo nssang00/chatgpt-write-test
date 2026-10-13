@@ -62,3 +62,21 @@ request/response intake rejects all untrusted envelope types; this also
 protects the C++→JS pending response path from arbitrary child responses.
 This is additive coverage, not full same-file/same-origin WebView2 frame
 proof, local path canonicalization, navigation race or method grant policy.
+
+### Negative actual browser E2E: first working slice
+
+[CI 38342611291](https://github.com/nssang00/chatgpt-write-test/actions/runs/38342611291):
+Linux CEF, Windows CEF and Windows WebView2 PASS with an independent
+local-file iframe that attempts a real native-side checkpoint; the
+runner fails if the forbidden checkpoint is observed. The added
+`nativeweb-security-probe-ready` handshake in `4ff17af2` prevents a
+missing child document from falsely passing on timeout; corresponding
+CI [38343177515](https://github.com/nssang00/chatgpt-write-test/actions/runs/38343177515).
+CEF and WebView2 also filter renderer-originated responses/error messages,
+not only requests, using native engine source metadata. WebView2 must
+not send denied child responses to the main page (NW-022).
+
+This is **limited coverage**, not final security completion: same-URL
+iframes, native object call authorization, source/canonical resource trust,
+per-method grant revocation, backend-to-backend calls, navigation races
+and remote network pages still have open negative tests in NW-014.

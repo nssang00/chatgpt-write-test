@@ -128,3 +128,17 @@ workaround; owner or next action; retest link. Do not silently retry flakiness.
 The unit tests reject invalid methods, wrong main frame/source and stale
 module generations, but these tests alone are **not evidence** that
 a malicious real page/frame could not trigger a native side effect.
+
+## 2026-10-13 additional security negative E2E + actual CLI plugin build
+
+| Test ID | Behavior | Automated evidence | Remaining |
+| --- | --- | --- | --- |
+| A1-SEC-08 | Cross-file child iframe tries native side-effectful method; trusted parent only passes if the unauthorized native checkpoint does NOT appear | Actual CEF Linux/Windows and WebView2 Windows: [38342611291](https://github.com/nssang00/chatgpt-write-test/actions/runs/38342611291) PASS; stronger iframe-ready handshake in [38343177515](https://github.com/nssang00/chatgpt-write-test/actions/runs/38343177515) | One case only; remote top-level navigation, same-URL iframe, canonical app roots and method rights pending |
+| A1-SEC-09 | Renderer responses/errors are subject to the engine-sourced sender document gate; WebView2 child denial must not be posted to main's Promise | Source-level check in `cef_backend.cpp` / `webview2_backend.cpp` + normal browser E2E | Forged native-response browser negative test not yet implemented |
+| A1-CLI-07 | `xytron plugin build camera --sdk PREFIX` compiles the generated C++ DLL/SO with installed Core SDK on Windows/Linux | [CLI 38343029145](https://github.com/nssang00/chatgpt-write-test/actions/runs/38343029145) PASS Windows + Linux (CLI invocation + CMake build) | Automatic SDK restore, app build/publish and signing not implemented |
+| A1-CLI-08 | Unsafe SDK-prefix shell injection input rejected; invalid plugin ID denied | [CLI 38343029145](https://github.com/nssang00/chatgpt-write-test/actions/runs/38343029145) PASS | Future arbitrary plugin CMake project sandbox not implemented |
+
+**Interpretation:** Passing A1-SEC-08 does NOT close release security
+A1-SEC-01..07. In WebView2 a child without injected bridge API is safe,
+but its lack of a structured permission response is not equivalent to
+engine-verified origin+frame capability enforcement.
