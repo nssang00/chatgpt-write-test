@@ -38,7 +38,13 @@ jobs:
         shell: pwsh
         run: |
           $dll='build-wv2-pilot/Release/CompanyWebView2OverlayPilot.dll'
-          $exports=(& dumpbin /exports $dll | Out-String)
+          $vswhere=Join-Path ([Environment]::GetFolderPath('ProgramFilesX86')) 'Microsoft Visual Studio/Installer/vswhere.exe'
+          $vs=(& $vswhere -latest -products '*' -property installationPath | Select-Object -First 1)
+          if(-not $vs){throw 'Visual Studio installation missing'}
+          $tools=(Get-ChildItem (Join-Path $vs 'VC/Tools/MSVC') -Directory | Sort-Object Name -Descending | Select-Object -First 1)
+          $dumpbin=Join-Path $tools.FullName 'bin/Hostx64/x64/dumpbin.exe'
+          if(-not(Test-Path $dumpbin)){throw "dumpbin.exe missing: $dumpbin"}
+          $exports=(& $dumpbin /exports $dll | Out-String)
           foreach($n in @('WV2Pilot_Open','WV2Pilot_SetBounds','WV2Pilot_SetVisible','WV2Pilot_NotifyParentMoved','WV2Pilot_GetState','WV2Pilot_GetLastError','WV2Pilot_GetPongCount','WV2Pilot_Close')) {
             if($exports -notmatch $n){throw "Missing export $n"}
           }
@@ -49,7 +55,20 @@ jobs:
           "- Native x64 DLL compiled and C ABI exports checked" >> $env:GITHUB_STEP_SUMMARY
           "- Unity C# API static contract only; Unity 2022.3 player execution NOT checked" >> $env:GITHUB_STEP_SUMMARY
           "- HWND cross-thread parenting, focus, IME, z-order, resize/DPI, reload and teardown need real Windows player Stage2" >> $env:GITHUB_STEP_SUMMARY
+      - name: Prepare safe standalone Unity pilot drop-in
+        shell: pwsh
+        run: |
+          $root='dist/WebView2UnityPilot-v58.5.1'
+          New-Item -ItemType Directory -Force -Path "$root/Assets/Plugins/x86_64","$root/Assets/Scripts" | Out-Null
+          Copy-Item 'build-wv2-pilot/Release/CompanyWebView2OverlayPilot.dll' "$root/Assets/Plugins/x86_64/"
+          Copy-Item 'Prototypes/WebView2Overlay/UnityPilot/Unity/WebView2OverlayUnityPilot.cs' "$root/Assets/Scripts/"
+          Copy-Item 'Prototypes/WebView2Overlay/UnityPilot/README.md' "$root/README_FIRST.md"
+          Get-ChildItem $root -Recurse -File | ForEach-Object {
+            $hash=(Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+            "$hash  $($_.FullName.Substring((Resolve-Path $root).Path.Length + 1).Replace('\','/'))"
+          } | Set-Content "$root/SHA256SUMS.txt"
       - uses: actions/upload-artifact@v4
         with:
-          name: webview2-overlay-v58-5-1-unity-pilot-x64-dll
-          path: build-wv2-pilot/Release/CompanyWebView2OverlayPilot.dll
+          name: webview2-overlay-v58-5-1-unity-pilot-dropin
+          path: dist/WebView2UnityPilot-v58.5.1/
+          if-no-files-found: error
