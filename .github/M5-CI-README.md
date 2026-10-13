@@ -41,3 +41,9 @@ The ChatGPT GitHub connector can write text files but cannot push the binary ZIP
 After the general run, review the uploaded `m5-basic-render-and-ol1010-*` artifact. The CPU hotspot profiler still runs after the smoke gate passes even if the performance comparison fails, to diagnose excessive costs. An unsuccessful render gate always blocks performance measurements.
 
 For real RTX results, register a Windows x64 self-hosted runner with custom label `m5-gpu`, installed Chrome/Edge, current GPU driver, and an interactive user session (headful Chrome). Then manually run **M5 GPU Layer Feature Bench**. No hosted software rasterizer result is a substitute for a real NVIDIA benchmark.
+
+## Visibility and private source caution
+
+**This GitHub repository is PUBLIC.** Uploading `m5-ci/project.zip` to it publishes the M5 renderer implementation, fixtures, and test code. Only upload if publication is intentional. GitHub Actions artifacts/screenshots may also be visible according to repository permissions.
+
+If M5 source must remain private, do NOT commit `m5-ci/project.zip` to this public repo. The Actions workflows also accept a repository Actions **secret** named `M5_PROJECT_ARCHIVE_URL` containing a stable HTTPS direct-download URL to an access-controlled ZIP (for example a time-limited signed URL); the URL is supplied to the runner without putting it into the repo text. Use **Actions -> Run workflow** with `project_archive_url` left empty. GitHub does not manage renewal for expiring URLs, and if the runner cannot download the ZIP the test fails. For stronger ongoing isolation, move this CI to a private repository and store the archive there.
