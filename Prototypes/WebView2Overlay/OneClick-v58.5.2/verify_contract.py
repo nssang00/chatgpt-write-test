@@ -15,7 +15,7 @@ for x in ['g_acks.fetch_add(1)','WV2Pilot_GetAckCount','probe-ack','COINIT_APART
  assert x in cpp,x
 for x in ['WV2Pilot_GetFixtureEchoAckCount','WV2Pilot_GetManualEchoAckCount','WV2Pilot_GetEchoRejectedCount','wv2echo::Parse(message,wv2echo::kRequest','wv2echo::Parse(message,wv2echo::kAck','g_pendingEcho.erase(it)','sendEcho(\'manual\',input.value)','sendEcho(\'auto\',fixture)','echo-return-v1|','원문과 ']:
  assert x in cpp, 'Native Echo code missing: '+x
-for x in ['\uC548\uB155\uD558\uC138\uC694','\U0001F600','inline bool Parse','tmp.payload.size()>4096','IsFixture']:
+for x in [r'\uC548\uB155\uD558\uC138\uC694',r'\U0001F600','inline bool Parse','tmp.payload.size()>4096','IsFixture']:
  assert x in header, 'UTF-16 protocol must include '+x
 assert 'Native UTF-16 EchoProtocol PASS' in echo_test
 assert 'add_test(NAME utf16-native-echo' in cmake and '/utf-8' in cmake
