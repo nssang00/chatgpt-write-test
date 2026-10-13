@@ -503,3 +503,25 @@ callbacks still have unmet release gates. Keep PR #7 Draft, main intact.
   normal CMake build-directory binaries, not the declared RID entry;
   publish/install/manifest validation is required before PluginManager
   packaged lazy loading. Do not claim plugin.json entry path is deployed.
+
+## 2026-10-14 definitive cross-platform CI evidence for binding slice (source c2b4dd5a)
+
+- **[Browser plugin E2E 38481853653](https://github.com/nssang00/chatgpt-write-test/actions/runs/38481853653):**
+  Linux CEF, Windows CEF, Windows WebView2 **ALL PASS** (legacy
+  JS->Plugin object lifecycle/negative frame regression preserved;
+  not a new ESM named-import or managed-language host E2E).
+- **[Core Regression 38481853664](https://github.com/nssang00/chatgpt-write-test/actions/runs/38481853664):**
+  C++11 Linux+Windows PASS, including new actual binary
+  `plugin.xytron_function_binding` and old NATIVEWEB_PLUGIN cases.
+- **[CLI 38481853765](https://github.com/nssang00/chatgpt-write-test/actions/runs/38481853765):**
+  Windows+Linux PASS, including installed SDK and loader/invocation of
+  the CLI-generated plugin DLL/SO with plugin.json descriptor.
+- **[Python/C# exports 38481853706](https://github.com/nssang00/chatgpt-write-test/actions/runs/38481853706):**
+  Python local decorator and .NET 8 Reflection PASS Windows+Linux.
+- **[Installed Core Consumer 38481853757](https://github.com/nssang00/chatgpt-write-test/actions/runs/38481853757):**
+  Windows+Linux PASS; Core SDK only.
+
+A1-BIND-01 B0 is verified. A1-BIND-06/07 are *local metadata only*
+and need actual host IPC/JS callbacks. NW-014 P0 native permissions,
+class/properties, PluginManager, native ES module imports, language
+hosts, app shell and full publish remain unfinished.
