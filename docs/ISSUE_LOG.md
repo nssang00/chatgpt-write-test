@@ -185,3 +185,16 @@ Issues should be appended, not silently discarded. A blocked task does not block
   cancellation/worker lifetime handling before connecting unloadable ABI
   method handlers. Real JS/browser, Python/.NET hosts and native
   authorization integration remain pending.
+
+## NW-018 Separate CEF/WebView2 static Core integration misses new ModuleRegistry TU — FIX SUBMITTED
+- First browser E2E regression after Module→BridgeRuntime routing addition:
+  Windows WebView2 CI run 38336528363 fails LNK2019 unresolved
+  `ModuleRegistry::ModuleRegistry`, `registerModule`, `generation`,
+  `clear` when linking bridge and multi-webview executables.
+- Core Regression run 38336528298 and CLI run 38336528323 passed Linux/Windows;
+  cause is source-list divergence, NOT native ABI break.
+- Fix: add `src/core/module_registry.cpp` to both independent static core
+  targets in `tests/integration/webview2/CMakeLists.txt` and
+  `tests/integration/cef/CMakeLists.txt`.
+- Verify all three actual browsers again before declaring resolved.
+  Follow-up: centralize reusable Core source lists to avoid drift.
