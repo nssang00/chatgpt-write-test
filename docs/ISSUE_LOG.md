@@ -240,3 +240,19 @@ This evidence is about the **implemented technical slices**, not
 NativeWeb product-release completion. CLI run/restore/publish, shell/menu,
 WPF/MFC/.NET host controls, Python/C# real backend and Plugin→JS
 callbacks still have unmet release gates. Keep PR #7 Draft, main intact.
+
+## NW-019 Untrusted renderer result forgery and child frame negative regression — CI PENDING
+- Earlier local-document gate checked JS->native Requests but forwarded CEF
+  `nativeweb.call.response` and WebView2 `response/error/event` envelopes
+  from any renderer document. This permitted an untrusted sender to inject a
+  reply toward a Core pending native->JS call (subject to guessing IDs).
+- Fix: gate **all incoming renderer envelope types** using engine-owned
+  sender metadata before forwarding to `BridgeRuntime`. For CEF, route
+  `permission_denied` to the actual child CefFrame rather than its parent.
+- Real browser E2E now loads an independent sibling local file in a child
+  frame and attempts a side-effectful native `test.checkpoint`. It must not
+  appear in stdout; a trusted parent must confirm the negative checkpoint.
+- IMPORTANT: a timeout/no bridge in the WebView2 child is not proof of a
+  structured permission_denied response; frame-specific backend event
+  support is a separate remaining security test. This is **one negative
+  test case**, not blanket closure of NW-014.

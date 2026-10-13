@@ -338,10 +338,11 @@ HRESULT WebView2Backend::installHandlers()
 
                         const Any message = jsonToAny(utf8);
                         const BridgeMessage parsed = parseBridgeMessage(message);
-                        if (parsed.type == BridgeMessageType::Request)
                         {
-                            // Get the source from WebView2 event metadata; JS
-                            // must not be able to supply its own identity.
+                            // ALL renderer-originated envelope types must
+                            // come from the trusted page, including responses
+                            // to C++ -> JS calls (not just JS requests).
+                            // Use engine event source, not JS fields.
                             LPWSTR sender = 0;
                             LPWSTR topLevel = 0;
                             const HRESULT senderResult = args->get_Source(&sender);
@@ -359,11 +360,14 @@ HRESULT WebView2Backend::installHandlers()
                                     trustedEntryUrl_, senderUrl, true) ||
                                 senderUrl != mainUrl)
                             {
-                                postBridgeMessageOnUi(
-                                    makeErrorMessage(
-                                        parsed.requestId,
-                                        Error("permission_denied",
-                                              "This document is not trusted to invoke native APIs")));
+                                if (parsed.type == BridgeMessageType::Request)
+                                    postBridgeMessageOnUi(
+                                        makeErrorMessage(
+                                            parsed.requestId,
+                                            Error("permission_denied",
+                                                  "This document is not trusted to invoke native APIs")));
+                                // Never forward forged native call responses,
+                                // errors or events from untrusted documents.
                                 return S_OK;
                             }
                         }

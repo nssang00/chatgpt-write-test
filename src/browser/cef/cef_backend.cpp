@@ -454,6 +454,12 @@ bool CefBackend::onProcessMessage(
 
     if (messageName == "nativeweb.call.response")
     {
+        // Renderer -> native responses are untrusted IPC too. A child
+        // frame/remote page cannot forge an answer to WebView::execute().
+        if (!frame || !trustedEntryDocument(
+                trustedEntryUrl_, frame->GetURL().ToString(), frame->IsMain()))
+            return true;
+
         const RequestId requestId =
             stringToId(list->GetString(0).ToString());
 
@@ -492,11 +498,20 @@ bool CefBackend::onProcessMessage(
     if (!frame || !trustedEntryDocument(
             trustedEntryUrl_, frame->GetURL().ToString(), frame->IsMain()))
     {
-        postBridgeMessage(
-            makeErrorMessage(
-                requestId,
-                Error("permission_denied",
-                      "This document is not trusted to invoke native APIs")));
+        // Return denial to the *originating* frame, not the main page.
+        // It must not reach BridgeRuntime, and must not strand a child's
+        // Promise waiting on a response sent to another document.
+        if (frame)
+        {
+            CefRefPtr<CefProcessMessage> denied =
+                CefProcessMessage::Create("nativeweb.response");
+            CefRefPtr<CefListValue> deniedArgs = denied->GetArgumentList();
+            deniedArgs->SetString(0, idToString(requestId));
+            deniedArgs->SetBool(1, false);
+            deniedArgs->SetString(2, "permission_denied");
+            deniedArgs->SetString(3, "Native APIs are unavailable in this frame");
+            frame->SendProcessMessage(PID_RENDERER, denied);
+        }
         return true;
     }
 

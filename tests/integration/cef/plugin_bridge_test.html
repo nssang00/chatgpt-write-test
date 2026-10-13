@@ -30,6 +30,35 @@
       factoryError = String(error).includes("invalid_factory_arguments");
     }
     ensure(factoryError, "invalid factory arguments did not reject");
+    // Actual second local document (not the trusted entry). Try to call
+    // the real native checkpoint from a child frame. There must be no
+    // native-side side effect even if the engine injects the bridge API.
+    const securityFrame = document.createElement("iframe");
+    securityFrame.src = "plugin_untrusted_child.html";
+    securityFrame.style.display = "none";
+    const childResult = new Promise(resolve => {
+      const timer = setTimeout(() => {
+        window.removeEventListener("message", onChildMessage);
+        resolve("no-response");
+      }, 7000);
+      function onChildMessage(event) {
+        if (event.source !== securityFrame.contentWindow ||
+            !event.data || event.data.kind !== "nativeweb-security-probe")
+          return;
+        clearTimeout(timer);
+        window.removeEventListener("message", onChildMessage);
+        resolve(event.data.outcome);
+      }
+      window.addEventListener("message", onChildMessage);
+    });
+    document.body.appendChild(securityFrame);
+    const securityOutcome = await childResult;
+    securityFrame.remove();
+    ensure(securityOutcome === "denied" ||
+           securityOutcome === "no-bridge" ||
+           securityOutcome === "no-response",
+           "untrusted child frame reached native API: " + securityOutcome);
+    await xytron.test.checkpoint("security-untrusted-frame-blocked");
     await xytron.test.checkpoint("plugin-js-verified");
 
     ensure(await xytron.test.plugin.busy() === true,

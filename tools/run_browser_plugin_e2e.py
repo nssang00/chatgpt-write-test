@@ -30,7 +30,8 @@ def main():
                 else 'libnativeweb_plugin_browser_fixture.so')
     executable = bin_dir / exe_name
     plugin = bin_dir / lib_name
-    for path in (html, executable, plugin):
+    child = project / 'tests/integration/cef/plugin_untrusted_child.html'
+    for path in (html, child, executable, plugin):
         if not path.is_file():
             parser.error('Required E2E input missing: ' + str(path))
 
@@ -71,12 +72,14 @@ def main():
         return 124
 
     print(output, end='')
-    markers = ('checkpoint: plugin-js-verified',
+    markers = ('checkpoint: security-untrusted-frame-blocked',
+               'checkpoint: plugin-js-verified',
                'checkpoint: plugin-busy-verified',
                'checkpoint: plugin-unloaded',
                'checkpoint: plugin-e2e-complete')
     missing = [m for m in markers if m not in output]
-    if process.returncode != 0 or missing or 'bridge-fail:' in output:
+    forbidden = 'checkpoint: security-UNTRUSTED-CALL-EXECUTED' in output
+    if process.returncode != 0 or missing or forbidden or 'bridge-fail:' in output:
         print('Browser E2E failed: exit={}, missing={}'.format(
               process.returncode, ', '.join(missing)), file=sys.stderr)
         return 1

@@ -51,3 +51,14 @@ cases yet for remote page, arbitrary file, navigation, about:blank child
 frames, WebView2 same-URL frame identity, native object authorization or
 per-method grant revocation. The separate NativePermissionPolicy Core
 primitive has not been fully integrated into actual browser dispatch.
+
+## Additional negative actual-browser scenario (NW-019)
+
+The trusted E2E entry now embeds a separate untrusted local-file iframe,
+which attempts to call a real native checkpoint. CI fails if the side-effect
+marker appears. CEF returns a permission_denied message to the originating
+frame, while WebView2 may expose no subframe bridge at all. The host-native
+request/response intake rejects all untrusted envelope types; this also
+protects the C++→JS pending response path from arbitrary child responses.
+This is additive coverage, not full same-file/same-origin WebView2 frame
+proof, local path canonicalization, navigation race or method grant policy.
