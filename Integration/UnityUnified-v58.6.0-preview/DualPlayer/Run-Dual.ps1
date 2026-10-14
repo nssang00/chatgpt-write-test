@@ -117,11 +117,13 @@ try {
   Need (Test-Path -LiteralPath (Join-Path $source 'Runtime\WebView.cs') -PathType Leaf) 'Old OneClick package WebView.cs missing'
   $project=Join-Path $out 'UnityProject'
   foreach($p in @('Assets\Editor','Assets\Scripts','Packages','ProjectSettings')){New-Item -ItemType Directory -Force -Path (Join-Path $project $p) | Out-Null}
-  Copy-Item -LiteralPath $source -Destination (Join-Path $project 'Assets\CompanyWebView') -Recurse
+  # Create and verify the missing UnifiedExperimental directory BEFORE copying sources.
+  # Shared with Windows CI's realistic OneClick Unity Assets assembly fixture.
+  $assembler=Join-Path $root 'DualPlayer\Install-UnifiedManagedSources.ps1'
+  Need (Test-Path -LiteralPath $assembler -PathType Leaf) 'Unified managed-source installer missing from kit'
+  & $assembler -CefPackagePath $source -UnityAssetsDir (Join-Path $project 'Assets') -KitRoot $root
   $runtime=Join-Path $project 'Assets\CompanyWebView\Runtime\UnifiedExperimental'
-  foreach($name in @('UnifiedWebView.cs','CefTextureBackendBridge.cs','WebView2OverlayBackendBridge.cs','UnifiedTextureSceneHost.cs','UnifiedOverlaySceneHost.cs')){
-   Copy-Item -LiteralPath (Join-Path $root ('Runtime\'+$name)) -Destination (Join-Path $runtime $name) -Force
-  }
+  Need (Test-Path -LiteralPath (Join-Path $runtime 'UnifiedWebView.cs') -PathType Leaf) 'Unified facade copy failed'
   Copy-Item -LiteralPath (Join-Path $root 'DualPlayer\BuildUnifiedDualPlayer.cs') -Destination (Join-Path $project 'Assets\Editor')
   Copy-Item -LiteralPath (Join-Path $root 'DualPlayer\UnifiedDualPlayerEvidence.cs') -Destination (Join-Path $project 'Assets\Scripts')
   '{"dependencies":{"com.unity.ugui":"1.0.0","com.unity.modules.jsonserialize":"1.0.0"}}' | Set-Content -LiteralPath (Join-Path $project 'Packages\manifest.json') -Encoding UTF8
