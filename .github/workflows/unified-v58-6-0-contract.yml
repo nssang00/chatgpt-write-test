@@ -25,6 +25,16 @@ jobs:
         run: |
           dotnet run --configuration Release --project Integration/UnityUnified-v58.6.0-preview/Tests/UnifiedContract.Tests.csproj
           if($LASTEXITCODE -ne 0){throw 'Unified C# contract failed'}
+      - name: Compile Unity Editor/Standalone host conditions against Unity signature stubs
+        shell: pwsh
+        run: |
+          $p='Integration/UnityUnified-v58.6.0-preview/Validation/UnityHostCompile.csproj'
+          dotnet build $p --configuration Release --nologo -p:DefineConstants=UNITY_EDITOR
+          if($LASTEXITCODE -ne 0){throw 'Unity Editor host compilation failed'}
+          dotnet clean $p --configuration Release --nologo
+          if($LASTEXITCODE -ne 0){throw 'Unity conditional clean failed'}
+          dotnet build $p --configuration Release --nologo -p:DefineConstants=UNITY_STANDALONE_WIN
+          if($LASTEXITCODE -ne 0){throw 'Unity Standalone Windows host compilation failed'}
       - name: Install pinned Microsoft WebView2 native SDK
         shell: pwsh
         run: |
