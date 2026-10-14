@@ -1,7 +1,9 @@
 # Xytron app://, file:// and extensible resource protocols
 
-Status: **first engine-neutral Core foundation implemented; browser custom
-scheme registration remains planned** (2026-10-14). The primary product
+Status: **CEF Linux/Windows and WebView2 Windows engine-backed app://
+resources verified in real-browser E2E** (source d540df4a, 2026-10-14).
+Full native-API authorization, packaged CLI run/publish, explicit file
+access and custom user-defined schemes remain open. The primary product
 is a standalone desktop app; embedded controls use the same policy.
 
 ## Product URL model (owner direction)
@@ -18,7 +20,7 @@ is a standalone desktop app; embedded controls use the same policy.
 - **Native Module registration != native invoke capability.** Permission
   must be checked per original frame/origin/app, method and object handle.
 
-## Phase U0: implemented C++11 Core-only resource catalog
+## Phase U0: implemented C++11 Core resource catalog
 
 \`nativeweb::AppResourceBundle\` in \`include/nativeweb/app_resources.hpp\`
 stores explicit byte resources and MIME types under canonical
@@ -35,11 +37,12 @@ case, queries, fragments, percent-encoding, dot segments, backslashes,
 empty path segments, userinfo/ports/control bytes and duplicate keys.
 It never directly reads arbitrary local files. Asset bodies are bounded
 at 16 MiB each. Core CTest \`core.app_resources\` covers positive and
-negative cases. This is **not yet a renderable app:// WebView URL**;
-WebView::create currently accepts regular source URLs and both browser
-engines still have an exact-file trust gate.
+negative cases. This resource catalog is now served through actual CEF/WebView2 app://
+engine adapters when the host supplies the bundle via WebViewOptions.
+The bridge checks an exact canonical app:// entry as well as the legacy
+file:/// entry; it does NOT yet perform full per-method authorization.
 
-## Phase U1/U2: native browser bindings (release blockers)
+## Phase U1/U2: implemented native browser resource handlers
 
 1. **CEF:** register the standard secure \`app\` scheme in
    \`CefApp::OnRegisterCustomSchemes\` for browser and renderer processes;
@@ -90,7 +93,7 @@ callback/Value adapter work separately, not this URL loader's security.
   app:// as the public origin; genuine app:// requires custom scheme
   environment registration and an actual resource response provider.
 
-## U1 CEF integration — source submitted, CI pending
+## U1 CEF integration — 3-engine source verification complete
 
 The CEF app used by NativeWeb registers `app` as a standard, secure
 custom scheme **in all CEF subprocesses**. Each CEF WebView with an
@@ -107,7 +110,7 @@ The WebView2 adapter does **not** yet serve app://; its normal file://
 workflow is unchanged. No CLI default change until both adapters
 have a real end-to-end check. See NW-033.
 
-## U2 WebView2 custom app scheme — source submitted, CI pending
+## U2 WebView2 custom app scheme — Windows real E2E verified
 
 WebView2 environment now receives `ICoreWebView2EnvironmentOptions4`
 with `app` as an authority-bearing secure custom scheme before
@@ -137,7 +140,7 @@ content and missing-resource status 404. The existing JS-to-native
 plugin lifecycle and untrusted same-entry frame cases are still
 required as part of the same scenario.
 
-## Additional browser resource semantics tests
+## Additional browser resource semantics tests — verified
 
 For the packaged app:// E2E, both engines now load a complete
 in-memory UI fixture: HTML, **relative external JS**, **relative
@@ -162,3 +165,41 @@ remain unimplemented, so the generator does **not** yet mount the
 directory in a real desktop executable. The eventual runner must
 read/validate resources, include only declared packaged bytes and use
 the same isolated AppResourceBundle/engine APIs.
+
+## 2026-10-14 definitive U0/U1/U2 app:// verification (source d540df4a)
+
+The **real packaged \`app://\` resource protocol** is now implemented on
+**Linux CEF, Windows CEF and Windows WebView2**, including:
+- Explicit C++11 in-memory \`AppResourceBundle\` with strict canonical
+  URLs, MIME types, duplicate rejection, 16 MiB per asset / 64 MiB per
+  bundle; snapshot at \`WebView::create\` prevents caller mutation races.
+- CEF secure/standard custom scheme, per-WebView isolated request
+  context and scheme factory; WebView2 secure authority-bearing custom
+  environment scheme and byte-stream \`WebResourceRequested\` responses.
+- **Real browser E2E** serves HTML + relative JS/CSS/SVG assets, checks
+  execution and MIME, Fetch success / undeclared asset 404, and denies
+  reading private bytes from \`app://camera\` in a
+  \`app://desktop\` page. Legacy exact-entry \`file://\` UI and
+  JS/native plugin object lifecycle regressions remain tested.
+- \`xytron new desktop\` CLI manifests for C++/Python/C# Main backends
+  declare \`ui.entry=app://desktop/index.html\` and \`ui.resources=ui\`.
+  This is **scaffolding only**; \`xytron run/build/publish\` and a
+  packaged app shell remain unimplemented.
+
+**All-green source and CI**
+- [Actual 3-engine browser E2E #38525221064](https://github.com/nssang00/chatgpt-write-test/actions/runs/38525221064):
+  Linux CEF, Windows CEF, Windows WebView2 PASS (both legacy file://
+  plugin E2E and packaged app:// resource lifecycle E2E).
+- [C++11 Core Regression #38525221058](https://github.com/nssang00/chatgpt-write-test/actions/runs/38525221058):
+  Windows and Ubuntu PASS.
+- [Native CLI #38525221109](https://github.com/nssang00/chatgpt-write-test/actions/runs/38525221109):
+  Windows and Ubuntu PASS, including new generated manifest declaration.
+- [Installed Core SDK #38525221089](https://github.com/nssang00/chatgpt-write-test/actions/runs/38525221089):
+  Windows and Ubuntu PASS (Core-only, not engine-inclusive distribution).
+
+**Not release-complete:** NW-014 **P0** native per-method, original frame,
+navigation and native-object grants; file:// user-approved file picker
+and filesystem confinement; late/duplicate declared custom scheme
+registration; app resource bundle packaging/restore; actual desktop
+shell, \`xytron run/build/publish\` and full embedded host controls.
+\`app://\` page origin alone is NOT automatic native access.

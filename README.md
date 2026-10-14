@@ -43,6 +43,19 @@ Python/C# export discovery tests pass locally on both OS
 **but actual Python/.NET native JS-host RPC is not implemented**.
 Do not assume `import { Player } from "game"` works yet.
 
+## Packaged UI resources: app:// — real engines verified
+
+CEF on Linux and Windows and WebView2 on Windows now support actual
+`app://desktop/...` packaged in-memory HTML/JS/CSS/image resources,
+not a file:// alias. Asset bundles are canonical-path validated,
+snapshotted at WebView creation, and served with explicit MIME/404.
+[Real browser 3-engine CI #38525221064](https://github.com/nssang00/chatgpt-write-test/actions/runs/38525221064)
+passed relative JS/CSS/SVG, Fetch, private host separation and existing
+file:// plugin lifecycle. `xytron new desktop` declares app:// as
+its default UI URL, but `xytron run/build/publish` are still TODO.
+This does not grant native methods: NW-014 remains P0.
+See [URL protocol status and remaining cases](docs/APP_RESOURCE_PROTOCOLS.md).
+
 ## Main Backend, Modules, Plugins
 
 - **One Main Backend** (cpp/python/csharp) is the application's logical

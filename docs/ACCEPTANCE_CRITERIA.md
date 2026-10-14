@@ -122,3 +122,7 @@ PASS. This is incremental verification, **not first-usable-SDK release acceptanc
   Python/.NET actual hosts, NW-014 full authorization and app runtime.
   `xytron plugin build` output is not yet packaged to plugin.json
   platform `entry` locations (NW-032).
+
+### Real packaged app:// resource E2E — partial product milestone
+
+CEF Linux/Windows and WebView2 Windows use actual app:// environment schemes and handlers; full `app://` plugin browser test and asset semantics 3/3 PASS [#38525221064](https://github.com/nssang00/chatgpt-write-test/actions/runs/38525221064) at source `d540df4a`. Core #38525221058 and CLI #38525221109 both OS PASS. This is **resource serving acceptance**, not a standalone desktop distribution release: NW-014 native auth, file-picking policy and `xytron run/build/publish` remain **BLOCKERS**.

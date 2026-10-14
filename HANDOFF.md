@@ -1,6 +1,45 @@
 # NativeWeb Session Handoff
 
-## 2026-10-14 resource protocols U0 (current)
+## 2026-10-14 definitive U0/U1/U2 app:// verification (source d540df4a)
+
+The **real packaged \`app://\` resource protocol** is now implemented on
+**Linux CEF, Windows CEF and Windows WebView2**, including:
+- Explicit C++11 in-memory \`AppResourceBundle\` with strict canonical
+  URLs, MIME types, duplicate rejection, 16 MiB per asset / 64 MiB per
+  bundle; snapshot at \`WebView::create\` prevents caller mutation races.
+- CEF secure/standard custom scheme, per-WebView isolated request
+  context and scheme factory; WebView2 secure authority-bearing custom
+  environment scheme and byte-stream \`WebResourceRequested\` responses.
+- **Real browser E2E** serves HTML + relative JS/CSS/SVG assets, checks
+  execution and MIME, Fetch success / undeclared asset 404, and denies
+  reading private bytes from \`app://camera\` in a
+  \`app://desktop\` page. Legacy exact-entry \`file://\` UI and
+  JS/native plugin object lifecycle regressions remain tested.
+- \`xytron new desktop\` CLI manifests for C++/Python/C# Main backends
+  declare \`ui.entry=app://desktop/index.html\` and \`ui.resources=ui\`.
+  This is **scaffolding only**; \`xytron run/build/publish\` and a
+  packaged app shell remain unimplemented.
+
+**All-green source and CI**
+- [Actual 3-engine browser E2E #38525221064](https://github.com/nssang00/chatgpt-write-test/actions/runs/38525221064):
+  Linux CEF, Windows CEF, Windows WebView2 PASS (both legacy file://
+  plugin E2E and packaged app:// resource lifecycle E2E).
+- [C++11 Core Regression #38525221058](https://github.com/nssang00/chatgpt-write-test/actions/runs/38525221058):
+  Windows and Ubuntu PASS.
+- [Native CLI #38525221109](https://github.com/nssang00/chatgpt-write-test/actions/runs/38525221109):
+  Windows and Ubuntu PASS, including new generated manifest declaration.
+- [Installed Core SDK #38525221089](https://github.com/nssang00/chatgpt-write-test/actions/runs/38525221089):
+  Windows and Ubuntu PASS (Core-only, not engine-inclusive distribution).
+
+**Not release-complete:** NW-014 **P0** native per-method, original frame,
+navigation and native-object grants; file:// user-approved file picker
+and filesystem confinement; late/duplicate declared custom scheme
+registration; app resource bundle packaging/restore; actual desktop
+shell, \`xytron run/build/publish\` and full embedded host controls.
+\`app://\` page origin alone is NOT automatic native access.
+
+
+## 2026-10-14 resource protocols U0 (historical, superseded by verified U2 checkpoint)
 
 - Owner elected app:// packaged resources as Xytron's target default
   desktop origin, file:// as restricted explicit/legacy, HTTP(S)
@@ -10,10 +49,10 @@
   implement the first C++11 in-memory packaged asset catalog with
   strict app://host/path canonical validation; `core.app_resources`
   tests traversal, duplicates, MIME and cross-scheme default denial.
-- Important: **U0 only, app:// is not yet served by CEF/WebView2**.
+- **HISTORICAL WARNING SUPERSEDED:** CEF/WebView2 now serve app:// and all-three-engine browser CI is green; see top checkpoint.
   Design/next steps in `docs/APP_RESOURCE_PROTOCOLS.md`; NW-033 open.
-  Do NOT switch generated app templates to app:// before both
-  backends have real cross-engine tests. NW-014 security release blocker
+  Both backend tests now pass and CLI new templates declare app://,
+  but actual CLI run/publish is still unavailable. NW-014 security release blocker
   is still open.
 
 

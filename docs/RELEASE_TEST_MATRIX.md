@@ -239,12 +239,12 @@ hosts, app shell and full publish remain unfinished.
 
 | Gate | Expected result | State |
 | --- | --- | --- |
-| A1-URL-00 | Strict app://host/path bytes+MIME bundle; invalid URL/duplicate/cross-scheme denial | **CORE TEST ADDED / CI PENDING** |
-| A1-URL-01 | app://desktop/index.html load and CSS/JS/image relative fetch in all 3 browser engines | NOT IMPLEMENTED |
-| A1-URL-02 | unknown host/asset and cross origin cannot read other packaged resources | NOT IMPLEMENTED |
-| A1-URL-03 | traversal, encoded path, symlink/disallowed file adapters denied | Core negative test added; engine and symlink tests PENDING |
+| A1-URL-00 | Strict app://host/path bytes+MIME bundle; invalid URL/duplicate/cross-scheme denial | **PASS:** Core #38525221058 Win/Linux |
+| A1-URL-01 | app://desktop packaged HTML, relative JS/CSS/SVG, MIME and Fetch in 3 engines (test entry uses plugin_bridge_test.html) | **PASS:** Browser #38525221064 all 3 engines |
+| A1-URL-02 | unknown asset 404 and app://desktop cannot read app://camera private bytes | **PASS for tested 404/cross-origin case:** Browser #38525221064; deeper origin testing pending |
+| A1-URL-03 | traversal/percent-encoded path rejected by canonical in-memory registry; filesystem-backed adapter/symlink policy separate | **CORE PASS** #38525221058; filesystem/symlink and multi-engine malformed-request E2E PENDING |
 | A1-URL-04 | untrusted http(s)/file iframe cannot obtain app API grants | NW-014 / NOT IMPLEMENTED |
-| A1-URL-05 | legacy file:/// entry remains compatible | PRIOR positive browser E2E; rerun on new source |
+| A1-URL-05 | legacy exact-entry file:/// page and plugin lifecycle compatible on 3 engines | **PASS:** Browser #38525221064 |
 | A1-URL-06 | custom schemes validated before engine startup; late/duplicate declaration fails | NOT IMPLEMENTED |
 | A1-URL-07 | explicit native method grants at app:// trusted origin | NW-014 / NOT IMPLEMENTED |
 | A1-URL-08 | callback/plugin revocation on navigation/unload | NOT IMPLEMENTED |
@@ -263,3 +263,44 @@ CEF or WebView2. Do not mark A1-URL-01 as done without real engine CI.
   regressions still pass in both modes
 These are executable source assertions; label PASS only after all
 3 engines succeed on the same commit.
+
+| A1-URL-09 | Resource bundle snapshot and 16 MiB item/64 MiB package bounds | **CORE PASS:** #38525221058 |
+| A1-URL-10 | CLI new desktop cpp/python/csharp declares app:// UI entry; no runtime claim | **CLI PASS:** #38525221109; run/build/publish pending |
+
+## 2026-10-14 definitive U0/U1/U2 app:// verification (source d540df4a)
+
+The **real packaged \`app://\` resource protocol** is now implemented on
+**Linux CEF, Windows CEF and Windows WebView2**, including:
+- Explicit C++11 in-memory \`AppResourceBundle\` with strict canonical
+  URLs, MIME types, duplicate rejection, 16 MiB per asset / 64 MiB per
+  bundle; snapshot at \`WebView::create\` prevents caller mutation races.
+- CEF secure/standard custom scheme, per-WebView isolated request
+  context and scheme factory; WebView2 secure authority-bearing custom
+  environment scheme and byte-stream \`WebResourceRequested\` responses.
+- **Real browser E2E** serves HTML + relative JS/CSS/SVG assets, checks
+  execution and MIME, Fetch success / undeclared asset 404, and denies
+  reading private bytes from \`app://camera\` in a
+  \`app://desktop\` page. Legacy exact-entry \`file://\` UI and
+  JS/native plugin object lifecycle regressions remain tested.
+- \`xytron new desktop\` CLI manifests for C++/Python/C# Main backends
+  declare \`ui.entry=app://desktop/index.html\` and \`ui.resources=ui\`.
+  This is **scaffolding only**; \`xytron run/build/publish\` and a
+  packaged app shell remain unimplemented.
+
+**All-green source and CI**
+- [Actual 3-engine browser E2E #38525221064](https://github.com/nssang00/chatgpt-write-test/actions/runs/38525221064):
+  Linux CEF, Windows CEF, Windows WebView2 PASS (both legacy file://
+  plugin E2E and packaged app:// resource lifecycle E2E).
+- [C++11 Core Regression #38525221058](https://github.com/nssang00/chatgpt-write-test/actions/runs/38525221058):
+  Windows and Ubuntu PASS.
+- [Native CLI #38525221109](https://github.com/nssang00/chatgpt-write-test/actions/runs/38525221109):
+  Windows and Ubuntu PASS, including new generated manifest declaration.
+- [Installed Core SDK #38525221089](https://github.com/nssang00/chatgpt-write-test/actions/runs/38525221089):
+  Windows and Ubuntu PASS (Core-only, not engine-inclusive distribution).
+
+**Not release-complete:** NW-014 **P0** native per-method, original frame,
+navigation and native-object grants; file:// user-approved file picker
+and filesystem confinement; late/duplicate declared custom scheme
+registration; app resource bundle packaging/restore; actual desktop
+shell, \`xytron run/build/publish\` and full embedded host controls.
+\`app://\` page origin alone is NOT automatic native access.
