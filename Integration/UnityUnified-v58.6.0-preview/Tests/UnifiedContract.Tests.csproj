@@ -7,6 +7,7 @@
   <ItemGroup>
     <Compile Include="../Runtime/UnifiedWebView.cs"/>
     <Compile Include="../Runtime/CefTextureBackendBridge.cs"/>
+    <Compile Include="../Runtime/WebView2OverlayBackendBridge.cs"/>
     <Compile Include="LegacyCefCompileStub.cs"/>
     <Compile Include="Program.cs"/>
   </ItemGroup>
