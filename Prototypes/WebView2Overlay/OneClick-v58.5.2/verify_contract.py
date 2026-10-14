@@ -40,4 +40,6 @@ assert "($data.testRevision -eq 'r3')" not in ps, 'Stale r3 wrapper revision mus
 assert '%~dp0.' in (r/'Run-All.cmd').read_text(encoding='utf-8')
 assert (r/'Review-Stage2.cmd').exists(), 'Manual review launcher missing'
 assert (r/'STAGE2_MANUAL_GUIDE_KO.md').exists(), 'Korean Stage2 guide missing'
-print('v58.5.2 r5 Native Echo + Stage2 manual review static contract PASS')
+assert 'PlayerSettings.resizableWindow=true;' in build, 'Windows Player must allow manual resizing'
+assert 'PlayerSettings.fullScreenMode=FullScreenMode.Windowed;' in build, 'Windows Player must start windowed'
+print('v58.5.2 r5 Native Echo + resizable Stage2 manual review static contract PASS')

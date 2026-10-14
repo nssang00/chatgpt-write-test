@@ -36,7 +36,13 @@ public static class WebView2OneClickBuilder {
   PlayerSettings.productName="WebView2 OneClick Pilot";
   PlayerSettings.defaultScreenWidth=1024;
   PlayerSettings.defaultScreenHeight=720;
+  // Stage2 R05/R09 must exercise actual OS window resizing, not only window dragging.
+  // Unity 2022.3 defaults to a fixed-size Standalone Player window.
+  PlayerSettings.fullScreenMode=FullScreenMode.Windowed;
+  PlayerSettings.resizableWindow=true;
   PlayerSettings.runInBackground=true;
+  Debug.Log("[WV2-STAGE2] Window mode="+PlayerSettings.fullScreenMode+
+      ", Resizable Window="+PlayerSettings.resizableWindow);
   var options=new BuildPlayerOptions {
    scenes=new []{scenePath},locationPathName=dest,
    target=BuildTarget.StandaloneWindows64,options=BuildOptions.Development

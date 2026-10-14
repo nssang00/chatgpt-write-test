@@ -12,4 +12,13 @@ assert 'Review-Stage2.ps1' in cmd
 assert 'Send to Native Echo' in guide and '원문과 정확히 일치' in guide
 assert 'Win+Shift+S' not in ps # no screenshot automation
 assert 'CompanyWebView2OverlayPilot' not in ps # no product native binary changes
+builder=(r/'UnityProject/Assets/Editor/WebView2OneClickBuilder.cs').read_text(encoding='utf-8')
+windowed='PlayerSettings.fullScreenMode=FullScreenMode.Windowed;'
+resizable='PlayerSettings.resizableWindow=true;'
+assert windowed in builder, 'Stage2 Player must explicitly start windowed'
+assert resizable in builder, 'Stage2 Player must enable interactive resizing'
+assert builder.index(windowed)<builder.index('BuildPipeline.BuildPlayer'), 'Window mode must be set before build'
+assert builder.index(resizable)<builder.index('BuildPipeline.BuildPlayer'), 'ResizableWindow must be set before build'
+assert '[WV2-STAGE2] Window mode=' in builder, 'Build log must expose window mode'
+assert '창 테두리' in guide and 'R05' in guide, 'Guide must tell user how to resize'
 print('Stage2 Korean manual review source contract PASS')
