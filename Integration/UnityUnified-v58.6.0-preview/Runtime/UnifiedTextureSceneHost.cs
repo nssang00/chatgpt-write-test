@@ -38,6 +38,8 @@ namespace Company.WebView.Unified.Experimental
             try
             {
                 var pluginPath = Path.Combine(Application.dataPath, "Plugins", "x86_64");
+                var cachePath = Path.Combine(Application.temporaryCachePath, "CompanyWebView-UnifiedPreview");
+                Directory.CreateDirectory(cachePath);
                 view = UnifiedWebView.Create(new UnifiedWebViewOptions {
                     Mode = PresentationMode.Texture,
                     Target = TargetKind.RawImage,
@@ -46,7 +48,7 @@ namespace Company.WebView.Unified.Experimental
                     Height = height,
                     TargetFrameRate = targetFrameRate,
                     CefSubprocessPath = Path.Combine(pluginPath, "CompanyWebViewCefSubprocess.exe"),
-                    CefCachePath = Path.Combine(Application.temporaryCachePath, "CompanyWebView-UnifiedPreview")
+                    CefCachePath = cachePath
                 });
             }
             catch (Exception e)

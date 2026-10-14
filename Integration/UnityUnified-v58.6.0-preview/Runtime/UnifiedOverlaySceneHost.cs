@@ -101,7 +101,12 @@ namespace Company.WebView.Unified.Experimental
                 view.Pump();
                 if(closingForDualTest)return;
                 if(!view.IsReady)return;
-                if(!readyLogged){readyLogged=true;Debug.Log("WV2 Unified controller ready");}
+                if(!readyLogged){
+                    readyLogged=true;
+                    Debug.Log("WV2 Unified controller ready");
+                    // Visible offline sample page: independent of any external network.
+                    view.ExecuteJavaScript("document.body.innerHTML='<h2>WebView2 Overlay RIGHT</h2><p>Unified Win32 child HWND</p><input placeholder=\"Korean IME\" />';document.body.style.background='#eef3ff';document.body.style.padding='24px';");
+                }
                 RECT client;
                 if(GetClientRect(parent,out client)) {
                     var current=PixelBounds(client);
