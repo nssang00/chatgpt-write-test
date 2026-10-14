@@ -42,7 +42,8 @@ bool AppResourceBundle::isCanonicalUrl(const std::string& url)
     for (std::size_t i=1; i<host.size(); ++i)
         if (!hostChar(host[i])) return false;
     const std::string path = url.substr(firstSlash);
-    if (path.size() < 2 || path[1] == '/') return false;
+    if (path.size() < 2 || path[1] == '/' ||
+        path[path.size()-1] == '/') return false;
     std::size_t start=1;
     while (start < path.size()) {
         const std::size_t end=path.find('/', start);
