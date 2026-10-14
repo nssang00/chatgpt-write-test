@@ -31,8 +31,8 @@ jobs:
         run: cmake -S tests/integration/cef -B build/cef -DCEF_ROOT="$CEF_ROOT" -DCMAKE_BUILD_TYPE=Release
       - name: Build CEF integration and plugin fixture
         run: cmake --build build/cef --config Release --parallel 4
-      - name: Run real browser plugin E2E
-        run: ctest --test-dir build/cef -R '^browser.plugin_object_lifecycle$' --output-on-failure
+      - name: Run real browser plugin and packaged app-resource E2E
+        run: ctest --test-dir build/cef -R '^browser\.' --output-on-failure
 
   windows-cef:
     runs-on: windows-2022
@@ -66,7 +66,7 @@ jobs:
         run: cmake --build build/cef --config Release --parallel 4
       - name: Run real browser plugin E2E
         shell: pwsh
-        run: ctest --test-dir build/cef -C Release -R '^browser.plugin_object_lifecycle$' --output-on-failure
+        run: ctest --test-dir build/cef -C Release -R '^browser\.' --output-on-failure
 
   windows-webview2:
     runs-on: windows-2022
@@ -87,4 +87,4 @@ jobs:
         run: cmake --build build/webview2 --config Release --parallel 4
       - name: Run real browser plugin E2E
         shell: pwsh
-        run: ctest --test-dir build/webview2 -C Release -R '^browser.plugin_object_lifecycle$' --output-on-failure
+        run: ctest --test-dir build/webview2 -C Release -R '^browser\.' --output-on-failure
