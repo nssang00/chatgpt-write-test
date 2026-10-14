@@ -92,6 +92,8 @@ install(EXPORT NativeWebTargets
 # A C++11-native bootstrap CLI; no Python/Node required for CLI itself.
 add_executable(xytron tools/cli/xytron.cpp)
 set_target_properties(xytron PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED YES CXX_EXTENSIONS NO)
+target_include_directories(xytron PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+target_link_libraries(xytron PRIVATE nativeweb_core)
 install(TARGETS xytron RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 if(NATIVEWEB_BUILD_TESTS)
   add_test(NAME cli.scaffold COMMAND ${CMAKE_COMMAND}

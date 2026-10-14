@@ -277,20 +277,39 @@ Any invokePluginCallback(const VariantList& args, const Invoker& invoke)
 Callable makePluginCallable(
     nw_plugin_call_v1 function,
     void* userData,
-    const std::shared_ptr<void>& lifetime)
+    const std::shared_ptr<void>& lifetime,
+    const CallableSignature& signature)
 {
     // Preserve the lease even when a consumer extracts/copies dynamicFunction()
     // instead of copying the full Callable wrapper.
-    const DynamicFunction dynamic = [function, userData, lifetime](
+    const DynamicFunction dynamic = [function, userData, lifetime, signature](
         const VariantList& args) -> Any {
         (void)lifetime;
+        if (signature.result.kind != CallableTypeKind::Unknown)
+        {
+            if (args.size() != signature.arity())
+                throw Error("invalid_arguments", "Plugin argument count mismatch");
+            for (std::size_t i = 0; i < args.size(); ++i)
+            {
+                const CallableTypeKind kind = signature.arguments[i].kind;
+                const std::type_info& type = args[i].type();
+                const bool valid =
+                    (kind == CallableTypeKind::Boolean && type == typeid(bool)) ||
+                    (kind == CallableTypeKind::Integer && type == typeid(int)) ||
+                    (kind == CallableTypeKind::Floating && type == typeid(double)) ||
+                    (kind == CallableTypeKind::String && type == typeid(std::string)) ||
+                    (kind == CallableTypeKind::Binary && type == typeid(Binary));
+                if (!valid)
+                    throw Error("invalid_arguments", "Plugin argument type mismatch");
+            }
+        }
         return invokePluginCallback(args,
             [function, userData](const nw_value_v1* values, uint64_t count,
                 nw_value_v1* result, nw_error_v1* error) -> int32_t {
                 return function(userData, values, count, result, error);
             });
     };
-    return Callable(dynamic, CallableSignature(), lifetime);
+    return Callable(dynamic, signature, lifetime);
 }
 
 ManagedObjectMethod makePluginObjectMethod(
@@ -406,6 +425,12 @@ std::size_t PluginModule::registrationCount() const
 {
     std::lock_guard<std::mutex> lock(mutex_);
     return registrations_.size();
+}
+
+std::vector<std::string> PluginModule::registeredFunctions() const
+{
+    std::lock_guard<std::mutex> lock(mutex_);
+    return functionNames_;
 }
 
 std::size_t PluginModule::objectFactoryCount() const
@@ -689,6 +714,8 @@ void PluginModule::initialize(
         &PluginModule::registerObjectMethodThunk;
     host.register_object_factory_args =
         &PluginModule::registerObjectFactoryArgsThunk;
+    host.register_typed_function =
+        &PluginModule::registerTypedFunctionThunk;
 
     const int32_t registerStatus =
         lease_->api.register_api(
@@ -731,6 +758,60 @@ int32_t PluginModule::registerFunction(
     nw_plugin_call_v1 function,
     void* userData)
 {
+    return registerFunctionImpl(relativeName, function, userData,
+                                CallableSignature());
+}
+
+int32_t PluginModule::registerTypedFunctionThunk(
+    void* context, const char* relative, nw_plugin_call_v1 fn,
+    void* userData, const nw_function_signature_v1* sig)
+{
+    if (!context) return -1;
+    try {
+        return static_cast<PluginModule*>(context)->registerTypedFunction(
+            relative, fn, userData, sig);
+    } catch (...) { return -1; }
+}
+
+int32_t PluginModule::registerTypedFunction(
+    const char* relative, nw_plugin_call_v1 fn, void* userData,
+    const nw_function_signature_v1* sig)
+{
+    if (!sig || sig->struct_size < sizeof(nw_function_signature_v1) ||
+        sig->argument_count > 64 ||
+        (sig->argument_count && !sig->argument_types)) return -1;
+    CallableSignature descriptor;
+    const auto decode = [](uint32_t type, bool result) -> CallableType {
+        switch (type) {
+        case NW_VALUE_NULL_V1:
+            if (result) return CallableType(CallableTypeKind::Void, "void");
+            break;
+        case NW_VALUE_BOOL_V1:
+            return CallableType(CallableTypeKind::Boolean, "boolean");
+        case NW_VALUE_INT32_V1:
+            return CallableType(CallableTypeKind::Integer, "integer");
+        case NW_VALUE_DOUBLE_V1:
+            return CallableType(CallableTypeKind::Floating, "number");
+        case NW_VALUE_STRING_V1:
+            return CallableType(CallableTypeKind::String, "string");
+        case NW_VALUE_BINARY_V1:
+            return CallableType(CallableTypeKind::Binary, "binary");
+        default: break;
+        }
+        throw Error("plugin_invalid_signature", "Invalid ABI signature type");
+    };
+    descriptor.result = decode(sig->result_type, true);
+    for (uint32_t i = 0; i < sig->argument_count; ++i)
+        descriptor.arguments.push_back(decode(sig->argument_types[i], false));
+    return registerFunctionImpl(relative, fn, userData, descriptor);
+}
+
+int32_t PluginModule::registerFunctionImpl(
+    const char* relativeName,
+    nw_plugin_call_v1 function,
+    void* userData,
+    const CallableSignature& signature)
+{
     if (
         !relativeName ||
         !*relativeName ||
@@ -766,11 +847,12 @@ int32_t PluginModule::registerFunction(
             makePluginCallable(
                 function,
                 userData,
-                lifetime));
+                lifetime, signature));
 
     registrations_.push_back(
         std::move(token));
     callableLifetimes_.push_back(lifetime);
+    functionNames_.push_back(method);
 
     return 0;
 }

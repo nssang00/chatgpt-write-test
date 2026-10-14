@@ -109,6 +109,25 @@ typedef int32_t (*nw_host_register_object_factory_args_v1)(
     nw_plugin_create_object_args_v1 create,
     nw_plugin_destroy_object_v1 destroy, void* user_data);
 
+/* ABI v1 additive extension. Types use NW_VALUE_*; result NULL denotes void.
+ * Metadata pointers are valid during registration only and are copied by host.
+ * Type metadata supports scalar/binary values, not objects or collections.
+ */
+typedef struct nw_function_signature_v1
+{
+    uint32_t struct_size;
+    uint32_t result_type;
+    const uint32_t* argument_types;
+    uint32_t argument_count;
+} nw_function_signature_v1;
+
+typedef int32_t (*nw_host_register_typed_function_v1)(
+    void* host_context,
+    const char* relative_name,
+    nw_plugin_call_v1 function,
+    void* user_data,
+    const nw_function_signature_v1* signature);
+
 typedef struct nw_host_api_v1
 {
     uint32_t struct_size;
@@ -121,6 +140,8 @@ typedef struct nw_host_api_v1
     nw_host_register_object_method_v1 register_object_method;
     /* Check struct_size before using this optional appended field. */
     nw_host_register_object_factory_args_v1 register_object_factory_args;
+    /* Check struct_size before accessing the optional typed registration. */
+    nw_host_register_typed_function_v1 register_typed_function;
 } nw_host_api_v1;
 
 typedef int32_t (*nw_plugin_register_api_v1)(

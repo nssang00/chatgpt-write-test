@@ -125,3 +125,13 @@ verified external dependencies, or a remote registry.** The old
 `plugin build ID --sdk PREFIX` continues working. Python `build` is only a
 syntax check and not a wheel build. C# template uses a temporary metadata
 attribute until the official binding SDK is consumable by generated projects.
+
+## S2-1 실험적 네이티브 자동 바인딩
+
+C++ 플러그인 함수의 ABI v1 타입 메타데이터를 Core에 전달하고 로컬에서 TypeScript 및 ES module 래퍼를 생성할 수 있다. 자세한 계약과 테스트, 안전상의 주의사항은 [`XYTRON_S2_TYPED_BINDINGS_KO.md`](XYTRON_S2_TYPED_BINDINGS_KO.md) 참조.
+
+```bash
+xytron bindings generate --library build/libcamera.so --out bindings --trusted
+```
+
+플러그인 코드를 실제 로딩·실행하므로 검증된 로컬 빌드에만 사용한다. Python/.NET 자동 바인딩과 최종 사용자 권한 모델은 별도 작업이다.

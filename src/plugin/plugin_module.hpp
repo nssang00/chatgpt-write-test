@@ -36,6 +36,7 @@ public:
     const std::string& path() const;
 
     std::size_t registrationCount() const;
+    std::vector<std::string> registeredFunctions() const;
     NativeObjectHandle createObject(
         const std::string& relativeType,
         NativeObjectRuntime& runtime,
@@ -59,6 +60,15 @@ private:
         const char* relativeName,
         nw_plugin_call_v1 function,
         void* userData);
+    static int32_t registerTypedFunctionThunk(
+        void*, const char*, nw_plugin_call_v1, void*,
+        const nw_function_signature_v1*);
+    int32_t registerTypedFunction(
+        const char*, nw_plugin_call_v1, void*,
+        const nw_function_signature_v1*);
+    int32_t registerFunctionImpl(
+        const char*, nw_plugin_call_v1, void*,
+        const CallableSignature&);
 
     static int32_t registerObjectFactoryThunk(
         void* hostContext, const char* relativeType,
@@ -100,6 +110,7 @@ private:
     BindingRegistry& registry_;
     std::shared_ptr<PluginLibraryLease> lease_;
     std::vector<RegistrationToken> registrations_;
+    std::vector<std::string> functionNames_;
     // Each weak ref identifies a registered callable whose copied snapshots
     // may remain queued/running after the registration token is released.
     std::vector<std::weak_ptr<void> > callableLifetimes_;

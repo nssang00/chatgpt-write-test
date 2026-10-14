@@ -196,3 +196,18 @@ target_include_directories(nativeweb_generated_xytron_plugin_regression
     PRIVATE ${PROJECT_SOURCE_DIR}/src)
 set_target_properties(nativeweb_generated_xytron_plugin_regression PROPERTIES
     CXX_STANDARD 11 CXX_STANDARD_REQUIRED YES CXX_EXTENSIONS NO)
+
+# S2: ABI-v1 size-gated typed registration and legacy compatibility.
+add_executable(nativeweb_typed_signature_regression typed_signature_regression.cpp)
+target_link_libraries(nativeweb_typed_signature_regression PRIVATE NativeWeb::Core)
+target_include_directories(nativeweb_typed_signature_regression PRIVATE ${PROJECT_SOURCE_DIR}/src)
+target_compile_features(nativeweb_typed_signature_regression PRIVATE cxx_std_11)
+add_test(NAME plugin.typed_signature COMMAND nativeweb_typed_signature_regression
+    $<TARGET_FILE:nativeweb_test_cpp_plugin>
+    $<TARGET_FILE:nativeweb_test_plugin>)
+add_test(NAME plugin.typed_bindings COMMAND ${CMAKE_COMMAND}
+    -DXYTRON=$<TARGET_FILE:xytron>
+    -DCPP_PLUGIN=$<TARGET_FILE:nativeweb_test_cpp_plugin>
+    -DLEGACY_PLUGIN=$<TARGET_FILE:nativeweb_test_plugin>
+    -DROOT=${PROJECT_BINARY_DIR}/s2-bindings-check
+    -P ${PROJECT_SOURCE_DIR}/tools/cli/test_bindings.cmake)
