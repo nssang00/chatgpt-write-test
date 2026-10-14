@@ -1,0 +1,42 @@
+name: Unity WebView v58.6.0 preview contract (NO UNITY RUNTIME)
+on:
+  push:
+    branches:
+      - feature/unified-unity-v58-6-0-integration-preview
+  workflow_dispatch:
+
+jobs:
+  source-contract-windows:
+    runs-on: windows-2022
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Dotnet SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Static provenance and fail-closed API contract
+        shell: pwsh
+        run: |
+          python Integration/UnityUnified-v58.6.0-preview/Validation/verify_integration.py
+          if($LASTEXITCODE -ne 0){throw 'Source contract failed'}
+      - name: Compile and exercise isolated C# API tests
+        shell: pwsh
+        run: |
+          dotnet run --configuration Release --project Integration/UnityUnified-v58.6.0-preview/Tests/UnifiedContract.Tests.csproj
+          if($LASTEXITCODE -ne 0){throw 'Unified C# contract failed'}
+      - name: Package source-only preview (not executable Unity Player)
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist/UnityUnified-v58.6.0-preview | Out-Null
+          Copy-Item Integration/UnityUnified-v58.6.0-preview/* dist/UnityUnified-v58.6.0-preview -Recurse -Force
+          Get-ChildItem dist/UnityUnified-v58.6.0-preview -Include bin,obj -Directory -Recurse | Remove-Item -Recurse -Force
+          $problems=@()
+          if(Test-Path dist/UnityUnified-v58.6.0-preview/Runtime/CEF.dll){$problems+= 'unexpected CEF binary'}
+          if($problems.Count -gt 0){throw ($problems -join '; ')}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: unified-unity-v58-6-0-source-contract-preview
+          path: dist/UnityUnified-v58.6.0-preview
+          if-no-files-found: error
+          retention-days: 30
