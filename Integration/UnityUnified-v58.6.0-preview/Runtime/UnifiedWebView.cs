@@ -49,6 +49,7 @@ namespace Company.WebView.Unified.Experimental
         void PostMessage(string value);
         void ExecuteJavaScript(string script);
         bool IsReady { get; }
+        bool IsShutdownComplete { get; }
         void Close();
     }
 
@@ -59,6 +60,7 @@ namespace Company.WebView.Unified.Experimental
         public PresentationMode Mode { get; private set; }
         public WebViewCapabilities Capabilities { get; private set; }
         public bool IsReady { get { AssertActive(); return driver.IsReady; } }
+        public bool IsShutdownComplete { get { AssertActive(); return driver.IsShutdownComplete; } }
         public event Action<string> MessageReceived;
 
         private UnifiedWebView(PresentationMode mode, IUnifiedBackend backend)

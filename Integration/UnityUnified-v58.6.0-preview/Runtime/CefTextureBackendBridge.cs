@@ -37,6 +37,7 @@ namespace Company.WebView.Unified.Experimental
         public void NotifyParentMoved() { }
         public void Pump() { if (opened && !disposed) validatedCef.PumpMessageLoop(); }
         public bool IsReady { get { return opened && !disposed; } }
+        public bool IsShutdownComplete { get { return !opened; } }
         public bool TryReadMessage(out string message) { message=null; return false; }
         public void PostMessage(string data) { throw new NotSupportedException("CEF 58.4.4 public facade has no unified message bridge yet"); }
         public void ExecuteJavaScript(string script) { throw new NotSupportedException("CEF 58.4.4 public facade has no unified script bridge yet"); }

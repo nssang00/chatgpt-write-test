@@ -54,6 +54,7 @@ namespace Company.WebView.Unified.Experimental
             FullImeComposition=false,MultiWebView=false
         };
         public bool IsReady { get { return opened && !closing && WV2Unified_GetState()==2; } }
+        public bool IsShutdownComplete { get { return joined; } }
         public void Open(UnifiedWebViewOptions options) {
             if(disposed)throw new ObjectDisposedException(nameof(WebView2OverlayBackendBridge));
             if(options.OverlayParentHwnd == IntPtr.Zero)throw new ArgumentException("Unity HWND required");

@@ -18,6 +18,14 @@ namespace Company.WebView.Unified.Experimental
         [SerializeField] private int height = 720;
         [SerializeField] private int targetFrameRate = 60;
         private UnifiedWebView view;
+        public bool IsTextureBackendReady { get { return view != null && view.IsReady; } }
+        public bool IsPreviewShutdownComplete { get; private set; }
+        public bool StopForDualTest() {
+            var old=view;view=null;
+            if(old==null)return false;
+            try { old.Close();old.Dispose();IsPreviewShutdownComplete=true;return true; }
+            catch(Exception e){Debug.LogError("Dual CEF close ERROR: "+e);return false;}
+        }
 
         private void Start()
         {
@@ -64,7 +72,7 @@ namespace Company.WebView.Unified.Experimental
             var previous = view;
             view = null;
             if (previous != null)
-                try { previous.Dispose(); } catch (Exception ex) { Debug.LogError("CEF cleanup FAILED: " + ex); }
+                try { previous.Dispose();IsPreviewShutdownComplete=true; } catch (Exception ex) { Debug.LogError("CEF cleanup FAILED: " + ex); }
         }
     }
 }

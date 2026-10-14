@@ -20,6 +20,20 @@ namespace Company.WebView.Unified.Experimental
         private bool hasWindow;
         private RectInt lastBounds;
         private bool readyLogged;
+        private bool closingForDualTest;
+        public bool IsOverlayReady { get { return view != null && !closingForDualTest && view.IsReady; } }
+        public bool IsPreviewShutdownComplete { get { return view != null && view.IsShutdownComplete; } }
+        public int ReceivedMessageCount { get; private set; }
+        public bool RequestDualShutdown(){
+            if(view==null)return false;
+            if(closingForDualTest)return true;
+            try {view.Close();closingForDualTest=true;return true;}
+            catch(Exception e){Debug.LogError("Dual overlay close request ERROR: "+e);return false;}
+        }
+        public void SendDualProbe(){
+            if(!IsOverlayReady)return;
+            view.ExecuteJavaScript("chrome.webview.postMessage('dual-unity-bridge-ping')");
+        }
 
 #if UNITY_STANDALONE_WIN && !UNITY_EDITOR
         [StructLayout(LayoutKind.Sequential)]
@@ -74,7 +88,10 @@ namespace Company.WebView.Unified.Experimental
                     Height=lastBounds.height,
                     Url=url
                 });
-                view.MessageReceived += msg => Debug.Log("WV2 Unified message received (length): "+msg.Length);
+                view.MessageReceived += msg => {
+                    ReceivedMessageCount++;
+                    Debug.Log("WV2 Unified message received (length): "+msg.Length);
+                };
             } catch(Exception e){Debug.LogError("Unified overlay open failed: "+e);}
         }
         private void Update()
@@ -82,6 +99,7 @@ namespace Company.WebView.Unified.Experimental
             if(view==null)return;
             try{
                 view.Pump();
+                if(closingForDualTest)return;
                 if(!view.IsReady)return;
                 if(!readyLogged){readyLogged=true;Debug.Log("WV2 Unified controller ready");}
                 RECT client;
