@@ -25,18 +25,38 @@ jobs:
         run: |
           dotnet run --configuration Release --project Integration/UnityUnified-v58.6.0-preview/Tests/UnifiedContract.Tests.csproj
           if($LASTEXITCODE -ne 0){throw 'Unified C# contract failed'}
-      - name: Package source-only preview (not executable Unity Player)
+      - name: Install pinned Microsoft WebView2 native SDK
+        shell: pwsh
+        run: |
+          nuget install Microsoft.Web.WebView2 -Version 1.0.4258.31 -OutputDirectory "$env:RUNNER_TEMP/wv2sdk" -NonInteractive
+          if($LASTEXITCODE -ne 0){throw 'NuGet WebView2 SDK failed'}
+      - name: Build independent x64 WebView2 unified native DLL
+        shell: pwsh
+        run: |
+          $sdk=Join-Path $env:RUNNER_TEMP 'wv2sdk/Microsoft.Web.WebView2.1.0.4258.31'
+          cmake -S Integration/UnityUnified-v58.6.0-preview/Native -B build-unified-wv2 -G 'Visual Studio 17 2022' -A x64 "-DWEBVIEW2_SDK_ROOT=$sdk"
+          if($LASTEXITCODE -ne 0){throw 'Unified WebView2 CMake configuration failed'}
+          cmake --build build-unified-wv2 --config Release --clean-first
+          if($LASTEXITCODE -ne 0){throw 'Unified WebView2 native build failed'}
+      - name: Run native ABI/invalid-input contract without Unity
+        shell: pwsh
+        run: |
+          ctest --test-dir build-unified-wv2 -C Release --output-on-failure
+          if($LASTEXITCODE -ne 0){throw 'Unified native ABI contract failed'}
+      - name: Package source and native WebView2 DLL (NOT Unity Player)
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path dist/UnityUnified-v58.6.0-preview | Out-Null
           Copy-Item Integration/UnityUnified-v58.6.0-preview/* dist/UnityUnified-v58.6.0-preview -Recurse -Force
           Get-ChildItem dist/UnityUnified-v58.6.0-preview -Include bin,obj -Directory -Recurse | Remove-Item -Recurse -Force
+          New-Item -ItemType Directory -Force -Path dist/UnityUnified-v58.6.0-preview/Plugins/x86_64 | Out-Null
+          Copy-Item 'build-unified-wv2/Release/CompanyWebView2UnifiedPreview.dll' 'dist/UnityUnified-v58.6.0-preview/Plugins/x86_64/'
           $problems=@()
           if(Test-Path dist/UnityUnified-v58.6.0-preview/Runtime/CEF.dll){$problems+= 'unexpected CEF binary'}
           if($problems.Count -gt 0){throw ($problems -join '; ')}
       - uses: actions/upload-artifact@v4
         with:
-          name: unified-unity-v58-6-0-source-contract-preview
+          name: unified-unity-v58-6-0-overlay-native-preview
           path: dist/UnityUnified-v58.6.0-preview
           if-no-files-found: error
           retention-days: 30
