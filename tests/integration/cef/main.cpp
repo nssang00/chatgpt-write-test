@@ -4,6 +4,9 @@
 #include "include/cef_command_line.h"
 #include "nativeweb/error.hpp"
 #include "nativeweb/webview.hpp"
+#include "nativeweb/app_resources.hpp"
+#include <fstream>
+#include <sstream>
 
 #include <atomic>
 #include <chrono>
@@ -671,12 +674,49 @@ int main(int argc, char* argv[])
     }
 
     const std::string url = getUrl(argc, argv);
+    std::shared_ptr<nativeweb::AppResourceBundle> appAssets;
+    if (url.compare(0, 6, "app://") == 0)
+    {
+        const std::string flag = "--app-assets=";
+        std::string directory;
+        for (int i=1;i<argc;++i)
+        {
+            const std::string arg = argv[i];
+            if (arg.compare(0,flag.size(),flag)==0)
+                directory=arg.substr(flag.size());
+        }
+        if (directory.empty())
+        {
+            std::cerr << "app:// test requires --app-assets" << std::endl;
+            return 7;
+        }
+        appAssets.reset(new nativeweb::AppResourceBundle());
+        const char* names[] = {
+            "plugin_bridge_test.html", "plugin_untrusted_child.html"
+        };
+        for (int i=0; i<2; ++i)
+        {
+            const std::string path=directory+"/"+names[i];
+            std::ifstream input(path.c_str(), std::ios::binary);
+            if (!input)
+            {
+                std::cerr << "Unable to read test bundle asset: "
+                          << path << std::endl;
+                return 8;
+            }
+            std::ostringstream contents;
+            contents << input.rdbuf();
+            appAssets->add("app://desktop/"+std::string(names[i]),
+                           "text/html",contents.str());
+        }
+    }
 
     app->setBrowserReadyCallback(
-        [&webview, url]() {
+        [&webview, url, appAssets]() {
             nativeweb::WebViewOptions options;
             options.engine =
                 nativeweb::Engine::Cef;
+            options.appResources = appAssets;
 
             webview.create(
                 0,

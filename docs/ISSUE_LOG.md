@@ -550,3 +550,15 @@ hosts, app shell and full publish remain unfinished.
   claim cross-engine app:// support before actual 3-engine E2E.
 - CEF scheme lifecycle/buffer multiwindow tests are required before
   U1 can be verified.
+
+## NW-033 U1 actual CEF app:// bundle E2E — CI PENDING
+- New CEF browser E2E `browser.app_resource_lifecycle` replays
+  existing real-plugin method/event/object lifecycle and untrusted child
+  frame tests with HTML served from `app://desktop/plugin_bridge_test.html`.
+  Host feeds in-memory app resources explicitly, never file:// mapping.
+- CEF and WebView2 independent Core source builds now include
+  `src/core/app_resources.cpp` to prevent old NW-018 linker drift.
+- WebView2 rejects app:// with structured `app_scheme_not_supported`
+  instead of attempting an undefined navigation. U2 remains open.
+- App bundle entry prevalidation moved before BrowserBackend creation;
+  invalid entry fails without leaving an unusable backend pointer.

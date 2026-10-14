@@ -128,6 +128,11 @@ void WebView2Backend::create(
             "webview_already_created",
             "NativeWeb WebView2 backend is already created");
     }
+    if (params.source.compare(0, 6, "app://") == 0)
+        throw Error("app_scheme_not_supported",
+                    "WebView2 app:// scheme adapter is not implemented; "
+                    "do not fall back to file:// without approval");
+
 
     if (
         !params.parent ||

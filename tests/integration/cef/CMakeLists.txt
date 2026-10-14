@@ -43,6 +43,7 @@ add_library(nativeweb_core_for_cef STATIC
   "${NATIVEWEB_ROOT}/src/core/bridge_message.cpp"
   "${NATIVEWEB_ROOT}/src/core/json_codec.cpp"
   "${NATIVEWEB_ROOT}/src/core/bridge_runtime.cpp"
+  "${NATIVEWEB_ROOT}/src/core/app_resources.cpp"
   "${NATIVEWEB_ROOT}/src/core/module_registry.cpp"
   "${NATIVEWEB_ROOT}/src/core/binding_registry.cpp"
   "${NATIVEWEB_ROOT}/src/core/worker_pool.cpp"
@@ -253,3 +254,14 @@ add_test(
     --engine cef --build-dir "${CMAKE_BINARY_DIR}"
 )
 set_tests_properties(browser.plugin_object_lifecycle PROPERTIES TIMEOUT 150)
+
+# Real in-memory app:// scheme test: same JS->native plugin E2E,
+# but host entry and child fixtures are served without file:// navigation.
+add_test(
+  NAME browser.app_resource_lifecycle
+  COMMAND "${Python3_EXECUTABLE}"
+    "${NATIVEWEB_ROOT}/tools/run_browser_plugin_e2e.py"
+    --engine cef --build-dir "${CMAKE_BINARY_DIR}" --app-resources
+)
+set_tests_properties(browser.app_resource_lifecycle PROPERTIES TIMEOUT 150)
+

@@ -16,7 +16,12 @@ def main():
     parser.add_argument('--engine', choices=('cef', 'webview2'), required=True)
     parser.add_argument('--build-dir', type=Path, required=True)
     parser.add_argument('--timeout', type=int, default=120)
+    parser.add_argument('--app-resources', action='store_true',
+                        help='run real CEF app:// packaged UI test')
     args = parser.parse_args()
+
+    if args.app_resources and args.engine != 'cef':
+        parser.error('app:// end-to-end resources are only supported for CEF currently')
 
     if args.engine == 'webview2' and os.name != 'nt':
         parser.error('WebView2 must be tested on Windows')
@@ -35,8 +40,12 @@ def main():
         if not path.is_file():
             parser.error('Required E2E input missing: ' + str(path))
 
-    command = [str(executable), '--url=' + html.as_uri(),
+    entry_url = ('app://desktop/plugin_bridge_test.html'
+                 if args.app_resources else html.as_uri())
+    command = [str(executable), '--url=' + entry_url,
                '--plugin-path=' + str(plugin)]
+    if args.app_resources:
+        command.append('--app-assets=' + str(html.parent))
     if args.engine == 'cef':
         # Chromium subprocess startup resolves ICU data and locale resources
         # relative to the runtime executable directory. Match the existing

@@ -161,6 +161,12 @@ public:
                 "webview_already_created",
                 "NativeWeb WebView is already created");
 
+        if (source.compare(0, 6, "app://") == 0 &&
+            (!options.appResources ||
+             !options.appResources->contains(source)))
+            throw Error("app_resource_not_found",
+                "app:// entry must be present in its packaged resource bundle");
+
         backend_ =
             detail::createBrowserBackend(
                 options.engine,
@@ -172,13 +178,6 @@ public:
         params.parent = parent;
         params.source = source;
         params.appResources = options.appResources;
-        if (source.compare(0, 6, "app://") == 0)
-        {
-            if (!params.appResources ||
-                !params.appResources->contains(source))
-                throw Error("app_resource_not_found",
-                    "app:// entry must be an explicitly packaged resource");
-        }
 
         try
         {
