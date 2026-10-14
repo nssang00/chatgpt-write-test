@@ -12,6 +12,7 @@
 #include "include/cef_scheme.h"
 #include "include/cef_resource_handler.h"
 #include "include/cef_request_context.h"
+#include "include/cef_request_context_handler.h"
 #include <cstring>
 #include <algorithm>
 

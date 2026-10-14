@@ -572,3 +572,13 @@ hosts, app shell and full publish remain unfinished.
 - Fixed its CMake target to link NativeWeb::Core (exports installed header
   include path and AppResourceBundle symbol). Follow-up full test CI
   required before closing. Independent CEF/WebView2 builds continue.
+
+## NW-035 CEF request-context source lacks complete handler header — FIX SUBMITTED
+- CEF 144 source in initial U1 build 38523543239 fails in
+  cef_scoped_refptr.h with incomplete CefRequestContextHandler when
+  CreateContext(settings, nullptr) instantiates a typed CefRefPtr.
+- Fix: include cef_request_context_handler.h explicitly. Browser
+  UI app:// tests will prove actual custom scheme after recompile.
+- WebView2 linker errors in same early commit were source-list drift;
+  app_resources.cpp was added to both engine CMake projects in
+  3e1bffba, pending verified source tests.
