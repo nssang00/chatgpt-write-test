@@ -4,20 +4,6 @@
 <body>
 <script>
 (async function () {
-  // The scheme itself must serve real bytes, enforce MIME, and return 404
-  // for an undeclared resource. file:// legacy E2E bypasses these checks.
-  if (location.protocol === "app:") {
-    const child = await fetch("app://desktop/plugin_untrusted_child.html");
-    ensure(child.ok && child.status === 200,
-           "app:// child resource not served");
-    ensure((child.headers.get("content-type") || "").includes("text/html"),
-           "app:// HTML MIME missing");
-    ensure((await child.text()).includes("nativeweb-security-probe-ready"),
-           "app:// child resource bytes mismatch");
-    const missing = await fetch("app://desktop/no-such-file.json");
-    ensure(missing.status === 404,
-           "app:// unknown resource must return 404");
-  }
   if (window !== window.top) {
     // Deliberately reload the SAME trusted entry in a child frame.
     // Its engine-supplied main-frame identity must differ, even when
@@ -47,6 +33,20 @@
     if (!condition) throw new Error(message);
   }
   try {
+  // The scheme itself must serve real bytes, enforce MIME, and return 404
+  // for an undeclared resource. file:// legacy E2E bypasses these checks.
+  if (location.protocol === "app:") {
+    const child = await fetch("app://desktop/plugin_untrusted_child.html");
+    ensure(child.ok && child.status === 200,
+           "app:// child resource not served");
+    ensure((child.headers.get("content-type") || "").includes("text/html"),
+           "app:// HTML MIME missing");
+    ensure((await child.text()).includes("nativeweb-security-probe-ready"),
+           "app:// child resource bytes mismatch");
+    const missing = await fetch("app://desktop/no-such-file.json");
+    ensure(missing.status === 404,
+           "app:// unknown resource must return 404");
+  }
     // This is a real dynamically-loaded library factory, not camera.open's
     // host-side mock object from the generic bridge integration test.
     const counter = await xytron.plugin.open(77);
