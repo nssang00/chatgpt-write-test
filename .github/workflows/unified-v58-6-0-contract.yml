@@ -48,6 +48,11 @@ jobs:
           if($LASTEXITCODE -ne 0){throw 'Unity conditional clean failed'}
           dotnet build $p --configuration Release --nologo -p:DefineConstants=UNITY_STANDALONE_WIN
           if($LASTEXITCODE -ne 0){throw 'Unity Standalone Windows host compilation failed'}
+      - name: Compile Unity Editor scene builder against API signatures
+        shell: pwsh
+        run: |
+          dotnet build Integration/UnityUnified-v58.6.0-preview/Validation/UnityEditorBuildStub.csproj --configuration Release --nologo
+          if($LASTEXITCODE -ne 0){throw 'Dual Unity Editor builder compile failed'}
       - name: Install pinned Microsoft WebView2 native SDK
         shell: pwsh
         run: |
