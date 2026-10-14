@@ -3,6 +3,7 @@
 #include <cito/detail/request_transport.hpp>
 
 #include <algorithm>
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <functional>
@@ -11,8 +12,11 @@
 #include <stdexcept>
 #include <unordered_map>
 #include <utility>
+#include <vector>
 
 namespace cito::detail {
+
+using RequestWaitId = std::uint64_t;
 
 struct RequestNetworkStart {
     RequestId request_id{};
@@ -22,12 +26,23 @@ struct RequestNetworkStart {
 
 class RequestNetworkAdapter {
 public:
+    using Clock =
+        std::chrono::steady_clock;
+
     using SessionSend =
         std::function<bool(
             std::span<const std::uint8_t>)>;
 
     using SendReply =
         RequestTransportCore::SendReply;
+
+    using LazyPayload =
+        std::function<
+            std::vector<std::uint8_t>()>;
+
+    using WaitHook =
+        std::function<void(
+            const RequestKey&)>;
 
     RequestNetworkAdapter(
         HostRuntimeCore& host,
@@ -122,6 +137,323 @@ public:
                 .has_value();
     }
 
+    void set_wait_hook(
+        WaitHook hook) {
+        wait_hook_ =
+            std::move(hook);
+    }
+
+    void clear_wait_hook() {
+        wait_hook_ = {};
+    }
+
+    bool waiting_enabled()
+        const noexcept {
+        return
+            static_cast<bool>(
+                wait_hook_);
+    }
+
+    RequestWaitId defer(
+        AppId requester_app,
+        const RequestKey& key,
+        LazyPayload encode,
+        RequestReplyCore::Completion
+            completion,
+        Clock::time_point deadline) {
+        if (requester_app == 0) {
+            throw std::invalid_argument(
+                "Cito request network: requester app id is zero");
+        }
+
+        if (!encode) {
+            throw std::invalid_argument(
+                "Cito request network: lazy encoder is empty");
+        }
+
+        if (!completion) {
+            throw std::invalid_argument(
+                "Cito request network: completion is empty");
+        }
+
+        if (!wait_hook_) {
+            completion(
+                RequestStatus::
+                    Unavailable,
+                {});
+            return 0;
+        }
+
+        const auto id =
+            next_wait_id_++;
+
+        waits_.emplace(
+            id,
+            WaitingRequest{
+                requester_app,
+                key,
+                std::move(encode),
+                std::move(completion),
+                deadline,
+                0,
+                false});
+
+        try {
+            wait_hook_(key);
+        } catch (...) {
+            finish_wait(
+                id,
+                RequestStatus::Internal,
+                {});
+            return 0;
+        }
+
+        return id;
+    }
+
+    std::size_t progress(
+        Clock::time_point now =
+            Clock::now()) {
+        std::vector<RequestWaitId>
+            ids;
+
+        ids.reserve(
+            waits_.size());
+
+        for (const auto& [id, _] :
+             waits_) {
+            ids.push_back(id);
+        }
+
+        std::size_t changed = 0;
+
+        for (const auto id : ids) {
+            auto it =
+                waits_.find(id);
+
+            if (it == waits_.end()) {
+                continue;
+            }
+
+            if (now >=
+                it->second.deadline) {
+                if (expire_wait(id)) {
+                    ++changed;
+                }
+                continue;
+            }
+
+            if (it->second.started) {
+                continue;
+            }
+
+            if (!can_send(
+                    it->second.key)) {
+                continue;
+            }
+
+            std::vector<std::uint8_t>
+                payload;
+
+            try {
+                payload =
+                    it->second.encode();
+            } catch (...) {
+                finish_wait(
+                    id,
+                    RequestStatus::Internal,
+                    {});
+                ++changed;
+                continue;
+            }
+
+            it =
+                waits_.find(id);
+
+            if (it == waits_.end()) {
+                continue;
+            }
+
+            const auto requester_app =
+                it->second.requester_app;
+            const auto key =
+                it->second.key;
+
+            it->second.started = true;
+            it->second.encode = {};
+
+            try {
+                const auto started =
+                    start(
+                        requester_app,
+                        key,
+                        std::span<
+                            const std::uint8_t>(
+                            payload.data(),
+                            payload.size()),
+                        [this, id](
+                            RequestStatus status,
+                            std::span<
+                                const std::uint8_t>
+                                response) {
+                            finish_wait(
+                                id,
+                                status,
+                                response);
+                        });
+
+                it =
+                    waits_.find(id);
+
+                if (it != waits_.end()) {
+                    it->second.request_id =
+                        started.request_id;
+                }
+            } catch (...) {
+                finish_wait(
+                    id,
+                    RequestStatus::Internal,
+                    {});
+            }
+
+            ++changed;
+        }
+
+        return changed;
+    }
+
+    bool cancel_wait(
+        RequestWaitId id) {
+        const auto it =
+            waits_.find(id);
+
+        if (it == waits_.end()) {
+            return false;
+        }
+
+        if (
+            !it->second.started ||
+            it->second.request_id == 0) {
+            return finish_wait(
+                id,
+                RequestStatus::Cancelled,
+                {});
+        }
+
+        const auto request_id =
+            it->second.request_id;
+
+        auto packet =
+            transport_.cancel(
+                request_id);
+
+        if (!packet) {
+            return finish_wait(
+                id,
+                RequestStatus::Cancelled,
+                {});
+        }
+
+        send_best_effort(
+            *packet);
+
+        return true;
+    }
+
+    bool expire_wait(
+        RequestWaitId id) {
+        const auto it =
+            waits_.find(id);
+
+        if (it == waits_.end()) {
+            return false;
+        }
+
+        if (
+            !it->second.started ||
+            it->second.request_id == 0) {
+            return finish_wait(
+                id,
+                RequestStatus::
+                    DeadlineExceeded,
+                {});
+        }
+
+        const auto request_id =
+            it->second.request_id;
+
+        auto packet =
+            transport_.expire(
+                request_id);
+
+        if (!packet) {
+            return finish_wait(
+                id,
+                RequestStatus::
+                    DeadlineExceeded,
+                {});
+        }
+
+        send_best_effort(
+            *packet);
+
+        return true;
+    }
+
+    std::size_t waiting_count()
+        const noexcept {
+        return waits_.size();
+    }
+
+    std::size_t fail_waiting(
+        RequestStatus status =
+            RequestStatus::Unavailable) {
+        std::vector<RequestWaitId>
+            ids;
+
+        ids.reserve(
+            waits_.size());
+
+        for (const auto& [id, _] :
+             waits_) {
+            ids.push_back(id);
+        }
+
+        std::size_t failed = 0;
+
+        for (const auto id : ids) {
+            const auto it =
+                waits_.find(id);
+
+            if (it == waits_.end()) {
+                continue;
+            }
+
+            if (
+                it->second.started &&
+                it->second.request_id != 0) {
+                const auto request_id =
+                    it->second.request_id;
+
+                if (transport_.fail_request(
+                        request_id,
+                        status)) {
+                    ++failed;
+                    continue;
+                }
+            }
+
+            if (finish_wait(
+                    id,
+                    status,
+                    {})) {
+                ++failed;
+            }
+        }
+
+        return failed;
+    }
+
     RequestNetworkStart start(
         AppId requester_app,
         const RequestKey& key,
@@ -202,66 +534,72 @@ public:
 
     std::size_t cancel_requests(
         AppId requester_app) {
+        std::vector<RequestWaitId>
+            wait_ids;
+
+        for (const auto& [id, wait] :
+             waits_) {
+            if (
+                wait.requester_app ==
+                requester_app) {
+                wait_ids.push_back(id);
+            }
+        }
+
+        std::size_t cancelled = 0;
+
+        for (const auto id :
+             wait_ids) {
+            if (cancel_wait(id)) {
+                ++cancelled;
+            }
+        }
+
         auto packets =
             transport_.cancel_requests(
                 requester_app);
 
         for (auto& packet : packets) {
-            const auto session_it =
-                sessions_.find(
-                    packet.destination);
-
-            if (
-                session_it ==
-                sessions_.end()) {
-                continue;
-            }
-
-            auto send =
-                session_it->second;
-
-            try {
-                (void)send(
-                    packet.bytes);
-            } catch (...) {
-                // Local correlation is already cancelled. Transport cleanup
-                // is best effort during app teardown.
-            }
+            send_best_effort(
+                packet);
         }
 
-        return packets.size();
+        return
+            cancelled +
+            packets.size();
     }
 
     std::size_t drop_requests(
         AppId requester_app) {
+        std::vector<RequestWaitId>
+            wait_ids;
+
+        for (const auto& [id, wait] :
+             waits_) {
+            if (
+                wait.requester_app ==
+                requester_app) {
+                wait_ids.push_back(id);
+            }
+        }
+
+        for (const auto id :
+             wait_ids) {
+            waits_.erase(id);
+        }
+
         auto packets =
             transport_.drop_requests(
                 requester_app);
 
         for (auto& packet : packets) {
-            const auto session_it =
-                sessions_.find(
-                    packet.destination);
-
-            if (
-                session_it ==
-                sessions_.end()) {
-                continue;
-            }
-
-            auto send =
-                session_it->second;
-
-            try {
-                (void)send(
-                    packet.bytes);
-            } catch (...) {
-                // Requester state is already abandoned. Teardown transport
-                // cancellation is best effort.
-            }
+            send_best_effort(
+                packet);
         }
 
-        return packets.size();
+        return
+            wait_ids.size() +
+            packets.size();
     }
 
     bool cancel(
@@ -274,25 +612,10 @@ public:
             return false;
         }
 
-        const auto session_it =
-            sessions_.find(
-                packet->destination);
+        send_best_effort(
+            *packet);
 
-        if (
-            session_it ==
-            sessions_.end()) {
-            return false;
-        }
-
-        auto send =
-            session_it->second;
-
-        try {
-            return send(
-                packet->bytes);
-        } catch (...) {
-            return false;
-        }
+        return true;
     }
 
     bool receive(
@@ -356,12 +679,79 @@ public:
     }
 
 private:
+    struct WaitingRequest {
+        AppId requester_app{};
+        RequestKey key{};
+        LazyPayload encode;
+        RequestReplyCore::Completion
+            completion;
+        Clock::time_point deadline{};
+        RequestId request_id{};
+        bool started{false};
+    };
+
+    bool finish_wait(
+        RequestWaitId id,
+        RequestStatus status,
+        std::span<const std::uint8_t>
+            response) {
+        const auto it =
+            waits_.find(id);
+
+        if (it == waits_.end()) {
+            return false;
+        }
+
+        auto completion =
+            std::move(
+                it->second.completion);
+
+        waits_.erase(it);
+
+        completion(
+            status,
+            response);
+
+        return true;
+    }
+
+    void send_best_effort(
+        const RequestTransportSend&
+            packet) {
+        const auto session_it =
+            sessions_.find(
+                packet.destination);
+
+        if (
+            session_it ==
+            sessions_.end()) {
+            return;
+        }
+
+        auto send =
+            session_it->second;
+
+        try {
+            (void)send(
+                packet.bytes);
+        } catch (...) {
+            // Correlation has already completed locally.
+        }
+    }
+
     HostRuntimeCore& host_;
     RequestTransportCore transport_;
 
     std::unordered_map<
         DestinationId,
         SessionSend> sessions_;
+
+    std::unordered_map<
+        RequestWaitId,
+        WaitingRequest> waits_;
+
+    WaitHook wait_hook_;
+    RequestWaitId next_wait_id_{1};
 };
 
 } // namespace cito::detail

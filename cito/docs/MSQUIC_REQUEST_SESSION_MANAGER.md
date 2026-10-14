@@ -102,10 +102,28 @@ runtime used by Context.
 This closes the previous gap between the in-memory public Context remote bridge
 and the standalone QUIC request/reply smoke.
 
+## Lazy first request and deadlines
+
+A client manager installs a readiness-wait hook into RequestNetworkAdapter.
+This lets `Context::request()` arrive before route discovery or QUIC session
+establishment has completed.
+
+The request value is retained without serialization. `poll()` advances both
+MsQuic completions and pending-request deadlines. Once a matching session is
+attached, RequestNetworkAdapter invokes the lazy encoder exactly once and sends
+the CTX1 request.
+
+A timeout before readiness returns `DeadlineExceeded` with encode count zero.
+A timeout after send completes the local correlation as
+`DeadlineExceeded` and sends CTX1 Cancel best-effort.
+
+The real namespace smoke now begins `Context::request()` before the route and
+session exist, then learns the CTR5 route, connects, and completes with the
+remote typed reply.
+
 ## Current boundary
 
 The smoke still drives `poll()/reconcile()` explicitly. The next runtime
-milestone is to make the public Cito event loop own those calls and to keep an
-initial request pending while discovery/session establishment is in progress,
-bounded by the request deadline. That change should preserve the encode-zero
-property until a concrete receiver session becomes ready.
+milestone is to make the normal Cito event loop own those calls and to connect
+the UDP discovery control plane itself to that loop, so application code does
+not manually drive route/session progress.

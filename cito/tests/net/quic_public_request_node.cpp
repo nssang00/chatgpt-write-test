@@ -59,9 +59,11 @@ struct ReplyType<NetPing> {
 template <>
 struct StaticCodec<NetPing> {
     static constexpr bool direct = true;
+    static inline std::size_t encodes = 0;
 
     static std::vector<std::uint8_t>
     encode(const NetPing& value) {
+        ++encodes;
         return {
             static_cast<std::uint8_t>(
                 value.value & 0xffu),
@@ -449,7 +451,30 @@ int run_client(
     const auto key =
         request_key();
 
-    if (!lifecycle.ensure(key)) {
+    cito::Context requester(
+        "acme");
+
+    cito::StaticCodec<
+        NetPing>::encodes = 0;
+
+    // First request arrives before discovery, route, or QUIC session
+    // readiness. The manager-installed wait hook must retain the typed
+    // request without serializing it.
+    auto request =
+        requester.request(
+            "robot_1",
+            NetPing{41},
+            cito::RequestOptions{
+                std::chrono::
+                    seconds(5)});
+
+    if (
+        request.ready() ||
+        cito::StaticCodec<
+            NetPing>::encodes != 0 ||
+        runtime->request_network()
+            .waiting_count() != 1 ||
+        lifecycle.desired_count() != 1) {
         return 20;
     }
 
@@ -463,35 +488,6 @@ int run_client(
 
     if (manager.reconcile() == 0) {
         return 22;
-    }
-
-    const bool connected =
-        spin(
-            manager,
-            [&] {
-                return
-                    manager.has_session(
-                        77) &&
-                    lifecycle.is_connected(
-                        77);
-            },
-            std::chrono::
-                seconds(6));
-
-    if (!connected) {
-        return 23;
-    }
-
-    cito::Context requester(
-        "acme");
-
-    auto request =
-        requester.request(
-            "robot_1",
-            NetPing{41});
-
-    if (request.ready()) {
-        return 24;
     }
 
     const bool completed =
@@ -508,11 +504,61 @@ int run_client(
         !request.result() ||
         request.result()
             .value()
-            .value != 42) {
+            .value != 42 ||
+        cito::StaticCodec<
+            NetPing>::encodes != 1 ||
+        !manager.has_session(77) ||
+        !lifecycle.is_connected(77)) {
+        return 23;
+    }
+
+    // A request with no discovered route remains unencoded until its
+    // deadline expires.
+    const auto before_timeout =
+        cito::StaticCodec<
+            NetPing>::encodes;
+
+    auto timed_out =
+        requester.request(
+            "missing",
+            NetPing{9},
+            cito::RequestOptions{
+                std::chrono::
+                    milliseconds(20)});
+
+    if (
+        timed_out.ready() ||
+        cito::StaticCodec<
+            NetPing>::encodes !=
+        before_timeout) {
+        return 24;
+    }
+
+    const bool timeout_completed =
+        spin(
+            manager,
+            [&] {
+                return timed_out.ready();
+            },
+            std::chrono::
+                seconds(2));
+
+    if (
+        !timeout_completed ||
+        timed_out.result() ||
+        timed_out.result()
+            .status() !=
+            cito::RequestStatus::
+                DeadlineExceeded ||
+        cito::StaticCodec<
+            NetPing>::encodes !=
+        before_timeout) {
         return 25;
     }
 
     if (
+        runtime->request_network()
+            .waiting_count() != 0 ||
         runtime->request_network()
             .transport()
             .outbound_count() != 0 ||
@@ -522,7 +568,7 @@ int run_client(
     }
 
     std::cout
-        << "quic_public_request_client result=42 session=1"
+        << "quic_public_request_client result=42 lazy=1 deadline=1"
         << std::endl;
 
     manager.shutdown();

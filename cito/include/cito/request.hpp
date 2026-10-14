@@ -2,6 +2,7 @@
 
 #include <cito/detail/request_reply_core.hpp>
 
+#include <chrono>
 #include <coroutine>
 #include <functional>
 #include <memory>
@@ -13,6 +14,11 @@ namespace cito {
 
 using RequestStatus =
     detail::RequestStatus;
+
+struct RequestOptions {
+    std::chrono::milliseconds timeout{
+        std::chrono::seconds(5)};
+};
 
 template <class T>
 class Result {

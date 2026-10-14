@@ -1,6 +1,7 @@
 #include <cito/cito.hpp>
 
 #include <cassert>
+#include <chrono>
 #include <cstdint>
 #include <span>
 #include <stdexcept>
@@ -152,6 +153,42 @@ int main() {
             Unavailable);
 
     // No handler demand means no request serialization.
+    assert(PingCodec::encodes == 0);
+
+    auto missing_with_options =
+        requester.request(
+            "robot_1",
+            Ping{8},
+            cito::RequestOptions{
+                std::chrono::
+                    milliseconds(25)});
+
+    assert(missing_with_options.ready());
+    assert(!missing_with_options.result());
+    assert(
+        missing_with_options.result()
+            .status() ==
+        cito::RequestStatus::
+            Unavailable);
+    assert(PingCodec::encodes == 0);
+
+    bool negative_timeout_rejected =
+        false;
+
+    try {
+        (void)requester.request(
+            "robot_1",
+            Ping{9},
+            cito::RequestOptions{
+                std::chrono::
+                    milliseconds(-1)});
+    } catch (
+        const std::invalid_argument&) {
+        negative_timeout_rejected =
+            true;
+    }
+
+    assert(negative_timeout_rejected);
     assert(PingCodec::encodes == 0);
 
     cito::Context provider("acme");

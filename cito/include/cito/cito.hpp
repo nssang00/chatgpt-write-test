@@ -355,7 +355,8 @@ private:
             ReplyTypeT<RequestT>>
         request(
             std::string_view resource,
-            const RequestT& value) {
+            const RequestT& value,
+            RequestOptions options) {
             using ReplyT =
                 ReplyTypeT<RequestT>;
 
@@ -377,6 +378,13 @@ private:
             auto& network =
                 runtime_->
                     request_network();
+
+            if (
+                options.timeout.count() <
+                0) {
+                throw std::invalid_argument(
+                    "Cito request timeout cannot be negative");
+            }
 
             auto completion =
                 [result_state](
@@ -472,9 +480,63 @@ private:
                 return request;
             }
 
-            // Remote demand must already have a route and an attached
-            // session before serialization. No ready receiver/session keeps
-            // the no-interest fast path at encode zero.
+            // A concrete network-session manager installs a wait hook. In
+            // that mode the request object is retained without serialization
+            // while discovery/route/session readiness converges.
+            if (network.waiting_enabled()) {
+                const auto deadline =
+                    detail::
+                        RequestNetworkAdapter::
+                            Clock::now() +
+                    options.timeout;
+
+                const auto wait_id =
+                    network.defer(
+                        app_id_,
+                        key,
+                        [value] {
+                            return
+                                StaticCodec<
+                                    RequestT>::
+                                    encode(
+                                        value);
+                        },
+                        completion,
+                        deadline);
+
+                if (
+                    wait_id != 0 &&
+                    !result_state->ready()) {
+                    std::weak_ptr<
+                        detail::
+                            EmbeddedHostRuntime>
+                        weak_runtime =
+                            runtime_;
+
+                    result_state->cancel_ =
+                        [weak_runtime =
+                             std::move(
+                                 weak_runtime),
+                         wait_id] {
+                            const auto runtime =
+                                weak_runtime
+                                    .lock();
+
+                            return
+                                runtime &&
+                                runtime->
+                                    request_network()
+                                    .cancel_wait(
+                                        wait_id);
+                        };
+                }
+
+                return request;
+            }
+
+            // Compatibility path used when no network-session manager owns
+            // readiness progression. It preserves the original fail-fast
+            // no-session semantics for local/unit embedders.
             if (!network.can_send(
                     key)) {
                 result_state->finish(
@@ -842,7 +904,19 @@ public:
         const RequestT& value) {
         return request(
             "",
-            value);
+            value,
+            {});
+    }
+
+    template <class RequestT>
+    Request<ReplyTypeT<RequestT>>
+    request(
+        const RequestT& value,
+        RequestOptions options) {
+        return request(
+            "",
+            value,
+            options);
     }
 
     template <class RequestT>
@@ -850,10 +924,23 @@ public:
     request(
         std::string_view resource,
         const RequestT& value) {
+        return request(
+            resource,
+            value,
+            {});
+    }
+
+    template <class RequestT>
+    Request<ReplyTypeT<RequestT>>
+    request(
+        std::string_view resource,
+        const RequestT& value,
+        RequestOptions options) {
         return state_->
             template request<RequestT>(
                 resource,
-                value);
+                value,
+                options);
     }
 
     template <class T>

@@ -154,6 +154,21 @@ public:
 
         ready_ =
             open_client_configuration();
+
+        if (
+            ready_ &&
+            lifecycle_) {
+            runtime_.request_network()
+                .set_wait_hook(
+                    [lifecycle =
+                         lifecycle_](
+                        const RequestKey&
+                            key) {
+                        lifecycle->ensure(
+                            key);
+                    });
+            owns_wait_hook_ = true;
+        }
     }
 
     ~Impl() {
@@ -286,6 +301,11 @@ public:
             ++count;
         }
 
+        // Lazy typed requests are encoded only after an attached session is
+        // ready, and deadlines advance from the same loop-owner poll path.
+        runtime_.request_network()
+            .progress();
+
         return count;
     }
 
@@ -375,6 +395,16 @@ public:
                 true,
                 std::memory_order_acq_rel)) {
             return;
+        }
+
+        if (owns_wait_hook_) {
+            runtime_.request_network()
+                .clear_wait_hook();
+            runtime_.request_network()
+                .fail_waiting(
+                    RequestStatus::
+                        Unavailable);
+            owns_wait_hook_ = false;
         }
 
         stop_listener();
@@ -1547,6 +1577,7 @@ private:
     HQUIC listener_{};
     std::uint16_t listen_port_{};
     bool ready_{false};
+    bool owns_wait_hook_{false};
 
     std::atomic<bool> stopping_{
         false};

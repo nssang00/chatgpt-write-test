@@ -704,32 +704,19 @@ public:
         RequestTransportSend>
     cancel(
         RequestId request_id) {
-        const auto it =
-            outbound_.find(
-                request_id);
-
-        if (it == outbound_.end()) {
-            return std::nullopt;
-        }
-
-        const auto destination =
-            it->second.destination;
-
-        outbound_.erase(it);
-
-        auto bytes =
-            encode_request_transport_cancel(
-                request_id);
-
-        if (!requests_.cancel(
-                request_id)) {
-            return std::nullopt;
-        }
-
-        return RequestTransportSend{
-            destination,
+        return terminate(
             request_id,
-            std::move(bytes)};
+            RequestStatus::Cancelled);
+    }
+
+    std::optional<
+        RequestTransportSend>
+    expire(
+        RequestId request_id) {
+        return terminate(
+            request_id,
+            RequestStatus::
+                DeadlineExceeded);
     }
 
     std::vector<
@@ -903,6 +890,52 @@ public:
     }
 
 private:
+    std::optional<
+        RequestTransportSend>
+    terminate(
+        RequestId request_id,
+        RequestStatus status) {
+        if (
+            status !=
+                RequestStatus::
+                    Cancelled &&
+            status !=
+                RequestStatus::
+                    DeadlineExceeded) {
+            throw std::invalid_argument(
+                "Cito request transport: invalid terminal status");
+        }
+
+        const auto it =
+            outbound_.find(
+                request_id);
+
+        if (it == outbound_.end()) {
+            return std::nullopt;
+        }
+
+        const auto destination =
+            it->second.destination;
+
+        outbound_.erase(it);
+
+        auto bytes =
+            encode_request_transport_cancel(
+                request_id);
+
+        if (!requests_.complete_remote(
+                request_id,
+                status,
+                {})) {
+            return std::nullopt;
+        }
+
+        return RequestTransportSend{
+            destination,
+            request_id,
+            std::move(bytes)};
+    }
+
     HostRuntimeCore& host_;
     RequestReplyCore& requests_;
 

@@ -170,7 +170,7 @@ jobs:
 
           test "$public_client_status" -eq 0
           test "$public_server_status" -eq 0
-          grep -q "quic_public_request_client result=42 session=1" quic-public-client.log
+          grep -q "quic_public_request_client result=42 lazy=1 deadline=1" quic-public-client.log
           grep -q "quic_public_request_server handler=1 reply=1" quic-public-server.log
 
 
@@ -245,5 +245,5 @@ jobs:
 
           test "$client_status" -eq 0
           test "$server_status" -eq 0
-          grep -q "quic_public_request_client result=42 session=1" quic-public-san-client.log
+          grep -q "quic_public_request_client result=42 lazy=1 deadline=1" quic-public-san-client.log
           grep -q "quic_public_request_server handler=1 reply=1" quic-public-san-server.log

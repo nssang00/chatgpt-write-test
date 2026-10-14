@@ -85,7 +85,20 @@ ctx.subscribe<Position>("drone_17", handler);
 ctx.publish("drone_17", position);
 ```
 
-Level 3 may add reliability, timeout/deadline, metadata, or execution policy.
+Level 3 adds optional policy such as timeout/deadline without exposing the
+transport:
+
+```cpp
+auto result =
+    co_await ctx.request(
+        "drone_17",
+        GetStatus{...},
+        cito::RequestOptions{
+            .timeout = 250ms
+        });
+```
+
+The default request timeout is 5 seconds. A negative timeout is rejected.
 
 Users do not select SHM, UDP, QUIC, coordinator IDs, destination IDs, sockets,
 event loops, or worker pools in the normal API.
@@ -112,7 +125,7 @@ transports as Publish/Subscribe. It does not introduce a second RPC runtime.
 2. Add a pending-request index keyed by RequestId on the single event loop.
 3. Add handler demand keyed by scope + resource + request type.
 4. Implement same-process `request()/handle()` first.
-5. Add deadline, cancellation and status before remote public release.
+5. Add deadline, cancellation and status before remote public release. ✅
 6. Route same-host request/reply over the normal direct/SHM path.
 7. Route remote reliable request/reply over QUIC stream by default.
 8. Add generated convenience facades for gRPC/protobuf migration after the
@@ -142,3 +155,36 @@ The Request/Reply milestone is not complete until these cumulative gates pass:
 Do not make `Channel`, `Topic`, `Client`, `Stub`, `DataReader`,
 `DataWriter`, or a transport object mandatory for ordinary use. Convenience
 facades may exist, but the core API remains intent-first.
+
+
+## Lazy remote request readiness
+
+When a concrete remote-session manager owns the runtime, `request()` does not
+require discovery and QUIC connection establishment to have finished before the
+call is made.
+
+The typed request is retained in a bounded runtime entry and is not serialized
+until an exact handler route has a ready reliable session:
+
+```text
+ctx.request(GetStatus)
+        |
+        +-- local handler -> encode/dispatch immediately
+        |
+        +-- remote manager installed
+              |
+              +-- wait for exact route/session
+              |      encode count = 0
+              |
+              +-- session ready
+                     encode once -> CTX1 -> send
+```
+
+The request deadline covers both readiness waiting and the remote reply wait.
+If it expires before readiness, the encoder is never called. If it expires
+after send, the local result becomes `DeadlineExceeded` and Cito emits a
+best-effort CTX1 Cancel so late replies cannot revive the request.
+
+Embedders that do not install a network-session manager retain the previous
+fail-fast `Unavailable` behavior. This keeps local/unit use deterministic
+while the normal distributed runtime can hide connection setup from users.

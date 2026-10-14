@@ -231,6 +231,14 @@ the client learns a CTR5 QUIC route, the manager creates the session, and
 `Context::request()` reaches a remote `Context::handle()` and receives the
 typed reply.
 
+The public C++ remote path now also supports a pending-first-request model:
+when the concrete session manager is installed, the first typed request can
+arrive before discovery/session readiness and remains unencoded until an exact
+session is ready. `RequestOptions.timeout` defaults to 5 seconds and covers
+both readiness waiting and remote reply waiting. Deadline-before-readiness is
+encode-zero; deadline-after-send completes locally as `DeadlineExceeded` and
+emits CTX1 Cancel best-effort.
+
 The remaining integration is event-loop ownership in normal `Context::run()`
-and pending-first-request/deadline behavior while discovery or connection is
-still converging.
+plus the real UDP discovery/control socket path, so applications no longer
+drive `poll()/reconcile()` or route learning explicitly.
