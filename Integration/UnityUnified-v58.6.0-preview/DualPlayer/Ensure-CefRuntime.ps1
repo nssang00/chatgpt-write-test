@@ -33,8 +33,30 @@ function IsValidStage([string]$candidate) {
  return $true
 }
 function AddIfValid([string]$candidate){if(IsValidStage $candidate){return [IO.Path]::GetFullPath($candidate)};return $null}
+# Accept an entire legacy oneclick_bundle, a container with oneclick_bundle inside,
+# or an already compiled stage. Never modify the old OneClick tree.
+function FindStageUnderFolder([string]$folder) {
+ if([string]::IsNullOrWhiteSpace($folder) -or -not (Test-Path -LiteralPath $folder -PathType Container)){return $null}
+ foreach($suffix in @(
+  '',
+  'Build\cef-native\stage',
+  'oneclick_bundle\Build\cef-native\stage',
+  'UnityHarness\Build\CompanyWebViewCefProbe_Data\Plugins\x86_64',
+  'oneclick_bundle\UnityHarness\Build\CompanyWebViewCefProbe_Data\Plugins\x86_64'
+ )){
+  $candidate=if($suffix){Join-Path $folder $suffix}else{$folder}
+  if(IsValidStage $candidate){return [IO.Path]::GetFullPath($candidate)}
+ }
+ return $null
+}
 function CandidateSearch {
- $roots=@($BundleRoot,(Split-Path -Parent $BundleRoot),$env:USERPROFILE+'\Downloads',$env:USERPROFILE+'\Desktop')
+ $roots=@(
+  $BundleRoot,
+  (Split-Path -Parent $BundleRoot),
+  (Join-Path $env:USERPROFILE 'Downloads'),
+  (Join-Path $env:USERPROFILE 'Desktop'),
+  (Join-Path $env:LOCALAPPDATA 'CompanyWebView\CEF-v58.4.4\oneclick_bundle')
+ )
  if($env:CEF_V58_4_4_RUNTIME_DIR){$roots=@($env:CEF_V58_4_4_RUNTIME_DIR)+$roots}
  $prior=Join-Path $BundleRoot '.cef-runtime-local.txt'
  if(Test-Path -LiteralPath $prior -PathType Leaf){
@@ -42,31 +64,36 @@ function CandidateSearch {
   if($last){$roots=@($last)+$roots}
  }
  $seen=@{}
- foreach($root in $roots){
-  if(-not $root -or -not (Test-Path -LiteralPath $root -PathType Container)){continue}
-  $list=@($root)
-  if($root -match 'Downloads$|Desktop$'){
-   $list+=@(Get-ChildItem -LiteralPath $root -Directory -ErrorAction SilentlyContinue |
-    Where-Object {$_.Name -match '(?i)cef|webview|oneclick'} |
-    Select-Object -ExpandProperty FullName -First 60)
-  }
-  foreach($folder in $list){
-   foreach($suffix in @('','Build\cef-native\stage','oneclick_bundle\Build\cef-native\stage',
-     'UnityHarness\Build\CompanyWebViewCefProbe_Data\Plugins\x86_64',
-     'oneclick_bundle\UnityHarness\Build\CompanyWebViewCefProbe_Data\Plugins\x86_64')){
-     $path=if($suffix){Join-Path $folder $suffix}else{$folder}
-     if($seen.ContainsKey($path)){continue};$seen[$path]=$true
-     $ok=AddIfValid $path
-     if($ok){return $ok}
+ foreach($rootDir in $roots){
+  if(-not $rootDir -or -not (Test-Path -LiteralPath $rootDir -PathType Container)){continue}
+  $rootFull=[IO.Path]::GetFullPath($rootDir)
+  if($seen.ContainsKey($rootFull)){continue}
+  $seen[$rootFull]=$true
+  $direct=FindStageUnderFolder $rootFull
+  if($direct){return $direct}
+  # At most two folder levels; do not recursively crawl users' disks.
+  $level1=@(Get-ChildItem -LiteralPath $rootFull -Directory -ErrorAction SilentlyContinue |
+    Where-Object {$_.Name -match '(?i)oneclick|cef|webview|company|58' } |
+    Select-Object -First 100)
+  foreach($one in $level1){
+   $stage1=FindStageUnderFolder $one.FullName
+   if($stage1){return $stage1}
+   $level2=@(Get-ChildItem -LiteralPath $one.FullName -Directory -ErrorAction SilentlyContinue |
+     Where-Object {$_.Name -match '(?i)oneclick|cef|webview|company|58|bundle' } |
+     Select-Object -First 60)
+   foreach($two in $level2){
+    $stage2=FindStageUnderFolder $two.FullName
+    if($stage2){return $stage2}
    }
   }
  }
  return $null
 }
 if($ExplicitDir){
- if(-not (IsValidStage $ExplicitDir)){throw 'Specified -CefRuntimeDir is not a complete compiled CEF v58.4.4 native stage.'}
- Write-Host '[CEF AUTO] Explicit runtime stage verified'
- Write-Output ([IO.Path]::GetFullPath($ExplicitDir));return
+ $resolved=FindStageUnderFolder $ExplicitDir
+ if(-not $resolved){throw 'Selected oneclick_bundle contains no compiled CEF runtime stage; expected Build\cef-native\stage (or Player Plugins\x86_64).'}
+ Write-Host '[CEF AUTO] Existing oneclick_bundle/runtime reuse verified'
+ Write-Output $resolved;return
 }
 if(IsValidStage $stage){
  Write-Host '[CEF AUTO] Using persistent compiled cache'
