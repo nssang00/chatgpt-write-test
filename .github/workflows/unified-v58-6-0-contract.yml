@@ -17,6 +17,33 @@ jobs:
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '8.0.x'
+      - name: Pinned CEF no-prompt auto-bootstrap source guard
+        shell: pwsh
+        run: |
+          python Integration/UnityUnified-v58.6.0-preview/Validation/verify_cef_bootstrap.py
+          if($LASTEXITCODE -ne 0){throw 'Pinned CEF bootstrap source check failed'}
+      - name: PowerShell CEF bootstrap syntax and offline stage-discovery test
+        shell: powershell
+        run: |
+          $helper=(Resolve-Path 'Integration/UnityUnified-v58.6.0-preview/DualPlayer/Ensure-CefRuntime.ps1').Path
+          $tokens=$null;$errors=$null
+          [System.Management.Automation.Language.Parser]::ParseFile($helper,[ref]$tokens,[ref]$errors)|Out-Null
+          if($errors.Count){throw "CEF auto-bootstrap PowerShell syntax errors: $errors"}
+          $folder=Join-Path $env:RUNNER_TEMP 'cef-stage-fixture'
+          $native=Join-Path $folder 'native\Release'
+          $runtime=Join-Path $folder 'runtime\Release'
+          $locales=Join-Path $runtime 'locales'
+          New-Item -ItemType Directory -Force -Path $native,$locales | Out-Null
+          New-Item -ItemType File -Force -Path (Join-Path $native 'CompanyWebViewCefTextureProbe.dll') | Out-Null
+          foreach($name in @('libcef.dll','CompanyWebViewCefSubprocess.exe','icudtl.dat','resources.pak','chrome_100_percent.pak')){
+            New-Item -ItemType File -Force -Path (Join-Path $runtime $name) | Out-Null
+          }
+          New-Item -ItemType File -Force -Path (Join-Path $locales 'en-US.pak') | Out-Null
+          $resolved=@(& $helper -BundleRoot $env:RUNNER_TEMP -ExplicitDir $folder -UnityExe 'unused-in-prebuilt-stage')
+          if($resolved.Count -ne 1 -or $resolved[0] -ne [IO.Path]::GetFullPath($folder)){
+            throw 'Offline auto-bootstrap failed to reuse valid staged CEF without user prompt'
+          }
+          Write-Host 'CEF auto-bootstrap fixture path PASS; no CDN download/build was attempted'
       - name: Regression - missing CEF must create one-file results ZIP without StrictMode Count crash
         shell: powershell
         run: |
