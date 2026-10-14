@@ -22,7 +22,7 @@ public static class DualWindowCapture {
  [DllImport("user32.dll")] static extern bool IsIconic(IntPtr h);
  [DllImport("user32.dll")] static extern bool SetWindowPos(IntPtr h,IntPtr a,int x,int y,int w,int t,uint f);
  [StructLayout(LayoutKind.Sequential)] struct RECT {public int l,t,r,b;}
- static bool Guard(IntPtr h,int process,out RECT r,out string error) {
+ static bool Guard(IntPtr h,int process,out RECT r,out string error,bool captureOnly) {
   r=new RECT();error="";
   if(h==IntPtr.Zero){error="WINDOW_NOT_AVAILABLE";return false;}
   uint actual;GetWindowThreadProcessId(h,out actual);
@@ -32,12 +32,12 @@ public static class DualWindowCapture {
   if(!GetWindowRect(h,out r)){error="NO_WINDOW_RECT";return false;}
   int w=r.r-r.l,t=r.b-r.t;
   if(w<400||t<300||w>4096||t>3000){error="INVALID_WINDOW_BOUNDS";return false;}
-  if(!SystemInformation.VirtualScreen.Contains(Rectangle.FromLTRB(r.l,r.t,r.r,r.b))){
+  if(captureOnly && !SystemInformation.VirtualScreen.Contains(Rectangle.FromLTRB(r.l,r.t,r.r,r.b))){
     error="OFFSCREEN_NO_CAPTURE";return false;}
   return true;
  }
  public static string Capture(IntPtr h,int pid,string path) {
-  RECT r;string err;if(!Guard(h,pid,out r,out err))return err;
+  RECT r;string err;if(!Guard(h,pid,out r,out err,true))return err;
   using(var bmp=new Bitmap(r.r-r.l,r.b-r.t)){
    using(var g=Graphics.FromImage(bmp))
     g.CopyFromScreen(r.l,r.t,0,0,bmp.Size,CopyPixelOperation.SourceCopy);
@@ -46,7 +46,7 @@ public static class DualWindowCapture {
   return "CAPTURED";
  }
  public static string Resize(IntPtr h,int pid,bool smaller) {
-  RECT r;string err;if(!Guard(h,pid,out r,out err))return err;
+  RECT r;string err;if(!Guard(h,pid,out r,out err,false))return err;
   int w=smaller?Math.Max(840,(int)((r.r-r.l)*.82)):Math.Max(1200,(int)((r.r-r.l)*1.18));
   int t=smaller?Math.Max(540,(int)((r.b-r.t)*.82)):Math.Max(760,(int)((r.b-r.t)*1.18));
   var area=SystemInformation.WorkingArea;
@@ -60,6 +60,7 @@ public static class DualWindowCapture {
 '@
   $start=[DateTime]::UtcNow
   $phases=@(
+   @{name='00_fit_window';frac=.08;op='shrink'},
    @{name='01_initial';frac=.22;op='capture'},
    @{name='02_shrink';frac=.34;op='shrink'},
    @{name='02_resized';frac=.53;op='capture'},

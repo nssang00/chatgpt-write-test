@@ -6,7 +6,7 @@ host=(r/'Runtime/UnifiedOverlaySceneHost.cs').read_text(encoding='utf-8')
 tel=(r/'DualPlayer/UnifiedDualPlayerEvidence.cs').read_text(encoding='utf-8')
 for v in ('GetForegroundWindow','GetAncestor','GetWindowThreadProcessId',
           'CopyFromScreen','SetWindowPos','ImageFormat.Png','screen-automation.json',
-          '01_initial','02_resized','03_restored','sha256',
+          '00_fit_window','01_initial','02_resized','03_restored','sha256',
           'manualVisualApprovalRequired=$true'):
     assert v in cap,v
 for v in ('Start-DualScreenAutomation','NoScreenshots','ResolveCefRuntime',
