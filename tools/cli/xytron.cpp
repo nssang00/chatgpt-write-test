@@ -220,7 +220,7 @@ static bool safeSdkPrefix(const std::string& path) {
     const char c=path[i];
     if(!((c>='a'&&c<='z')||(c>='A'&&c<='Z')||
          (c>='0'&&c<='9')||c=='_'||c=='-'||
-         c=='/'||c=='\\'||c=='.'||c==':'||c==' '))
+         c=='/'||c=='\\'||c=='.'||c==':'||c==' '||c=='~'))
       return false;
   }
   return true;
