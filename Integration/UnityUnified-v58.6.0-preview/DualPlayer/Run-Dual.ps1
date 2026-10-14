@@ -34,23 +34,12 @@ function FindUnity {
  return $d
 }
 function ResolveCefRuntime {
- if($CefRuntimeDir){return $CefRuntimeDir}
- $localSetting=Join-Path $root '.cef-runtime-local.txt'
- if(Test-Path -LiteralPath $localSetting){
-  $saved=(Get-Content -LiteralPath $localSetting -Raw -Encoding UTF8).Trim().Trim('"')
-  if(Test-Path -LiteralPath $saved -PathType Container){Write-Host '[DUAL] Previous CEF runtime path loaded';return $saved}
- }
- $candidates=@((Join-Path (Split-Path $root -Parent) 'Build\cef-native\stage'),
-   (Join-Path (Split-Path $root -Parent) 'CEF-v58.4.4\Build\cef-native\stage'),
-   (Join-Path $root 'Build\cef-native\stage'))
- if($env:CEF_V58_4_4_RUNTIME_DIR){$candidates=@($env:CEF_V58_4_4_RUNTIME_DIR)+$candidates}
- foreach($candidate in $candidates){
-  if(Test-Path -LiteralPath (Join-Path $candidate 'native\Release\CompanyWebViewCefTextureProbe.dll') -PathType Leaf){return $candidate}
- }
- Write-Host '[DUAL] Paste the validated v58.4.4 CEF Build\cef-native\stage folder (one-time):'
- $candidate=(Read-Host 'CEF runtime folder').Trim().Trim('"')
- Need (Test-Path -LiteralPath $candidate -PathType Container) 'CEF runtime folder not found'
- return $candidate
+ # No prompt: use previous v58.4.4 native stage or build the exact pinned baseline automatically.
+ $helper=Join-Path $root 'DualPlayer\Ensure-CefRuntime.ps1'
+ Need (Test-Path -LiteralPath $helper -PathType Leaf) 'Missing CEF automation helper'
+ $stage=@(& $helper -BundleRoot $root -ExplicitDir $CefRuntimeDir -UnityExe $unity)
+ Need ($stage.Count -eq 1 -and -not [string]::IsNullOrWhiteSpace($stage[0])) 'CEF automation could not resolve a complete pinned native stage'
+ return [string]$stage[0]
 }
 function GetCefStageLayout([string]$from){
  Need (-not [string]::IsNullOrWhiteSpace($from) -and (Test-Path -LiteralPath $from -PathType Container)) 'CEF v58.4.4 native runtime folder not found. Use a previously BUILT CEF stage folder, not the source ZIP.'
@@ -83,9 +72,9 @@ try {
  if($SelfTest){$summary.status='SELFTEST_PASS';$summary.stage='SELFTEST';$code=0}
  else {
   Need ($env:OS -eq 'Windows_NT' -and [IntPtr]::Size -eq 8) 'Windows x64 only'
+  $unity=FindUnity
   $CefRuntimeDir=ResolveCefRuntime
   $null=GetCefStageLayout $CefRuntimeDir
-  $unity=FindUnity
   New-Item -ItemType Directory -Force -Path $out | Out-Null
   $unpack=Join-Path $out 'source'
   Expand-Archive -LiteralPath (Join-Path $root 'UnifiedSource-v58.6.0.zip') -DestinationPath $unpack -Force
@@ -106,7 +95,6 @@ try {
   Need (Test-Path -LiteralPath $srcDll) 'No compiled WebView2 unified DLL'
   $dest=Join-Path $project 'Assets\Plugins\x86_64'
   StageCef $CefRuntimeDir $dest
-  $CefRuntimeDir|Set-Content -LiteralPath (Join-Path $root '.cef-runtime-local.txt') -Encoding UTF8
   Copy-Item -LiteralPath $srcDll -Destination $dest -Force
   $summary.stage='UNITY_BUILD'
   $player=Join-Path $out 'Player\UnifiedDualPreview.exe'
