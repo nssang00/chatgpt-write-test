@@ -77,8 +77,8 @@ def run(exe, require_dotnet):
             checks += 1
             src = cs / 'src/Plugin.cs'
             content = src.read_text(encoding='utf-8')
-            src.write_text(content.replace('public static string Hello',
-                '[Export]\n    public static int Hello(int count) => count;\n    public static string Hello'),
+            src.write_text(content.replace('[Export]\n    public static string Hello',
+                '[Export]\n    public static int Hello(int count) => count;\n    [Export]\n    public static string Hello'),
                 encoding='utf-8')
             call(exe, cs, 'build')
             call(exe, cs, 'bindings', 'generate', '--out', 'duplicates', '--trusted', ok=False)
