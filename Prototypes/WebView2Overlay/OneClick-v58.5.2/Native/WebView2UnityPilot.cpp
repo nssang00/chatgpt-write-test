@@ -8,6 +8,11 @@
 #include <thread>
 #include <map>
 #include <string>
+#ifdef UNIFIED_PREVIEW
+#include <deque>
+#include <utility>
+#include <cwchar>
+#endif
 #include "EchoProtocol.h"
 using Microsoft::WRL::Callback;
 using Microsoft::WRL::ComPtr;
@@ -16,6 +21,9 @@ namespace {
 constexpr UINT kUpdate = WM_APP + 41;
 constexpr UINT kParentMoved = WM_APP + 42;
 constexpr UINT kVisibility = WM_APP + 43;
+#ifdef UNIFIED_PREVIEW
+constexpr UINT kUnifiedCommand = WM_APP + 44;
+#endif
 constexpr wchar_t kClass[] = L"CompanyWV2UnityPilotHost";
 struct RectValue { int x=0, y=0, width=400, height=300; };
 std::thread g_thread;
@@ -35,6 +43,58 @@ std::map<std::wstring,std::wstring> g_pendingEcho; // STA thread only; never log
 std::atomic<int> g_shutdownPhase{0}; // 0 live, 1 requested, 2 WM_CLOSE, 3 cleaning, 4 COM closed, 5 STA ending, 6 worker ended, 7 joined
 std::atomic<bool> g_stop{false};
 std::atomic<bool> g_visible{true};
+#ifdef UNIFIED_PREVIEW
+// Preview is still a singleton per process. All WebView2 COM work remains STA-owned.
+std::wstring g_initialUrl=L"about:blank"; // set before worker launch
+std::mutex g_commandMutex;
+std::deque<std::pair<int,std::wstring>> g_commands;
+std::mutex g_messageMutex;
+std::deque<std::wstring> g_messages;
+std::atomic<int> g_droppedMessages{0};
+std::atomic<int> g_commandsCompleted{0};
+std::atomic<int> g_commandError{0};
+bool IsSafeUrl(const std::wstring& url) {
+    return url==L"about:blank" ||
+        (url.size()<2048 && (url.rfind(L"https://",0)==0 || url.rfind(L"http://",0)==0));
+}
+void ProcessUnifiedCommands() {
+    std::deque<std::pair<int,std::wstring>> pending;
+    { std::lock_guard<std::mutex> lk(g_commandMutex); pending.swap(g_commands); }
+    if(!g_webview || g_stop.load()) return;
+    for(const auto& cmd:pending) {
+        HRESULT hr=E_INVALIDARG;
+        switch(cmd.first) {
+          case 1: hr=IsSafeUrl(cmd.second) ? g_webview->Navigate(cmd.second.c_str()) : E_INVALIDARG;break;
+          case 2: hr=g_webview->ExecuteScript(cmd.second.c_str(),
+                Callback<ICoreWebView2ExecuteScriptCompletedHandler>(
+                    [](HRESULT h,LPCWSTR)->HRESULT {if(FAILED(h)) g_commandError.store(-41);return S_OK;}).Get());break;
+          case 3: hr=g_webview->PostWebMessageAsString(cmd.second.c_str());break;
+          case 4: hr=g_webview->NavigateToString(cmd.second.c_str());break;
+          case 5: hr=g_webview->Reload();break;
+          case 6: hr=g_webview->Stop();break;
+          case 7: hr=g_webview->GoBack();break;
+          case 8: hr=g_webview->GoForward();break;
+        }
+        if(FAILED(hr)) g_commandError.store(-40-cmd.first);
+        else g_commandsCompleted.fetch_add(1);
+    }
+}
+int QueueUnifiedCommand(int kind, const wchar_t* input, size_t maxLength=65536) {
+    if(g_status.load()!=2 || !g_webview || g_stop.load()) return -20;
+    if(input==nullptr) return -10;
+    size_t length=wcsnlen_s(input,maxLength+1);
+    if(length==0 || length>maxLength) return -10;
+    std::wstring value(input,length);
+    if(kind==1 && !IsSafeUrl(value)) return -16;
+    if(kind==4 && length>65535) return -10;
+    { std::lock_guard<std::mutex> lk(g_commandMutex);
+      if(g_commands.size()>=64) return -17;
+      g_commands.emplace_back(kind,std::move(value)); }
+    HWND host=g_host.load();
+    if(!host || !PostMessageW(host,kUnifiedCommand,0,0)) return -18;
+    return 0;
+}
+#endif
 // The following COM objects are ONLY accessed on the dedicated STA thread.
 ComPtr<ICoreWebView2Controller> g_controller;
 ComPtr<ICoreWebView2> g_webview;
@@ -49,6 +109,10 @@ void Fail(int code) {
 void CleanupOnSta() {
     g_shutdownPhase.store(3);
     g_pendingEcho.clear();
+#ifdef UNIFIED_PREVIEW
+    {std::lock_guard<std::mutex> lk(g_commandMutex);g_commands.clear();}
+    {std::lock_guard<std::mutex> lk(g_messageMutex);g_messages.clear();}
+#endif
     if(g_webview && g_hasMessageHandler) {
         g_webview->remove_WebMessageReceived(g_webMessageToken);
         g_hasMessageHandler=false;
@@ -86,6 +150,11 @@ HRESULT OnController(HRESULT result, ICoreWebView2Controller* controller) {
             LPWSTR value=nullptr;
             if(SUCCEEDED(args->TryGetWebMessageAsString(&value)) && value) {
                 const std::wstring message(value); // WebView2 gives UTF-16, not UTF-8
+#ifdef UNIFIED_PREVIEW
+                {std::lock_guard<std::mutex> lk(g_messageMutex);
+                 if(g_messages.size() >= 32) g_droppedMessages.fetch_add(1);
+                 else g_messages.push_back(message); }
+#else
                 if(message==L"probe-ping") {
                     g_webview->PostWebMessageAsString(L"probe-pong");
                     g_pongs.fetch_add(1);
@@ -121,6 +190,7 @@ HRESULT OnController(HRESULT result, ICoreWebView2Controller* controller) {
                         }
                     }
                 }
+                #endif
                 CoTaskMemFree(value);
             }
             return S_OK;
@@ -200,7 +270,11 @@ setTimeout(()=>{
   sendEcho('auto',fixture);
 },350);
 </script></html>)HTML";
+#ifdef UNIFIED_PREVIEW
+    hr=g_webview->Navigate(g_initialUrl.c_str());
+#else
     hr=g_webview->NavigateToString(html);
+#endif
     if(FAILED(hr)) { Fail(-28); return S_OK; }
     g_status.store(2);
     return S_OK;
@@ -231,6 +305,9 @@ LRESULT CALLBACK HostProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         ResizeWebView();
         return 0;
       }
+#ifdef UNIFIED_PREVIEW
+      case kUnifiedCommand: ProcessUnifiedCommands();return 0;
+#endif
       case kVisibility:
         ShowWindow(hwnd, g_visible.load() ? SW_SHOWNOACTIVATE : SW_HIDE);
         if(g_controller) g_controller->put_IsVisible(g_visible.load() ? TRUE : FALSE);
@@ -301,6 +378,9 @@ __declspec(dllexport) int __cdecl WV2Pilot_Open(void* parentHandle,int x,int y,i
     g_parent=parent;
     { std::lock_guard<std::mutex> lock(g_lock); g_rect={x,y,width,height}; }
     g_error.store(0); g_pongs.store(0); g_acks.store(0); g_fixtureEchoAcks.store(0); g_manualEchoAcks.store(0); g_echoRejected.store(0); g_shutdownPhase.store(0); g_stop.store(false); g_visible.store(true);
+#ifdef UNIFIED_PREVIEW
+    g_droppedMessages.store(0);g_commandsCompleted.store(0);g_commandError.store(0);
+#endif
     g_status.store(1);
     try { g_thread=std::thread(Worker); }
     catch(...) { g_status.store(0); g_error.store(-13); return -13; }
@@ -363,4 +443,48 @@ __declspec(dllexport) int __cdecl WV2Pilot_Close(unsigned timeoutMs) {
     g_shutdownPhase.store(7);
     return 0;
 }
+
+#ifdef UNIFIED_PREVIEW
+// Separate DLL name/ABI from immutable r5 pilot. No unbounded pointer retention.
+__declspec(dllexport) int __cdecl WV2Unified_Open(void* parent,int x,int y,int w,int h,const wchar_t* url) {
+    if(url==nullptr) return -10;
+    const size_t length=wcsnlen_s(url,2049);
+    if(length==0 || length>2048) return -10;
+    std::wstring candidate(url,length);
+    if(!IsSafeUrl(candidate)) return -16;
+    if(g_thread.joinable() || g_status.load()!=0) return -12;
+    g_initialUrl=std::move(candidate);
+    return WV2Pilot_Open(parent,x,y,w,h);
+}
+__declspec(dllexport) int __cdecl WV2Unified_Navigate(const wchar_t* url) {return QueueUnifiedCommand(1,url,2048);}
+__declspec(dllexport) int __cdecl WV2Unified_ExecuteScript(const wchar_t* js) {return QueueUnifiedCommand(2,js);}
+__declspec(dllexport) int __cdecl WV2Unified_PostMessage(const wchar_t* text) {return QueueUnifiedCommand(3,text);}
+__declspec(dllexport) int __cdecl WV2Unified_NavigateHtml(const wchar_t* html) {return QueueUnifiedCommand(4,html);}
+__declspec(dllexport) int __cdecl WV2Unified_Reload() {return QueueUnifiedCommand(5,L"reload");}
+__declspec(dllexport) int __cdecl WV2Unified_Stop() {return QueueUnifiedCommand(6,L"stop");}
+__declspec(dllexport) int __cdecl WV2Unified_GoBack() {return QueueUnifiedCommand(7,L"back");}
+__declspec(dllexport) int __cdecl WV2Unified_GoForward() {return QueueUnifiedCommand(8,L"forward");}
+__declspec(dllexport) int __cdecl WV2Unified_ReadMessage(wchar_t* outText,int capacity) {
+    if(!outText || capacity<1 || capacity>65537) return -10;
+    std::lock_guard<std::mutex> lk(g_messageMutex);
+    if(g_messages.empty())return 0;
+    const auto& message=g_messages.front();
+    if(message.size()>=static_cast<size_t>(capacity))return -15;
+    memcpy(outText,message.c_str(),(message.size()+1)*sizeof(wchar_t));
+    int n=static_cast<int>(message.size());
+    g_messages.pop_front();
+    return n;
+}
+__declspec(dllexport) int __cdecl WV2Unified_GetState() {return WV2Pilot_GetState();}
+__declspec(dllexport) int __cdecl WV2Unified_GetLastError() {return WV2Pilot_GetLastError();}
+__declspec(dllexport) int __cdecl WV2Unified_GetCommandError() {return g_commandError.load();}
+__declspec(dllexport) int __cdecl WV2Unified_GetCompletedCommandCount() {return g_commandsCompleted.load();}
+__declspec(dllexport) int __cdecl WV2Unified_GetDroppedMessageCount() {return g_droppedMessages.load();}
+__declspec(dllexport) int __cdecl WV2Unified_SetBounds(int x,int y,int w,int h) {return WV2Pilot_SetBounds(x,y,w,h);}
+__declspec(dllexport) int __cdecl WV2Unified_NotifyParentMoved() {return WV2Pilot_NotifyParentMoved();}
+__declspec(dllexport) int __cdecl WV2Unified_SetVisible(int visible) {return WV2Pilot_SetVisible(visible);}
+__declspec(dllexport) int __cdecl WV2Unified_RequestClose() {return WV2Pilot_RequestClose();}
+__declspec(dllexport) int __cdecl WV2Unified_Close(unsigned timeoutMs) {return WV2Pilot_Close(timeoutMs);}
+__declspec(dllexport) int __cdecl WV2Unified_GetShutdownPhase() {return WV2Pilot_GetShutdownPhase();}
+#endif
 }
