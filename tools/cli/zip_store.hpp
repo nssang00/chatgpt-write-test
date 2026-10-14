@@ -34,7 +34,8 @@ inline std::uint32_t crc32(const std::string& body) {
   std::uint32_t crc = 0xffffffffu;
   for(std::size_t i=0;i<body.size();++i) {
     crc ^= static_cast<unsigned char>(body[i]);
-    for(int j=0;j<8;++j)+      crc = (crc >> 1) ^ ((crc & 1u) ? 0xedb88320u : 0u);
+    for(int j=0;j<8;++j)
+      crc = (crc >> 1) ^ ((crc & 1u) ? 0xedb88320u : 0u);
   }
   return crc ^ 0xffffffffu;
 }

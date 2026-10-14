@@ -5,7 +5,8 @@ Validates archive framing, paths, CRC and v1 manifest/entry compatibility.
 This is NOT a digital signature, safe-to-execute verdict, dependency resolver,
 or proof that a language host can load the plugin.
 """
-import argparse+import json
+import argparse
+import json
 import re
 from pathlib import Path, PurePosixPath
 import stat

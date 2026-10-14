@@ -349,7 +349,8 @@ static PluginSpec readPluginSpec(const std::string& directory) {
     throw std::runtime_error("Unsupported plugin schemaVersion");
   PluginSpec p;
   p.id=manifest.string("name");
-  p.version=manifest.string("version");+  p.runtime=manifest.string("runtime");
+  p.version=manifest.string("version");
+  p.runtime=manifest.string("runtime");
   if(!valid(p.id,true)) throw std::runtime_error("Invalid plugin name");
   if(!std::regex_match(p.version,std::regex("[0-9]+\\.[0-9]+\\.[0-9]+")))
     throw std::runtime_error("Invalid plugin version");

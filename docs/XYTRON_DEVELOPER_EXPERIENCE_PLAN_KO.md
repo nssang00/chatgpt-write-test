@@ -65,7 +65,8 @@ C++:
   "entry": {
     "win-x64": "bin/win-x64/camera.dll",
     "linux-x64": "bin/linux-x64/libcamera.so"
-  }+}
+  }
+}
 ```
 
 C#:

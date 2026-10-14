@@ -66,7 +66,8 @@ private:
         // Reject non-ASCII escapes rather than mis-normalize identifiers.
         if(n>0x7f || n<0x20)throw std::runtime_error("Unsupported Unicode manifest escape");
         result+=static_cast<char>(n);
-      } else {+        switch(esc){
+      } else {
+        switch(esc){
           case '"':result+='"';break;case '\\':result+='\\';break;
           case '/':result+='/';break;case 'b':result+='\b';break;
           case 'f':result+='\f';break;case 'n':result+='\n';break;

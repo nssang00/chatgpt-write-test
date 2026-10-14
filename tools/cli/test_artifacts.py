@@ -113,7 +113,8 @@ def test_all(exe, repo, sdk, require_dotnet):
         where = raw.find(b'Modified!')
         assert where > 0
         raw[where] ^= 1
-        corrupted = root / pkg.name+        corrupted.write_bytes(raw)
+        corrupted = root / pkg.name
+        corrupted.write_bytes(raw)
         try:
             verify_archive(corrupted)
         except zipfile.BadZipFile:
