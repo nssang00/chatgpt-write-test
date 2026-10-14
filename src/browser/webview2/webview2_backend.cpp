@@ -6,6 +6,9 @@
 #include "browser/webview2/webview2_bridge_script.hpp"
 #include "core/json_codec.hpp"
 #include "nativeweb/error.hpp"
+#include "nativeweb/app_resources.hpp"
+#include <WebView2EnvironmentOptions.h>
+#include <objidl.h>
 
 #include <memory>
 #include <sstream>
@@ -54,10 +57,12 @@ WebView2Backend::WebView2Backend()
       comInitialized_(false),
       created_(false),
       closing_(false),
+      webResourceRequestedRegistered_(false),
       webMessageRegistered_(false),
       navigationStartingRegistered_(false),
       navigationCompletedRegistered_(false)
 {
+    webResourceRequestedToken_.value=0;
     webMessageToken_.value = 0;
     navigationStartingToken_.value = 0;
     navigationCompletedToken_.value = 0;
@@ -128,10 +133,11 @@ void WebView2Backend::create(
             "webview_already_created",
             "NativeWeb WebView2 backend is already created");
     }
-    if (params.source.compare(0, 6, "app://") == 0)
-        throw Error("app_scheme_not_supported",
-                    "WebView2 app:// scheme adapter is not implemented; "
-                    "do not fall back to file:// without approval");
+    if (params.source.compare(0, 6, "app://") == 0 &&
+        (!params.appResources ||
+         !params.appResources->contains(params.source)))
+        throw Error("app_resource_not_found",
+                    "app:// entry is not in the packaged WebView2 resource bundle");
 
 
     if (
@@ -151,6 +157,7 @@ void WebView2Backend::create(
             params.parent);
     source_ = params.source;
     trustedEntryUrl_ = params.source;
+    appResources_ = params.appResources;
     closing_.store(false);
 
     const HRESULT comResult =
@@ -172,13 +179,31 @@ void WebView2Backend::create(
     comInitialized_ = true;
     createDispatchWindow();
 
+    // An authority-bearing secure app:// origin must be registered BEFORE
+    // the WebView2 Environment is created, including ordinary file:// hosts
+    // (all environments sharing browser processes must agree on schemes).
+    auto environmentOptions =
+        Microsoft::WRL::Make<CoreWebView2EnvironmentOptions>();
+    Microsoft::WRL::ComPtr<ICoreWebView2EnvironmentOptions4> options4;
+    checkHresult(environmentOptions.As(&options4),
+                 "Query ICoreWebView2EnvironmentOptions4");
+    auto appScheme =
+        Microsoft::WRL::Make<CoreWebView2CustomSchemeRegistration>(L"app");
+    checkHresult(appScheme->put_HasAuthorityComponent(TRUE),
+                 "app:// authority option");
+    checkHresult(appScheme->put_TreatAsSecure(TRUE),
+                 "app:// secure option");
+    ICoreWebView2CustomSchemeRegistration* schemes[] = {appScheme.Get()};
+    checkHresult(options4->SetCustomSchemeRegistrations(1, schemes),
+                 "SetCustomSchemeRegistrations");
+
     CreateState state;
 
     const HRESULT createResult =
         CreateCoreWebView2EnvironmentWithOptions(
             0,
             0,
-            0,
+            environmentOptions.Get(),
             Microsoft::WRL::Callback<
                 ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler>(
                 [this, &state](
@@ -312,8 +337,67 @@ void WebView2Backend::finishControllerCreation(
 
 HRESULT WebView2Backend::installHandlers()
 {
-    HRESULT result =
-        webview_->add_WebMessageReceived(
+    // Explicit app:// resource responses: no file:// fallback, CORS wildcard,
+    // or filesystem access. Filter covers images, CSS, document and fetch.
+    HRESULT result = webview_->AddWebResourceRequestedFilter(
+        L"app://*", COREWEBVIEW2_WEB_RESOURCE_CONTEXT_ALL);
+    if (FAILED(result)) return result;
+    result = webview_->add_WebResourceRequested(
+        Microsoft::WRL::Callback<
+            ICoreWebView2WebResourceRequestedEventHandler>(
+            [this](ICoreWebView2* sender,
+                   ICoreWebView2WebResourceRequestedEventArgs* args)
+                -> HRESULT
+            {
+                if (!args || !environment_) return E_INVALIDARG;
+                Microsoft::WRL::ComPtr<ICoreWebView2WebResourceRequest> request;
+                HRESULT r=args->get_Request(&request);
+                if (FAILED(r) || !request) return FAILED(r)?r:E_FAIL;
+                LPWSTR uri=0;
+                r=request->get_Uri(&uri);
+                if (FAILED(r) || !uri) return FAILED(r)?r:E_FAIL;
+                const std::string url=wideToUtf8(uri);
+                CoTaskMemFree(uri);
+                if (url.compare(0,6,"app://") != 0) return S_OK;
+
+                AppResource resource;
+                const bool found=appResources_ &&
+                    appResources_->find(url, &resource);
+                const std::string body=found?resource.bytes:"Not Found";
+                const std::string mime=found?resource.mimeType:"text/plain";
+
+                Microsoft::WRL::ComPtr<IStream> stream;
+                r=CreateStreamOnHGlobal(nullptr, TRUE, &stream);
+                if (FAILED(r)) return r;
+                if (!body.empty())
+                {
+                    ULONG written=0;
+                    r=stream->Write(body.data(),
+                                    static_cast<ULONG>(body.size()), &written);
+                    if (FAILED(r) || written!=body.size())
+                        return FAILED(r)?r:E_FAIL;
+                }
+                LARGE_INTEGER zero;
+                zero.QuadPart=0;
+                r=stream->Seek(zero,STREAM_SEEK_SET,nullptr);
+                if (FAILED(r)) return r;
+
+                const std::wstring headers =
+                    L"Content-Type: " + utf8ToWide(mime) +
+                    L"\r\nX-Content-Type-Options: nosniff"
+                    L"\r\nCache-Control: no-store";
+                Microsoft::WRL::ComPtr<ICoreWebView2WebResourceResponse> response;
+                r=environment_->CreateWebResourceResponse(
+                    stream.Get(),found?200:404,
+                    found?L"OK":L"Not Found",headers.c_str(),&response);
+                if (FAILED(r)) return r;
+                return args->put_Response(response.Get());
+            }).Get(),
+        &webResourceRequestedToken_);
+    if (FAILED(result)) return result;
+    webResourceRequestedRegistered_=true;
+
+    result = webview_->add_WebMessageReceived(
             Microsoft::WRL::Callback<
                 ICoreWebView2WebMessageReceivedEventHandler>(
                 [this](
@@ -572,6 +656,11 @@ void WebView2Backend::destroyOnUi()
 
     if (webview_)
     {
+        if (webResourceRequestedRegistered_)
+        {
+            webview_->remove_WebResourceRequested(webResourceRequestedToken_);
+            webResourceRequestedRegistered_ = false;
+        }
         if (webMessageRegistered_)
         {
             webview_->remove_WebMessageReceived(

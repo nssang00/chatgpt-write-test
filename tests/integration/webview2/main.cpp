@@ -1,6 +1,9 @@
 #include "browser/webview2/webview2_backend.hpp"
 #include "nativeweb/error.hpp"
 #include "nativeweb/webview.hpp"
+#include "nativeweb/app_resources.hpp"
+#include <fstream>
+#include <sstream>
 
 #include <atomic>
 #include <chrono>
@@ -544,12 +547,51 @@ int main(int argc, char* argv[])
 
     nativeweb::WebViewOptions options;
     options.engine = nativeweb::Engine::Auto;
+    const std::string source=getUrl(argc,argv);
+    if (source.compare(0,6,"app://")==0)
+    {
+        std::string directory;
+        const std::string prefix="--app-assets=";
+        for (int i=1;i<argc;++i)
+        {
+            const std::string arg=argv[i];
+            if (arg.compare(0,prefix.size(),prefix)==0)
+                directory=arg.substr(prefix.size());
+        }
+        if (directory.empty())
+        {
+            std::cerr << "Missing --app-assets argument" << std::endl;
+            DestroyWindow(window);
+            return 7;
+        }
+        std::shared_ptr<nativeweb::AppResourceBundle> assets(
+            new nativeweb::AppResourceBundle());
+        const char* names[]={
+            "plugin_bridge_test.html","plugin_untrusted_child.html"
+        };
+        for(int i=0;i<2;++i)
+        {
+            std::ifstream input(
+                (directory+"/"+std::string(names[i])).c_str(),
+                std::ios::binary);
+            if (!input)
+            {
+                std::cerr << "Missing app resource: " << names[i] << std::endl;
+                DestroyWindow(window);
+                return 8;
+            }
+            std::ostringstream bytes; bytes << input.rdbuf();
+            assets->add("app://desktop/"+std::string(names[i]),
+                        "text/html",bytes.str());
+        }
+        options.appResources=assets;
+    }
 
     try
     {
         webview.create(
             reinterpret_cast<nativeweb::NativeWindowHandle>(window),
-            getUrl(argc, argv),
+            source,
             options);
     }
     catch (const std::exception& error)

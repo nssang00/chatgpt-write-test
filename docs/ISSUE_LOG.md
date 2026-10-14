@@ -582,3 +582,13 @@ hosts, app shell and full publish remain unfinished.
 - WebView2 linker errors in same early commit were source-list drift;
   app_resources.cpp was added to both engine CMake projects in
   3e1bffba, pending verified source tests.
+
+## NW-033 U2 WebView2 app scheme — SOURCE SUBMITTED / 3-ENGINE CI PENDING
+- Creates a secure app:// scheme in WebView2 environment options4
+  before Environment creation; resource filter serves only explicit
+  AppResourceBundle bytes and deny-by-default 404 for unknown paths.
+- Adds Windows real browser packaged app:// plugin lifecycle/iframe
+  E2E in addition to Linux/Windows CEF.
+- Native module per-method grants and plugin/other host isolation
+  remain NW-014 open. Do not mark cross-engine URL gate PASS before
+  all three actual browser jobs pass.

@@ -197,3 +197,12 @@ add_test(
     --engine webview2 --build-dir "${CMAKE_BINARY_DIR}"
 )
 set_tests_properties(browser.plugin_object_lifecycle PROPERTIES TIMEOUT 150)
+
+add_test(
+  NAME browser.app_resource_lifecycle
+  COMMAND "${Python3_EXECUTABLE}"
+    "${NATIVEWEB_ROOT}/tools/run_browser_plugin_e2e.py"
+    --engine webview2 --build-dir "${CMAKE_BINARY_DIR}" --app-resources
+)
+set_tests_properties(browser.app_resource_lifecycle PROPERTIES TIMEOUT 150)
+

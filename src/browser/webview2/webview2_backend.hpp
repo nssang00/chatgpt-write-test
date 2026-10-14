@@ -99,14 +99,17 @@ private:
     std::atomic<bool> closing_;
     std::string source_;
     std::string trustedEntryUrl_;
+    std::shared_ptr<const AppResourceBundle> appResources_;
 
     Microsoft::WRL::ComPtr<ICoreWebView2Environment> environment_;
     Microsoft::WRL::ComPtr<ICoreWebView2Controller> controller_;
     Microsoft::WRL::ComPtr<ICoreWebView2> webview_;
 
+    EventRegistrationToken webResourceRequestedToken_;
     EventRegistrationToken webMessageToken_;
     EventRegistrationToken navigationStartingToken_;
     EventRegistrationToken navigationCompletedToken_;
+    bool webResourceRequestedRegistered_;
     bool webMessageRegistered_;
     bool navigationStartingRegistered_;
     bool navigationCompletedRegistered_;

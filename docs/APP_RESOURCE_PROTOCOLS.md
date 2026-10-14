@@ -106,3 +106,19 @@ preexisting exact file:/// legacy source; no remote HTTPS auto-grant.
 The WebView2 adapter does **not** yet serve app://; its normal file://
 workflow is unchanged. No CLI default change until both adapters
 have a real end-to-end check. See NW-033.
+
+## U2 WebView2 custom app scheme — source submitted, CI pending
+
+WebView2 environment now receives `ICoreWebView2EnvironmentOptions4`
+with `app` as an authority-bearing secure custom scheme before
+environment creation. A `WebResourceRequested` filter and handler
+returns explicit in-memory MIME/body resources (or 404), never
+reading disk; remote cross-origin CORS grants are not emitted.
+The existing WebMessageReceived native bridge still checks
+host-supplied document identity. A new Windows WebView2 real
+`browser.app_resource_lifecycle` E2E mirrors Linux/Windows CEF.
+
+Because `CoreWebView2EnvironmentOptions4` and custom scheme
+registration are runtime-dependent, the pinned SDK/CI must pass
+without degrading back to file://. Full same-file iframe/method
+authorization NW-014 remains a separate release blocker.
