@@ -16,6 +16,10 @@ namespace Company.WebView.Unified.Experimental
         public int TargetFrameRate { get; set; } = 60;
         public string CefSubprocessPath { get; set; }
         public string CefCachePath { get; set; }
+        // Native Win32 HWND owned by the current Unity Windows Player process (Overlay only).
+        public IntPtr OverlayParentHwnd { get; set; }
+        public int OverlayX { get; set; }
+        public int OverlayY { get; set; }
     }
 
     public sealed class WebViewCapabilities
@@ -39,6 +43,10 @@ namespace Company.WebView.Unified.Experimental
         void GoForward();
         void Resize(int width, int height);
         void Pump();
+        bool TryReadMessage(out string message);
+        void PostMessage(string value);
+        void ExecuteJavaScript(string script);
+        bool IsReady { get; }
         void Close();
     }
 
@@ -48,6 +56,8 @@ namespace Company.WebView.Unified.Experimental
         private bool disposed;
         public PresentationMode Mode { get; private set; }
         public WebViewCapabilities Capabilities { get; private set; }
+        public bool IsReady { get { AssertActive(); return driver.IsReady; } }
+        public event Action<string> MessageReceived;
 
         private UnifiedWebView(PresentationMode mode, IUnifiedBackend backend)
         {
@@ -87,13 +97,13 @@ namespace Company.WebView.Unified.Experimental
                 throw new ArgumentOutOfRangeException(nameof(options), "Dimensions and frame rate must be positive");
             if (String.IsNullOrWhiteSpace(options.Url))
                 throw new ArgumentException("A URL or about:blank is required", nameof(options));
-            // Prevent silent fallback: the audited r5 WebView2 pilot has no generic Navigate API,
-            // no lifecycle ownership contract, and only supports one fixed HTML sample.
-            if (factory == null && mode == PresentationMode.Overlay)
-                throw new NotSupportedException("WebView2 Overlay is an independently validated HWND pilot only; unified URL/HTML API not yet integrated.");
-            if (factory == null && (String.IsNullOrWhiteSpace(options.CefSubprocessPath) || String.IsNullOrWhiteSpace(options.CefCachePath)))
+            if (factory == null && mode == PresentationMode.Overlay && options.OverlayParentHwnd == IntPtr.Zero)
+                throw new ArgumentException("Overlay requires a valid current-process Unity Player HWND", nameof(options));
+            if (factory == null && mode == PresentationMode.Texture &&
+                (String.IsNullOrWhiteSpace(options.CefSubprocessPath) || String.IsNullOrWhiteSpace(options.CefCachePath)))
                 throw new ArgumentException("CEF Texture requires validated subprocess and cache paths");
-            IUnifiedBackend backend = factory != null ? factory(mode) : new CefTextureBackendBridge();
+            IUnifiedBackend backend = factory != null ? factory(mode)
+                : (mode == PresentationMode.Overlay ? (IUnifiedBackend)new WebView2OverlayBackendBridge() : new CefTextureBackendBridge());
             if (backend == null) throw new InvalidOperationException("Backend factory returned null");
             try
             {
@@ -128,10 +138,28 @@ namespace Company.WebView.Unified.Experimental
             driver.Resize(width, height);
         }
         // Called once each Unity main-thread Update; do not call from worker threads.
-        public void Pump() { AssertActive(); driver.Pump(); }
+        public void Pump() {
+            AssertActive(); driver.Pump();
+            if(!Capabilities.Messages) return;
+            string msg;
+            int guard=0;
+            while(guard++<32 && driver.TryReadMessage(out msg))
+                MessageReceived?.Invoke(msg);
+        }
         public void Close() { AssertActive(); driver.Close(); }
-        public void PostMessage(string data) { AssertActive(); throw new NotSupportedException("Unified JS messaging is not yet connected to both native backends"); }
-        public void ExecuteJavaScript(string script) { AssertActive(); throw new NotSupportedException("Unified JavaScript execution is not yet connected to both native backends"); }
+        public void PostMessage(string data) {
+            AssertActive();
+            if(!Capabilities.Messages) throw new NotSupportedException("Messages unsupported in this backend");
+            if(data==null)throw new ArgumentNullException(nameof(data));
+            driver.PostMessage(data);
+        }
+        // Fire-and-forget dispatch. Script result / exception propagation remains unimplemented.
+        public void ExecuteJavaScript(string script) {
+            AssertActive();
+            if(!Capabilities.ScriptExecution) throw new NotSupportedException("Script execution unsupported in this backend");
+            if(String.IsNullOrWhiteSpace(script)) throw new ArgumentException("Empty script", nameof(script));
+            driver.ExecuteJavaScript(script);
+        }
         public void Dispose()
         {
             if (disposed) return;
