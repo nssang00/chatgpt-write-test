@@ -249,6 +249,9 @@ hosts, app shell and full publish remain unfinished.
 | A1-URL-07 | explicit native method grants at app:// trusted origin | NW-014 / NOT IMPLEMENTED |
 | A1-URL-08 | callback/plugin revocation on navigation/unload | NOT IMPLEMENTED |
 
+| A1-URL-09 | Resource bundle snapshot and 16 MiB item/64 MiB package bounds | **CORE PASS:** #38525221058 |
+| A1-URL-10 | CLI new desktop cpp/python/csharp declares app:// UI entry; no runtime claim | **CLI PASS:** #38525221109; run/build/publish pending |
+
 Pass A1-URL-00 alone does NOT mean app:// URLs are renderable by
 CEF or WebView2. Do not mark A1-URL-01 as done without real engine CI.
 
@@ -263,9 +266,6 @@ CEF or WebView2. Do not mark A1-URL-01 as done without real engine CI.
   regressions still pass in both modes
 These are executable source assertions; label PASS only after all
 3 engines succeed on the same commit.
-
-| A1-URL-09 | Resource bundle snapshot and 16 MiB item/64 MiB package bounds | **CORE PASS:** #38525221058 |
-| A1-URL-10 | CLI new desktop cpp/python/csharp declares app:// UI entry; no runtime claim | **CLI PASS:** #38525221109; run/build/publish pending |
 
 ## 2026-10-14 definitive U0/U1/U2 app:// verification (source d540df4a)
 

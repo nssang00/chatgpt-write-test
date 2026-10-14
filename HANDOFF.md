@@ -2,22 +2,22 @@
 
 ## 2026-10-14 definitive U0/U1/U2 app:// verification (source d540df4a)
 
-The **real packaged \`app://\` resource protocol** is now implemented on
+The **real packaged `app://` resource protocol** is now implemented on
 **Linux CEF, Windows CEF and Windows WebView2**, including:
-- Explicit C++11 in-memory \`AppResourceBundle\` with strict canonical
+- Explicit C++11 in-memory `AppResourceBundle` with strict canonical
   URLs, MIME types, duplicate rejection, 16 MiB per asset / 64 MiB per
-  bundle; snapshot at \`WebView::create\` prevents caller mutation races.
+  bundle; snapshot at `WebView::create` prevents caller mutation races.
 - CEF secure/standard custom scheme, per-WebView isolated request
   context and scheme factory; WebView2 secure authority-bearing custom
-  environment scheme and byte-stream \`WebResourceRequested\` responses.
+  environment scheme and byte-stream `WebResourceRequested` responses.
 - **Real browser E2E** serves HTML + relative JS/CSS/SVG assets, checks
   execution and MIME, Fetch success / undeclared asset 404, and denies
-  reading private bytes from \`app://camera\` in a
-  \`app://desktop\` page. Legacy exact-entry \`file://\` UI and
+  reading private bytes from `app://camera` in a
+  `app://desktop` page. Legacy exact-entry `file://` UI and
   JS/native plugin object lifecycle regressions remain tested.
-- \`xytron new desktop\` CLI manifests for C++/Python/C# Main backends
-  declare \`ui.entry=app://desktop/index.html\` and \`ui.resources=ui\`.
-  This is **scaffolding only**; \`xytron run/build/publish\` and a
+- `xytron new desktop` CLI manifests for C++/Python/C# Main backends
+  declare `ui.entry=app://desktop/index.html` and `ui.resources=ui`.
+  This is **scaffolding only**; `xytron run/build/publish` and a
   packaged app shell remain unimplemented.
 
 **All-green source and CI**
@@ -35,8 +35,8 @@ The **real packaged \`app://\` resource protocol** is now implemented on
 navigation and native-object grants; file:// user-approved file picker
 and filesystem confinement; late/duplicate declared custom scheme
 registration; app resource bundle packaging/restore; actual desktop
-shell, \`xytron run/build/publish\` and full embedded host controls.
-\`app://\` page origin alone is NOT automatic native access.
+shell, `xytron run/build/publish` and full embedded host controls.
+`app://` page origin alone is NOT automatic native access.
 
 
 ## 2026-10-14 resource protocols U0 (historical, superseded by verified U2 checkpoint)

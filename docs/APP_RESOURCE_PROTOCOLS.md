@@ -8,13 +8,13 @@ is a standalone desktop app; embedded controls use the same policy.
 
 ## Product URL model (owner direction)
 
-- \`app://desktop/index.html\` is the **target default packaged UI URL**.
-  Per-feature isolated hosts, e.g. \`app://camera/ui/panel.html\`.
-- \`http://\`, \`https://\` remain navigation/network protocols;
+- `app://desktop/index.html` is the **target default packaged UI URL**.
+  Per-feature isolated hosts, e.g. `app://camera/ui/panel.html`.
+- `http://`, `https://` remain navigation/network protocols;
   they do NOT implicitly grant native Module access.
-- \`file://\` is supported for explicitly chosen files and legacy
+- `file://` is supported for explicitly chosen files and legacy
   development hosts; no generic unrestricted filesystem resource handler.
-- Additional \`foo://\` schemes will be manifest-declared BEFORE browser
+- Additional `foo://` schemes will be manifest-declared BEFORE browser
   environment initialization; runtime Modules only supply resource
   handlers for those predeclared schemes, not arbitrary late schemes.
 - **Native Module registration != native invoke capability.** Permission
@@ -22,21 +22,21 @@ is a standalone desktop app; embedded controls use the same policy.
 
 ## Phase U0: implemented C++11 Core resource catalog
 
-\`nativeweb::AppResourceBundle\` in \`include/nativeweb/app_resources.hpp\`
+`nativeweb::AppResourceBundle` in `include/nativeweb/app_resources.hpp`
 stores explicit byte resources and MIME types under canonical
-\`app://host/path\` URLs, e.g.:
+`app://host/path` URLs, e.g.:
 
-\`\`\`cpp
+```cpp
 nativeweb::AppResourceBundle resources;
 resources.add("app://desktop/index.html", "text/html", html);
 resources.add("app://desktop/assets/main.js", "application/javascript", js);
-\`\`\`
+```
 
 The first slice **rejects** HTTP/file/other schemes, noncanonical host
 case, queries, fragments, percent-encoding, dot segments, backslashes,
 empty path segments, userinfo/ports/control bytes and duplicate keys.
 It never directly reads arbitrary local files. Asset bodies are bounded
-at 16 MiB each. Core CTest \`core.app_resources\` covers positive and
+at 16 MiB each. Core CTest `core.app_resources` covers positive and
 negative cases. This resource catalog is now served through actual CEF/WebView2 app://
 engine adapters when the host supplies the bundle via WebViewOptions.
 The bridge checks an exact canonical app:// entry as well as the legacy
@@ -44,20 +44,20 @@ file:/// entry; it does NOT yet perform full per-method authorization.
 
 ## Phase U1/U2: implemented native browser resource handlers
 
-1. **CEF:** register the standard secure \`app\` scheme in
-   \`CefApp::OnRegisterCustomSchemes\` for browser and renderer processes;
-   install a \`CefSchemeHandlerFactory\` before navigating. It must
+1. **CEF:** register the standard secure `app` scheme in
+   `CefApp::OnRegisterCustomSchemes` for browser and renderer processes;
+   install a `CefSchemeHandlerFactory` before navigating. It must
    serve catalog bytes/MIME/status without access to undeclared paths.
-2. **WebView2:** register custom \`app\` scheme via Environment options
-   BEFORE \`CreateCoreWebView2EnvironmentWithOptions\`, then use
+2. **WebView2:** register custom `app` scheme via Environment options
+   BEFORE `CreateCoreWebView2EnvironmentWithOptions`, then use
    request handlers to serve the same catalog (virtual HTTPS host mapping
    can be a separate compatibility fallback but does NOT make an app://
    URL work by itself).
-3. **Security:** upgrade \`trustedEntryDocument()\` to use engine-supplied
+3. **Security:** upgrade `trustedEntryDocument()` to use engine-supplied
    document identity and approved app:// origins plus exact entry path,
    without accidentally making file:// or arbitrary external sites
    trusted. Bind module permissions to actual native dispatch.
-4. **Packaged app:** CLI \`xytron new\` and \`run/build/publish\` should
+4. **Packaged app:** CLI `xytron new` and `run/build/publish` should
    expose app:// by default only after the real engine U1/U2 E2E is green.
    Preserve explicit file:// legacy host behavior until then.
 
@@ -87,7 +87,7 @@ callback/Value adapter work separately, not this URL loader's security.
 
 ## External implementation references
 
-- CEF requires registration in \`OnRegisterCustomSchemes\` in *all*
+- CEF requires registration in `OnRegisterCustomSchemes` in *all*
   processes, plus browser-side scheme handler factory.
 - WebView2 virtual host name mapping supports HTTPS host mapping, not
   app:// as the public origin; genuine app:// requires custom scheme
@@ -168,22 +168,22 @@ the same isolated AppResourceBundle/engine APIs.
 
 ## 2026-10-14 definitive U0/U1/U2 app:// verification (source d540df4a)
 
-The **real packaged \`app://\` resource protocol** is now implemented on
+The **real packaged `app://` resource protocol** is now implemented on
 **Linux CEF, Windows CEF and Windows WebView2**, including:
-- Explicit C++11 in-memory \`AppResourceBundle\` with strict canonical
+- Explicit C++11 in-memory `AppResourceBundle` with strict canonical
   URLs, MIME types, duplicate rejection, 16 MiB per asset / 64 MiB per
-  bundle; snapshot at \`WebView::create\` prevents caller mutation races.
+  bundle; snapshot at `WebView::create` prevents caller mutation races.
 - CEF secure/standard custom scheme, per-WebView isolated request
   context and scheme factory; WebView2 secure authority-bearing custom
-  environment scheme and byte-stream \`WebResourceRequested\` responses.
+  environment scheme and byte-stream `WebResourceRequested` responses.
 - **Real browser E2E** serves HTML + relative JS/CSS/SVG assets, checks
   execution and MIME, Fetch success / undeclared asset 404, and denies
-  reading private bytes from \`app://camera\` in a
-  \`app://desktop\` page. Legacy exact-entry \`file://\` UI and
+  reading private bytes from `app://camera` in a
+  `app://desktop` page. Legacy exact-entry `file://` UI and
   JS/native plugin object lifecycle regressions remain tested.
-- \`xytron new desktop\` CLI manifests for C++/Python/C# Main backends
-  declare \`ui.entry=app://desktop/index.html\` and \`ui.resources=ui\`.
-  This is **scaffolding only**; \`xytron run/build/publish\` and a
+- `xytron new desktop` CLI manifests for C++/Python/C# Main backends
+  declare `ui.entry=app://desktop/index.html` and `ui.resources=ui`.
+  This is **scaffolding only**; `xytron run/build/publish` and a
   packaged app shell remain unimplemented.
 
 **All-green source and CI**
@@ -201,5 +201,5 @@ The **real packaged \`app://\` resource protocol** is now implemented on
 navigation and native-object grants; file:// user-approved file picker
 and filesystem confinement; late/duplicate declared custom scheme
 registration; app resource bundle packaging/restore; actual desktop
-shell, \`xytron run/build/publish\` and full embedded host controls.
-\`app://\` page origin alone is NOT automatic native access.
+shell, `xytron run/build/publish` and full embedded host controls.
+`app://` page origin alone is NOT automatic native access.
