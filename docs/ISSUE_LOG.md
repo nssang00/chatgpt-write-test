@@ -592,3 +592,10 @@ hosts, app shell and full publish remain unfinished.
 - Native module per-method grants and plugin/other host isolation
   remain NW-014 open. Do not mark cross-engine URL gate PASS before
   all three actual browser jobs pass.
+
+## NW-036 Additional packaged app:// browser resource semantics — CI PENDING
+- Cross-platform browser E2E adds relative JS, CSS, SVG, 404, and
+  app://desktop vs app://camera cross-origin private byte denial.
+- Same source fixtures remain available as disk files for legacy
+  file:/// URL E2E. New host isolation is a required separate gate
+  from native Module invocation permissions NW-014.

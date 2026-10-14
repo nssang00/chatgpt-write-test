@@ -136,3 +136,17 @@ against a known child fixture and checks status 200, MIME, exact byte
 content and missing-resource status 404. The existing JS-to-native
 plugin lifecycle and untrusted same-entry frame cases are still
 required as part of the same scenario.
+
+## Additional browser resource semantics tests
+
+For the packaged app:// E2E, both engines now load a complete
+in-memory UI fixture: HTML, **relative external JS**, **relative
+stylesheet**, **relative image (SVG)**, same-origin Fetch and a 404
+for missing resources. The bundle deliberately includes
+`app://camera/ui/panel.html` containing private fixture data; script
+at `app://desktop` must not read its bytes (distinct origin and no
+CORS access grant). The existing file:// legacy plugin E2E still
+loads the same source fixtures from disk.
+
+All tests must pass Windows CEF, Linux CEF and Windows WebView2
+before labeling app:// usable in a generated desktop project.

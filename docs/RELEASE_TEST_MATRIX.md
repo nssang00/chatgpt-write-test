@@ -251,3 +251,15 @@ hosts, app shell and full publish remain unfinished.
 
 Pass A1-URL-00 alone does NOT mean app:// URLs are renderable by
 CEF or WebView2. Do not mark A1-URL-01 as done without real engine CI.
+
+### Expanded real browser app:// resource assertions
+
+- JS external script execution: `app_resource_script.js`, relative URL
+- CSS application: computed style reads `--xytron-app-style`
+- SVG image fetch: status, MIME and real bytes from bundled resource
+- Missing resource returns HTTP-style 404, without filesystem fallback
+- app://desktop is denied access to explicit app://camera private bytes
+- Existing native bridge method/object lifetime and iframe denial
+  regressions still pass in both modes
+These are executable source assertions; label PASS only after all
+3 engines succeed on the same commit.

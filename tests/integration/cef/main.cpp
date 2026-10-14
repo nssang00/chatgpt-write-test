@@ -691,12 +691,18 @@ int main(int argc, char* argv[])
             return 7;
         }
         appAssets.reset(new nativeweb::AppResourceBundle());
-        const char* names[] = {
-            "plugin_bridge_test.html", "plugin_untrusted_child.html"
+        struct AssetEntry { const char* name; const char* url; const char* mime; };
+        const AssetEntry assets[] = {
+            {"plugin_bridge_test.html", "app://desktop/plugin_bridge_test.html", "text/html"},
+            {"plugin_untrusted_child.html", "app://desktop/plugin_untrusted_child.html", "text/html"},
+            {"app_resource_script.js", "app://desktop/app_resource_script.js", "application/javascript"},
+            {"app_resource_style.css", "app://desktop/app_resource_style.css", "text/css"},
+            {"app_resource_icon.svg", "app://desktop/app_resource_icon.svg", "image/svg+xml"},
+            {"app_camera_private.html", "app://camera/ui/panel.html", "text/html"}
         };
-        for (int i=0; i<2; ++i)
+        for (std::size_t i=0; i<sizeof(assets)/sizeof(assets[0]); ++i)
         {
-            const std::string path=directory+"/"+names[i];
+            const std::string path=directory+"/"+assets[i].name;
             std::ifstream input(path.c_str(), std::ios::binary);
             if (!input)
             {
@@ -706,8 +712,8 @@ int main(int argc, char* argv[])
             }
             std::ostringstream contents;
             contents << input.rdbuf();
-            appAssets->add("app://desktop/"+std::string(names[i]),
-                           "text/html",contents.str());
+            appAssets->add(assets[i].url,
+                           assets[i].mime,contents.str());
         }
     }
 

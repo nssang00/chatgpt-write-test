@@ -33,7 +33,12 @@ def main():
     executable = bin_dir / exe_name
     plugin = bin_dir / lib_name
     child = project / 'tests/integration/cef/plugin_untrusted_child.html'
-    for path in (html, child, executable, plugin):
+    additional = [
+        html.parent / name for name in
+        ("app_resource_script.js", "app_resource_style.css",
+         "app_resource_icon.svg", "app_camera_private.html")
+    ] if args.app_resources else []
+    for path in (html, child, executable, plugin, *additional):
         if not path.is_file():
             parser.error('Required E2E input missing: ' + str(path))
 

@@ -1,7 +1,14 @@
 <!doctype html>
 <html lang="en">
-<head><meta charset="utf-8"><title>NativeWeb real plugin browser E2E</title></head>
+<head>
+<meta charset="utf-8">
+<title>NativeWeb real plugin browser E2E</title>
+<link rel="stylesheet" href="app_resource_style.css">
+<script src="app_resource_script.js"></script>
+</head>
 <body>
+<div id="app-resource-marker" class="app-resource-marker"></div>
+<img id="app-resource-icon" src="app_resource_icon.svg" alt="test">
 <script>
 (async function () {
   if (window !== window.top) {
@@ -36,6 +43,27 @@
   // The scheme itself must serve real bytes, enforce MIME, and return 404
   // for an undeclared resource. file:// legacy E2E bypasses these checks.
   if (location.protocol === "app:") {
+    ensure(window.__xytronResourceScript === "loaded",
+           "relative app:// external JS not executed");
+    const element = document.getElementById("app-resource-marker");
+    ensure(getComputedStyle(element).getPropertyValue(
+               "--xytron-app-style").trim() === "loaded",
+           "relative app:// CSS not applied");
+    const icon = await fetch("app://desktop/app_resource_icon.svg");
+    ensure(icon.status === 200 &&
+           (icon.headers.get("content-type") || "").includes("image/svg+xml"),
+           "relative app:// image resource MIME/status failed");
+    ensure((await icon.text()).includes("<svg"),
+           "app:// image data mismatch");
+    // A separate plugin host is a distinct browser origin. The resource
+    // exists, but script from app://desktop must not read its bytes.
+    let leaked = false;
+    try {
+      const foreign = await fetch("app://camera/ui/panel.html");
+      leaked = foreign.ok && (await foreign.text()).includes(
+        "private-camera-resource");
+    } catch (_) { /* CORS blocked, expected */ }
+    ensure(!leaked, "app:// host separation failed: camera bytes leaked");
     const child = await fetch("app://desktop/plugin_untrusted_child.html");
     ensure(child.ok && child.status === 200,
            "app:// child resource not served");
