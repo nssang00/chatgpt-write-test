@@ -44,6 +44,7 @@ std::map<std::wstring,std::wstring> g_pendingEcho; // STA thread only; never log
 std::atomic<int> g_shutdownPhase{0}; // 0 live, 1 requested, 2 WM_CLOSE, 3 cleaning, 4 COM closed, 5 STA ending, 6 worker ended, 7 joined
 std::atomic<bool> g_stop{false};
 std::atomic<bool> g_visible{true};
+ComPtr<ICoreWebView2> g_webview; // STA-owned; declared before preview STA commands
 #ifdef UNIFIED_PREVIEW
 // Preview is still a singleton per process. All WebView2 COM work remains STA-owned.
 std::wstring g_initialUrl=L"about:blank"; // set before worker launch
@@ -98,7 +99,6 @@ int QueueUnifiedCommand(int kind, const wchar_t* input, size_t maxLength=65536) 
 #endif
 // The following COM objects are ONLY accessed on the dedicated STA thread.
 ComPtr<ICoreWebView2Controller> g_controller;
-ComPtr<ICoreWebView2> g_webview;
 EventRegistrationToken g_webMessageToken{};
 bool g_hasMessageHandler=false;
 void Fail(int code) {
