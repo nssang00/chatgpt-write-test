@@ -11,6 +11,13 @@ namespace UnityEditor {
         public BuildOptions options;
     }
     public static class EditorUserBuildSettings {public static BuildTarget activeBuildTarget=>BuildTarget.StandaloneWindows64;}
+    public static class PlayerSettings {
+        public static string companyName,productName;
+        public static int defaultScreenWidth,defaultScreenHeight;
+        public static bool resizableWindow,runInBackground;
+        public static UnityEngine.FullScreenMode fullScreenMode;
+        public static void SetGraphicsAPIs(BuildTarget target,UnityEngine.Rendering.GraphicsDeviceType[] apis){}
+    }
     public static class EditorBuildSettings {public static EditorBuildSettingsScene[] scenes;}
     public sealed class EditorBuildSettingsScene {public EditorBuildSettingsScene(string p,bool enabled){}}
     public static class AssetDatabase {public static void SaveAssets(){}}

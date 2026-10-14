@@ -2,7 +2,14 @@
 using System;
 namespace UnityEngine
 {
-    public class MonoBehaviour { public bool enabled {get;set;}=true; public T GetComponent<T>() where T:new(){return new T();} }
+    public class Object {}
+    public class MonoBehaviour : Object { public bool enabled {get;set;}=true; public T GetComponent<T>() where T:new(){return new T();} }
+    public class GameObject : Object {
+        public GameObject(string name,params Type[] comps){}
+        public RectTransform transform=>new RectTransform();
+        public T AddComponent<T>() where T:new(){return new T();}
+        public T GetComponent<T>() where T:new(){return new T();}
+    }
     [AttributeUsage(AttributeTargets.Field)] public sealed class SerializeField : Attribute {}
     [AttributeUsage(AttributeTargets.Method)] public sealed class ContextMenu : Attribute { public ContextMenu(string label) {} }
     public static class Debug {
@@ -12,6 +19,7 @@ namespace UnityEngine
     }
     public static class Application {
         public static string dataPath=>"C:/TEST";
+        public static string unityVersion=>"2022.3.62f3";
         public static string temporaryCachePath=>"C:/CACHE";
         public static string persistentDataPath=>"C:/TEMP";
         public static void Quit(int code) {}
@@ -19,12 +27,18 @@ namespace UnityEngine
     public static class Time { public static float realtimeSinceStartup=>0; }
     public static class JsonUtility {public static string ToJson(object data,bool pretty)=>"{}";}
     public enum RenderMode { ScreenSpaceOverlay, ScreenSpaceCamera, WorldSpace }
-    public class Canvas { public RenderMode renderMode;public Camera worldCamera; }
+    public enum FullScreenMode {Windowed}
+    public struct Color {public Color(float r,float g,float b,float a){} }
+    public class Canvas : Object {public RenderMode renderMode;public Camera worldCamera;public RectTransform transform=>new RectTransform();}
     public class Camera {}
     public struct Vector3 { public float x,y,z; }
-    public struct Vector2 { public float x,y; }
-    public class RectTransform {
-        public void GetWorldCorners(Vector3[] corners) {}
+    public struct Vector2 {public float x,y;public Vector2(float a,float b){x=a;y=b;} }
+    public class RectTransform : Object {
+        public GameObject gameObject=>new GameObject("RectStub");
+        public Vector2 anchorMin,anchorMax,offsetMin,offsetMax;
+        public void SetParent(RectTransform parent,bool worldPositionStays){}
+        public T GetComponent<T>() where T:new(){return new T();}
+        public void GetWorldCorners(Vector3[] corners){}
     }
     public struct RectInt {
         public int x,y,width,height;
@@ -36,5 +50,5 @@ namespace UnityEngine
         public static Vector2 WorldToScreenPoint(Camera camera,Vector3 corner)=>new Vector2();
     }
 }
-namespace UnityEngine.UI { public class RawImage { public object texture; } }
+namespace UnityEngine.UI {public class RawImage : UnityEngine.Object {public object texture;public UnityEngine.Color color;}public class CanvasScaler : UnityEngine.Object {}public class GraphicRaycaster : UnityEngine.Object {}}
 namespace Company.WebView { public class CefTextureSurface : UnityEngine.MonoBehaviour {public ulong AcceleratedFrameCount {get;set;} public ulong SoftwareFrameCount {get;set;} } }
