@@ -2,7 +2,7 @@
 using System;
 namespace UnityEngine
 {
-    public class MonoBehaviour { public bool enabled {get;set;}=true; }
+    public class MonoBehaviour { public bool enabled {get;set;}=true; public T GetComponent<T>() where T:new(){return new T();} }
     [AttributeUsage(AttributeTargets.Field)] public sealed class SerializeField : Attribute {}
     [AttributeUsage(AttributeTargets.Method)] public sealed class ContextMenu : Attribute { public ContextMenu(string label) {} }
     public static class Debug {
@@ -13,7 +13,11 @@ namespace UnityEngine
     public static class Application {
         public static string dataPath=>"C:/TEST";
         public static string temporaryCachePath=>"C:/CACHE";
+        public static string persistentDataPath=>"C:/TEMP";
+        public static void Quit(int code) {}
     }
+    public static class Time { public static float realtimeSinceStartup=>0; }
+    public static class JsonUtility {public static string ToJson(object data,bool pretty)=>"{}";}
     public enum RenderMode { ScreenSpaceOverlay, ScreenSpaceCamera, WorldSpace }
     public class Canvas { public RenderMode renderMode;public Camera worldCamera; }
     public class Camera {}
@@ -32,5 +36,5 @@ namespace UnityEngine
         public static Vector2 WorldToScreenPoint(Camera camera,Vector3 corner)=>new Vector2();
     }
 }
-namespace UnityEngine.UI { public class RawImage {} }
-namespace Company.WebView { public class CefTextureSurface : UnityEngine.MonoBehaviour {} }
+namespace UnityEngine.UI { public class RawImage { public object texture; } }
+namespace Company.WebView { public class CefTextureSurface : UnityEngine.MonoBehaviour {public ulong AcceleratedFrameCount {get;set;} public ulong SoftwareFrameCount {get;set;} } }

@@ -3,6 +3,7 @@ on:
   push:
     branches:
       - feature/unified-unity-v58-6-0-integration-preview
+      - feature/unified-unity-v58-6-0-dual-player-oneclick
   workflow_dispatch:
 
 jobs:
@@ -15,6 +16,18 @@ jobs:
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '8.0.x'
+      - name: Dual Unity Player source contract
+        shell: pwsh
+        run: |
+          python Integration/UnityUnified-v58.6.0-preview/Validation/verify_dual_player.py
+          if($LASTEXITCODE -ne 0){throw 'Dual Unity Player source contract failed'}
+      - name: PowerShell dual runner parser
+        shell: pwsh
+        run: |
+          $tokens=$null;$errors=$null
+          $path=(Resolve-Path 'Integration/UnityUnified-v58.6.0-preview/DualPlayer/Run-Dual.ps1').Path
+          [System.Management.Automation.Language.Parser]::ParseFile($path,[ref]$tokens,[ref]$errors) | Out-Null
+          if($errors.Count){throw "Dual Runner PS syntax failure: $errors"}
       - name: Static provenance and fail-closed API contract
         shell: pwsh
         run: |
@@ -66,7 +79,7 @@ jobs:
           if($problems.Count -gt 0){throw ($problems -join '; ')}
       - uses: actions/upload-artifact@v4
         with:
-          name: unified-unity-v58-6-0-overlay-native-preview
+          name: unified-unity-v58-6-0-dual-player-seed
           path: dist/UnityUnified-v58.6.0-preview
           if-no-files-found: error
           retention-days: 30

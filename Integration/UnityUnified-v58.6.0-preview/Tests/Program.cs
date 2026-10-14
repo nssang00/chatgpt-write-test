@@ -6,6 +6,7 @@ internal sealed class RecordingBackend : IUnifiedBackend
     public bool Opened, Closed, Disposed, FailOpen;
     public int Calls, Pumps, Resizes, JS, Posts;
     public bool IsReady => Opened && !Disposed;
+    public bool IsShutdownComplete => Closed;
     public WebViewCapabilities Capabilities { get; } = new WebViewCapabilities { Navigation=true, TextureSurface=true };
     public void Open(UnifiedWebViewOptions options) { Opened=true; if (FailOpen) throw new InvalidOperationException("expected failure"); }
     public void LoadUrl(string s) { Calls++; }

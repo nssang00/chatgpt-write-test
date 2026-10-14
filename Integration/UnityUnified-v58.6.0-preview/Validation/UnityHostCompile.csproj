@@ -12,6 +12,7 @@
  <Compile Include="../Runtime/WebView2OverlayBackendBridge.cs"/>
  <Compile Include="../Runtime/UnifiedTextureSceneHost.cs"/>
  <Compile Include="../Runtime/UnifiedOverlaySceneHost.cs"/>
+ <Compile Include="../DualPlayer/UnifiedDualPlayerEvidence.cs"/>
  <Compile Include="../Tests/LegacyCefCompileStub.cs"/>
  <Compile Include="UnityHostCompileStub.cs"/>
 </ItemGroup>
