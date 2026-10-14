@@ -1,6 +1,6 @@
 #requires -Version 5.1
 param([string]$BundleRoot=$PSScriptRoot,[string]$CefRuntimeDir='',[string]$UnityExe='',
- [ValidateRange(30,300)][int]$AutoSeconds=120,[switch]$SelfTest,[switch]$NoScreenshots)
+ [ValidateRange(30,300)][int]$AutoSeconds=120,[switch]$SelfTest,[switch]$NoScreenshots,[switch]$TestMissingRuntime)
 $ErrorActionPreference='Stop'; Set-StrictMode -Version Latest
 $root=[IO.Path]::GetFullPath((Join-Path $BundleRoot '.'))
 $stamp=Get-Date -Format 'yyyyMMdd-HHmmss'
@@ -52,12 +52,19 @@ function ResolveCefRuntime {
  Need (Test-Path -LiteralPath $candidate -PathType Container) 'CEF runtime folder not found'
  return $candidate
 }
-function StageCef([string]$from,[string]$to) {
- Need ($from -and (Test-Path -LiteralPath $from -PathType Container)) 'Supply -CefRuntimeDir from validated v58.4.4 Windows build'
+function GetCefStageLayout([string]$from){
+ Need (-not [string]::IsNullOrWhiteSpace($from) -and (Test-Path -LiteralPath $from -PathType Container)) 'CEF v58.4.4 native runtime folder not found. Use a previously BUILT CEF stage folder, not the source ZIP.'
  $native=Join-Path $from 'native\Release';$runtime=Join-Path $from 'runtime\Release'
- if(-not (Test-Path -LiteralPath (Join-Path $native 'CompanyWebViewCefTextureProbe.dll'))){$native=$from;$runtime=$from}
- Need (Test-Path -LiteralPath (Join-Path $native 'CompanyWebViewCefTextureProbe.dll')) 'CEF probe DLL missing'
- Need (Test-Path -LiteralPath (Join-Path $runtime 'libcef.dll')) 'libcef.dll missing'
+ if(-not (Test-Path -LiteralPath (Join-Path $native 'CompanyWebViewCefTextureProbe.dll') -PathType Leaf)){
+  $native=$from;$runtime=$from
+ }
+ Need (Test-Path -LiteralPath (Join-Path $native 'CompanyWebViewCefTextureProbe.dll') -PathType Leaf) 'CEF probe DLL not found; select Build\cef-native\stage or validated Player Plugins\x86_64.'
+ Need (Test-Path -LiteralPath (Join-Path $runtime 'libcef.dll') -PathType Leaf) 'CEF libcef.dll not found. Source-only ZIP is not the compiled CEF runtime.'
+ return @{native=$native;runtime=$runtime}
+}
+function StageCef([string]$from,[string]$to) {
+ $layout=GetCefStageLayout $from
+ $native=$layout.native;$runtime=$layout.runtime
  New-Item -ItemType Directory -Force -Path $to | Out-Null
  foreach($item in (Get-ChildItem -LiteralPath $runtime -Force)){
   if($item.Name -match '^(smoke-cache|cef-cache|profiles|logs|Results)$'){continue}
@@ -71,12 +78,14 @@ function StageCef([string]$from,[string]$to) {
 }
 $code=2
 try {
+ if($TestMissingRuntime){throw 'TEST_ONLY: simulated missing CEF runtime; intentionally no Unity execution'}
  VerifyKit
  if($SelfTest){$summary.status='SELFTEST_PASS';$summary.stage='SELFTEST';$code=0}
  else {
   Need ($env:OS -eq 'Windows_NT' -and [IntPtr]::Size -eq 8) 'Windows x64 only'
-  $unity=FindUnity
   $CefRuntimeDir=ResolveCefRuntime
+  $null=GetCefStageLayout $CefRuntimeDir
+  $unity=FindUnity
   New-Item -ItemType Directory -Force -Path $out | Out-Null
   $unpack=Join-Path $out 'source'
   Expand-Archive -LiteralPath (Join-Path $root 'UnifiedSource-v58.6.0.zip') -DestinationPath $unpack -Force
@@ -143,6 +152,7 @@ try {
 } finally {
  New-Item -ItemType Directory -Force -Path $out | Out-Null
  $summary | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath (Join-Path $out 'summary.json') -Encoding UTF8
+ if(-not $TestMissingRuntime){
  $snippets=Join-Path $out 'diagnostics-redacted.log'
  $clips=@()
  foreach($name in @('unity-editor-build.log','unity-player.log')){
@@ -157,9 +167,13 @@ try {
   }
  }
  $clips|Set-Content -LiteralPath $snippets -Encoding UTF8
- $safe=@('summary.json','diagnostics-redacted.log','player-runtime-evidence.json','screen-automation.json') | ForEach-Object{Join-Path $out $_} | Where-Object{Test-Path -LiteralPath $_ -PathType Leaf}
+ }
+ # Never let a failed preflight be masked by PowerShell scalar unrolling:
+ # @(... pipeline ...) is an array for zero, one and many result files.
+ $safe=@(@('summary.json','diagnostics-redacted.log','player-runtime-evidence.json','screen-automation.json') |
+   ForEach-Object{Join-Path $out $_} | Where-Object{Test-Path -LiteralPath $_ -PathType Leaf})
  $shotDir=Join-Path $out 'screenshots'
  if(Test-Path -LiteralPath $shotDir){$safe+=@(Get-ChildItem -LiteralPath $shotDir -File -Filter '*.png'|Select-Object -ExpandProperty FullName)}
- if($safe.Count -gt 0){$zip="$out.zip";Compress-Archive -LiteralPath $safe -DestinationPath $zip -Force;Write-Host "[DUAL] Upload ONLY: $zip"}
+ if(@($safe).Count -gt 0){$zip="$out.zip";Compress-Archive -LiteralPath $safe -DestinationPath $zip -Force;Write-Host "[DUAL] Upload ONLY: $zip"}
 }
 exit $code
