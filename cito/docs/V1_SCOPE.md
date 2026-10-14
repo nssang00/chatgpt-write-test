@@ -213,3 +213,24 @@ RequestSessionLifecycleCore consumes exact request-handler routes and QUIC
 endpoint metadata to emit loop-owned Connect/Disconnect actions, including
 endpoint changes, connect retry, handler withdrawal, and route expiry. Actual
 MsQuic session objects remain the next concrete attachment layer.
+
+
+## Concrete MsQuic Request/Reply session attachment
+
+The optional `cito_msquic` transport now contains a reusable
+`MsQuicRequestSessionManager`. It consumes RequestSessionLifecycleCore
+Connect/Disconnect actions, owns concrete MsQuic connections/streams, and
+attaches ready DestinationIds to RequestNetworkAdapter.
+
+MsQuic callbacks queue bytes/completions; HostRuntimeCore, RequestReplyCore,
+discovery, and session attachment state are mutated only from the manager's
+loop-owner `poll()/reconcile()` path.
+
+The QUIC workflow now includes a real two-process public Context smoke where
+the client learns a CTR5 QUIC route, the manager creates the session, and
+`Context::request()` reaches a remote `Context::handle()` and receives the
+typed reply.
+
+The remaining integration is event-loop ownership in normal `Context::run()`
+and pending-first-request/deadline behavior while discovery or connection is
+still converging.

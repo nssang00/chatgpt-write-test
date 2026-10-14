@@ -4,7 +4,7 @@ project(cito LANGUAGES C CXX)
 find_package(Threads REQUIRED)
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
 
-option(CITO_ENABLE_MSQUIC "Build the optional MsQuic integration smoke" OFF)
+option(CITO_ENABLE_MSQUIC "Build optional MsQuic Request/Reply transport integration" OFF)
 
 add_library(cito_core SHARED src/embedded_host_runtime.cpp)
 target_include_directories(cito_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
@@ -23,6 +23,22 @@ target_compile_features(cito_c PRIVATE cxx_std_20)
 target_compile_definitions(cito_c PRIVATE CITO_C_BUILD)
 target_link_libraries(cito_c PRIVATE cito_core Threads::Threads)
 set_target_properties(cito_c PROPERTIES OUTPUT_NAME cito)
+
+if(CITO_ENABLE_MSQUIC)
+  find_path(MSQUIC_INCLUDE_DIR msquic.h REQUIRED)
+  find_library(MSQUIC_LIBRARY msquic REQUIRED)
+
+  add_library(cito_msquic STATIC
+    src/msquic_request_session_manager.cpp)
+  target_include_directories(cito_msquic
+    PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include
+    PRIVATE ${MSQUIC_INCLUDE_DIR})
+  target_compile_features(cito_msquic PUBLIC cxx_std_20)
+  target_compile_options(cito_msquic PRIVATE -Wall -Wextra -Wpedantic)
+  target_link_libraries(cito_msquic
+    PUBLIC cito_core Threads::Threads
+    PRIVATE ${MSQUIC_LIBRARY})
+endif()
 
 include(CTest)
 if(BUILD_TESTING)
@@ -290,9 +306,6 @@ if(BUILD_TESTING)
   endif()
 
   if(CITO_ENABLE_MSQUIC)
-    find_path(MSQUIC_INCLUDE_DIR msquic.h REQUIRED)
-    find_library(MSQUIC_LIBRARY msquic REQUIRED)
-
     add_executable(cito_quic_msquic_node tests/net/quic_msquic_node.cpp)
     target_include_directories(cito_quic_msquic_node PRIVATE ${MSQUIC_INCLUDE_DIR})
     target_link_libraries(cito_quic_msquic_node PRIVATE cito ${MSQUIC_LIBRARY})
@@ -302,5 +315,11 @@ if(BUILD_TESTING)
     target_include_directories(cito_quic_request_node PRIVATE ${MSQUIC_INCLUDE_DIR})
     target_link_libraries(cito_quic_request_node PRIVATE cito ${MSQUIC_LIBRARY})
     target_compile_options(cito_quic_request_node PRIVATE -Wall -Wextra -Wpedantic)
+
+    add_executable(cito_quic_public_request_node
+      tests/net/quic_public_request_node.cpp)
+    target_include_directories(cito_quic_public_request_node PRIVATE ${MSQUIC_INCLUDE_DIR})
+    target_link_libraries(cito_quic_public_request_node PRIVATE cito cito_msquic)
+    target_compile_options(cito_quic_public_request_node PRIVATE -Wall -Wextra -Wpedantic)
   endif()
 endif()
