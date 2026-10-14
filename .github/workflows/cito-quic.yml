@@ -29,7 +29,7 @@ concurrency:
 jobs:
   msquic-smoke:
     runs-on: ubuntu-24.04
-    timeout-minutes: 12
+    timeout-minutes: 16
 
     steps:
       - uses: actions/checkout@v4
@@ -172,3 +172,78 @@ jobs:
           test "$public_server_status" -eq 0
           grep -q "quic_public_request_client result=42 session=1" quic-public-client.log
           grep -q "quic_public_request_server handler=1 reply=1" quic-public-server.log
+
+
+      - name: Configure sanitized public Request/Reply smoke
+        run: |
+          cmake -S cito -B build-quic-san -G Ninja \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DCITO_ENABLE_MSQUIC=ON \
+            -DCMAKE_C_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer" \
+            -DCMAKE_CXX_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer" \
+            -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=address,undefined" \
+            -DCMAKE_SHARED_LINKER_FLAGS="-fsanitize=address,undefined"
+          cmake --build build-quic-san --target cito_quic_public_request_node -j2
+
+      - name: Sanitized public Request/Reply smoke
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          cleanup() {
+            sudo ip netns del cito-quic-san-c 2>/dev/null || true
+            sudo ip netns del cito-quic-san-s 2>/dev/null || true
+            sudo ip link del br-quic-san 2>/dev/null || true
+          }
+          trap cleanup EXIT
+          cleanup
+
+          sudo ip link add br-quic-san type bridge
+          sudo ip link set br-quic-san up
+
+          add_node() {
+            local ns="$1"
+            local host="$2"
+            local peer="$3"
+            local addr="$4"
+
+            sudo ip netns add "$ns"
+            sudo ip link add "$host" type veth peer name "$peer"
+            sudo ip link set "$host" master br-quic-san
+            sudo ip link set "$host" up
+            sudo ip link set "$peer" netns "$ns"
+            sudo ip netns exec "$ns" ip link set lo up
+            sudo ip netns exec "$ns" ip link set "$peer" name eth0
+            sudo ip netns exec "$ns" ip addr add "$addr"/24 dev eth0
+            sudo ip netns exec "$ns" ip link set eth0 up
+          }
+
+          add_node cito-quic-san-c veth-qsc veth-qsc-ns 10.203.0.11
+          add_node cito-quic-san-s veth-qss veth-qss-ns 10.203.0.12
+
+          BIN="$GITHUB_WORKSPACE/build-quic-san/cito_quic_public_request_node"
+          SAN_ENV="ASAN_OPTIONS=detect_leaks=0:halt_on_error=1:abort_on_error=1 UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1"
+
+          sudo ip netns exec cito-quic-san-s env $SAN_ENV "$BIN" server 4436 \
+            "$GITHUB_WORKSPACE/quic-cert.pem" "$GITHUB_WORKSPACE/quic-key.pem" \
+            >quic-public-san-server.log 2>&1 &
+          SERVER_PID=$!
+
+          sleep 0.3
+
+          client_status=0
+          sudo ip netns exec cito-quic-san-c env $SAN_ENV "$BIN" client 10.203.0.12 4436 \
+            >quic-public-san-client.log 2>&1 || client_status=$?
+
+          server_status=0
+          wait "$SERVER_PID" || server_status=$?
+
+          echo "=== sanitized QUIC public request client ==="
+          cat quic-public-san-client.log
+          echo "=== sanitized QUIC public request server ==="
+          cat quic-public-san-server.log
+
+          test "$client_status" -eq 0
+          test "$server_status" -eq 0
+          grep -q "quic_public_request_client result=42 session=1" quic-public-san-client.log
+          grep -q "quic_public_request_server handler=1 reply=1" quic-public-san-server.log
