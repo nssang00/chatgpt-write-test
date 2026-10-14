@@ -43,7 +43,7 @@ def test_all(exe, repo, sdk, require_dotnet):
         python_project = root / "plugins/python_job"
         plugin_file = python_project / "src/python_job/plugin.py"
         plugin_file.write_text(plugin_file.read_text().replace("Hello,", "Modified!"))
-        (python_project / "src/python_job/extra.py").write_text("value = 42\n")
+        (python_project / "src/python_job/extra.py").write_bytes(b"value = 42\n")
         execute(exe, python_project, "build")
         assert json.loads((python_project / "plugin.json").read_text())["runtime"] == "python"
         sys.path[0:0] = [str(repo / "bindings/python"), str(python_project / "src")]
