@@ -51,3 +51,12 @@ Unity 설치 경로가 다르면 \`-UnityExe "C:\path\Unity.exe"\`. 실행 시�
 \`results\dual-날짜.zip\` **하나**와 민감정보를 가린 화면 캡처 2~3장을 업로드하세요. ZIP에는 JSON과 Unity 로그만 저장합니다. \`results\dual-날짜\UnityProject\` 및 Player 폴더는 CEF DLL/웹 프로필 등 환경 정보를 포함할 수 있으므로 업로드하지 마세요.
 
 \`summary.json\`의 \`PENDING_MANUAL\`은 자동 검사 통과이되 수동 화면 검증이 남았다는 뜻입니다. CI는 Unity 라이선스와 GPU 실기 시험을 실행하지 못하므로 이 최초 통합 테스트는 **Windows 사용자 실행 전까지 미검증**입니다.
+
+
+## v58.6.0 자동 증거 수집판 (2026-10-15)
+
+스크린샷을 직접 촬영하지 마세요. Run-Dual.cmd 더블클릭 → 처음에만 필요한 CEF v58.4.4 런타임 폴더 경로 지정 → Unity Player가 전면에 있게 유지 → 실제 한글 IME 입력만 확인 → 자동 종료 후 results/dual-*.zip 하나를 제출하면 됩니다.
+
+자동: 01_initial.png / 02_resized.png / 03_restored.png (Unity 창의 OS 합성 캡처로 HWND 포함), 창 축소·복원, 이미지 크기 차이 기록, 원본 SHA-256, JS → WebView2 → C# 한글+이모지 UTF-16 일치, CEF 프레임/RawImage 및 양쪽 종료 검증. 캡처가 안 되면 자동으로 건너뛰며 다른 앱을 촬영하지 않습니다. 창의 실제 시각적 정렬·IME 후보창은 사용자 실기 확인 및 캡처 독립 검토가 필요합니다.
+
+개인정보를 브라우저 샘플 입력창에 넣지 마세요. 전체 원시 로그와 브라우저 프로필은 제출 ZIP에서 제외합니다. -NoScreenshots 옵션으로 사진 기록을 끌 수 있습니다.

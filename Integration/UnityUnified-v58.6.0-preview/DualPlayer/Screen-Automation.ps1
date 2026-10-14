@@ -3,7 +3,7 @@
 function Start-DualScreenAutomation {
  param([System.Diagnostics.Process]$Player,[int]$DurationSeconds,[string]$OutputFolder)
  $report=[ordered]@{schema='dual-window-evidence-v1';status='UNAVAILABLE';foregroundOnly=$true;
-   screenshots=@();actions=@();manualVisualApprovalRequired=$true}
+   screenshots=@();actions=@();resizeConfirmedByDimensions=$null;manualVisualApprovalRequired=$true}
  $images=Join-Path $OutputFolder 'screenshots'
  New-Item -ItemType Directory -Force -Path $images | Out-Null
  try {
@@ -76,11 +76,13 @@ public static class DualWindowCapture {
    if($phase.op -eq 'capture'){
     $png=Join-Path $images ($phase.name+'.png')
     $code=[DualWindowCapture]::Capture($h,$Player.Id,$png)
-    $entry=[ordered]@{name=$phase.name;result=$code;file=$null;bytes=0;sha256=$null}
+    $entry=[ordered]@{name=$phase.name;result=$code;file=$null;bytes=0;sha256=$null;width=0;height=0}
     if($code -eq 'CAPTURED' -and (Test-Path -LiteralPath $png)){
      $entry.file='screenshots/'+$phase.name+'.png'
      $entry.bytes=(Get-Item -LiteralPath $png).Length
      $entry.sha256=(Get-FileHash -LiteralPath $png -Algorithm SHA256).Hash.ToLowerInvariant()
+     $bmp=[System.Drawing.Bitmap]::FromFile($png)
+     try{$entry.width=$bmp.Width;$entry.height=$bmp.Height}finally{$bmp.Dispose()}
     }
     $report.screenshots+=$entry
    }else{
@@ -88,6 +90,13 @@ public static class DualWindowCapture {
    }
   }
   $count=@($report.screenshots|Where-Object result -eq 'CAPTURED').Count
+  if($count -eq 3){
+   $a=@($report.screenshots|Where-Object name -eq '01_initial')[0]
+   $b=@($report.screenshots|Where-Object name -eq '02_resized')[0]
+   $c=@($report.screenshots|Where-Object name -eq '03_restored')[0]
+   $report.resizeConfirmedByDimensions=($a.width -gt $b.width -and $a.height -gt $b.height -and
+     $c.width -gt $b.width -and $c.height -gt $b.height)
+  }
   $report.status=if($count -eq 3){'CAPTURED_3_OF_3'}elseif($count -gt 0){'PARTIAL_CAPTURE'}else{'NO_CAPTURE_PLAYER_NOT_FOREGROUND'}
  } catch {
   $report.status='AUTOMATION_ERROR'
