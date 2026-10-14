@@ -25,10 +25,24 @@ ok(new desktop cpp_app --backend cpp)
 ok(new desktop ai_app --backend python)
 ok(new desktop erp_app --backend csharp)
 ok(plugin new camera --language cpp)
+ok(new plugin vision --lang cpp)
+ok(new plugin analytics --lang csharp)
+ok(new plugin automation --lang python)
+ok(new plugin defaults)
+ok(new app workstation)
+ok(new app data_workbench --backend python)
 foreach(p cpp_app/backend/main.cpp ai_app/backend/main.py
           erp_app/backend/Program.cs erp_app/backend/MainBackend.csproj
           plugins/camera/plugin.json plugins/camera/plugin.cpp
-          plugins/camera/CMakeLists.txt)
+          plugins/camera/CMakeLists.txt
+          plugins/vision/plugin.cpp
+          plugins/analytics/Plugin.csproj
+          plugins/analytics/src/Plugin.cs
+          plugins/analytics/src/ExportAttribute.cs
+          plugins/automation/pyproject.toml
+          plugins/automation/src/automation/plugin.py
+          plugins/defaults/plugin.cpp
+          workstation/backend/main.cpp)
   if(NOT EXISTS "${TEST_ROOT}/${p}")
     message(FATAL_ERROR "Missing generated file: ${p}")
   endif()
@@ -49,8 +63,19 @@ bad(1 new desktop ../../escape --backend cpp)
 bad(1 new desktop wrong --backend rust)
 bad(1 plugin new ../../escape --language cpp)
 bad(1 plugin new camera --language python)
+bad(1 new plugin invalid --lang rust)
+bad(1 new plugin ../../escape --lang python)
+bad(1 new plugin analytics --lang csharp)
+bad(1 new app workstation)
 bad(2 run)
-bad(2 publish)
+bad(1 publish)
+bad(1 pack)
+# A package must not be emitted for a C++ plugin that has not compiled.
+execute_process(COMMAND "${XYTRON}" plugin pack vision
+  WORKING_DIRECTORY "${TEST_ROOT}" RESULT_VARIABLE unbuilt)
+if(NOT unbuilt EQUAL 1)
+  message(FATAL_ERROR "Unbuilt native plugin was packaged")
+endif()
 bad(1 doctor --sdk invalid)
 # No implicit installation: a build attempt without SDK has to fail;
 # a malicious SDK prefix must be rejected before executing a shell.
@@ -93,4 +118,59 @@ if(NOT traversal EQUAL 1)
 endif()
 bad(1 module add erp --language csharp)
 
+foreach(runtime "native" "dotnet" "python")
+  if(runtime STREQUAL "native")
+    set(target "vision")
+  elseif(runtime STREQUAL "dotnet")
+    set(target "analytics")
+  else()
+    set(target "automation")
+  endif()
+  file(READ "${TEST_ROOT}/plugins/${target}/plugin.json" doc)
+  string(JSON actual ERROR_VARIABLE parse_err GET "${doc}" runtime)
+  if(parse_err OR NOT actual STREQUAL runtime)
+    message(FATAL_ERROR "Plugin runtime mismatch: ${target}: ${doc}")
+  endif()
+  string(JSON id GET "${doc}" name)
+  if(NOT id STREQUAL target)
+    message(FATAL_ERROR "Plugin name mismatch: ${target}")
+  endif()
+endforeach()
+file(READ "${TEST_ROOT}/workstation/xytron.json" app)
+string(JSON backend GET "${app}" main language)
+if(NOT backend STREQUAL "cpp")
+  message(FATAL_ERROR "Default backend is not cpp")
+endif()
+file(READ "${TEST_ROOT}/plugins/analytics/Plugin.csproj" csproj)
+if(NOT csproj MATCHES "net8.0")
+  message(FATAL_ERROR "Generated .NET plugin needs target framework")
+endif()
+# Package Python source with a manifest; ZIP structure is separately
+# verified by Python's standard zipfile module in the integration test.
+execute_process(COMMAND "${XYTRON}" pack
+  WORKING_DIRECTORY "${TEST_ROOT}/plugins/automation"
+  RESULT_VARIABLE python_pack_rc)
+if(NOT python_pack_rc EQUAL 0 OR
+   NOT EXISTS "${TEST_ROOT}/plugins/automation/dist/automation-1.0.0-any.xplugin")
+  message(FATAL_ERROR "Python plugin packaging failed")
+endif()
+execute_process(COMMAND "${XYTRON}" pack
+  WORKING_DIRECTORY "${TEST_ROOT}/plugins/automation"
+  RESULT_VARIABLE duplicate_pack_rc)
+if(NOT duplicate_pack_rc EQUAL 1)
+  message(FATAL_ERROR "Existing package overwritten")
+endif()
+execute_process(COMMAND "${XYTRON}" publish
+  WORKING_DIRECTORY "${TEST_ROOT}/plugins/automation"
+  RESULT_VARIABLE published)
+if(NOT published EQUAL 0 OR
+   NOT EXISTS "${TEST_ROOT}/plugins/automation/releases/automation-1.0.0-any.xplugin")
+  message(FATAL_ERROR "Local publish failed")
+endif()
+execute_process(COMMAND "${XYTRON}" publish
+  WORKING_DIRECTORY "${TEST_ROOT}/plugins/automation"
+  RESULT_VARIABLE duplicate_publish)
+if(NOT duplicate_publish EQUAL 1)
+  message(FATAL_ERROR "Published package overwritten")
+endif()
 message(STATUS "Xytron bootstrap CLI scaffold PASS")

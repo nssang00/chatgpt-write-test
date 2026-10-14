@@ -257,3 +257,6 @@ See [product vision](docs/PRODUCT_VISION.md) and
 ## Repository note
 
 이 저장소는 처음에는 ChatGPT ↔ GitHub 연결 기능 검증용으로 만들어졌기 때문에 과거 integration demo artifact가 일부 남아 있다. 현재부터는 NativeWeb 개발과 handoff 가능한 source-of-truth repository로 사용한다.
+
+
+Developer workflow decisions and implementation phase gates: [Xytron CLI plan (KO)](docs/XYTRON_DEVELOPER_EXPERIENCE_PLAN_KO.md).

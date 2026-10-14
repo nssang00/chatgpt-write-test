@@ -1,6 +1,11 @@
 // Native C++11 bootstrap CLI: project/plugin scaffolding, not runtime.
 #include <cstdlib>
 #include <fstream>
+#include <regex>
+#include "zip_store.hpp"
+#include "json_validate.hpp"
+#include "json_fields.hpp"
+#include "file_tree.hpp"
 #include <iostream>
 #include <sstream>
 #include <stdexcept>
@@ -81,7 +86,7 @@ static void desktop(const std::string& id,const std::string& lang) {
   }
   std::cout<<"Created scaffold: "<<id<<" (Main "<<lang<<")\n";
 }
-static void plugin(const std::string& id) {
+static void pluginCpp(const std::string& id) {
   if(!valid(id,true)) throw std::runtime_error("Invalid module id");
   dir("plugins",false);
   const std::string p="plugins/"+id;
@@ -97,6 +102,10 @@ static void plugin(const std::string& id) {
     "#include <string>\n"
     "static std::string hello() { return std::string(\"hello\"); }\n"
     "XYTRON_MODULE(m) {\n  m.function(\"hello\", &hello);\n}\n");
+  file(p+"/README.md", "# "+id+" (C++ plugin)\n\n"
+    "Edit plugin.cpp, then run `xytron plugin build "+id+" --sdk SDK_PREFIX` "
+    "from the parent project. This is a native ABI v1 plugin; "
+    "JS bridge and publish are separate integration steps.\n");
   file(p+"/CMakeLists.txt",
     "cmake_minimum_required(VERSION 3.19)\n"
     "project(xytron_native_plugin LANGUAGES CXX)\n"
@@ -121,6 +130,79 @@ static void plugin(const std::string& id) {
     "set_target_properties(${_id} PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED YES)\n"
     "# Stable C ABI v1; never link Core into plugin DLL/SO.\n");
   std::cout<<"Created C++ plugin scaffold: "<<p<<"\n";
+}
+
+
+// The project templates use normal language-native build descriptions.
+// Python and .NET export declarations are metadata-only until their
+// managed hosts are connected to the Xytron runtime.
+static void pluginManaged(const std::string& id,const std::string& lang) {
+  if(!valid(id,true)) throw std::runtime_error("Invalid module id");
+  if(lang!="python"&&lang!="csharp")
+    throw std::runtime_error("Unsupported managed plugin language");
+  dir("plugins",false);
+  const std::string p="plugins/"+id;
+  dir(p,true);
+  if(lang=="python") {
+    dir(p+"/src",true); dir(p+"/src/"+id,true);
+    dir(p+"/tests",true);
+    file(p+"/plugin.json",
+      "{\n  \"schemaVersion\": 1,\n  \"name\": "+q(id)+
+      ",\n  \"version\": \"1.0.0\",\n  \"runtime\": \"python\",\n"
+      "  \"entry\": \""+id+".plugin\"\n}\n");
+    file(p+"/pyproject.toml",
+      "[build-system]\nrequires = [\"setuptools>=61\", \"wheel\"]\n"
+      "build-backend = \"setuptools.build_meta\"\n\n"
+      "[project]\nname = \""+id+"\"\nversion = \"1.0.0\"\n"
+      "requires-python = \">=3.9\"\n\n"
+      "[tool.setuptools.packages.find]\nwhere = [\"src\"]\n");
+    file(p+"/src/"+id+"/__init__.py", "from .plugin import hello\n");
+    file(p+"/src/"+id+"/plugin.py",
+      "# Requires Xytron's Python export SDK at runtime.\n"
+      "from xytron import export\n\n"
+      "@export\ndef hello(name: str) -> str:\n"
+      "    return f\"Hello, {name}!\"\n");
+    file(p+"/tests/test_plugin.py",
+      "# With the Xytron Python SDK on PYTHONPATH:\n"
+      "from "+id+".plugin import hello\n\n"
+      "def test_hello():\n    assert hello(\"Xytron\") == \"Hello, Xytron!\"\n");
+  } else {
+    dir(p+"/src",true); dir(p+"/tests",true);
+    file(p+"/plugin.json",
+      "{\n  \"schemaVersion\": 1,\n  \"name\": "+q(id)+
+      ",\n  \"version\": \"1.0.0\",\n  \"runtime\": \"dotnet\",\n"
+      "  \"entry\": \"bin/"+id+".dll\"\n}\n");
+    file(p+"/Plugin.csproj",
+      "<Project Sdk=\"Microsoft.NET.Sdk\">\n"
+      "  <PropertyGroup>\n    <TargetFramework>net8.0</TargetFramework>\n"
+      "    <Nullable>enable</Nullable>\n"
+      "    <AssemblyName>"+id+"</AssemblyName>\n"
+      "  </PropertyGroup>\n</Project>\n");
+    file(p+"/src/Plugin.cs",
+      "using Xytron;\n\npublic static class Plugin\n{\n"
+      "    [Export]\n"
+      "    public static string Hello(string name) => $\"Hello, {name}!\";\n}\n");
+    file(p+"/src/ExportAttribute.cs",
+      "// Temporary metadata-only contract copied into standalone templates.\n"
+      "// Replace with the official Xytron.Binding SDK reference when available.\n"
+      "using System;\nnamespace Xytron\n{\n"
+      "    [AttributeUsage(AttributeTargets.Class | AttributeTargets.Method)]\n"
+      "    public sealed class ExportAttribute : Attribute { }\n}\n");
+    file(p+"/tests/README.md",
+      "Test the Hello method with your preferred .NET test runner.\n"
+      "The language host and JS bridge are not implemented yet.\n");
+  }
+  file(p+"/README.md","# "+id+" ("+lang+" plugin)\n\n"
+    "Edit the source, use native language tooling to build or test, "
+    "and keep plugin.json in sync with the package output.\n\n"
+    "The runtime field selects the future loader, not the authoring language. "
+    "Use xytron build, xytron pack and xytron publish --output DIR. "
+    "Live JS dispatch and signed distribution remain TODO.\n");
+  std::cout<<"Created "<<lang<<" plugin scaffold: "<<p<<"\n";
+}
+static void newPlugin(const std::string& id,const std::string& lang) {
+  if(lang=="cpp") pluginCpp(id);
+  else pluginManaged(id,lang);
 }
 
 // The CLI invokes CMake for a user-authored, locally trusted plugin tree.
@@ -251,15 +333,167 @@ static void moduleAdd(const std::string& id, const std::string& lang) {
            <<" (scaffold only, not loaded by runtime)\n";
 }
 
+
+struct PluginSpec {
+  std::string id,version,runtime;
+};
+static PluginSpec readPluginSpec(const std::string& directory) {
+  std::ifstream in((directory+"/plugin.json").c_str(),std::ios::binary);
+  if(!in) throw std::runtime_error("Missing plugin.json under "+directory);
+  std::ostringstream stream;stream<<in.rdbuf();
+  const std::string doc=stream.str();
+  if(doc.size()>65536) throw std::runtime_error("Oversized plugin manifest");
+  xytron_cli::JsonSyntax(doc).validate();
+  const xytron_cli::JsonObjectFields manifest(doc);
+  if(manifest.raw("schemaVersion")!="1")
+    throw std::runtime_error("Unsupported plugin schemaVersion");
+  PluginSpec p;
+  p.id=manifest.string("name");
+  p.version=manifest.string("version");+  p.runtime=manifest.string("runtime");
+  if(!valid(p.id,true)) throw std::runtime_error("Invalid plugin name");
+  if(!std::regex_match(p.version,std::regex("[0-9]+\\.[0-9]+\\.[0-9]+")))
+    throw std::runtime_error("Invalid plugin version");
+  if(p.runtime!="native"&&p.runtime!="python"&&p.runtime!="dotnet")
+    throw std::runtime_error("Unsupported plugin runtime");
+  if(p.runtime=="python" && manifest.string("entry")!=p.id+".plugin")
+    throw std::runtime_error("Python plugin entry does not match generated package");
+  if(p.runtime=="dotnet" && manifest.string("entry")!="bin/"+p.id+".dll")
+    throw std::runtime_error(".NET plugin entry does not match generated package");
+  if(p.runtime=="native") {
+    const xytron_cli::JsonObjectFields entry=manifest.object("entry");
+    if(entry.string("win-x64")!="bin/win-x64/"+p.id+".dll" ||
+       entry.string("linux-x64")!="bin/linux-x64/lib"+p.id+".so")
+      throw std::runtime_error("Native plugin platform entries differ from package layout");
+  }
+  return p;
+}
+static std::string nativeRid() {
+#ifdef _WIN32
+  return "win-x64";
+#elif defined(__linux__) && defined(__x86_64__)
+  return "linux-x64";
+#else
+  throw std::runtime_error("Native plugin pack is supported on win-x64/linux-x64 only");
+#endif
+}
+static std::string nativeLibrary(const std::string& id) {
+#ifdef _WIN32
+  return id+".dll";
+#else
+  return "lib"+id+".so";
+#endif
+}
+static void pluginPack(const std::string& source) {
+  const PluginSpec spec=readPluginSpec(source);
+  const std::string base=source+"/";
+  xytron_cli::ZipStore archive;
+  archive.add("plugin.json",base+"plugin.json");
+  std::string rid="any";
+  if(spec.runtime=="native") {
+    rid=nativeRid();
+    const std::string library=nativeLibrary(spec.id);
+    std::string built=base+"build/"+library;
+#ifdef _WIN32
+    built=base+"build/Release/"+library;
+#endif
+    archive.add("bin/"+rid+"/"+library,built);
+  } else if(spec.runtime=="dotnet") {
+    // Include referenced DLLs and metadata copied by dotnet build. External
+    // runtime installation/restore remains a host deployment responsibility.
+    const std::string outDir=base+"build";
+    std::vector<std::string> built;xytron_cli::sourceFiles(outDir,"",built);
+    bool assemblyFound=false;
+    for(std::size_t i=0;i<built.size();++i) {
+      if(built[i]==spec.id+".dll") assemblyFound=true;
+      archive.add("bin/"+built[i],outDir+"/"+built[i]);
+    }
+    if(!assemblyFound) throw std::runtime_error("Missing .NET plugin assembly");
+  } else {
+    const std::string src=base+"src/"+spec.id;
+    std::vector<std::string> files;xytron_cli::sourceFiles(src,"",files);
+    bool entryFound=false;
+    for(std::size_t i=0;i<files.size();++i) {
+      if(files[i]=="plugin.py") entryFound=true;
+      archive.add("python/"+spec.id+"/"+files[i],src+"/"+files[i]);
+    }
+    if(!entryFound) throw std::runtime_error("Missing Python plugin entry");
+    archive.add("pyproject.toml",base+"pyproject.toml");
+  }
+  dir(base+"dist",false);
+  const std::string out=base+"dist/"+spec.id+"-"+spec.version+"-"+rid+".xplugin";
+  archive.write(out);
+  std::cout<<"Created plugin archive: "<<out<<"\n"
+           <<"Note: runtime dependency closure, signing and remote publishing are NOT implemented.\n";
+}
+static void pluginBuildCurrent(const std::string& sdk) {
+  const PluginSpec spec=readPluginSpec(".");
+  if(spec.runtime=="native") {
+    if(sdk.empty()) throw std::runtime_error("Native build requires --sdk PREFIX");
+    if(!safeSdkPrefix(sdk)) throw std::runtime_error("Invalid SDK prefix");
+    // Reuse installed SDK and generated CMake project without copying Core.
+    const std::string configure="cmake -S . -B build \"-DCMAKE_PREFIX_PATH="+sdk+"\"";
+    if(std::system(configure.c_str())!=0) throw std::runtime_error("CMake configure failed");
+    if(std::system("cmake --build build --config Release")!=0)
+      throw std::runtime_error("CMake build failed");
+  } else if(spec.runtime=="dotnet") {
+    if(!sdk.empty()) throw std::runtime_error("--sdk is for native plugins only");
+    if(std::system("dotnet build Plugin.csproj --configuration Release --output build")!=0)
+      throw std::runtime_error("dotnet build failed or .NET SDK missing");
+  } else {
+    if(!sdk.empty()) throw std::runtime_error("--sdk is for native plugins only");
+#ifdef _WIN32
+    const std::string cmd="python -m compileall -q src/"+spec.id;
+#else
+    const std::string cmd="python3 -m compileall -q src/"+spec.id;
+#endif
+    if(std::system(cmd.c_str())!=0)
+      throw std::runtime_error("Python syntax check failed or interpreter missing");
+  }
+  std::cout<<"Plugin build/syntax check PASS ("<<spec.id<<", "<<spec.runtime<<")\n";
+}
+// Local artifact publication only. Remote registries, authentication, signing
+// and supply-chain verification will be a separate release milestone.
+static void pluginPublish(const std::string& output) {
+  if(output.empty() || output.size()>700)
+    throw std::runtime_error("Invalid publish output directory");
+  // No shell execution here; spaces are safe, but reject parent traversal.
+  if(output.find("..")!=std::string::npos)
+    throw std::runtime_error("Parent traversal in publish output");
+  const PluginSpec spec=readPluginSpec(".");
+  const std::string rid=spec.runtime=="native"?nativeRid():"any";
+  const std::string name=spec.id+"-"+spec.version+"-"+rid+".xplugin";
+  const std::string src="dist/"+name;
+  std::ifstream in(src.c_str(),std::ios::binary);
+  if(!in) throw std::runtime_error("Run xytron pack before publish: "+src);
+  in.seekg(0,std::ios::end);
+  const std::streamoff length=in.tellg();
+  if(length<=0 || length>64*1024*1024) throw std::runtime_error("Invalid artifact size");
+  in.seekg(0,std::ios::beg);
+  dir(output,false);
+  const std::string dest=output+"/"+name;
+  if(exists(dest)) throw std::runtime_error("Refusing to overwrite published artifact: "+dest);
+  std::ofstream out(dest.c_str(),std::ios::binary);
+  if(!out) throw std::runtime_error("Cannot publish to "+dest);
+  out<<in.rdbuf();out.close();
+  if(!out) throw std::runtime_error("Local artifact publication failed");
+  std::cout<<"Published local archive: "<<dest<<"\n"
+           <<"Remote registry upload, signing and installation are not supported.\n";
+}
 static void help() {
   std::cout<<"xytron bootstrap CLI (partial)\n"
-    "  new desktop NAME --backend cpp|python|csharp\n"
-    "  plugin new NAME --language cpp\n"
-    "  plugin build NAME --sdk INSTALLED_SDK_PREFIX\n"
+    "  new app NAME [--backend cpp|python|csharp] (default: cpp)\n"
+    "  new desktop NAME [--backend cpp|python|csharp]\n"
+    "  new plugin NAME [--lang cpp|python|csharp] (default: cpp)\n"
+    "  plugin new NAME --language cpp|python|csharp\n"
+    "  plugin build NAME --sdk INSTALLED_SDK_PREFIX (C++ only)\n"
     "  module add NAME --language cpp|python|csharp\n"
     "  doctor --sdk INSTALLED_SDK_PREFIX\n"
+    "  build [--sdk PREFIX] (inside plugin project)\n"
+    "  pack (inside plugin project)\n"
+    "  plugin pack NAME (from parent project)\n"
+    "  publish [--output DIR] (local archive copy, inside plugin project)\n"
     "  --help / --version\n"
-    "  restore/run/build/test/publish: NOT IMPLEMENTED\n";
+    "  restore/run/test/remote-publish: NOT IMPLEMENTED\n";
 }
 int main(int argc,char** argv) {
   try {
@@ -267,11 +501,39 @@ int main(int argc,char** argv) {
       help(); return 0;
     }
     if(argc==2&&std::string(argv[1])=="--version") {
-      std::cout<<"xytron bootstrap 0.1.0\n"; return 0;
+      std::cout<<"xytron bootstrap 0.2.0\n"; return 0;
     }
-    if(argc==6&&std::string(argv[1])=="new"&&
-       std::string(argv[2])=="desktop"&&std::string(argv[4])=="--backend") {
-      desktop(argv[3],argv[5]);return 0;
+    if(argc>=4 && std::string(argv[1])=="new" &&
+       (std::string(argv[2])=="desktop"||std::string(argv[2])=="app") &&
+       (argc==4 || (argc==6 && std::string(argv[4])=="--backend"))) {
+      desktop(argv[3],argc==4?"cpp":argv[5]);return 0;
+    }
+    if(argc>=4 && std::string(argv[1])=="new" &&
+       std::string(argv[2])=="plugin" &&
+       (argc==4 || (argc==6 && std::string(argv[4])=="--lang"))) {
+      newPlugin(argv[3],argc==4?"cpp":argv[5]);return 0;
+    }
+    if(argc==2 && std::string(argv[1])=="publish") {
+      pluginPublish("releases");return 0;
+    }
+    if(argc==4 && std::string(argv[1])=="publish"&&
+       std::string(argv[2])=="--output") {
+      pluginPublish(argv[3]);return 0;
+    }
+    if(argc==2 && std::string(argv[1])=="pack") {
+      pluginPack(".");return 0;
+    }
+    if(argc==2 && std::string(argv[1])=="build") {
+      pluginBuildCurrent("");return 0;
+    }
+    if(argc==4 && std::string(argv[1])=="build"&&
+       std::string(argv[2])=="--sdk") {
+      pluginBuildCurrent(argv[3]);return 0;
+    }
+    if(argc==4 && std::string(argv[1])=="plugin"&&
+       std::string(argv[2])=="pack") {
+      if(!valid(argv[3],true)) throw std::runtime_error("Invalid plugin id");
+      pluginPack(std::string("plugins/")+argv[3]);return 0;
     }
     if(argc==6&&std::string(argv[1])=="module"&&
        std::string(argv[2])=="add"&&std::string(argv[4])=="--language") {
@@ -287,9 +549,7 @@ int main(int argc,char** argv) {
     }
     if(argc==6&&std::string(argv[1])=="plugin"&&
        std::string(argv[2])=="new"&&std::string(argv[4])=="--language") {
-      if(std::string(argv[5])!="cpp")
-        throw std::runtime_error("Only C++ plugin templates are implemented");
-      plugin(argv[3]);return 0;
+      newPlugin(argv[3],argv[5]);return 0;
     }
     help();std::cerr<<"Invalid or unimplemented xytron command\n";return 2;
   } catch(const std::exception& e) {

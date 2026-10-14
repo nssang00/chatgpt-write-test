@@ -1,3 +1,9 @@
+> 최신 상태(2026-10-15): 아래 과거 부트스트랩 기록은 역사적 내용입니다.
+> `new app/new plugin/build/pack/publish`의 로컬 구현과 검증 강화 상태는
+> [개발자 경험 계획](XYTRON_DEVELOPER_EXPERIENCE_PLAN_KO.md) 및
+> [CLI 검증 기록](XYTRON_CLI_VERIFICATION_KO.md)을 참조하세요.
+> 전체 데스크톱 앱 실행과 서명된 플러그인 설치는 여전히 미구현입니다.
+
 Native C++11 xytron bootstrap CLI status
 ====================================
 
@@ -98,3 +104,24 @@ First workflow attempts had YAML and PowerShell syntax problems
 `ui` resources directory. This is a **declaration**, not runtime:
 `xytron run`, `build`, `publish` and packaging remain unavailable.
 See `docs/APP_RESOURCE_PROTOCOLS.md` and NW-037.
+
+## 2026-10-14 developer experience increment (scaffold + local packaging)
+
+See [Korean CLI product plan](XYTRON_DEVELOPER_EXPERIENCE_PLAN_KO.md) for owner decisions,
+engine/toolchain restore policy, phase gates, and security boundaries.
+
+The native C++11 CLI now additionally accepts `xytron new app NAME` (default
+C++ Main), `xytron new plugin ID --lang cpp|python|csharp` and existing
+`xytron plugin new ID --language ...`. C#/Python templates are editable
+normal language projects and `plugin.json` declares runtime `dotnet`/`python`
+(rather than authoring language). The native one keeps the ABI v1.
+
+Inside a generated plugin directory `xytron build [--sdk PREFIX]` delegates
+to CMake, dotnet, or Python syntax compilation; `xytron pack` creates a local
+ZIP `.xplugin`; `xytron publish [--output DIR]` copies an already built
+archive locally. `plugin pack ID` works from the parent project. **None of
+these commands imply a running app, a managed JS bridge, signed packages,
+verified external dependencies, or a remote registry.** The old
+`plugin build ID --sdk PREFIX` continues working. Python `build` is only a
+syntax check and not a wheel build. C# template uses a temporary metadata
+attribute until the official binding SDK is consumable by generated projects.
