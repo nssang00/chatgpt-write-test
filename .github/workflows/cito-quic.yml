@@ -12,8 +12,10 @@ on:
       - "cito/include/cito/detail/request_session_lifecycle.hpp"
       - "cito/include/cito/detail/msquic_request_session_manager.hpp"
       - "cito/include/cito/detail/posix_udp_control_manager.hpp"
+      - "cito/include/cito/detail/linux_request_runtime_driver.hpp"
       - "cito/src/msquic_request_session_manager.cpp"
       - "cito/src/posix_udp_control_manager.cpp"
+      - "cito/src/linux_request_runtime_driver.cpp"
       - "cito/tests/net/quic_msquic_node.cpp"
       - "cito/tests/net/quic_public_request_node.cpp"
       - "cito/tests/net/quic_request_node.cpp"
@@ -173,8 +175,8 @@ jobs:
 
           test "$public_client_status" -eq 0
           test "$public_server_status" -eq 0
-          grep -q "quic_public_request_client result=42 lazy=1 deadline=1 discovery=udp" quic-public-client.log
-          grep -q "quic_public_request_server handler=1 reply=1 discovery=udp" quic-public-server.log
+          grep -q "quic_public_request_client result=42 lazy=1 deadline=1 discovery=udp run=context" quic-public-client.log
+          grep -q "quic_public_request_server handler=1 reply=1 discovery=udp run=context" quic-public-server.log
 
 
       - name: Configure sanitized public Request/Reply smoke
@@ -249,5 +251,5 @@ jobs:
 
           test "$client_status" -eq 0
           test "$server_status" -eq 0
-          grep -q "quic_public_request_client result=42 lazy=1 deadline=1 discovery=udp" quic-public-san-client.log
-          grep -q "quic_public_request_server handler=1 reply=1 discovery=udp" quic-public-san-server.log
+          grep -q "quic_public_request_client result=42 lazy=1 deadline=1 discovery=udp run=context" quic-public-san-client.log
+          grep -q "quic_public_request_server handler=1 reply=1 discovery=udp run=context" quic-public-san-server.log

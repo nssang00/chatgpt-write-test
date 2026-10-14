@@ -5,6 +5,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <string>
 
@@ -53,6 +54,9 @@ public:
     // Convert RequestSessionLifecycleCore actions into concrete MsQuic
     // connect/disconnect operations. Call from the same loop owner as poll().
     std::size_t reconcile();
+
+    void set_wake_callback(
+        std::function<void()> wake);
 
     bool has_session(
         DestinationId destination)

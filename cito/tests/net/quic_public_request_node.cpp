@@ -1,15 +1,12 @@
 #include <cito/cito.hpp>
-#include <cito/detail/msquic_request_session_manager.hpp>
-#include <cito/detail/posix_udp_control_manager.hpp>
-#include <cito/detail/request_session_lifecycle.hpp>
-#include <cito/detail/udp_runtime_adapter.hpp>
+#include <cito/detail/linux_request_runtime_driver.hpp>
 
-#include <array>
+#include <atomic>
 #include <chrono>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
-#include <functional>
+#include <exception>
 #include <iostream>
 #include <span>
 #include <stdexcept>
@@ -64,6 +61,7 @@ struct StaticCodec<NetPing> {
     static std::vector<std::uint8_t>
     encode(const NetPing& value) {
         ++encodes;
+
         return {
             static_cast<std::uint8_t>(
                 value.value & 0xffu),
@@ -142,21 +140,6 @@ struct StaticCodec<NetPong> {
 
 namespace {
 
-using Clock =
-    std::chrono::steady_clock;
-
-std::uint64_t now_ms() {
-    return static_cast<
-        std::uint64_t>(
-        std::chrono::
-            duration_cast<
-                std::chrono::
-                    milliseconds>(
-                Clock::now()
-                    .time_since_epoch())
-            .count());
-}
-
 std::uint32_t parse_ipv4(
     const std::string& text) {
     unsigned a = 0;
@@ -187,40 +170,54 @@ std::uint32_t parse_ipv4(
         d;
 }
 
-bool spin(
-    cito::detail::
-        PosixUdpControlManager&
-        control,
-    cito::detail::
-        MsQuicRequestSessionManager&
-        quic,
-    const std::function<bool()>& done,
-    std::chrono::milliseconds timeout) {
-    const auto deadline =
-        Clock::now() + timeout;
-
-    while (
-        Clock::now() < deadline) {
-        control.poll(
-            now_ms());
-        quic.reconcile();
-        quic.poll();
-
-        if (done()) {
-            return true;
+struct Detached {
+    struct promise_type {
+        Detached get_return_object() {
+            return {};
         }
 
-        std::this_thread::sleep_for(
-            std::chrono::
-                milliseconds(1));
+        std::suspend_never
+        initial_suspend()
+            const noexcept {
+            return {};
+        }
+
+        std::suspend_never
+        final_suspend()
+            const noexcept {
+            return {};
+        }
+
+        void return_void()
+            const noexcept {}
+
+        void unhandled_exception() {
+            std::terminate();
+        }
+    };
+};
+
+Detached await_and_stop(
+    cito::Context& ctx,
+    cito::Request<NetPong> request,
+    bool& done,
+    bool& ok,
+    std::uint32_t& value,
+    cito::RequestStatus& status) {
+    auto result =
+        co_await request;
+
+    status =
+        result.status();
+
+    if (result) {
+        ok = true;
+        value =
+            result.value().value;
     }
 
-    control.poll(
-        now_ms());
-    quic.reconcile();
-    quic.poll();
-
-    return done();
+    done = true;
+    ctx.stop();
 }
 
 int run_server(
@@ -236,112 +233,122 @@ int run_server(
     auto runtime =
         acquire_embedded_host_runtime();
 
-    UdpRuntimeAdapter routes(
-        runtime->host(),
-        50,
-        5001);
+    LinuxRequestRuntimeOptions
+        options;
 
-    const std::array<
-        cito::RouteEndpoint,
-        1> endpoints{{
-            {77, 0, quic_port}}};
+    options.coordinator = 50;
+    options.incarnation = 5001;
+    options.destination = 77;
+    options.control_port =
+        control_port;
+    options.quic_port =
+        quic_port;
+    options.lease_ms = 700;
+    options.announce_interval_ms =
+        100;
+    options.announcement_targets
+        .push_back(
+            UdpEndpoint{
+                parse_ipv4(
+                    announce_ip),
+                announce_port});
+    options.certificate_file =
+        cert;
+    options.private_key_file =
+        key;
+    options.quic.registration_name =
+        "cito-public-server";
 
-    routes.set_local_route_endpoints(
-        endpoints);
-
-    PosixUdpControlManager control(
-        routes);
-
-    if (!control.bind(
-            control_port)) {
-        return 10;
-    }
-
-    control.add_announcement_target(
-        UdpEndpoint{
-            parse_ipv4(
-                announce_ip),
-            announce_port});
-
-    control.set_announcement_policy(
-        700,
-        100);
-
-    MsQuicRequestSessionManager
-        manager(
+    auto driver =
+        install_linux_request_runtime(
             *runtime,
-            nullptr);
-
-    if (!manager.start_listener(
-            quic_port,
-            cert,
-            key)) {
-        return 11;
-    }
+            std::move(options));
 
     cito::Context provider(
         "acme");
 
-    int handler_calls = 0;
+    std::atomic<int>
+        handler_calls{0};
 
     provider.handle<NetPing>(
         "robot_1",
         [&](const NetPing& ping) {
-            ++handler_calls;
+            handler_calls.fetch_add(
+                1,
+                std::memory_order_relaxed);
+
             return NetPong{
                 ping.value + 1};
         });
 
-    const bool replied =
-        spin(
-            control,
-            manager,
-            [&] {
-                return
-                    handler_calls == 1 &&
-                    manager
-                        .completed_send_count() >=
-                    1;
-            },
-            std::chrono::
-                seconds(8));
+    std::atomic<bool>
+        completed{false};
 
-    if (!replied) {
-        return 12;
-    }
+    std::thread stopper(
+        [&] {
+            const auto deadline =
+                std::chrono::
+                    steady_clock::now() +
+                std::chrono::
+                    seconds(10);
 
-    const bool peer_closed =
-        spin(
-            control,
-            manager,
-            [&] {
-                return
-                    manager.peer_count() ==
-                    0;
-            },
-            std::chrono::
-                seconds(4));
+            while (
+                std::chrono::
+                    steady_clock::now() <
+                    deadline) {
+                if (
+                    handler_calls.load(
+                        std::memory_order_relaxed) ==
+                        1 &&
+                    driver->
+                        completed_send_count() >=
+                        1 &&
+                    driver->peer_count() ==
+                        0) {
+                    completed.store(
+                        true,
+                        std::memory_order_release);
+                    provider.stop();
+                    return;
+                }
 
-    if (!peer_closed) {
-        return 13;
-    }
+                std::this_thread::
+                    sleep_for(
+                        std::chrono::
+                            milliseconds(1));
+            }
 
-    if (
-        control.stats()
-            .datagrams_received <
-            2 ||
-        control.stats()
-            .datagrams_sent <
-            2) {
-        return 14;
+            provider.stop();
+        });
+
+    provider.run();
+    stopper.join();
+
+    const auto stats =
+        driver->control_stats();
+
+    const bool ok =
+        completed.load(
+            std::memory_order_acquire) &&
+        handler_calls.load(
+            std::memory_order_relaxed) ==
+            1 &&
+        stats.datagrams_received >=
+            2 &&
+        stats.datagrams_sent >= 2;
+
+    (void)runtime->clear_driver(
+        driver.get());
+    driver.reset();
+
+    if (!ok) {
+        return 10;
     }
 
     std::cout
-        << "quic_public_request_server handler=1 reply=1 discovery=udp"
+        << "quic_public_request_server handler=1 reply=1 discovery=udp run=context"
         << std::endl;
 
-    manager.shutdown();
-    control.stop();
     return 0;
 }
 
@@ -352,32 +359,23 @@ int run_client(
     auto runtime =
         acquire_embedded_host_runtime();
 
-    UdpRuntimeAdapter routes(
-        runtime->host(),
-        20,
-        2001);
+    LinuxRequestRuntimeOptions
+        options;
 
-    RequestSessionLifecycleCore
-        lifecycle(
-            runtime->host(),
-            routes);
+    options.coordinator = 20;
+    options.incarnation = 2001;
+    options.control_port =
+        control_port;
+    options.quic.registration_name =
+        "cito-public-client";
+    options.quic
+        .skip_server_certificate_validation =
+        true;
 
-    PosixUdpControlManager control(
-        routes,
-        &lifecycle);
-
-    if (!control.bind(
-            control_port)) {
-        return 20;
-    }
-
-    MsQuicRequestSessionManager
-        manager(
+    auto driver =
+        install_linux_request_runtime(
             *runtime,
-            &lifecycle,
-            MsQuicRequestSessionOptions{
-                "cito-public-request-smoke",
-                true});
+            std::move(options));
 
     cito::Context requester(
         "acme");
@@ -385,8 +383,6 @@ int run_client(
     cito::StaticCodec<
         NetPing>::encodes = 0;
 
-    // The request is created before any remote coordinator, route, endpoint,
-    // or QUIC session is known.
     auto request =
         requester.request(
             "robot_1",
@@ -400,32 +396,38 @@ int run_client(
         cito::StaticCodec<
             NetPing>::encodes != 0 ||
         runtime->request_network()
-            .waiting_count() != 1 ||
-        lifecycle.desired_count() != 1) {
-        return 21;
+            .waiting_count() != 1) {
+        return 20;
     }
 
-    const bool completed =
-        spin(
-            control,
-            manager,
-            [&] {
-                return request.ready();
-            },
-            std::chrono::
-                seconds(8));
+    bool done = false;
+    bool ok = false;
+    std::uint32_t value = 0;
+    auto status =
+        cito::RequestStatus::
+            Internal;
+
+    await_and_stop(
+        requester,
+        request,
+        done,
+        ok,
+        value,
+        status);
+
+    requester.run();
 
     if (
-        !completed ||
-        !request.result() ||
-        request.result()
-            .value()
-            .value != 42 ||
+        !done ||
+        !ok ||
+        status !=
+            cito::RequestStatus::Ok ||
+        value != 42 ||
         cito::StaticCodec<
             NetPing>::encodes != 1 ||
-        !manager.has_session(77) ||
-        !lifecycle.is_connected(77)) {
-        return 22;
+        driver->session_count() !=
+            1) {
+        return 21;
     }
 
     const auto before_timeout =
@@ -445,55 +447,62 @@ int run_client(
         cito::StaticCodec<
             NetPing>::encodes !=
         before_timeout) {
+        return 22;
+    }
+
+    bool timeout_done = false;
+    bool timeout_ok = false;
+    std::uint32_t timeout_value =
+        0;
+    auto timeout_status =
+        cito::RequestStatus::
+            Internal;
+
+    await_and_stop(
+        requester,
+        timed_out,
+        timeout_done,
+        timeout_ok,
+        timeout_value,
+        timeout_status);
+
+    requester.run();
+
+    const auto stats =
+        driver->control_stats();
+
+    const bool final_ok =
+        timeout_done &&
+        !timeout_ok &&
+        timeout_status ==
+            cito::RequestStatus::
+                DeadlineExceeded &&
+        cito::StaticCodec<
+            NetPing>::encodes ==
+            before_timeout &&
+        stats.datagrams_received >=
+            3 &&
+        stats.datagrams_sent >= 2 &&
+        runtime->request_network()
+            .waiting_count() == 0 &&
+        runtime->request_network()
+            .transport()
+            .outbound_count() == 0 &&
+        runtime->requests()
+            .pending_count() == 0;
+
+    (void)runtime->clear_driver(
+        driver.get());
+    driver.reset();
+
+    if (!final_ok) {
         return 23;
     }
 
-    const bool timeout_completed =
-        spin(
-            control,
-            manager,
-            [&] {
-                return timed_out.ready();
-            },
-            std::chrono::
-                seconds(2));
-
-    if (
-        !timeout_completed ||
-        timed_out.result() ||
-        timed_out.result()
-            .status() !=
-            cito::RequestStatus::
-                DeadlineExceeded ||
-        cito::StaticCodec<
-            NetPing>::encodes !=
-        before_timeout) {
-        return 24;
-    }
-
-    if (
-        control.stats()
-            .datagrams_received <
-            3 ||
-        control.stats()
-            .datagrams_sent <
-            2 ||
-        runtime->request_network()
-            .waiting_count() != 0 ||
-        runtime->request_network()
-            .transport()
-            .outbound_count() != 0 ||
-        runtime->requests()
-            .pending_count() != 0) {
-        return 25;
-    }
-
     std::cout
-        << "quic_public_request_client result=42 lazy=1 deadline=1 discovery=udp"
+        << "quic_public_request_client result=42 lazy=1 deadline=1 discovery=udp run=context"
         << std::endl;
 
-    manager.shutdown();
-    control.stop();
     return 0;
 }
 

@@ -270,9 +270,25 @@ public:
         return fd_ >= 0;
     }
 
+    int native_fd() const noexcept {
+        return fd_;
+    }
+
     std::uint16_t control_port()
         const noexcept {
         return control_port_;
+    }
+
+    std::optional<std::uint64_t>
+    next_announcement_ms()
+        const noexcept {
+        if (
+            fd_ < 0 ||
+            targets_.empty()) {
+            return std::nullopt;
+        }
+
+        return next_announcement_ms_;
     }
 
     const PosixUdpControlStats&
@@ -464,6 +480,15 @@ PosixUdpControlManager::open()
         impl_->open();
 }
 
+int
+PosixUdpControlManager::native_fd()
+    const noexcept {
+    return
+        impl_
+            ? impl_->native_fd()
+            : -1;
+}
+
 std::uint16_t
 PosixUdpControlManager::
 control_port()
@@ -472,6 +497,17 @@ control_port()
         impl_
             ? impl_->control_port()
             : 0;
+}
+
+std::optional<std::uint64_t>
+PosixUdpControlManager::
+next_announcement_ms()
+    const noexcept {
+    return
+        impl_
+            ? impl_->
+                  next_announcement_ms()
+            : std::nullopt;
 }
 
 const PosixUdpControlStats&

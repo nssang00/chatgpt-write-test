@@ -590,6 +590,14 @@ private:
             return request;
         }
 
+        void run() {
+            runtime_->run();
+        }
+
+        void stop() noexcept {
+            runtime_->stop();
+        }
+
     private:
         explicit State(std::string_view scope)
             : scope_id_(stable_name_id(scope)),
@@ -955,7 +963,17 @@ public:
         return state_->publish(resource, value);
     }
 
-    void run() noexcept {}
+    void run() {
+        if (state_) {
+            state_->run();
+        }
+    }
+
+    void stop() noexcept {
+        if (state_) {
+            state_->stop();
+        }
+    }
 
 private:
     Subscription make_subscription(

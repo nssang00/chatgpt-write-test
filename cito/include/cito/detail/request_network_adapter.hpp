@@ -405,6 +405,26 @@ public:
         return waits_.size();
     }
 
+    std::optional<Clock::time_point>
+    next_deadline()
+        const noexcept {
+        std::optional<
+            Clock::time_point>
+            next;
+
+        for (const auto& [_, wait] :
+             waits_) {
+            if (
+                !next ||
+                wait.deadline <
+                    *next) {
+                next = wait.deadline;
+            }
+        }
+
+        return next;
+    }
+
     std::size_t fail_waiting(
         RequestStatus status =
             RequestStatus::Unavailable) {

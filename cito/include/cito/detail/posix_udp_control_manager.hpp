@@ -5,6 +5,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <vector>
 
 namespace cito::detail {
@@ -56,7 +57,13 @@ public:
     void stop();
 
     bool open() const noexcept;
+    int native_fd() const noexcept;
+
     std::uint16_t control_port()
+        const noexcept;
+
+    std::optional<std::uint64_t>
+    next_announcement_ms()
         const noexcept;
 
     const PosixUdpControlStats&

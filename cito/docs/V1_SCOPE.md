@@ -260,3 +260,21 @@ original pre-discovery `Context::request()`.
 The remaining integration is to make `Context::run()` own the UDP control and
 QUIC poll/reconcile cycle automatically, and to provide the corresponding
 Windows control-socket backend.
+
+
+## Context-owned Linux Request/Reply loop
+
+The embedded host runtime now accepts one internal RuntimeDriver.
+`Context::run()` delegates to it and `Context::stop()` wakes/stops it.
+Without a driver, local Context run remains a no-op for compatibility.
+
+The Linux Request/Reply driver composes the real POSIX UDP control manager,
+RequestSessionLifecycleCore, MsQuic session manager, and request deadline
+progression. It blocks on the UDP fd plus an MsQuic wake pipe and computes its
+timeout from the next request/announcement deadline, with only a bounded lease
+maintenance ceiling.
+
+The real two-node public QUIC smoke now uses `Context::run()` rather than
+manually calling control/quic poll or reconcile functions. The remaining work
+is automatic platform bootstrap/configuration and the equivalent Windows
+driver/backend.

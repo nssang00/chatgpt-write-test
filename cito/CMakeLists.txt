@@ -41,6 +41,11 @@ if(CITO_ENABLE_MSQUIC)
 
   add_library(cito_msquic STATIC
     src/msquic_request_session_manager.cpp)
+
+  if(UNIX AND NOT APPLE)
+    target_sources(cito_msquic PRIVATE
+      src/linux_request_runtime_driver.cpp)
+  endif()
   target_include_directories(cito_msquic
     PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include
     PRIVATE ${MSQUIC_INCLUDE_DIR})
@@ -49,6 +54,10 @@ if(CITO_ENABLE_MSQUIC)
   target_link_libraries(cito_msquic
     PUBLIC cito_core Threads::Threads
     PRIVATE ${MSQUIC_LIBRARY})
+
+  if(UNIX AND NOT APPLE)
+    target_link_libraries(cito_msquic PUBLIC cito_posix_runtime)
+  endif()
 endif()
 
 include(CTest)
@@ -63,6 +72,7 @@ if(BUILD_TESTING)
 
   cito_add_test(cito_context_tests tests/context_test.cpp "unit;regression")
   cito_add_test(cito_shared_context_tests tests/shared_context_test.cpp "unit;latency;regression")
+  cito_add_test(cito_context_runtime_driver_tests tests/context_runtime_driver_test.cpp "unit;regression")
   cito_add_test(cito_context_index_tests tests/context_index_test.cpp "unit;latency;regression")
   cito_add_test(cito_type_tests tests/type_test.cpp "unit;regression")
   cito_add_test(cito_wire_tests tests/wire_test.cpp "unit;regression")

@@ -309,6 +309,14 @@ public:
         return count;
     }
 
+    void set_wake_callback(
+        std::function<void()> wake) {
+        std::lock_guard<std::mutex>
+            lock(queue_mutex_);
+        wake_ =
+            std::move(wake);
+    }
+
     std::size_t reconcile() {
         if (
             !ready_ ||
@@ -1241,10 +1249,23 @@ private:
     void post(
         std::function<void()>
             event) {
-        std::lock_guard<std::mutex>
-            lock(queue_mutex_);
-        events_.push_back(
-            std::move(event));
+        std::function<void()> wake;
+
+        {
+            std::lock_guard<std::mutex>
+                lock(queue_mutex_);
+            events_.push_back(
+                std::move(event));
+            wake = wake_;
+        }
+
+        if (wake) {
+            try {
+                wake();
+            } catch (...) {
+                // Wake notification is advisory; queued work remains intact.
+            }
+        }
     }
 
     static QUIC_STATUS QUIC_API
@@ -1595,6 +1616,8 @@ private:
     std::deque<
         std::function<void()>>
         events_;
+    std::function<void()>
+        wake_;
 
     std::unordered_map<
         DestinationId,
@@ -1681,6 +1704,16 @@ reconcile() {
         impl_
             ? impl_->reconcile()
             : 0;
+}
+
+void
+MsQuicRequestSessionManager::
+set_wake_callback(
+    std::function<void()> wake) {
+    if (impl_) {
+        impl_->set_wake_callback(
+            std::move(wake));
+    }
 }
 
 bool
