@@ -4,7 +4,7 @@
  <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
  <Nullable>disable</Nullable>
  <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
- <NoWarn>CS0414;CS0649</NoWarn>
+ <NoWarn>CS0169;CS0414;CS0649</NoWarn>
 </PropertyGroup>
 <ItemGroup>
  <Compile Include="../Runtime/UnifiedWebView.cs"/>
