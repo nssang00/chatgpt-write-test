@@ -38,6 +38,8 @@ namespace Company.WebView.Unified.Experimental
         [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)]
         private static extern int WV2Unified_SetBounds(int x,int y,int w,int h);
         [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)]
+        private static extern int WV2Unified_NotifyParentMoved();
+        [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)]
         private static extern int WV2Unified_RequestClose();
         [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)]
         private static extern int WV2Unified_Close(uint timeoutMs);
@@ -86,7 +88,13 @@ namespace Company.WebView.Unified.Experimental
             message=messageBuffer.ToString();
             return true;
         }
-        public void Resize(int width,int height) { CheckReady();Require(WV2Unified_SetBounds(x,y,width,height),"bounds"); }
+        public void Resize(int width,int height) { SetBounds(x,y,width,height); }
+        public void SetBounds(int nx,int ny,int width,int height) {
+            CheckReady();
+            Require(WV2Unified_SetBounds(nx,ny,width,height),"bounds");
+            x=nx;y=ny;
+        }
+        public void NotifyParentMoved() { CheckReady();Require(WV2Unified_NotifyParentMoved(),"parent moved"); }
         public void Pump() {
             if(!opened || disposed)return;
             int state=WV2Unified_GetState();

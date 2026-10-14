@@ -14,6 +14,8 @@ internal sealed class RecordingBackend : IUnifiedBackend
     public void GoBack() { Calls++; }
     public void GoForward() { Calls++; }
     public void Resize(int w,int h) { Resizes++; }
+    public void SetBounds(int x,int y,int w,int h) { Resizes++; }
+    public void NotifyParentMoved() { }
     public void Pump() { Pumps++; }
     public bool TryReadMessage(out string message) { message=null;return false; }
     public void PostMessage(string data) { Posts++; }

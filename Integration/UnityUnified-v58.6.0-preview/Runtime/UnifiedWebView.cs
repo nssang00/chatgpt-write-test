@@ -42,6 +42,8 @@ namespace Company.WebView.Unified.Experimental
         void GoBack();
         void GoForward();
         void Resize(int width, int height);
+        void SetBounds(int x,int y,int width,int height);
+        void NotifyParentMoved();
         void Pump();
         bool TryReadMessage(out string message);
         void PostMessage(string value);
@@ -131,6 +133,13 @@ namespace Company.WebView.Unified.Experimental
         public void Stop() { AssertNavigation(); driver.Stop(); }
         public void GoBack() { AssertNavigation(); driver.GoBack(); }
         public void GoForward() { AssertNavigation(); driver.GoForward(); }
+        public void SetBounds(int x,int y,int width,int height)
+        {
+            AssertActive();
+            if(width < 1 || height < 1) throw new ArgumentOutOfRangeException(nameof(width));
+            driver.SetBounds(x,y,width,height);
+        }
+        public void NotifyParentMoved() { AssertActive();driver.NotifyParentMoved(); }
         public void Resize(int width, int height)
         {
             AssertActive();

@@ -33,6 +33,8 @@ namespace Company.WebView.Unified.Experimental
         public void GoBack() { RequireOpen(); validatedCef.GoBack(); }
         public void GoForward() { RequireOpen(); validatedCef.GoForward(); }
         public void Resize(int width, int height) { RequireOpen(); validatedCef.Resize(width, height); }
+        public void SetBounds(int x,int y,int width,int height) { Resize(width,height); }
+        public void NotifyParentMoved() { }
         public void Pump() { if (opened && !disposed) validatedCef.PumpMessageLoop(); }
         public bool IsReady { get { return opened && !disposed; } }
         public bool TryReadMessage(out string message) { message=null; return false; }
