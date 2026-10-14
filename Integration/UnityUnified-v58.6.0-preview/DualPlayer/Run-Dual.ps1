@@ -1,11 +1,11 @@
 #requires -Version 5.1
 param([string]$BundleRoot=$PSScriptRoot,[string]$CefRuntimeDir='',[string]$UnityExe='',
- [ValidateRange(30,300)][int]$AutoSeconds=120,[switch]$SelfTest)
+ [ValidateRange(30,300)][int]$AutoSeconds=120,[switch]$SelfTest,[switch]$NoScreenshots)
 $ErrorActionPreference='Stop'; Set-StrictMode -Version Latest
 $root=[IO.Path]::GetFullPath((Join-Path $BundleRoot '.'))
 $stamp=Get-Date -Format 'yyyyMMdd-HHmmss'
 $out=Join-Path $root ('results\dual-'+$stamp)
-$summary=[ordered]@{harness='58.6.0-dual-experimental';status='FAIL';autoChecks='NOT_RUN';stage='PREFLIGHT';problems=@();manualChecks='PENDING'}
+$summary=[ordered]@{capturePolicy='Foreground Unity window only; no desktop capture';harness='58.6.0-dual-experimental';status='FAIL';autoChecks='NOT_RUN';stage='PREFLIGHT';problems=@();manualChecks='PENDING'}
 function Need([bool]$ok,[string]$msg){if(-not $ok){throw $msg}}
 function VerifyKit {
  $archive=Join-Path $root 'UnifiedSource-v58.6.0.zip'
@@ -33,6 +33,25 @@ function FindUnity {
  Need (Test-Path -LiteralPath $d -PathType Leaf) 'Unity 2022.3.62f3 missing, use -UnityExe'
  return $d
 }
+function ResolveCefRuntime {
+ if($CefRuntimeDir){return $CefRuntimeDir}
+ $localSetting=Join-Path $root '.cef-runtime-local.txt'
+ if(Test-Path -LiteralPath $localSetting){
+  $saved=(Get-Content -LiteralPath $localSetting -Raw -Encoding UTF8).Trim().Trim('"')
+  if(Test-Path -LiteralPath $saved -PathType Container){Write-Host '[DUAL] Previous CEF runtime path loaded';return $saved}
+ }
+ $candidates=@((Join-Path (Split-Path $root -Parent) 'Build\cef-native\stage'),
+   (Join-Path (Split-Path $root -Parent) 'CEF-v58.4.4\Build\cef-native\stage'),
+   (Join-Path $root 'Build\cef-native\stage'))
+ if($env:CEF_V58_4_4_RUNTIME_DIR){$candidates=@($env:CEF_V58_4_4_RUNTIME_DIR)+$candidates}
+ foreach($candidate in $candidates){
+  if(Test-Path -LiteralPath (Join-Path $candidate 'native\Release\CompanyWebViewCefTextureProbe.dll') -PathType Leaf){return $candidate}
+ }
+ Write-Host '[DUAL] Paste the validated v58.4.4 CEF Build\cef-native\stage folder (one-time):'
+ $candidate=(Read-Host 'CEF runtime folder').Trim().Trim('"')
+ Need (Test-Path -LiteralPath $candidate -PathType Container) 'CEF runtime folder not found'
+ return $candidate
+}
 function StageCef([string]$from,[string]$to) {
  Need ($from -and (Test-Path -LiteralPath $from -PathType Container)) 'Supply -CefRuntimeDir from validated v58.4.4 Windows build'
  $native=Join-Path $from 'native\Release';$runtime=Join-Path $from 'runtime\Release'
@@ -57,6 +76,7 @@ try {
  else {
   Need ($env:OS -eq 'Windows_NT' -and [IntPtr]::Size -eq 8) 'Windows x64 only'
   $unity=FindUnity
+  $CefRuntimeDir=ResolveCefRuntime
   New-Item -ItemType Directory -Force -Path $out | Out-Null
   $unpack=Join-Path $out 'source'
   Expand-Archive -LiteralPath (Join-Path $root 'UnifiedSource-v58.6.0.zip') -DestinationPath $unpack -Force
@@ -77,6 +97,7 @@ try {
   Need (Test-Path -LiteralPath $srcDll) 'No compiled WebView2 unified DLL'
   $dest=Join-Path $project 'Assets\Plugins\x86_64'
   StageCef $CefRuntimeDir $dest
+  $CefRuntimeDir|Set-Content -LiteralPath (Join-Path $root '.cef-runtime-local.txt') -Encoding UTF8
   Copy-Item -LiteralPath $srcDll -Destination $dest -Force
   $summary.stage='UNITY_BUILD'
   $player=Join-Path $out 'Player\UnifiedDualPreview.exe'
@@ -96,6 +117,16 @@ try {
   Write-Host "[DUAL] Open both views (CEF Texture LEFT, WebView2 RIGHT) for $AutoSeconds seconds"
   $arg=('-screen-fullscreen 0 -screen-width 1400 -screen-height 850 -dualDuration {0} -dualEvidencePath "{1}" -logFile "{2}"' -f $AutoSeconds,$runtimeJson,$log)
   $p=Start-Process -FilePath $player -ArgumentList $arg -WorkingDirectory (Split-Path $player -Parent) -PassThru
+  if(-not $NoScreenshots){
+   . (Join-Path $root 'DualPlayer\Screen-Automation.ps1')
+   Start-DualScreenAutomation -Player $p -DurationSeconds $AutoSeconds -OutputFolder $out
+   $screenReport=Join-Path $out 'screen-automation.json'
+   if(Test-Path -LiteralPath $screenReport){
+    $screen=Get-Content -LiteralPath $screenReport -Raw -Encoding UTF8|ConvertFrom-Json
+    $summary.screenCapture=$screen.status
+    $summary.screenCaptureCount=@($screen.screenshots|Where-Object result -eq 'CAPTURED').Count
+   }
+  }
   if(-not $p.WaitForExit(($AutoSeconds+90)*1000)){Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue;throw 'Player timeout'}
   Need (Test-Path -LiteralPath $runtimeJson) 'Player did not write evidence'
   $e=Get-Content -LiteralPath $runtimeJson -Raw -Encoding UTF8 | ConvertFrom-Json
@@ -103,6 +134,7 @@ try {
   Need ($e.cefReady -and $e.cefRawImageBound -and $e.cefAcceleratedFrames -gt 0) 'CEF Texture not proven'
   Need ($e.overlayReady -and $e.overlayMessageCount -gt 0) 'WebView2 messaging not proven'
   Need ($e.cefShutdown -and $e.overlayJoined -and $p.ExitCode -eq 0) 'Dual shutdown failed'
+  Need ($e.overlayUnicodeRoundtripCount -gt 0) 'Unicode JS-to-native-to-C# automation failed'
   $summary.status='PENDING_MANUAL';$summary.autoChecks='PASS';$summary.stage='COMPLETE_AUTO';$code=0
  }
 } catch {
@@ -111,7 +143,23 @@ try {
 } finally {
  New-Item -ItemType Directory -Force -Path $out | Out-Null
  $summary | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath (Join-Path $out 'summary.json') -Encoding UTF8
- $safe=@('summary.json','unity-editor-build.log','unity-player.log','player-runtime-evidence.json') | ForEach-Object{Join-Path $out $_} | Where-Object{Test-Path -LiteralPath $_ -PathType Leaf}
+ $snippets=Join-Path $out 'diagnostics-redacted.log'
+ $clips=@()
+ foreach($name in @('unity-editor-build.log','unity-player.log')){
+  $log=Join-Path $out $name
+  if(Test-Path -LiteralPath $log -PathType Leaf){
+   $clips+= '['+$name+']'
+   $clips+=@(Get-Content -LiteralPath $log -Encoding UTF8 |
+     Where-Object{$_ -match '(?i)\[UNIFIED-DUAL\]|\[DUAL\]|\berror\b|Exception|FAILED|WebView2|CEF|CS[0-9]{4}|shutdown|joined'} |
+     Select-Object -Last 220 | ForEach-Object{
+       $_ -replace '(?i)[A-Z]:\\Users\\[^\\ ]+','<USER_HOME>' -replace '(?i)(Authorization|Cookie|Set-Cookie):\s*[^\r\n]+','$1: <REDACTED>' -replace '(?i)https?://\S+','<URL>'
+     })
+  }
+ }
+ $clips|Set-Content -LiteralPath $snippets -Encoding UTF8
+ $safe=@('summary.json','diagnostics-redacted.log','player-runtime-evidence.json','screen-automation.json') | ForEach-Object{Join-Path $out $_} | Where-Object{Test-Path -LiteralPath $_ -PathType Leaf}
+ $shotDir=Join-Path $out 'screenshots'
+ if(Test-Path -LiteralPath $shotDir){$safe+=@(Get-ChildItem -LiteralPath $shotDir -File -Filter '*.png'|Select-Object -ExpandProperty FullName)}
  if($safe.Count -gt 0){$zip="$out.zip";Compress-Archive -LiteralPath $safe -DestinationPath $zip -Force;Write-Host "[DUAL] Upload ONLY: $zip"}
 }
 exit $code
