@@ -90,3 +90,11 @@ GitHub Actions [CLI 38355060435](https://github.com/nssang00/chatgpt-write-test/
 PASS Ubuntu+Windows and still actually compiles the CLI-generated C++ DLL/SO.
 First workflow attempts had YAML and PowerShell syntax problems
 (NW-026/NW-027); both are fixed in the verified run.
+
+## New application default UI protocol
+
+`xytron new desktop APP --backend cpp|python|csharp` now emits an
+`app://desktop/index.html` UI entry in `xytron.json` and a
+`ui` resources directory. This is a **declaration**, not runtime:
+`xytron run`, `build`, `publish` and packaging remain unavailable.
+See `docs/APP_RESOURCE_PROTOCOLS.md` and NW-037.

@@ -59,7 +59,7 @@ static void desktop(const std::string& id,const std::string& lang) {
     lang=="python"?"backend/main.py":"backend/Program.cs";
   dir(id,true); dir(id+"/ui",true); dir(id+"/backend",true);
   file(id+"/xytron.json","{\n \"schemaVersion\": 1,\n \"app\": {\"id\": "+
-    q(id)+", \"mode\":\"desktop\", \"engine\":\"auto\"},\n \"main\": "+
+    q(id)+", \"mode\":\"desktop\", \"engine\":\"auto\"},\n \"ui\": {\"entry\":\"app://desktop/index.html\", \"resources\":\"ui\"},\n \"main\": "+
     "{\"id\":\"app\", \"language\": "+q(lang)+", \"entry\": "+
     q(entry)+"},\n \"modules\": []\n}\n");
   file(id+"/ui/index.html","<!doctype html><html><body><h1>Xytron</h1>"

@@ -599,3 +599,12 @@ hosts, app shell and full publish remain unfinished.
 - Same source fixtures remain available as disk files for legacy
   file:/// URL E2E. New host isolation is a required separate gate
   from native Module invocation permissions NW-014.
+
+## NW-037 CLI app:// default UI declared but desktop runner missing — OPEN / P1
+- `xytron new desktop` writes ui.entry=app://desktop/index.html and
+  ui.resources=ui, pointing to generated ui/index.html for all Main
+  backend languages. CLI regression validates the manifest.
+- No actual `xytron run/build/publish` or engine-backed desktop shell
+  consumes this declaration yet; it remains future distribution work.
+- This must NOT be presented as a runnable desktop app scaffold until
+  CLI runner, app asset mounting and clean-machine binary tests exist.

@@ -150,3 +150,15 @@ loads the same source fixtures from disk.
 
 All tests must pass Windows CEF, Linux CEF and Windows WebView2
 before labeling app:// usable in a generated desktop project.
+
+## CLI default UI manifest declaration (not runnable yet)
+
+The `xytron new desktop` project generator now writes a **declarative**
+UI mapping:
+`"ui": {"entry":"app://desktop/index.html","resources":"ui"}`.
+This applies to all C++/Python/C# Main profiles and points to the
+generated `ui/index.html` file. `xytron run` and `publish`
+remain unimplemented, so the generator does **not** yet mount the
+directory in a real desktop executable. The eventual runner must
+read/validate resources, include only declared packaged bytes and use
+the same isolated AppResourceBundle/engine APIs.
