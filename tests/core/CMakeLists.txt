@@ -298,6 +298,7 @@ add_test(NAME core.native_permission_policy
 # Native host-supplied URL / frame trust primitive, not browser-level E2E.
 add_executable(nativeweb_trusted_document_regression
     trusted_document_regression.cpp)
+target_link_libraries(nativeweb_trusted_document_regression PRIVATE NativeWeb::Core)
 target_include_directories(nativeweb_trusted_document_regression
     PRIVATE ${PROJECT_SOURCE_DIR}/src)
 set_target_properties(nativeweb_trusted_document_regression PROPERTIES

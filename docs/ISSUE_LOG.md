@@ -562,3 +562,13 @@ hosts, app shell and full publish remain unfinished.
   instead of attempting an undefined navigation. U2 remains open.
 - App bundle entry prevalidation moved before BrowserBackend creation;
   invalid entry fails without leaving an unusable backend pointer.
+
+## NW-034 Core regression trusted_document test missing Core/include dependency — FIX SUBMITTED
+- Commit ee1e071c extended trusted_document.hpp to accept canonical app://
+  URLs by using the AppResourceBundle policy. The old standalone
+  nativeweb_trusted_document_regression CMake target only included src,
+  causing nativeweb/app_resources.hpp missing compilation on Win+Ubuntu
+  in Core CI 38523543240.
+- Fixed its CMake target to link NativeWeb::Core (exports installed header
+  include path and AppResourceBundle symbol). Follow-up full test CI
+  required before closing. Independent CEF/WebView2 builds continue.
