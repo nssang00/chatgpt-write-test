@@ -513,7 +513,13 @@ static void generateManagedBindings(const std::string& out,bool trusted,
     if(!getcwd(cwd,sizeof(cwd)))throw std::runtime_error("Cannot resolve plugin directory");
 #endif
     const std::string root=cwd;
-    if(!safeSdkPrefix(root))throw std::runtime_error("Unsupported plugin directory");
+    if(!safeSdkPrefix(root)) {
+      for(std::size_t i=0;i<root.size();++i)
+        if(!safeSdkPrefix(root.substr(i,1)))
+          throw std::runtime_error("Unsupported plugin directory byte: "+
+              std::to_string(static_cast<unsigned char>(root[i])));
+      throw std::runtime_error("Plugin directory path is too long");
+    }
     const std::string assembly=root+"/build/"+spec.id+".dll";
     const std::string output=root+"/"+out;
     command="dotnet run --project \""+support+
