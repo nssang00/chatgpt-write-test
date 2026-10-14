@@ -122,3 +122,17 @@ Because `CoreWebView2EnvironmentOptions4` and custom scheme
 registration are runtime-dependent, the pinned SDK/CI must pass
 without degrading back to file://. Full same-file iframe/method
 authorization NW-014 remains a separate release blocker.
+
+### U0 hardening / actual browser resource probes
+
+When WebView::create() accepts an AppResourceBundle, it copies/snapshots
+the developer-provided catalog before browser requests can run, avoiding
+untrusted mutation or data races after create. Each resource is capped
+at 16 MiB, and total bundle bytes at 64 MiB. C++11 CTest verifies copy
+isolation and large-resource denial.
+
+The real browser app:// E2E additionally performs a JS `fetch()`
+against a known child fixture and checks status 200, MIME, exact byte
+content and missing-resource status 404. The existing JS-to-native
+plugin lifecycle and untrusted same-entry frame cases are still
+required as part of the same scenario.

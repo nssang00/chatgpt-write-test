@@ -28,6 +28,11 @@ int main()
                "console.log('ready')");
     bundle.add("app://camera/ui/panel.html","text/html","camera panel");
     CHECK(bundle.size()==3u);
+    AppResourceBundle snapshot(bundle);
+    bundle.add("app://desktop/new.txt", "text/plain", "new");
+    CHECK(snapshot.size()==3u);
+    CHECK(!snapshot.contains("app://desktop/new.txt"));
+    CHECK(bundle.size()==4u);
     AppResource content;
     CHECK(bundle.find("app://desktop/index.html",&content));
     CHECK(content.mimeType=="text/html");
@@ -66,7 +71,16 @@ int main()
         CHECK(e.code()=="invalid_app_resource_mime");
     }
     CHECK(mime);
-    CHECK(bundle.size()==3u);
+    CHECK(bundle.size()==4u);
+    AppResourceBundle limited;
+    bool tooLarge=false;
+    try { limited.add("app://desktop/huge.bin", "application/octet-stream",
+                      std::string(16u*1024u*1024u+1,'a')); }
+    catch (const nativeweb::Error& e) {
+        tooLarge=true;
+        CHECK(e.code()=="app_resource_too_large");
+    }
+    CHECK(tooLarge);
     if(failures) return 1;
     std::cout<<"app:// packaged resource catalog: PASS\n";
     return 0;

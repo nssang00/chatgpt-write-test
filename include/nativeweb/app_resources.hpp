@@ -30,6 +30,7 @@ public:
 
 private:
     std::map<std::string, AppResource> resources_;
+    std::size_t totalBytes_ = 0;
 };
 
 } // namespace nativeweb

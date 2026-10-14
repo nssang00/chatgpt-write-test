@@ -177,7 +177,12 @@ public:
         detail::BrowserCreateParams params;
         params.parent = parent;
         params.source = source;
-        params.appResources = options.appResources;
+        // Freeze the host-supplied bundle for the lifetime of this browser;
+        // CEF IO and WebView2 resource threads must never race a mutable
+        // developer-owned AppResourceBundle.
+        if (options.appResources)
+            params.appResources.reset(
+                new AppResourceBundle(*options.appResources));
 
         try
         {

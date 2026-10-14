@@ -69,6 +69,9 @@ void AppResourceBundle::add(const std::string& url,
         throw Error("invalid_app_resource_mime", "Invalid app resource MIME type");
     if (bytes.size() > 16u*1024u*1024u)
         throw Error("app_resource_too_large", "App resource exceeds 16 MiB");
+    const std::size_t maxBundleSize = 64u*1024u*1024u;
+    if (bytes.size() > maxBundleSize-totalBytes_)
+        throw Error("app_bundle_too_large", "App bundle exceeds 64 MiB");
     if (resources_.size() >= 4096u)
         throw Error("app_resource_limit", "Too many app resources");
     if (resources_.count(url))
@@ -77,6 +80,7 @@ void AppResourceBundle::add(const std::string& url,
     resource.mimeType=mimeType;
     resource.bytes=bytes;
     resources_[url]=resource;
+    totalBytes_ += bytes.size();
 }
 
 bool AppResourceBundle::find(
