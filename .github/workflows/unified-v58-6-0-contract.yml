@@ -4,6 +4,7 @@ on:
     branches:
       - feature/unified-unity-v58-6-0-integration-preview
       - feature/unified-unity-v58-6-0-dual-player-oneclick
+      - feature/unified-unity-v58-6-0-auto-evidence
   workflow_dispatch:
 
 jobs:
@@ -16,6 +17,18 @@ jobs:
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '8.0.x'
+      - name: Automatic screenshots and privacy source contract
+        shell: pwsh
+        run: |
+          python Integration/UnityUnified-v58.6.0-preview/Validation/verify_screen_automation_contract.py
+          if($LASTEXITCODE -ne 0){throw 'Automatic evidence source contract failed'}
+      - name: Auto screenshot PowerShell syntax check
+        shell: pwsh
+        run: |
+          $tokens=$null;$errors=$null
+          $path=(Resolve-Path 'Integration/UnityUnified-v58.6.0-preview/DualPlayer/Screen-Automation.ps1').Path
+          [System.Management.Automation.Language.Parser]::ParseFile($path,[ref]$tokens,[ref]$errors)|Out-Null
+          if($errors.Count){throw "Screenshot automation syntax error: $errors"}
       - name: Dual Unity Player source contract
         shell: pwsh
         run: |
