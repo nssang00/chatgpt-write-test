@@ -15,12 +15,14 @@ for required in ['cefAcceleratedFrames','cefRawImageBound','overlayMessageCount'
  'overlayJoined','cefShutdown','status="FAIL_AUTO"','manualImeDpiZOrderPending=true',
  'WriteAllText','Application.Quit']:
  assert required in tele, required
-for required in ['UnifiedSource-v58.6.0.zip','Get-FileHash','SHA256SUMS.txt',
+for required in ['GetCefPackageFromBundle','Get-FileHash','SHA256SUMS.txt',
  'CompanyWebViewCefTextureProbe.dll','libcef.dll','Run','-dualEvidencePath',
  'CEF runtime','player-runtime-evidence.json','PENDING_MANUAL',
  'Compress-Archive -LiteralPath $safe']:
  assert required in ps, required
-assert 'Run-Dual.ps1' in cmd and 'CefRuntimeDir' in guide
+assert 'Run-Dual.ps1' in cmd and 'oneclick_bundle' in guide
 assert 'UnityProject' not in ps.split("$safe=@(")[1].split(")")[0]
 assert '50e8c2' not in ps, 'Do not invent source identity'
 print('Dual Player CEF Texture + WebView2 HWND source/evidence contract PASS; Unity runtime NOT RUN')
+
+assert 'UnifiedSource-v58.6.0.zip' not in ps, 'One folder kit must not require the old source snapshot ZIP'
