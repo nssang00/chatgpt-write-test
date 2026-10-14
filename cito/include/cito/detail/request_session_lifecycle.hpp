@@ -5,6 +5,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <iterator>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
@@ -48,14 +49,48 @@ public:
 
     bool ensure(
         const RequestKey& key) {
-        return desired_.insert(
-            key).second;
+        if (!desired_.insert(
+                key).second) {
+            return false;
+        }
+
+        auto sends =
+            routes_.ensure_routes(
+                request_handler_interest_key(
+                    key));
+
+        pending_control_.insert(
+            pending_control_.end(),
+            std::make_move_iterator(
+                sends.begin()),
+            std::make_move_iterator(
+                sends.end()));
+
+        return true;
     }
 
     bool release(
         const RequestKey& key) {
-        return desired_.erase(
-            key) != 0;
+        if (desired_.erase(
+                key) == 0) {
+            return false;
+        }
+
+        routes_.release_routes(
+            request_handler_interest_key(
+                key));
+
+        return true;
+    }
+
+    std::vector<UdpSend>
+    take_control_sends() {
+        auto sends =
+            std::move(
+                pending_control_);
+
+        pending_control_.clear();
+        return sends;
     }
 
     std::vector<RequestSessionAction>
@@ -238,6 +273,9 @@ private:
     std::unordered_set<
         RequestKey,
         RequestKeyHash> desired_;
+
+    std::vector<UdpSend>
+        pending_control_;
 
     std::unordered_map<
         DestinationId,

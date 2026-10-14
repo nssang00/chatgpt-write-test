@@ -242,3 +242,21 @@ emits CTX1 Cancel best-effort.
 The remaining integration is event-loop ownership in normal `Context::run()`
 plus the real UDP discovery/control socket path, so applications no longer
 drive `poll()/reconcile()` or route learning explicitly.
+
+
+## Real UDP discovery to QUIC Request/Reply
+
+RequestSessionLifecycleCore now expresses handler-route demand through
+UdpRuntimeAdapter as soon as a request key becomes desired. Route desire may
+therefore precede coordinator discovery; a later matching snapshot
+automatically emits CTR3 without a second application-side ensure call.
+
+The POSIX runtime has a reusable nonblocking UDP control manager that pumps
+CTS2/CTQ1/CTB1/CTR3/CTR5 messages and lease expiry from the loop owner. The
+public QUIC namespace smoke now uses that real UDP control exchange instead of
+in-process route seeding, then creates the MsQuic session and completes the
+original pre-discovery `Context::request()`.
+
+The remaining integration is to make `Context::run()` own the UDP control and
+QUIC poll/reconcile cycle automatically, and to provide the corresponding
+Windows control-socket backend.

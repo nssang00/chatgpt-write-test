@@ -11,7 +11,9 @@ on:
       - "cito/include/cito/detail/request_transport.hpp"
       - "cito/include/cito/detail/request_session_lifecycle.hpp"
       - "cito/include/cito/detail/msquic_request_session_manager.hpp"
+      - "cito/include/cito/detail/posix_udp_control_manager.hpp"
       - "cito/src/msquic_request_session_manager.cpp"
+      - "cito/src/posix_udp_control_manager.cpp"
       - "cito/tests/net/quic_msquic_node.cpp"
       - "cito/tests/net/quic_public_request_node.cpp"
       - "cito/tests/net/quic_request_node.cpp"
@@ -149,7 +151,8 @@ jobs:
 
           PUBBIN="$GITHUB_WORKSPACE/build-quic/cito_quic_public_request_node"
 
-          sudo ip netns exec cito-quic-s "$PUBBIN" server 4435 \
+          sudo ip netns exec cito-quic-s "$PUBBIN" server 4435 47350 \
+            10.202.0.11 47320 \
             "$GITHUB_WORKSPACE/quic-cert.pem" "$GITHUB_WORKSPACE/quic-key.pem" \
             >quic-public-server.log 2>&1 &
           PUBLIC_SERVER_PID=$!
@@ -157,7 +160,7 @@ jobs:
           sleep 0.3
 
           public_client_status=0
-          sudo ip netns exec cito-quic-c "$PUBBIN" client 10.202.0.12 4435 \
+          sudo ip netns exec cito-quic-c "$PUBBIN" client 47320 \
             >quic-public-client.log 2>&1 || public_client_status=$?
 
           public_server_status=0
@@ -170,8 +173,8 @@ jobs:
 
           test "$public_client_status" -eq 0
           test "$public_server_status" -eq 0
-          grep -q "quic_public_request_client result=42 lazy=1 deadline=1" quic-public-client.log
-          grep -q "quic_public_request_server handler=1 reply=1" quic-public-server.log
+          grep -q "quic_public_request_client result=42 lazy=1 deadline=1 discovery=udp" quic-public-client.log
+          grep -q "quic_public_request_server handler=1 reply=1 discovery=udp" quic-public-server.log
 
 
       - name: Configure sanitized public Request/Reply smoke
@@ -224,7 +227,8 @@ jobs:
           BIN="$GITHUB_WORKSPACE/build-quic-san/cito_quic_public_request_node"
           SAN_ENV="ASAN_OPTIONS=detect_leaks=0:halt_on_error=1:abort_on_error=1 UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1"
 
-          sudo ip netns exec cito-quic-san-s env $SAN_ENV "$BIN" server 4436 \
+          sudo ip netns exec cito-quic-san-s env $SAN_ENV "$BIN" server 4436 47360 \
+            10.203.0.11 47330 \
             "$GITHUB_WORKSPACE/quic-cert.pem" "$GITHUB_WORKSPACE/quic-key.pem" \
             >quic-public-san-server.log 2>&1 &
           SERVER_PID=$!
@@ -232,7 +236,7 @@ jobs:
           sleep 0.3
 
           client_status=0
-          sudo ip netns exec cito-quic-san-c env $SAN_ENV "$BIN" client 10.203.0.12 4436 \
+          sudo ip netns exec cito-quic-san-c env $SAN_ENV "$BIN" client 47330 \
             >quic-public-san-client.log 2>&1 || client_status=$?
 
           server_status=0
@@ -245,5 +249,5 @@ jobs:
 
           test "$client_status" -eq 0
           test "$server_status" -eq 0
-          grep -q "quic_public_request_client result=42 lazy=1 deadline=1" quic-public-san-client.log
-          grep -q "quic_public_request_server handler=1 reply=1" quic-public-san-server.log
+          grep -q "quic_public_request_client result=42 lazy=1 deadline=1 discovery=udp" quic-public-san-client.log
+          grep -q "quic_public_request_server handler=1 reply=1 discovery=udp" quic-public-san-server.log

@@ -1,10 +1,10 @@
 #include <cito/cito.hpp>
 #include <cito/detail/msquic_request_session_manager.hpp>
+#include <cito/detail/posix_udp_control_manager.hpp>
 #include <cito/detail/request_session_lifecycle.hpp>
 #include <cito/detail/udp_runtime_adapter.hpp>
 
 #include <array>
-#include <cassert>
 #include <chrono>
 #include <cstdint>
 #include <cstdio>
@@ -145,16 +145,16 @@ namespace {
 using Clock =
     std::chrono::steady_clock;
 
-cito::detail::RequestKey
-request_key() {
-    return {
-        cito::stable_name_id(
-            "acme"),
-        cito::stable_name_id(
-            "robot_1"),
-        cito::static_type_ref<
-            NetPing>()
-            .type_id()};
+std::uint64_t now_ms() {
+    return static_cast<
+        std::uint64_t>(
+        std::chrono::
+            duration_cast<
+                std::chrono::
+                    milliseconds>(
+                Clock::now()
+                    .time_since_epoch())
+            .count());
 }
 
 std::uint32_t parse_ipv4(
@@ -189,8 +189,11 @@ std::uint32_t parse_ipv4(
 
 bool spin(
     cito::detail::
+        PosixUdpControlManager&
+        control,
+    cito::detail::
         MsQuicRequestSessionManager&
-        manager,
+        quic,
     const std::function<bool()>& done,
     std::chrono::milliseconds timeout) {
     const auto deadline =
@@ -198,7 +201,10 @@ bool spin(
 
     while (
         Clock::now() < deadline) {
-        manager.poll();
+        control.poll(
+            now_ms());
+        quic.reconcile();
+        quic.poll();
 
         if (done()) {
             return true;
@@ -209,41 +215,29 @@ bool spin(
                 milliseconds(1));
     }
 
-    manager.poll();
+    control.poll(
+        now_ms());
+    quic.reconcile();
+    quic.poll();
+
     return done();
 }
 
-bool seed_remote_route(
-    cito::detail::EmbeddedHostRuntime&
-        runtime,
-    cito::detail::UdpRuntimeAdapter&
-        requester_udp,
-    std::uint32_t provider_ipv4,
-    std::uint16_t quic_port) {
+int run_server(
+    std::uint16_t quic_port,
+    std::uint16_t control_port,
+    const std::string&
+        announce_ip,
+    std::uint16_t announce_port,
+    const std::string& cert,
+    const std::string& key) {
     using namespace cito::detail;
 
-    const auto key =
-        request_key();
-    const auto capability =
-        request_handler_interest_key(
-            key);
+    auto runtime =
+        acquire_embedded_host_runtime();
 
-    HostRuntimeCore provider_host;
-
-    if (!provider_host.register_app(
-            1,
-            [](auto, auto, auto) {
-                return std::size_t{0};
-            })) {
-        return false;
-    }
-
-    provider_host.add_interest(
-        1,
-        capability);
-
-    UdpRuntimeAdapter provider_udp(
-        provider_host,
+    UdpRuntimeAdapter routes(
+        runtime->host(),
         50,
         5001);
 
@@ -252,110 +246,26 @@ bool seed_remote_route(
         1> endpoints{{
             {77, 0, quic_port}}};
 
-    provider_udp
-        .set_local_route_endpoints(
-            endpoints);
+    routes.set_local_route_endpoints(
+        endpoints);
 
-    const UdpEndpoint
-        provider_source{
-            provider_ipv4,
-            47010};
+    PosixUdpControlManager control(
+        routes);
 
-    const UdpEndpoint
-        requester_source{
-            0x0aca000bu,
-            47020};
-
-    auto sends =
-        requester_udp
-            .process_control(
-                provider_udp
-                    .announcement(
-                        47010,
-                        5000),
-                provider_source,
-                1000);
-
-    if (sends.size() != 1) {
-        return false;
+    if (!control.bind(
+            control_port)) {
+        return 10;
     }
 
-    auto replies =
-        provider_udp.process_control(
-            sends[0].bytes,
-            requester_source,
-            1000);
+    control.add_announcement_target(
+        UdpEndpoint{
+            parse_ipv4(
+                announce_ip),
+            announce_port});
 
-    if (replies.size() != 1) {
-        return false;
-    }
-
-    sends =
-        requester_udp
-            .process_control(
-                replies[0].bytes,
-                provider_source,
-                1000);
-
-    if (!sends.empty()) {
-        return false;
-    }
-
-    sends =
-        requester_udp
-            .ensure_routes(
-                capability);
-
-    if (sends.size() != 1) {
-        return false;
-    }
-
-    replies =
-        provider_udp.process_control(
-            sends[0].bytes,
-            requester_source,
-            1000);
-
-    if (replies.size() != 1) {
-        return false;
-    }
-
-    sends =
-        requester_udp
-            .process_control(
-                replies[0].bytes,
-                provider_source,
-                1000);
-
-    if (!sends.empty()) {
-        return false;
-    }
-
-    const auto* endpoint =
-        requester_udp
-            .quic_endpoint(
-                77);
-
-    return
-        endpoint &&
-        endpoint->ipv4 ==
-            provider_ipv4 &&
-        endpoint->port ==
-            quic_port &&
-        runtime.host()
-            .remote_destinations(
-                capability)
-            .contains(77);
-}
-
-int run_server(
-    std::uint16_t port,
-    const std::string& cert,
-    const std::string& key) {
-    using namespace cito::detail;
-
-    auto runtime =
-        acquire_embedded_host_runtime();
+    control.set_announcement_policy(
+        700,
+        100);
 
     MsQuicRequestSessionManager
         manager(
@@ -363,10 +273,10 @@ int run_server(
             nullptr);
 
     if (!manager.start_listener(
-            port,
+            quic_port,
             cert,
             key)) {
-        return 10;
+        return 11;
     }
 
     cito::Context provider(
@@ -384,6 +294,7 @@ int run_server(
 
     const bool replied =
         spin(
+            control,
             manager,
             [&] {
                 return
@@ -396,11 +307,12 @@ int run_server(
                 seconds(8));
 
     if (!replied) {
-        return 11;
+        return 12;
     }
 
     const bool peer_closed =
         spin(
+            control,
             manager,
             [&] {
                 return
@@ -411,20 +323,30 @@ int run_server(
                 seconds(4));
 
     if (!peer_closed) {
-        return 12;
+        return 13;
+    }
+
+    if (
+        control.stats()
+            .datagrams_received <
+            2 ||
+        control.stats()
+            .datagrams_sent <
+            2) {
+        return 14;
     }
 
     std::cout
-        << "quic_public_request_server handler=1 reply=1"
+        << "quic_public_request_server handler=1 reply=1 discovery=udp"
         << std::endl;
 
     manager.shutdown();
+    control.stop();
     return 0;
 }
 
 int run_client(
-    const std::string& host,
-    std::uint16_t port) {
+    std::uint16_t control_port) {
     using namespace cito::detail;
 
     auto runtime =
@@ -440,6 +362,15 @@ int run_client(
             runtime->host(),
             routes);
 
+    PosixUdpControlManager control(
+        routes,
+        &lifecycle);
+
+    if (!control.bind(
+            control_port)) {
+        return 20;
+    }
+
     MsQuicRequestSessionManager
         manager(
             *runtime,
@@ -448,18 +379,14 @@ int run_client(
                 "cito-public-request-smoke",
                 true});
 
-    const auto key =
-        request_key();
-
     cito::Context requester(
         "acme");
 
     cito::StaticCodec<
         NetPing>::encodes = 0;
 
-    // First request arrives before discovery, route, or QUIC session
-    // readiness. The manager-installed wait hook must retain the typed
-    // request without serializing it.
+    // The request is created before any remote coordinator, route, endpoint,
+    // or QUIC session is known.
     auto request =
         requester.request(
             "robot_1",
@@ -475,23 +402,12 @@ int run_client(
         runtime->request_network()
             .waiting_count() != 1 ||
         lifecycle.desired_count() != 1) {
-        return 20;
-    }
-
-    if (!seed_remote_route(
-            *runtime,
-            routes,
-            parse_ipv4(host),
-            port)) {
         return 21;
-    }
-
-    if (manager.reconcile() == 0) {
-        return 22;
     }
 
     const bool completed =
         spin(
+            control,
             manager,
             [&] {
                 return request.ready();
@@ -509,11 +425,9 @@ int run_client(
             NetPing>::encodes != 1 ||
         !manager.has_session(77) ||
         !lifecycle.is_connected(77)) {
-        return 23;
+        return 22;
     }
 
-    // A request with no discovered route remains unencoded until its
-    // deadline expires.
     const auto before_timeout =
         cito::StaticCodec<
             NetPing>::encodes;
@@ -531,11 +445,12 @@ int run_client(
         cito::StaticCodec<
             NetPing>::encodes !=
         before_timeout) {
-        return 24;
+        return 23;
     }
 
     const bool timeout_completed =
         spin(
+            control,
             manager,
             [&] {
                 return timed_out.ready();
@@ -553,10 +468,16 @@ int run_client(
         cito::StaticCodec<
             NetPing>::encodes !=
         before_timeout) {
-        return 25;
+        return 24;
     }
 
     if (
+        control.stats()
+            .datagrams_received <
+            3 ||
+        control.stats()
+            .datagrams_sent <
+            2 ||
         runtime->request_network()
             .waiting_count() != 0 ||
         runtime->request_network()
@@ -564,14 +485,15 @@ int run_client(
             .outbound_count() != 0 ||
         runtime->requests()
             .pending_count() != 0) {
-        return 26;
+        return 25;
     }
 
     std::cout
-        << "quic_public_request_client result=42 lazy=1 deadline=1"
+        << "quic_public_request_client result=42 lazy=1 deadline=1 discovery=udp"
         << std::endl;
 
     manager.shutdown();
+    control.stop();
     return 0;
 }
 
@@ -585,7 +507,7 @@ int main(
         std::strcmp(
             argv[1],
             "server") == 0) {
-        if (argc != 5) {
+        if (argc != 8) {
             return 2;
         }
 
@@ -594,8 +516,17 @@ int main(
                 std::uint16_t>(
                 std::stoul(
                     argv[2])),
-            argv[3],
-            argv[4]);
+            static_cast<
+                std::uint16_t>(
+                std::stoul(
+                    argv[3])),
+            argv[4],
+            static_cast<
+                std::uint16_t>(
+                std::stoul(
+                    argv[5])),
+            argv[6],
+            argv[7]);
     }
 
     if (
@@ -603,16 +534,15 @@ int main(
         std::strcmp(
             argv[1],
             "client") == 0) {
-        if (argc != 4) {
+        if (argc != 3) {
             return 2;
         }
 
         return run_client(
-            argv[2],
             static_cast<
                 std::uint16_t>(
                 std::stoul(
-                    argv[3])));
+                    argv[2])));
     }
 
     return 2;

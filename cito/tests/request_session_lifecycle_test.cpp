@@ -90,18 +90,14 @@ int main() {
             provider_source,
             1000);
 
-    assert(sends.empty());
+    // sessions.ensure(request) expressed route desire before discovery.
+    // Once the snapshot reveals a matching handler, CTR3 is emitted
+    // automatically without a second explicit ensure_routes() call.
+    assert(sends.size() == 1);
     assert(
         requester.candidate_hosts(
             capability)
             .contains(10));
-
-    // Request the exact route. The provider advertises QUIC-only.
-    sends =
-        requester_udp.ensure_routes(
-            capability);
-
-    assert(sends.size() == 1);
 
     replies =
         provider_udp.process_control(
@@ -167,12 +163,14 @@ int main() {
             provider_endpoint);
 
     assert(
-        requester_udp.release_routes(
-            capability));
+        sessions.release(
+            request));
+    assert(
+        sessions.ensure(
+            request));
 
     sends =
-        requester_udp.ensure_routes(
-            capability);
+        sessions.take_control_sends();
     assert(sends.size() == 1);
 
     replies =
@@ -278,6 +276,9 @@ int main() {
 
     assert(sessions.release(request));
     assert(!sessions.release(request));
+    assert(
+        sessions.take_control_sends()
+            .empty());
     assert(sessions.desired_count() == 0);
 
     return 0;

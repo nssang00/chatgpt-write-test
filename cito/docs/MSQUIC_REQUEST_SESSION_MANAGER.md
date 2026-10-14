@@ -127,3 +127,28 @@ The smoke still drives `poll()/reconcile()` explicitly. The next runtime
 milestone is to make the normal Cito event loop own those calls and to connect
 the UDP discovery control plane itself to that loop, so application code does
 not manually drive route/session progress.
+
+
+## Real UDP discovery control-plane smoke
+
+The public two-node QUIC smoke no longer seeds the route inside the client
+process. The provider advertises its live handler demand through a real UDP
+control socket. The requester has already issued `Context::request()`, so the
+handler capability is desired before discovery completes.
+
+The namespace test performs the actual control exchange:
+
+```text
+provider CTS2 announcement
+requester CTQ1 snapshot request
+provider CTB1 snapshot batch
+requester CTR3 route request
+provider CTR5 QUIC endpoint
+```
+
+Only after CTR5 is received does RequestSessionLifecycleCore emit Connect and
+the MsQuic manager attach a reliable session. The retained typed request then
+encodes once and is sent.
+
+This validates one real path from pre-discovery public request through UDP
+control discovery and QUIC Request/Reply data transport.

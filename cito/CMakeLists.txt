@@ -24,6 +24,17 @@ target_compile_definitions(cito_c PRIVATE CITO_C_BUILD)
 target_link_libraries(cito_c PRIVATE cito_core Threads::Threads)
 set_target_properties(cito_c PROPERTIES OUTPUT_NAME cito)
 
+if(UNIX AND NOT APPLE)
+  add_library(cito_posix_runtime STATIC
+    src/posix_udp_control_manager.cpp)
+  target_include_directories(cito_posix_runtime
+    PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
+  target_compile_features(cito_posix_runtime PUBLIC cxx_std_20)
+  target_compile_options(cito_posix_runtime PRIVATE -Wall -Wextra -Wpedantic)
+  target_link_libraries(cito_posix_runtime
+    PUBLIC cito_core Threads::Threads)
+endif()
+
 if(CITO_ENABLE_MSQUIC)
   find_path(MSQUIC_INCLUDE_DIR msquic.h REQUIRED)
   find_library(MSQUIC_LIBRARY msquic REQUIRED)
@@ -317,10 +328,12 @@ if(BUILD_TESTING)
     target_link_libraries(cito_quic_request_node PRIVATE cito ${MSQUIC_LIBRARY})
     target_compile_options(cito_quic_request_node PRIVATE -Wall -Wextra -Wpedantic)
 
-    add_executable(cito_quic_public_request_node
-      tests/net/quic_public_request_node.cpp)
-    target_include_directories(cito_quic_public_request_node PRIVATE ${MSQUIC_INCLUDE_DIR})
-    target_link_libraries(cito_quic_public_request_node PRIVATE cito cito_msquic)
-    target_compile_options(cito_quic_public_request_node PRIVATE -Wall -Wextra -Wpedantic)
+    if(UNIX AND NOT APPLE)
+      add_executable(cito_quic_public_request_node
+        tests/net/quic_public_request_node.cpp)
+      target_include_directories(cito_quic_public_request_node PRIVATE ${MSQUIC_INCLUDE_DIR})
+      target_link_libraries(cito_quic_public_request_node PRIVATE cito cito_msquic cito_posix_runtime)
+      target_compile_options(cito_quic_public_request_node PRIVATE -Wall -Wextra -Wpedantic)
+    endif()
   endif()
 endif()
