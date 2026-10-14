@@ -15,8 +15,10 @@
 #include <sys/stat.h>
 #ifdef _WIN32
 #include <direct.h>
+#include <windows.h>
 #else
 #include <sys/types.h>
+#include <unistd.h>
 #endif
 static bool exists(const std::string& p) {
   struct stat x; return stat(p.c_str(),&x)==0;
@@ -199,6 +201,8 @@ static void pluginManaged(const std::string& id,const std::string& lang) {
     "and keep plugin.json in sync with the package output.\n\n"
     "The runtime field selects the future loader, not the authoring language. "
     "Use xytron build, xytron pack and xytron publish --output DIR. "
+    "Use `xytron bindings generate --out bindings` for Python; "
+    "add `--trusted` after building a local C# assembly.\n"
     "Live JS dispatch and signed distribution remain TODO.\n");
   std::cout<<"Created "<<lang<<" plugin scaffold: "<<p<<"\n";
 }
@@ -456,6 +460,73 @@ static void generateBindings(const std::string& library,
   std::cout << "Generated typed native bindings for " << methods.size()
             << " function(s): " << output << "\n";
 }
+// Managed bindgen is a separate installed tool: Python is parsed without
+// executing user code; .NET requires explicit --trusted for reflection.
+// Native plugin bindgen retains the existing --library --trusted workflow.
+static std::string cliSupportDir(const std::string& program) {
+  // Use the actual binary path even when invoked via PATH as plain "xytron".
+  std::string executable=program;
+#ifdef _WIN32
+  char fullPath[4096];
+  const DWORD length=GetModuleFileNameA(NULL,fullPath,sizeof(fullPath));
+  if(length>0 && length<sizeof(fullPath))executable.assign(fullPath,length);
+#else
+  char fullPath[4096];
+  const ssize_t length=readlink("/proc/self/exe",fullPath,sizeof(fullPath)-1);
+  if(length>0)executable.assign(fullPath,static_cast<std::size_t>(length));
+#endif
+  const std::size_t slash=executable.find_last_of("/\\");
+  if(slash!=std::string::npos) {
+    const std::string bindir=executable.substr(0,slash);
+    const std::string installed=bindir+"/../share/xytron/cli";
+    if(exists(installed+"/generate_managed_bindings.py"))return installed;
+  }
+#ifdef XYTRON_CLI_DEV_TOOLS
+  const std::string source=XYTRON_CLI_DEV_TOOLS;
+  if(exists(source+"/generate_managed_bindings.py"))return source;
+#endif
+  throw std::runtime_error("Managed bindings support files missing; reinstall Xytron CLI");
+}
+static void generateManagedBindings(const std::string& out,bool trusted,
+                                    const std::string& executable) {
+  if(out.empty() || out=="." || out.find("..")!=std::string::npos ||
+     !safeSdkPrefix(out))
+    throw std::runtime_error("Invalid output directory for managed bindings");
+  const PluginSpec spec=readPluginSpec(".");
+  if(spec.runtime=="native")
+    throw std::runtime_error("Native bindings require --library PATH --trusted");
+  if(spec.runtime=="dotnet" && !trusted)
+    throw std::runtime_error(".NET reflection executes trusted local assembly; supply --trusted");
+  const std::string support=cliSupportDir(executable);
+  if(!safeSdkPrefix(support))throw std::runtime_error("Unsupported CLI tool location");
+#ifdef _WIN32
+  const std::string python="python";
+#else
+  const std::string python="python3";
+#endif
+  std::string command;
+  if(spec.runtime=="dotnet") {
+    char cwd[4096];
+#ifdef _WIN32
+    if(!_getcwd(cwd,sizeof(cwd)))throw std::runtime_error("Cannot resolve plugin directory");
+#else
+    if(!getcwd(cwd,sizeof(cwd)))throw std::runtime_error("Cannot resolve plugin directory");
+#endif
+    const std::string root=cwd;
+    if(!safeSdkPrefix(root))throw std::runtime_error("Unsupported plugin directory");
+    const std::string assembly=root+"/build/"+spec.id+".dll";
+    const std::string output=root+"/"+out;
+    command="dotnet run --project \""+support+
+      "/dotnet_reflector/Xytron.Metadata.csproj\" --configuration Release -- \""+
+      assembly+"\" \""+output+"\" \""+spec.id+"\"";
+  } else {
+    command=python+" \""+support+
+      "/generate_managed_bindings.py\" --project . --out \""+out+"\"";
+  }
+
+  if(std::system(command.c_str())!=0)
+    throw std::runtime_error("Managed bindings generation failed");
+}
 static void pluginPack(const std::string& source) {
   const PluginSpec spec=readPluginSpec(source);
   const std::string base=source+"/";
@@ -574,6 +645,7 @@ static void help() {
     "  module add NAME --language cpp|python|csharp\n"
     "  doctor --sdk INSTALLED_SDK_PREFIX\n"
     "  bindings generate --library PATH --out DIR --trusted (C++ only)\n"
+    "  bindings generate --out DIR [--trusted] (Python/.NET plugin cwd)\n"
     "  build [--sdk PREFIX] (inside plugin project)\n"
     "  pack (inside plugin project)\n"
     "  plugin pack NAME (from parent project)\n"
@@ -612,6 +684,12 @@ int main(int argc,char** argv) {
        std::string(argv[5])=="--out" &&
        std::string(argv[7])=="--trusted") {
       generateBindings(argv[4],argv[6]); return 0;
+    }
+    if((argc==5 || argc==6) && std::string(argv[1])=="bindings" &&
+       std::string(argv[2])=="generate" &&
+       std::string(argv[3])=="--out" &&
+       (argc==5 || std::string(argv[5])=="--trusted")) {
+      generateManagedBindings(argv[4],argc==6,argv[0]); return 0;
     }
     if(argc==2 && std::string(argv[1])=="pack") {
       pluginPack(".");return 0;

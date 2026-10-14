@@ -94,6 +94,14 @@ add_executable(xytron tools/cli/xytron.cpp)
 set_target_properties(xytron PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED YES CXX_EXTENSIONS NO)
 target_include_directories(xytron PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
 target_link_libraries(xytron PRIVATE nativeweb_core)
+target_compile_definitions(xytron PRIVATE
+  XYTRON_CLI_DEV_TOOLS=\"${CMAKE_CURRENT_SOURCE_DIR}/tools/cli\")
+install(FILES tools/cli/generate_managed_bindings.py
+  DESTINATION ${CMAKE_INSTALL_DATADIR}/xytron/cli)
+install(FILES tools/cli/dotnet_reflector/Program.cs
+              tools/cli/dotnet_reflector/Xytron.Metadata.csproj
+  DESTINATION ${CMAKE_INSTALL_DATADIR}/xytron/cli/dotnet_reflector)
+
 install(TARGETS xytron RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 if(NATIVEWEB_BUILD_TESTS)
   add_test(NAME cli.scaffold COMMAND ${CMAKE_COMMAND}

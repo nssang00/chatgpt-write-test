@@ -135,3 +135,17 @@ xytron bindings generate --library build/libcamera.so --out bindings --trusted
 ```
 
 플러그인 코드를 실제 로딩·실행하므로 검증된 로컬 빌드에만 사용한다. Python/.NET 자동 바인딩과 최종 사용자 권한 모델은 별도 작업이다.
+
+## S2 managed binding prototype
+
+Python `@export` 함수는 코드를 실행하지 않는 AST 분석으로 바인딩을 생성한다.
+C# `[Export]` 정적 메서드는 빌드한 어셈블리를 로드해야 하므로 개발자가 신뢰한 로컬 코드에만 `--trusted`를 사용한다.
+
+```bash
+xytron build
+xytron bindings generate --out bindings             # Python
+xytron bindings generate --out bindings --trusted   # C# / .NET
+xytron pack
+```
+
+입력과 출력 제한, 타입 매핑, 보안 가정은 [XYTRON_MANAGED_BINDINGS_KO.md](XYTRON_MANAGED_BINDINGS_KO.md)에 정리했다.
