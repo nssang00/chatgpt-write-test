@@ -43,6 +43,23 @@ jobs:
           if($resolved.Count -ne 1 -or $resolved[0] -ne [IO.Path]::GetFullPath($folder)){
             throw 'Offline auto-bootstrap failed to reuse valid staged CEF without user prompt'
           }
+          # Legacy source bundle can be reused AS-IS, without manually extracting stage.
+          $legacy=Join-Path $env:RUNNER_TEMP 'legacy-oneclick\oneclick_bundle'
+          $legacyStage=Join-Path $legacy 'Build\cef-native\stage'
+          New-Item -ItemType Directory -Force -Path $legacyStage | Out-Null
+          Copy-Item -LiteralPath (Join-Path $folder 'native') -Destination (Join-Path $legacyStage 'native') -Recurse -Force
+          Copy-Item -LiteralPath (Join-Path $folder 'runtime') -Destination (Join-Path $legacyStage 'runtime') -Recurse -Force
+          $chosen=@(& $helper -BundleRoot $env:RUNNER_TEMP -ExplicitDir $legacy -UnityExe 'unused-in-prebuilt-stage' -NoAutoDownload)
+          if($chosen.Count -ne 1 -or $chosen[0] -ne [IO.Path]::GetFullPath($legacyStage)){
+            throw 'Existing oneclick_bundle root cannot be passed directly as CEF runtime'
+          }
+          $newKit=Join-Path $env:RUNNER_TEMP 'legacy-oneclick\new-unified-kit'
+          New-Item -ItemType Directory -Force -Path $newKit | Out-Null
+          $automatic=@(& $helper -BundleRoot $newKit -UnityExe 'unused-in-prebuilt-stage' -NoAutoDownload)
+          if($automatic.Count -ne 1 -or $automatic[0] -ne [IO.Path]::GetFullPath($legacyStage)){
+            throw 'Sibling oneclick_bundle was not discovered automatically'
+          }
+          Write-Host 'Legacy oneclick_bundle explicit + sibling auto discovery PASS; no network/build'
           Write-Host 'CEF auto-bootstrap fixture path PASS; no CDN download/build was attempted'
       - name: Regression - missing CEF must create one-file results ZIP without StrictMode Count crash
         shell: powershell
