@@ -17,6 +17,23 @@ jobs:
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '8.0.x'
+      - name: Regression - missing CEF must create one-file results ZIP without StrictMode Count crash
+        shell: powershell
+        run: |
+          $root=Join-Path $env:RUNNER_TEMP 'dual-preflight-regression'
+          New-Item -ItemType Directory -Force -Path $root | Out-Null
+          Copy-Item 'Integration/UnityUnified-v58.6.0-preview/DualPlayer/Run-Dual.ps1' (Join-Path $root 'Run-Dual.ps1')
+          & powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $root 'Run-Dual.ps1') -BundleRoot $root -TestMissingRuntime
+          if($LASTEXITCODE -ne 2){throw "Expected preflight exit 2, got $LASTEXITCODE"}
+          $zips=@(Get-ChildItem -LiteralPath (Join-Path $root 'results') -Filter 'dual-*.zip' -File)
+          if($zips.Count -ne 1){throw "Preflight must create exactly one result ZIP; got $($zips.Count)"}
+          $unzip=Join-Path $root 'verified'
+          Expand-Archive -LiteralPath $zips[0].FullName -DestinationPath $unzip
+          $parts=@(Get-ChildItem -LiteralPath $unzip -File)
+          if($parts.Count -ne 1 -or $parts[0].Name -ne 'summary.json'){throw 'Exactly one summary.json expected'}
+          $data=Get-Content -LiteralPath (Join-Path $unzip 'summary.json') -Raw | ConvertFrom-Json
+          if($data.status -ne 'FAIL' -or $data.autoChecks -ne 'NOT_RUN' -or $data.problems.Count -lt 1){throw 'Preflight report improperly declares success'}
+          Write-Host 'Preflight singleton ZIP regression PASS; Unity/CEF were NOT RUN'
       - name: Automatic screenshots and privacy source contract
         shell: pwsh
         run: |
