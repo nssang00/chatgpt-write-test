@@ -182,14 +182,12 @@ jobs:
           4. Run Run-Dual.cmd; it will detect the existing oneclick_bundle\Build\cef-native\stage if the native runtime is present.
           5. If the old bundle contains source only, CEF runtime must be compiled; this patch does not include binary libcef.dll.
           '@ | Set-Content -LiteralPath (Join-Path $patch 'README_REUSE_ONECLICK.md') -Encoding UTF8
-          Compress-Archive -Path (Join-Path $patch '*') -DestinationPath 'oneclick-bundle-reuse-patch.zip' -Force
-          Add-Type -AssemblyName System.IO.Compression.FileSystem
-          $names=@([IO.Compression.ZipFile]::OpenRead((Resolve-Path 'oneclick-bundle-reuse-patch.zip')).Entries | ForEach-Object FullName)
-          if($names.Count -lt 3){throw 'OneClick patch archive missing files'}
+          $files=@(Get-ChildItem -LiteralPath $patch -File -Recurse)
+          if($files.Count -ne 3){throw 'OneClick patch staging must contain exactly three files'}
       - uses: actions/upload-artifact@v4
         with:
           name: oneclick-bundle-reuse-drop-in-patch
-          path: oneclick-bundle-reuse-patch.zip
+          path: ${{ runner.temp }}/oneclick-bundle-reuse-patch
           if-no-files-found: error
           retention-days: 30
       - uses: actions/upload-artifact@v4
