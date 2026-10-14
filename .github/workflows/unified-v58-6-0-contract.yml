@@ -34,6 +34,8 @@ jobs:
           $data=Get-Content -LiteralPath (Join-Path $unzip 'summary.json') -Raw | ConvertFrom-Json
           if($data.status -ne 'FAIL' -or $data.autoChecks -ne 'NOT_RUN' -or $data.problems.Count -lt 1){throw 'Preflight report improperly declares success'}
           Write-Host 'Preflight singleton ZIP regression PASS; Unity/CEF were NOT RUN'
+          $global:LASTEXITCODE=0  # Expected nonzero child test must not mark this PASS step failed
+          exit 0
       - name: Automatic screenshots and privacy source contract
         shell: pwsh
         run: |
