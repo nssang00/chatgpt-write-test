@@ -29,6 +29,14 @@ jobs:
           $path=(Resolve-Path 'Integration/UnityUnified-v58.6.0-preview/DualPlayer/Screen-Automation.ps1').Path
           [System.Management.Automation.Language.Parser]::ParseFile($path,[ref]$tokens,[ref]$errors)|Out-Null
           if($errors.Count){throw "Screenshot automation syntax error: $errors"}
+      - name: Compile screenshot GDI C# helpers and run no-desktop smoke test
+        shell: powershell
+        run: |
+          . 'Integration/UnityUnified-v58.6.0-preview/DualPlayer/Screen-Automation.ps1'
+          Start-DualScreenAutomation -Player (Get-Process -Id $PID) -DurationSeconds 0 -OutputFolder $env:RUNNER_TEMP
+          $j=Get-Content (Join-Path $env:RUNNER_TEMP 'screen-automation.json') -Raw | ConvertFrom-Json
+          if($j.status -eq 'AUTOMATION_ERROR'){throw 'Win32 screenshot helper type compilation failed'}
+          if($j.status -eq 'CAPTURED_3_OF_3'){throw 'CI headless process must never be accepted as a Unity screenshot'}
       - name: Dual Unity Player source contract
         shell: pwsh
         run: |
