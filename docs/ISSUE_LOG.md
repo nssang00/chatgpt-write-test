@@ -538,3 +538,15 @@ hosts, app shell and full publish remain unfinished.
   trust gate still only accepts exact file:/// entry.
 - No claim of default usable app:// until 3-engine positive+negative
   browser E2E passes. NW-014 full method/frame grants remains P0.
+
+## NW-033 U1 CEF per-WebView app scheme — SOURCE SUBMITTED / CI PENDING
+- AppResourceBundle passed using `WebViewOptions::appResources`;
+  CEF renderer and browser register a standard secure app scheme.
+  Per-request-context handler serves only explicit bytes/MIME;
+  unknown keys get 404, no disk fallback.
+- Exact trusted main `app://` entry now allowed by native bridge
+  policy, but app module method permissions NW-014 remain incomplete.
+- WebView2 custom app scheme still NOT IMPLEMENTED; do not
+  claim cross-engine app:// support before actual 3-engine E2E.
+- CEF scheme lifecycle/buffer multiwindow tests are required before
+  U1 can be verified.

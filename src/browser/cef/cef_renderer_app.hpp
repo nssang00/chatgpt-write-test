@@ -35,6 +35,9 @@ public:
     void setBrowserReadyCallback(
         const std::function<void()>& callback);
 
+    void OnRegisterCustomSchemes(
+        CefRawPtr<CefSchemeRegistrar> registrar) override;
+
     void OnContextInitialized() override;
 
     void OnContextCreated(

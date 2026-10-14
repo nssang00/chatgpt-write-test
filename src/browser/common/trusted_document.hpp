@@ -1,6 +1,7 @@
 #ifndef NATIVEWEB_TRUSTED_DOCUMENT_HPP_INCLUDED
 #define NATIVEWEB_TRUSTED_DOCUMENT_HPP_INCLUDED
 #include <string>
+#include "nativeweb/app_resources.hpp"
 
 namespace nativeweb {
 namespace detail {
@@ -13,10 +14,13 @@ inline bool trustedEntryDocument(const std::string& entry,
                                  const std::string& actual,
                                  bool mainFrame)
 {
-    return mainFrame &&
-           entry.size() > 8 &&
+    if (!mainFrame || entry != actual)
+        return false;
+    if (AppResourceBundle::isCanonicalUrl(entry))
+        return true;
+    // Backward-compatible exact local file entry, NOT arbitrary file URLs.
+    return entry.size() > 8 &&
            entry.compare(0, 8, "file:///") == 0 &&
-           actual == entry &&
            entry.find('#') == std::string::npos &&
            entry.find('?') == std::string::npos &&
            entry.find('\0') == std::string::npos;

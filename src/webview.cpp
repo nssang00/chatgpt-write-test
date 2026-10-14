@@ -1,4 +1,5 @@
 #include "nativeweb/webview.hpp"
+#include "nativeweb/app_resources.hpp"
 
 #include "browser/common/backend_registry.hpp"
 #include "core/bridge_runtime.hpp"
@@ -170,6 +171,14 @@ public:
         detail::BrowserCreateParams params;
         params.parent = parent;
         params.source = source;
+        params.appResources = options.appResources;
+        if (source.compare(0, 6, "app://") == 0)
+        {
+            if (!params.appResources ||
+                !params.appResources->contains(source))
+                throw Error("app_resource_not_found",
+                    "app:// entry must be an explicitly packaged resource");
+        }
 
         try
         {

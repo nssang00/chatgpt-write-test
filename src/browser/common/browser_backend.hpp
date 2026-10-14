@@ -5,6 +5,7 @@
 #include "nativeweb/types.hpp"
 
 #include <string>
+#include <memory>
 
 namespace nativeweb {
 namespace detail {
@@ -18,6 +19,7 @@ struct BrowserCreateParams
 
     NativeWindowHandle parent;
     std::string source;
+    std::shared_ptr<const AppResourceBundle> appResources;
 };
 
 class BrowserBackendListener

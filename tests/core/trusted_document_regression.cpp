@@ -21,5 +21,17 @@ int main()
     REQUIRE(!trustedEntryDocument("file:///C:/app/index.html?token=1",
                                   "file:///C:/app/index.html?token=1", true));
     REQUIRE(!trustedEntryDocument("", "", true));
+    REQUIRE(trustedEntryDocument("app://desktop/index.html",
+                                 "app://desktop/index.html", true));
+    REQUIRE(!trustedEntryDocument("app://desktop/index.html",
+                                  "app://camera/index.html", true));
+    REQUIRE(!trustedEntryDocument("app://desktop/index.html",
+                                  "app://desktop/index.html", false));
+    REQUIRE(!trustedEntryDocument("app://desktop/../etc/passwd",
+                                  "app://desktop/../etc/passwd", true));
+    REQUIRE(!trustedEntryDocument("app://desktop/%2e%2e/etc/passwd",
+                                  "app://desktop/%2e%2e/etc/passwd", true));
+    REQUIRE(!trustedEntryDocument("https://example.com/index.html",
+                                  "https://example.com/index.html", true));
     return failures ? 1 : 0;
 }

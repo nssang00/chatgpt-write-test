@@ -1,4 +1,5 @@
 #include "browser/cef/cef_backend.hpp"
+#include "nativeweb/app_resources.hpp"
 
 #include "browser/cef/cef_value_converter.hpp"
 #include "browser/common/backend_registry.hpp"
@@ -8,6 +9,11 @@
 #include "include/cef_render_handler.h"
 #include "include/cef_request_handler.h"
 #include "include/cef_task.h"
+#include "include/cef_scheme.h"
+#include "include/cef_resource_handler.h"
+#include "include/cef_request_context.h"
+#include <cstring>
+#include <algorithm>
 
 #include <cstdint>
 #include <functional>
@@ -38,6 +44,88 @@ RequestId stringToId(const std::string& value)
 
     return id;
 }
+
+// Each app:// handler owns its response bytes; it never opens a path on disk.
+// A dedicated CefRequestContext owns the factory per WebView, so unrelated
+// apps/windows cannot overwrite one another's asset table.
+class AppResourceHandler : public CefResourceHandler
+{
+public:
+    AppResourceHandler(const AppResource& resource, bool found)
+        : mime_(found ? resource.mimeType : "text/plain"),
+          bytes_(found ? resource.bytes : "Not Found"),
+          status_(found ? 200 : 404), offset_(0) {}
+
+    bool Open(CefRefPtr<CefRequest> request, bool& handle_request,
+              CefRefPtr<CefCallback> callback) override
+    {
+        handle_request = true;
+        return true;
+    }
+
+    void GetResponseHeaders(CefRefPtr<CefResponse> response,
+                            int64_t& response_length,
+                            CefString& redirect_url) override
+    {
+        response->SetStatus(status_);
+        response->SetMimeType(mime_);
+        CefResponse::HeaderMap headers;
+        headers.insert(std::make_pair(
+            CefString("X-Content-Type-Options"), CefString("nosniff")));
+        headers.insert(std::make_pair(
+            CefString("Cache-Control"), CefString("no-store")));
+        response->SetHeaderMap(headers);
+        response_length=static_cast<int64_t>(bytes_.size());
+    }
+
+    bool Read(void* data_out, int bytes_to_read, int& bytes_read,
+              CefRefPtr<CefResourceReadCallback> callback) override
+    {
+        bytes_read=0;
+        if (bytes_to_read <= 0 || offset_ >= bytes_.size()) return false;
+        const std::size_t count=std::min(
+            static_cast<std::size_t>(bytes_to_read), bytes_.size()-offset_);
+        std::memcpy(data_out, bytes_.data()+offset_, count);
+        offset_+=count;
+        bytes_read=static_cast<int>(count);
+        return true;
+    }
+
+    void Cancel() override {}
+
+private:
+    std::string mime_;
+    std::string bytes_;
+    int status_;
+    std::size_t offset_;
+    IMPLEMENT_REFCOUNTING(AppResourceHandler);
+};
+
+class AppResourceFactory : public CefSchemeHandlerFactory
+{
+public:
+    explicit AppResourceFactory(
+        const std::shared_ptr<const AppResourceBundle>& bundle)
+        : bundle_(bundle) {}
+
+    CefRefPtr<CefResourceHandler> Create(
+        CefRefPtr<CefBrowser> browser,
+        CefRefPtr<CefFrame> frame,
+        const CefString& scheme_name,
+        CefRefPtr<CefRequest> request) override
+    {
+        if (!request || scheme_name.ToString() != "app" || !bundle_)
+            return nullptr;
+        const std::string url=request->GetURL().ToString();
+        AppResource resource;
+        const bool found=bundle_->find(url, &resource);
+        return new AppResourceHandler(resource, found);
+    }
+
+private:
+    std::shared_ptr<const AppResourceBundle> bundle_;
+    IMPLEMENT_REFCOUNTING(AppResourceFactory);
+};
 
 class FunctionTask : public CefTask
 {
@@ -351,6 +439,24 @@ void CefBackend::create(
 
     trustedEntryUrl_ = params.source;
 
+    if (params.source.compare(0, 6, "app://") == 0)
+    {
+        if (!params.appResources ||
+            !params.appResources->contains(params.source))
+            throw Error("app_resource_not_found",
+                        "app entry is not in the packaged resource bundle");
+        CefRequestContextSettings contextSettings;
+        appRequestContext_ =
+            CefRequestContext::CreateContext(contextSettings, nullptr);
+        if (!appRequestContext_ ||
+            !appRequestContext_->RegisterSchemeHandlerFactory(
+                "app", "", new AppResourceFactory(params.appResources)))
+            throw Error("app_scheme_registration_failed",
+                        "Could not register isolated CEF app resource scheme");
+    }
+    else
+        appRequestContext_ = nullptr;
+
     CefBrowserSettings settings;
 
     const bool started =
@@ -360,7 +466,7 @@ void CefBackend::create(
             params.source,
             settings,
             nullptr,
-            nullptr);
+            appRequestContext_);
 
     if (!started)
         throw std::runtime_error("CefBrowserHost::CreateBrowser failed");

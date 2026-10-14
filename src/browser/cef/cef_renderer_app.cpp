@@ -2,6 +2,7 @@
 
 #include "browser/cef/cef_value_converter.hpp"
 #include "include/cef_process_message.h"
+#include "include/cef_scheme.h"
 
 #include <iostream>
 #include <sstream>
@@ -288,6 +289,18 @@ void CefRendererApp::setBrowserReadyCallback(
     const std::function<void()>& callback)
 {
     browserReadyCallback_ = callback;
+}
+
+void CefRendererApp::OnRegisterCustomSchemes(
+    CefRawPtr<CefSchemeRegistrar> registrar)
+{
+    if (registrar)
+        registrar->AddCustomScheme(
+            "app",
+            CEF_SCHEME_OPTION_STANDARD |
+            CEF_SCHEME_OPTION_SECURE |
+            CEF_SCHEME_OPTION_CORS_ENABLED |
+            CEF_SCHEME_OPTION_FETCH_ENABLED);
 }
 
 void CefRendererApp::OnContextInitialized()

@@ -2,10 +2,12 @@
 #define NATIVEWEB_TYPES_HPP_INCLUDED
 
 #include <cstdint>
+#include <memory>
 #include <string>
 #include <vector>
 
 namespace nativeweb {
+class AppResourceBundle;
 
 // Opaque host-window boundary used by the core API. Host adapters are
 // responsible for translating MFC/WinForms/WPF/Qt/GTK/Win32 native handles.
@@ -84,6 +86,8 @@ struct WebViewOptions
     }
 
     Engine engine;
+    // Explicit byte assets to resolve app:// URLs; no implicit disk access.
+    std::shared_ptr<const AppResourceBundle> appResources;
 };
 
 } // namespace nativeweb

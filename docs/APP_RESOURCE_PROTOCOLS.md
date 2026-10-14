@@ -89,3 +89,20 @@ callback/Value adapter work separately, not this URL loader's security.
 - WebView2 virtual host name mapping supports HTTPS host mapping, not
   app:// as the public origin; genuine app:// requires custom scheme
   environment registration and an actual resource response provider.
+
+## U1 CEF integration — source submitted, CI pending
+
+The CEF app used by NativeWeb registers `app` as a standard, secure
+custom scheme **in all CEF subprocesses**. Each CEF WebView with an
+explicit `WebViewOptions::appResources` bundle gets its own request
+context and scheme handler factory; no global resource map shared
+across windows. The handler responds only with explicitly registered
+in-memory resources, returns 404 for unknown keys, and never
+opens filesystem paths. Before create(), the entry must be
+present in the bundle. `trustedEntryDocument` now recognizes
+canonical `app://` exact main document URLs *in addition to* the
+preexisting exact file:/// legacy source; no remote HTTPS auto-grant.
+
+The WebView2 adapter does **not** yet serve app://; its normal file://
+workflow is unchanged. No CLI default change until both adapters
+have a real end-to-end check. See NW-033.
