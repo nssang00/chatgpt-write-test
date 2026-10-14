@@ -443,9 +443,9 @@ static void pluginBuildCurrent(const std::string& sdk) {
   } else {
     if(!sdk.empty()) throw std::runtime_error("--sdk is for native plugins only");
 #ifdef _WIN32
-    const std::string cmd="python -m compileall -q src/"+spec.id;
+    const std::string cmd="python -m compileall -f -q src/"+spec.id;
 #else
-    const std::string cmd="python3 -m compileall -q src/"+spec.id;
+    const std::string cmd="python3 -m compileall -f -q src/"+spec.id;
 #endif
     if(std::system(cmd.c_str())!=0)
       throw std::runtime_error("Python syntax check failed or interpreter missing");
