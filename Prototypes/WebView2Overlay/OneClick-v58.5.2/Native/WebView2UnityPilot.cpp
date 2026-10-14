@@ -12,6 +12,7 @@
 #include <deque>
 #include <utility>
 #include <cwchar>
+#include <cstring>
 #endif
 #include "EchoProtocol.h"
 using Microsoft::WRL::Callback;
@@ -80,7 +81,7 @@ void ProcessUnifiedCommands() {
     }
 }
 int QueueUnifiedCommand(int kind, const wchar_t* input, size_t maxLength=65536) {
-    if(g_status.load()!=2 || !g_webview || g_stop.load()) return -20;
+    if(g_status.load()!=2 || g_stop.load()) return -20; // do not touch STA-owned COM pointer
     if(input==nullptr) return -10;
     size_t length=wcsnlen_s(input,maxLength+1);
     if(length==0 || length>maxLength) return -10;
@@ -152,7 +153,7 @@ HRESULT OnController(HRESULT result, ICoreWebView2Controller* controller) {
                 const std::wstring message(value); // WebView2 gives UTF-16, not UTF-8
 #ifdef UNIFIED_PREVIEW
                 {std::lock_guard<std::mutex> lk(g_messageMutex);
-                 if(g_messages.size() >= 32) g_droppedMessages.fetch_add(1);
+                 if(g_messages.size() >= 32 || message.size()>65536) g_droppedMessages.fetch_add(1);
                  else g_messages.push_back(message); }
 #else
                 if(message==L"probe-ping") {
