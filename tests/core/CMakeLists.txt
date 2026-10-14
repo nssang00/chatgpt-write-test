@@ -311,3 +311,12 @@ target_include_directories(nativeweb_module_bridge_regression PRIVATE ${PROJECT_
 set_target_properties(nativeweb_module_bridge_regression PROPERTIES
     CXX_STANDARD 11 CXX_STANDARD_REQUIRED YES CXX_EXTENSIONS NO)
 add_test(NAME core.module_bridge COMMAND nativeweb_module_bridge_regression)
+
+
+# Canonical package-only app:// URLs and explicit resource catalog.
+add_executable(nativeweb_app_resources_regression
+    app_resources_regression.cpp)
+target_link_libraries(nativeweb_app_resources_regression PRIVATE NativeWeb::Core)
+set_target_properties(nativeweb_app_resources_regression PROPERTIES
+    CXX_STANDARD 11 CXX_STANDARD_REQUIRED YES CXX_EXTENSIONS NO)
+add_test(NAME core.app_resources COMMAND nativeweb_app_resources_regression)

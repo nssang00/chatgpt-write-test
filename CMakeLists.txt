@@ -10,6 +10,7 @@ include(CMakePackageConfigHelpers)
 find_package(Threads REQUIRED)
 
 add_library(nativeweb_core STATIC
+    src/core/app_resources.cpp
     src/core/pending_call_registry.cpp
     src/core/object_registry.cpp
     src/core/native_object_runtime.cpp

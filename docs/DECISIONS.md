@@ -460,3 +460,15 @@ the app-scoped Module Registry also owns Main and embedded Modules.
 Python/.NET supervised process is initial language-host default, not an
 assumption of in-process CPython or CLR embedding. Native-dispatch per-call
 grants remain required despite export markers.
+
+## D-046: app:// is the packaged app resource origin; file:// is restricted
+
+**Accepted direction — owner 2026-10-14.** App UI packages use
+`app://desktop/` with host-separated feature/plugin resources. Native
+Core owns scheme policy and routing. Individual modules may supply
+handlers only for manifest-declared custom schemes, with engine setup
+done before browser creation. Arbitrary `file://` never implicitly
+grants filesystem or native API access. Resource ability is separate
+from per-method native invoke permissions (NW-014 P0). CEF/WebView2
+real custom-scheme registration must be proven before the CLI claims
+app:// is usable, see docs/APP_RESOURCE_PROTOCOLS.md.

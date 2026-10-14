@@ -1,5 +1,23 @@
 # NativeWeb Session Handoff
 
+## 2026-10-14 resource protocols U0 (current)
+
+- Owner elected app:// packaged resources as Xytron's target default
+  desktop origin, file:// as restricted explicit/legacy, HTTP(S)
+  as ordinary remote navigation and future manifest-declared custom
+  schemes implemented by Modules. Native call grants stay separate.
+- `include/nativeweb/app_resources.hpp` and `src/core/app_resources.cpp`
+  implement the first C++11 in-memory packaged asset catalog with
+  strict app://host/path canonical validation; `core.app_resources`
+  tests traversal, duplicates, MIME and cross-scheme default denial.
+- Important: **U0 only, app:// is not yet served by CEF/WebView2**.
+  Design/next steps in `docs/APP_RESOURCE_PROTOCOLS.md`; NW-033 open.
+  Do NOT switch generated app templates to app:// before both
+  backends have real cross-engine tests. NW-014 security release blocker
+  is still open.
+
+
+
 ## 2026-10-14 definitive cross-platform CI evidence for binding slice (source c2b4dd5a)
 
 - **[Browser plugin E2E 38481853653](https://github.com/nssang00/chatgpt-write-test/actions/runs/38481853653):**

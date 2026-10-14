@@ -167,3 +167,18 @@ lazy plugin loading; B2 C++ class_/constructor/method/property on stable
 object ABI; B3 Python/.NET supervised host RPC; B4 static ESM exports;
 NW-014 full method-level native permission enforcement. Test each
 slice separately; fail-safe launcher behavior and binary leases first.
+
+## 2026-10-14 URL protocol workstream
+
+- **U0** implemented: `AppResourceBundle` C++11 resource catalog,
+  canonical `app://host/path` parser, explicit payload/MIME and
+  negative unit tests. No implicit file:// disk fallback.
+- **U1** independently build CEF custom scheme registration in all
+  processes plus factory; test actual file-less app:// loaded DOM.
+- **U2** independently build WebView2 Environment custom app scheme +
+  request handler, test same app:// DOM and fetch behavior.
+- **U3** require matching origin/frame identity, object/method grants
+  (NW-014), actual 3-engine negative tests; only then default CLI
+  standalone desktop UI to app:// and design user-defined schemes.
+- Preserve parallel B0/B1 C++ Plugin/language-host workstreams;
+  record engine SDK failures without changing main.

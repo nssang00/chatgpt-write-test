@@ -234,3 +234,20 @@ A1-BIND-01 B0 is verified. A1-BIND-06/07 are *local metadata only*
 and need actual host IPC/JS callbacks. NW-014 P0 native permissions,
 class/properties, PluginManager, native ES module imports, language
 hosts, app shell and full publish remain unfinished.
+
+## A1-URL series — source of truth: docs/APP_RESOURCE_PROTOCOLS.md
+
+| Gate | Expected result | State |
+| --- | --- | --- |
+| A1-URL-00 | Strict app://host/path bytes+MIME bundle; invalid URL/duplicate/cross-scheme denial | **CORE TEST ADDED / CI PENDING** |
+| A1-URL-01 | app://desktop/index.html load and CSS/JS/image relative fetch in all 3 browser engines | NOT IMPLEMENTED |
+| A1-URL-02 | unknown host/asset and cross origin cannot read other packaged resources | NOT IMPLEMENTED |
+| A1-URL-03 | traversal, encoded path, symlink/disallowed file adapters denied | Core negative test added; engine and symlink tests PENDING |
+| A1-URL-04 | untrusted http(s)/file iframe cannot obtain app API grants | NW-014 / NOT IMPLEMENTED |
+| A1-URL-05 | legacy file:/// entry remains compatible | PRIOR positive browser E2E; rerun on new source |
+| A1-URL-06 | custom schemes validated before engine startup; late/duplicate declaration fails | NOT IMPLEMENTED |
+| A1-URL-07 | explicit native method grants at app:// trusted origin | NW-014 / NOT IMPLEMENTED |
+| A1-URL-08 | callback/plugin revocation on navigation/unload | NOT IMPLEMENTED |
+
+Pass A1-URL-00 alone does NOT mean app:// URLs are renderable by
+CEF or WebView2. Do not mark A1-URL-01 as done without real engine CI.

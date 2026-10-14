@@ -525,3 +525,16 @@ A1-BIND-01 B0 is verified. A1-BIND-06/07 are *local metadata only*
 and need actual host IPC/JS callbacks. NW-014 P0 native permissions,
 class/properties, PluginManager, native ES module imports, language
 hosts, app shell and full publish remain unfinished.
+
+## NW-033 app:// default app resource scheme — U0 CORE IMPLEMENTED / ENGINE PENDING
+- Owner chose packaged `app://` Core default, optional safe file://,
+  ordinary http(s), manifest-declared custom-scheme Module handlers.
+- `AppResourceBundle` implements byte/MIME catalog and conservative
+  canonical URL parsing with no filesystem accesses. Core unit test
+  `core.app_resources` rejects traversal and cross-scheme requests.
+- **RELEASE BLOCKER:** neither CEF nor WebView2 yet serves this catalog
+  via a real app:// scheme. CEF needs all-process scheme registration,
+  WebView2 needs environment-level custom scheme registration; native
+  trust gate still only accepts exact file:/// entry.
+- No claim of default usable app:// until 3-engine positive+negative
+  browser E2E passes. NW-014 full method/frame grants remains P0.
