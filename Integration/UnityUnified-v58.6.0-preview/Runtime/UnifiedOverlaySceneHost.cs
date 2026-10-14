@@ -24,6 +24,10 @@ namespace Company.WebView.Unified.Experimental
         public bool IsOverlayReady { get { return view != null && !closingForDualTest && view.IsReady; } }
         public bool IsPreviewShutdownComplete { get { return view != null && view.IsShutdownComplete; } }
         public int ReceivedMessageCount { get; private set; }
+        // Programmatic Unicode fixture tests UTF-16 transport, not keyboard IME composition.
+        private const string UnicodeFixture="한글 가나다 ABC123 😀";
+        public int UnicodeRoundtripCount { get; private set; }
+        public int PingRoundtripCount { get; private set; }
         public bool RequestDualShutdown(){
             if(view==null)return false;
             if(closingForDualTest)return true;
@@ -32,7 +36,8 @@ namespace Company.WebView.Unified.Experimental
         }
         public void SendDualProbe(){
             if(!IsOverlayReady)return;
-            view.ExecuteJavaScript("chrome.webview.postMessage('dual-unity-bridge-ping')");
+            view.ExecuteJavaScript("chrome.webview.postMessage('dual-unity-bridge-ping');" +
+                "chrome.webview.postMessage('한글 가나다 ABC123 😀');");
         }
 
 #if UNITY_STANDALONE_WIN && !UNITY_EDITOR
@@ -90,6 +95,8 @@ namespace Company.WebView.Unified.Experimental
                 });
                 view.MessageReceived += msg => {
                     ReceivedMessageCount++;
+                    if(msg==UnicodeFixture)UnicodeRoundtripCount++;
+                    if(msg=="dual-unity-bridge-ping")PingRoundtripCount++;
                     Debug.Log("WV2 Unified message received (length): "+msg.Length);
                 };
             } catch(Exception e){Debug.LogError("Unified overlay open failed: "+e);}

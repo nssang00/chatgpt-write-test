@@ -19,6 +19,9 @@ public sealed class UnifiedDualPlayerEvidence : MonoBehaviour
         public long cefSoftwareFrames;
         public bool overlayReady;
         public int overlayMessageCount;
+        public int overlayUnicodeRoundtripCount;
+        public int overlayPingRoundtripCount;
+        public bool automaticWindowScreenshotsAreSeparateEvidence=true;
         public bool overlayCloseRequested;
         public bool overlayJoined;
         public bool cefShutdown;
@@ -56,6 +59,8 @@ public sealed class UnifiedDualPlayerEvidence : MonoBehaviour
         if(overlayHost!=null) {
             if(overlayHost.IsOverlayReady)evidence.overlayReady=true;
             evidence.overlayMessageCount=Math.Max(evidence.overlayMessageCount,overlayHost.ReceivedMessageCount);
+            evidence.overlayUnicodeRoundtripCount=Math.Max(evidence.overlayUnicodeRoundtripCount,overlayHost.UnicodeRoundtripCount);
+            evidence.overlayPingRoundtripCount=Math.Max(evidence.overlayPingRoundtripCount,overlayHost.PingRoundtripCount);
         }
         if(cefSurface!=null && cefSurface.GetComponent<UnityEngine.UI.RawImage>().texture!=null)
             evidence.cefRawImageBound=true;
@@ -98,6 +103,7 @@ public sealed class UnifiedDualPlayerEvidence : MonoBehaviour
         reportSaved=true;
         evidence.status=evidence.cefReady && evidence.cefAcceleratedFrames>0 &&
             evidence.cefRawImageBound && evidence.overlayReady && evidence.overlayMessageCount>0 &&
+            evidence.overlayUnicodeRoundtripCount>0 && evidence.overlayPingRoundtripCount>0 &&
             evidence.overlayCloseRequested && evidence.overlayJoined && evidence.cefShutdown &&
             String.IsNullOrEmpty(evidence.error) ? "PASS_AUTO" : "FAIL_AUTO";
         evidence.completedUtc=DateTime.UtcNow.ToString("o");
@@ -106,7 +112,7 @@ public sealed class UnifiedDualPlayerEvidence : MonoBehaviour
             if(!String.IsNullOrEmpty(parent))Directory.CreateDirectory(parent);
             File.WriteAllText(reportFile,JsonUtility.ToJson(evidence,true));
             Debug.Log("[UNIFIED-DUAL] "+evidence.status+" CEF accelerated="+evidence.cefAcceleratedFrames+
-                " RawImage="+evidence.cefRawImageBound+" WebView2 msgs="+evidence.overlayMessageCount+
+                " RawImage="+evidence.cefRawImageBound+" WebView2 unicode="+evidence.overlayUnicodeRoundtripCount+" WebView2 msgs="+evidence.overlayMessageCount+
                 " joined="+evidence.overlayJoined+" CEF shutdown="+evidence.cefShutdown);
         }catch(Exception ex){Debug.LogError("[UNIFIED-DUAL] Evidence write FAILED "+ex);}
         Application.Quit(evidence.status=="PASS_AUTO"?0:3);
