@@ -26,3 +26,11 @@ assert '50e8c2' not in ps, 'Do not invent source identity'
 print('Dual Player CEF Texture + WebView2 HWND source/evidence contract PASS; Unity runtime NOT RUN')
 
 assert 'UnifiedSource-v58.6.0.zip' not in ps, 'One folder kit must not require the old source snapshot ZIP'
+installer=(dual/'Install-UnifiedManagedSources.ps1').read_text(encoding='utf-8')
+for required in ("Join-Path $targetRuntime 'UnifiedExperimental'",
+                 'New-Item -ItemType Directory -Force -Path $unified',
+                 'Runtime\\WebView.cs','Copy-Item -LiteralPath $original -Destination $destination'):
+ assert required in installer, required
+assert 'Install-UnifiedManagedSources.ps1' in ps
+assert "$runtime $name" not in ps
+
