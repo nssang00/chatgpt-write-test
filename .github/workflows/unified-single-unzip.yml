@@ -1,0 +1,119 @@
+name: v58.6.0 Single ZIP Unity Dual OneClick (no Player runtime claim)
+on:
+  push:
+    branches:
+      - feature/unified-unity-v58-6-0-single-unzip-kit
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  package-single-unzip:
+    runs-on: windows-2022
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Validate bundled source and PowerShell script syntax
+        shell: pwsh
+        run: |
+          $r='Integration/UnityUnified-v58.6.0-preview'
+          python "$r/Validation/verify_dual_player.py"
+          if($LASTEXITCODE -ne 0){throw 'Dual contract failed'}
+          python "$r/Validation/verify_screen_automation_contract.py"
+          if($LASTEXITCODE -ne 0){throw 'Screenshot contract failed'}
+          python "$r/Validation/verify_cef_bootstrap.py"
+          if($LASTEXITCODE -ne 0){throw 'CEF bootstrap contract failed'}
+          foreach($s in @("$r/DualPlayer/Run-Dual.ps1","$r/DualPlayer/Ensure-CefRuntime.ps1","$r/DualPlayer/Screen-Automation.ps1")){
+            $tokens=$null;$errs=$null
+            [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $s).Path,[ref]$tokens,[ref]$errs)|Out-Null
+            if(@($errs).Count -gt 0){throw "PowerShell syntax failed: $s"}
+          }
+          dotnet run --configuration Release --project "$r/Tests/UnifiedContract.Tests.csproj"
+          if($LASTEXITCODE -ne 0){throw 'Managed C# contract test failed'}
+      - name: Build independent WebView2 unified DLL on x64 Windows
+        shell: pwsh
+        run: |
+          nuget install Microsoft.Web.WebView2 -Version 1.0.4258.31 -OutputDirectory "$env:RUNNER_TEMP/wv2sdk" -NonInteractive
+          if($LASTEXITCODE -ne 0){throw 'Pinned WebView2 SDK install failed'}
+          $sdk=Join-Path $env:RUNNER_TEMP 'wv2sdk/Microsoft.Web.WebView2.1.0.4258.31'
+          cmake -S Integration/UnityUnified-v58.6.0-preview/Native -B build-wv2-single -G 'Visual Studio 17 2022' -A x64 "-DWEBVIEW2_SDK_ROOT=$sdk"
+          if($LASTEXITCODE -ne 0){throw 'WebView2 native CMake configuration failed'}
+          cmake --build build-wv2-single --config Release
+          if($LASTEXITCODE -ne 0){throw 'WebView2 native DLL build failed'}
+          ctest --test-dir build-wv2-single -C Release --output-on-failure
+          if($LASTEXITCODE -ne 0){throw 'WebView2 ABI test failed'}
+      - name: Reuse entire legacy oneclick_bundle automatically (offline fixture)
+        shell: powershell
+        run: |
+          $r='Integration/UnityUnified-v58.6.0-preview/DualPlayer'
+          $root=Join-Path $env:RUNNER_TEMP 'standalone-smoke'
+          $old=Join-Path $root 'oneclick_bundle'
+          $stage=Join-Path $old 'Build\cef-native\stage'
+          $native=Join-Path $stage 'native\Release'
+          $runtime=Join-Path $stage 'runtime\Release'
+          $locales=Join-Path $runtime 'locales'
+          $package=Join-Path $old 'Package\com.company.webview\Runtime'
+          New-Item -ItemType Directory -Force -Path $native,$locales,$package | Out-Null
+          New-Item -ItemType File -Force -Path (Join-Path $native 'CompanyWebViewCefTextureProbe.dll') | Out-Null
+          foreach($name in @('libcef.dll','CompanyWebViewCefSubprocess.exe','icudtl.dat','resources.pak','chrome_100_percent.pak')){
+            New-Item -ItemType File -Force -Path (Join-Path $runtime $name) | Out-Null
+          }
+          New-Item -ItemType File -Force -Path (Join-Path $locales 'en-US.pak') | Out-Null
+          Set-Content -LiteralPath (Join-Path $package 'WebView.cs') -Value '// static fixture, not a runnable CEF browser'
+          $kit=Join-Path $root 'CompanyWebView-Dual-OneClick'
+          New-Item -ItemType Directory -Force -Path $kit | Out-Null
+          $helper=(Resolve-Path (Join-Path $r 'Ensure-CefRuntime.ps1')).Path
+          $nativeStage=@(& $helper -BundleRoot $kit -UnityExe 'not-used-when-existing-stage' -NoAutoDownload)
+          if($nativeStage.Count -ne 1 -or $nativeStage[0] -ne [IO.Path]::GetFullPath($stage)){
+            throw 'Legacy OneClick adjacent directory detection failed'
+          }
+          $sourceText=Get-Content -LiteralPath (Join-Path $r 'Run-Dual.ps1') -Raw
+          if($sourceText -notmatch 'GetCefPackageFromBundle' -or $sourceText -match 'UnifiedSource-v58.6.0.zip'){
+            throw 'Standalone kit unexpectedly depends on separately unpacked source snapshot'
+          }
+          Write-Host 'Sibling compiled oneclick_bundle static discovery PASS'
+      - name: Assemble ONE unzip folder with Run-Dual.cmd at root
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $r='Integration/UnityUnified-v58.6.0-preview'
+          $kit=Join-Path $env:GITHUB_WORKSPACE 'CompanyWebView-Dual-OneClick'
+          foreach($p in @('DualPlayer','Runtime','Plugins/x86_64')){
+            New-Item -ItemType Directory -Force -Path (Join-Path $kit $p) | Out-Null
+          }
+          Copy-Item "$r/DualPlayer/Run-Dual.cmd" "$kit/Run-Dual.cmd"
+          Copy-Item "$r/DualPlayer/Run-Dual.ps1" "$kit/Run-Dual.ps1"
+          foreach($f in @('Ensure-CefRuntime.ps1','Screen-Automation.ps1',
+           'BuildUnifiedDualPlayer.cs','UnifiedDualPlayerEvidence.cs','README_FIRST_KO.md')){
+            Copy-Item "$r/DualPlayer/$f" "$kit/DualPlayer/$f"
+          }
+          foreach($f in @('UnifiedWebView.cs','CefTextureBackendBridge.cs',
+           'WebView2OverlayBackendBridge.cs','UnifiedTextureSceneHost.cs','UnifiedOverlaySceneHost.cs')){
+            Copy-Item "$r/Runtime/$f" "$kit/Runtime/$f"
+          }
+          Copy-Item 'build-wv2-single/Release/CompanyWebView2UnifiedPreview.dll' "$kit/Plugins/x86_64/CompanyWebView2UnifiedPreview.dll"
+          Copy-Item "$r/DualPlayer/README_FIRST_KO.md" "$kit/README_FIRST_KO.md"
+          # The ZIP is its own launch root. No patch archive, no nested ZIP.
+          $items=@(Get-ChildItem -LiteralPath $kit -File -Recurse | Sort-Object FullName)
+          if($items.Count -lt 14){throw "Kit incomplete: $($items.Count) files"}
+          $hashes=@(foreach($item in $items){
+            $relative=$item.FullName.Substring($kit.Length+1).Replace('\','/')
+            "{0}  {1}" -f ((Get-FileHash -LiteralPath $item.FullName -Algorithm SHA256).Hash.ToLowerInvariant()),$relative
+          })
+          $hashes | Set-Content -LiteralPath (Join-Path $kit 'SHA256SUMS.txt') -Encoding UTF8
+          if(-not (Test-Path -LiteralPath (Join-Path $kit 'Run-Dual.cmd'))){throw 'Launcher not at ZIP root'}
+          if(Test-Path -LiteralPath (Join-Path $kit 'UnifiedSource-v58.6.0.zip')){throw 'Nested ZIP unacceptable'}
+          $copy=Join-Path $env:RUNNER_TEMP 'single-unzip-selftest'
+          Copy-Item -LiteralPath $kit -Destination $copy -Recurse
+          $tester=Join-Path $copy 'Run-Dual.ps1'
+          & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $tester -BundleRoot $copy -SelfTest
+          if($LASTEXITCODE -ne 0){throw 'Unpacked single-folder checksum self-test failed'}
+          Write-Host "One-zip-root PASS ($($items.Count) checksummed files); no CEF or Unity Player run"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: CompanyWebView_Dual_OneClick_Unzip_And_Run
+          path: CompanyWebView-Dual-OneClick/
+          if-no-files-found: error
+          retention-days: 30
