@@ -567,7 +567,7 @@ int main(int argc, char* argv[])
         std::shared_ptr<nativeweb::AppResourceBundle> assets(
             new nativeweb::AppResourceBundle());
         struct AssetEntry { const char* name; const char* url; const char* mime; };
-        const AssetEntry assets[]={
+        const AssetEntry entries[]={
             {"plugin_bridge_test.html", "app://desktop/plugin_bridge_test.html", "text/html"},
             {"plugin_untrusted_child.html", "app://desktop/plugin_untrusted_child.html", "text/html"},
             {"app_resource_script.js", "app://desktop/app_resource_script.js", "application/javascript"},
@@ -575,19 +575,19 @@ int main(int argc, char* argv[])
             {"app_resource_icon.svg", "app://desktop/app_resource_icon.svg", "image/svg+xml"},
             {"app_camera_private.html", "app://camera/ui/panel.html", "text/html"}
         };
-        for(std::size_t i=0;i<sizeof(assets)/sizeof(assets[0]);++i)
+        for(std::size_t i=0;i<sizeof(entries)/sizeof(entries[0]);++i)
         {
             std::ifstream input(
-                (directory+"/"+std::string(assets[i].name)).c_str(),
+                (directory+"/"+std::string(entries[i].name)).c_str(),
                 std::ios::binary);
             if (!input)
             {
-                std::cerr << "Missing app resource: " << assets[i].name << std::endl;
+                std::cerr << "Missing app resource: " << entries[i].name << std::endl;
                 DestroyWindow(window);
                 return 8;
             }
             std::ostringstream bytes; bytes << input.rdbuf();
-            assets->add(assets[i].url,assets[i].mime,bytes.str());
+            assets->add(entries[i].url,entries[i].mime,bytes.str());
         }
         options.appResources=assets;
     }

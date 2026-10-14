@@ -608,3 +608,11 @@ hosts, app shell and full publish remain unfinished.
   consumes this declaration yet; it remains future distribution work.
 - This must NOT be presented as a runnable desktop app scaffold until
   CLI runner, app asset mounting and clean-machine binary tests exist.
+
+## NW-038 WebView2 expanded packaged resource fixture name collision — FIX SUBMITTED
+- Browser CI 38524905603 Windows WebView2 failed in test main.cpp:
+  `AssetEntry assets[]` shadows existing
+  `std::shared_ptr<AppResourceBundle> assets` in the same scope.
+  Error C2040/C2088/C2039; no production backend compile error.
+- Rename entry descriptor array to `entries[]` while retaining
+  the AppResourceBundle pointer. Rerun 3-engine browser suite.
