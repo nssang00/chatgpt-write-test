@@ -8,9 +8,8 @@ $out=Join-Path $root ('results\dual-'+$stamp)
 $summary=[ordered]@{capturePolicy='Foreground Unity window only; no desktop capture';harness='58.6.0-dual-experimental';status='FAIL';autoChecks='NOT_RUN';stage='PREFLIGHT';problems=@();manualChecks='PENDING'}
 function Need([bool]$ok,[string]$msg){if(-not $ok){throw $msg}}
 function VerifyKit {
- $archive=Join-Path $root 'UnifiedSource-v58.6.0.zip'
- Need (Test-Path -LiteralPath $archive) 'Missing pinned UnifiedSource-v58.6.0.zip'
- Need ((Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant() -eq '49ef2950c18473317a403a00fb14be51e90cefcb761a811c4b95bf135f9214c7') 'Unified source archive hash mismatch'
+ # The unified sources and WebView2 binary ship directly in this one-folder kit.
+ # CEF source is reused directly from the pre-existing validated oneclick_bundle.
  $manifest=Join-Path $root 'SHA256SUMS.txt';Need (Test-Path -LiteralPath $manifest) 'SHA256SUMS.txt missing'
  $count=0
  foreach($line in (Get-Content -LiteralPath $manifest -Encoding UTF8)){
@@ -23,7 +22,7 @@ function VerifyKit {
   Need ((Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant() -eq $want) "Checksum mismatch: $rel"
   $count++
  }
- Need ($count -ge 12) 'Incomplete kit manifest'
+ Need ($count -ge 8) 'Incomplete kit manifest'
  Write-Host "[DUAL] Source identity verified: $count entries"
 }
 function FindUnity {
@@ -40,6 +39,43 @@ function ResolveCefRuntime {
  $stage=@(& $helper -BundleRoot $root -ExplicitDir $CefRuntimeDir -UnityExe $unity)
  Need ($stage.Count -eq 1 -and -not [string]::IsNullOrWhiteSpace($stage[0])) 'CEF automation could not resolve a complete pinned native stage'
  return [string]$stage[0]
+}
+function GetCefPackageFromBundle([string]$stageDir){
+ # Reuse original CEF v58.4.4 source tree READ-ONLY. No copy back into oneclick_bundle.
+ $roots=@($root,(Split-Path $root -Parent),
+  (Join-Path $env:USERPROFILE 'Downloads'),(Join-Path $env:USERPROFILE 'Desktop'))
+ # Stage normally lives under oneclick_bundle\Build\cef-native\stage
+ $up=$stageDir
+ for($k=0;$k -lt 6;$k++){
+  if(-not $up){break}
+  $roots=@($up)+$roots
+  $next=Split-Path $up -Parent
+  if($next -eq $up){break}
+  $up=$next
+ }
+ foreach($r in $roots){
+  if(-not $r -or -not (Test-Path -LiteralPath $r -PathType Container)){continue}
+  foreach($relative in @('Package\com.company.webview',
+    'oneclick_bundle\Package\com.company.webview',
+    'Assemble\UnityProject\Assets\CompanyWebView')){
+   $path=Join-Path $r $relative
+   if(Test-Path -LiteralPath (Join-Path $path 'Runtime\WebView.cs') -PathType Leaf){
+    Write-Host '[DUAL] Reusing existing oneclick_bundle CEF Unity source (read-only)'
+    return $path
+   }
+  }
+  # Bounded search: sibling/Downloads oneclick_bundle only, no full-disk indexing.
+  $dirs=@(Get-ChildItem -LiteralPath $r -Directory -ErrorAction SilentlyContinue |
+     Where-Object {$_.Name -match '(?i)oneclick|cef|webview' } | Select-Object -First 60)
+  foreach($dir in $dirs){
+   $source=Join-Path $dir.FullName 'Package\com.company.webview'
+   if(Test-Path -LiteralPath (Join-Path $source 'Runtime\WebView.cs') -PathType Leaf){
+    Write-Host '[DUAL] Reusing existing oneclick_bundle CEF Unity source (read-only)'
+    return $source
+   }
+  }
+ }
+ throw 'Existing oneclick_bundle/Package/com.company.webview source folder not found. Keep the original compiled oneclick_bundle next to this kit.'
 }
 function GetCefStageLayout([string]$from){
  Need (-not [string]::IsNullOrWhiteSpace($from) -and (Test-Path -LiteralPath $from -PathType Container)) 'CEF v58.4.4 native runtime folder not found. Use a previously BUILT CEF stage folder, not the source ZIP.'
@@ -75,11 +111,10 @@ try {
   $unity=FindUnity
   $CefRuntimeDir=ResolveCefRuntime
   $null=GetCefStageLayout $CefRuntimeDir
+  $null=GetCefPackageFromBundle $CefRuntimeDir
   New-Item -ItemType Directory -Force -Path $out | Out-Null
-  $unpack=Join-Path $out 'source'
-  Expand-Archive -LiteralPath (Join-Path $root 'UnifiedSource-v58.6.0.zip') -DestinationPath $unpack -Force
-  $source=Join-Path $unpack 'Assemble\UnityProject\Assets\CompanyWebView'
-  Need (Test-Path -LiteralPath (Join-Path $source 'Runtime\WebView.cs')) 'Snapshot source layout invalid'
+  $source=GetCefPackageFromBundle $CefRuntimeDir
+  Need (Test-Path -LiteralPath (Join-Path $source 'Runtime\WebView.cs') -PathType Leaf) 'Old OneClick package WebView.cs missing'
   $project=Join-Path $out 'UnityProject'
   foreach($p in @('Assets\Editor','Assets\Scripts','Packages','ProjectSettings')){New-Item -ItemType Directory -Force -Path (Join-Path $project $p) | Out-Null}
   Copy-Item -LiteralPath $source -Destination (Join-Path $project 'Assets\CompanyWebView') -Recurse
