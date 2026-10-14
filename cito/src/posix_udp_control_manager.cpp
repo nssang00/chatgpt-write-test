@@ -29,9 +29,7 @@ public:
 
     bool bind(
         std::uint16_t control_port) {
-        if (
-            fd_ >= 0 ||
-            control_port == 0) {
+        if (fd_ >= 0) {
             return false;
         }
 
@@ -93,11 +91,25 @@ public:
             return false;
         }
 
+        sockaddr_in bound{};
+        socklen_t bound_size =
+            sizeof(bound);
+
+        if (::getsockname(
+                fd,
+                reinterpret_cast<
+                    sockaddr*>(
+                    &bound),
+                &bound_size) != 0) {
+            ::close(fd);
+            return false;
+        }
+
         fd_ = fd;
         control_port_ =
-            control_port;
+            ntohs(bound.sin_port);
         next_announcement_ms_ = 0;
-        return true;
+        return control_port_ != 0;
     }
 
     void add_announcement_target(

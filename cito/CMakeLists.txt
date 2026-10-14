@@ -276,6 +276,13 @@ if(BUILD_TESTING)
   set_tests_properties(cito_idl_complex_smoke PROPERTIES LABELS "smoke;latency;regression")
 
   if(UNIX AND NOT APPLE)
+    add_executable(cito_posix_udp_control_manager_tests
+      tests/posix_udp_control_manager_test.cpp)
+    target_link_libraries(cito_posix_udp_control_manager_tests PRIVATE cito cito_posix_runtime)
+    target_compile_options(cito_posix_udp_control_manager_tests PRIVATE -Wall -Wextra -Wpedantic)
+    add_test(NAME cito_posix_udp_control_manager_tests COMMAND cito_posix_udp_control_manager_tests)
+    set_tests_properties(cito_posix_udp_control_manager_tests PROPERTIES LABELS "unit;smoke;latency;regression")
+
     cito_add_test(cito_shm_ring_tests tests/shm_ring_test.cpp "unit;latency;regression")
     target_link_libraries(cito_shm_ring_tests PRIVATE rt)
 
