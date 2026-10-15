@@ -30,7 +30,14 @@ Require ($null -ne $tar) 'Expanded CEF TAR missing'
 Require ($LASTEXITCODE -eq 0) 'CEF TAR expansion failed'
 $sourceRuntime=Join-Path $expanded 'Package\com.company.webview\Runtime'
 $sourceWebView=Join-Path $sourceRuntime 'WebView.cs'
-Require (Test-Path -LiteralPath $sourceWebView -PathType Leaf) 'Validated runtime source lacks WebView.cs'
+if(-not (Test-Path -LiteralPath $sourceWebView -PathType Leaf)){
+  Write-Host "[AUDIT] CEF runtime archive root:" -ForegroundColor Yellow
+  @(Get-ChildItem -LiteralPath $expanded -File -Recurse |
+    Where-Object{$_.Extension -in '.cs','.asmdef','.json','.md','.cpp'} |
+    Select-Object -First 100 |
+    ForEach-Object{$_.FullName.Substring($expanded.Length+1)}) | ForEach-Object{Write-Host "  $_"}
+  throw 'Original v58.2 Runtime source archive does not contain validated v58.4.4 managed Unity facade WebView.cs. Do not substitute an unvalidated facade.'
+}
 $managedSha=(Get-FileHash -LiteralPath $sourceWebView -Algorithm SHA256).Hash.ToLowerInvariant()
 Require ($managedSha -eq 'f568ba150a2ab87b0bb6298f0364597a6c53e668774b8d74e24b19b2387b8134') 'Managed CEF facade SHA mismatch'
 $targetRuntime=Join-Path $oneclick 'Package\com.company.webview\Runtime'
