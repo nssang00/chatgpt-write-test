@@ -34,6 +34,13 @@ internal static class ContractTests
     static UnifiedWebViewOptions Opt(PresentationMode m,TargetKind t) => new UnifiedWebViewOptions{Mode=m,Target=t};
     public static void Main()
     {
+        // The real Windows Player returned two WebView2 messages, but Unicode/ping
+        // comparisons failed: a default ANSI StringBuilder marshaler truncated UTF-16.
+        var readMessage=typeof(WebView2OverlayBackendBridge).GetMethod(
+            "WV2Unified_ReadMessage",BindingFlags.NonPublic|BindingFlags.Static);
+        Check(readMessage!=null,"WebView2 native reader declaration exists");
+        var import=readMessage.GetCustomAttribute<DllImportAttribute>();
+        Check(import!=null && import.CharSet==CharSet.Unicode,"WebView2 receive buffer MUST marshal UTF-16");
         Check(UnifiedWebView.ResolveMode(PresentationMode.Auto,TargetKind.RawImage)==PresentationMode.Texture,"RawImage");
         Check(UnifiedWebView.ResolveMode(PresentationMode.Auto,TargetKind.MeshMaterial)==PresentationMode.Texture,"Mesh");
         Check(UnifiedWebView.ResolveMode(PresentationMode.Auto,TargetKind.RenderTexture)==PresentationMode.Texture,"RenderTexture");
