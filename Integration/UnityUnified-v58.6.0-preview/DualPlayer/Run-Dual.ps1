@@ -181,6 +181,7 @@ try {
   }
   Need ($e.cefReady -and $e.cefRawImageBound -and $e.cefAcceleratedFrames -gt 0) 'CEF Texture not proven'
   Need ($e.cubeTextureBound -and $e.cubeTextureBindCount -gt 0 -and $e.cubeObservedFrameAdvances -ge 3 -and $e.cubeRotationDegrees -gt 180 -and $e.cubeVisibleFrames -gt 0 -and $e.cubeOccluderBeforeCubeRay) 'CEF 3D cube mesh/material/animation/depth-geometry not proven'
+  Need ($e.cubeFrontInitialObserved -and $e.cubeFrontRestoredObserved -and $e.cubeSourcePixelSamples -ge 3 -and $e.cubeSourcePixelChangeEvents -ge 2 -and $e.cubeMaxChangedPixels -ge 16 -and -not $e.cubePixelReadbackError) 'CEF source GPU pixels did not demonstrate CSS animation independently of mesh rotation'
   Need ($e.overlayReady -and $e.overlayMessageCount -gt 0) 'WebView2 messaging not proven'
   Need ($e.cefShutdown -and $e.overlayJoined -and $p.ExitCode -eq 0) 'Dual shutdown failed'
   Need ($e.overlayUnicodeRoundtripCount -gt 0) 'Unicode JS-to-native-to-C# automation failed'
