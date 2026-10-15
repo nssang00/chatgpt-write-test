@@ -4,6 +4,7 @@ on:
     branches:
       - feature/unified-unity-v58-6-0-readonly-stage-fix
       - feature/unified-unity-v58-6-0-dual-utf16-uv-fix
+      - feature/unified-unity-v58-6-0-cef-3d-cube-proof
   workflow_dispatch:
 permissions:
   contents: read
@@ -26,7 +27,7 @@ jobs:
         run: |
           $ErrorActionPreference='Stop'
           $r='Integration/UnityUnified-v58.6.0-preview'
-          foreach($name in @('verify_dual_player.py','verify_cef_bootstrap.py','verify_integration.py','verify_screen_automation_contract.py')){
+          foreach($name in @('verify_dual_player.py','verify_cef_bootstrap.py','verify_integration.py','verify_screen_automation_contract.py','verify_cube_3d.py')){
             python "$r/Validation/$name"
             if($LASTEXITCODE -ne 0){throw "Python contract failed: $name"}
           }
