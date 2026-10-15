@@ -1,0 +1,51 @@
+name: Audit archived CEF managed facade source
+on:
+  push:
+    branches: [feature/unified-v58-6-0-bundled-cef-stage]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: windows-2022
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ci/oneclick-v58-4-4
+      - name: Inspect CEF legacy source payload variants
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $sets=@('ci/v57.8-native/source-part*.b64','ci/oneclick-v57.8/parts/part*.b64','ci/v58.2-runtime/source-part*.b64')
+          $seven='C:\Program Files\7-Zip\7z.exe'
+          foreach($set in $sets){
+            $files=@(Get-ChildItem $set | Sort-Object Name)
+            Write-Host "GROUP=$set, PARTS=$($files.Count)"
+            if($files.Count -eq 0){continue}
+            $str=($files|ForEach-Object{(Get-Content -LiteralPath $_.FullName -Raw).Trim()}) -join ''
+            $data=[Convert]::FromBase64String($str)
+            $name=($set -replace '[^A-Za-z0-9]','_')
+            $archive=Join-Path $env:RUNNER_TEMP ($name+'.bin')
+            [IO.File]::WriteAllBytes($archive,$data)
+            $sha=(Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash
+            Write-Host "ARCHIVE=$name, SIZE=$($data.Length), SHA256=$sha"
+            $dest=Join-Path $env:RUNNER_TEMP ($name+'_extract')
+            New-Item -ItemType Directory -Force -Path $dest|Out-Null
+            & $seven x $archive "-o$dest" -y|Out-Null
+            if($LASTEXITCODE -ne 0){Write-Host 'Direct 7z extraction unsupported';continue}
+            $intermediate=@(Get-ChildItem -LiteralPath $dest -File -Recurse |Where-Object{$_.Extension -in '.tar','.zip'})
+            foreach($f in $intermediate){
+              $inner=Join-Path $dest ('inner_'+($f.BaseName -replace '[^A-Za-z0-9]','_'))
+              New-Item -ItemType Directory -Force -Path $inner | Out-Null
+              & $seven x $f.FullName "-o$inner" -y|Out-Null
+            }
+            $managed=@(Get-ChildItem -LiteralPath $dest -Filter 'WebView.cs' -Recurse -File -ErrorAction SilentlyContinue)
+            foreach($m in $managed){
+              Write-Host "WEBVIEW_PATH=$($m.FullName), SHA256=$((Get-FileHash -LiteralPath $m.FullName -Algorithm SHA256).Hash)"
+            }
+            $surfaces=@(Get-ChildItem -LiteralPath $dest -Recurse -File -Filter '*.cs' -ErrorAction SilentlyContinue |
+              Select-String -Pattern 'class\s+CefTextureSurface\b' -ErrorAction SilentlyContinue)
+            Write-Host "CEF_SURFACE_MATCHES=$($surfaces.Count)"
+            foreach($p in $surfaces|Select-Object -First 4){Write-Host "CEF_SURFACE_PATH=$($p.Path)"}
+          }
