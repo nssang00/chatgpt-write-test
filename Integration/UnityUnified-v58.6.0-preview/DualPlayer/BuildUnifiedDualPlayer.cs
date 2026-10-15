@@ -71,6 +71,9 @@ public static class BuildUnifiedDualPlayer
         // RawImage samples bottom-left origin. Flip V on the isolated dual-test panel only.
         // Do not modify the validated v58.4.4 CefTextureSurface implementation.
         left.GetComponent<RawImage>().uvRect=new Rect(0f,1f,1f,-1f);
+        // Keep RawImage active only as CEF external GPU texture OWNER; never draw it.
+        // The 3D cube below, not a screen-space RawImage, is the visible left viewport.
+        left.GetComponent<RawImage>().enabled=false;
         var cefSurface=left.gameObject.AddComponent<CefTextureSurface>();
         var textureHost=left.gameObject.AddComponent<UnifiedTextureSceneHost>();
         Assign(cefSurface,"target",left.GetComponent<RawImage>());
@@ -78,8 +81,57 @@ public static class BuildUnifiedDualPlayer
         Assign(textureHost,"validatedTextureSurface",cefSurface);
         // An offline data URL avoids external network dependence for texture frame readiness.
         var host=new SerializedObject(textureHost);
-        host.FindProperty("initialUrl").stringValue="data:text/html,%3Chtml%3E%3Cbody%20style%3D%22background%3A%23b8e0ce%3Bfont-family%3AArial%3Bfont-size%3A36px%22%3ECEF%20Texture%20LEFT%3C%2Fbody%3E%3C%2Fhtml%3E";
+        const string cubeHtml="<!doctype html><html><meta charset='utf-8'>"+
+            "<style>html,body{margin:0;height:100%;background:#b8e0ce;overflow:hidden;}"+
+            "h1{font:900 58px Arial;margin:28px 18px;color:#10392e}p{font:34px Arial;margin:24px}"+
+            ".move{width:110px;height:110px;background:#ff6700;margin:38px;"+
+            "animation:slide 1.2s linear infinite alternate;}"+
+            "@keyframes slide{from{transform:translateX(0)}to{transform:translateX(460px)}}"+
+            "</style><body><h1>CEF GPU TEXTURE</h1><p>UNITY 3D CUBE</p>"+
+            "<div class='move'></div><p>CSS animation / D3D11</p></body></html>";
+        host.FindProperty("initialUrl").stringValue="data:text/html;charset=utf-8,"+Uri.EscapeDataString(cubeHtml);
         host.ApplyModifiedPropertiesWithoutUndo();
+        // Direct CEF external GPU Texture2D -> MeshRenderer Material (not HWND).
+        var camera=Camera.main;
+        if(camera==null)throw new Exception("Default camera missing");
+        camera.transform.position=new Vector3(0,0,-15);
+        camera.transform.rotation=Quaternion.identity;
+        camera.orthographic=true;
+        camera.orthographicSize=4.5f;
+        camera.clearFlags=CameraClearFlags.SolidColor;
+        camera.backgroundColor=new Color(0.10f,0.17f,0.25f,1f);
+        var cube=GameObject.CreatePrimitive(PrimitiveType.Cube);
+        cube.name="CEF live GPU texture - ROTATING UNITY CUBE";
+        cube.transform.position=new Vector3(-3.8f,0,0);
+        cube.transform.localScale=new Vector3(3.4f,3.4f,1.25f);
+        var cubeShader=Shader.Find("Unlit/Texture");
+        if(cubeShader==null)throw new Exception("Unlit/Texture shader missing");
+        var cubeMaterial=new Material(cubeShader);
+        cubeMaterial.name="CEF external GPU texture material";
+        cubeMaterial.mainTextureScale=new Vector2(1,-1);
+        cubeMaterial.mainTextureOffset=new Vector2(0,1);
+        Directory.CreateDirectory("Assets/Materials");
+        AssetDatabase.CreateAsset(cubeMaterial,"Assets/Materials/CefGpuCube.mat");
+        var renderer=cube.GetComponent<MeshRenderer>();
+        renderer.sharedMaterial=cubeMaterial;
+        var occluder=GameObject.CreatePrimitive(PrimitiveType.Sphere);
+        occluder.name="DEPTH TEST - sphere in FRONT of rotating CEF cube";
+        occluder.transform.position=new Vector3(-3.8f,-0.65f,-3.5f);
+        occluder.transform.localScale=Vector3.one*1.25f;
+        var occluderShader=Shader.Find("Unlit/Color");
+        if(occluderShader==null)throw new Exception("Unlit/Color shader missing");
+        var occluderMaterial=new Material(occluderShader);
+        occluderMaterial.name="Depth occluder solid orange";
+        occluderMaterial.color=new Color(1f,0.42f,0.09f,1f);
+        AssetDatabase.CreateAsset(occluderMaterial,"Assets/Materials/DepthOccluder.mat");
+        occluder.GetComponent<MeshRenderer>().sharedMaterial=occluderMaterial;
+        var cubeProof=cube.AddComponent<CefCubeTextureProof>();
+        Assign(cubeProof,"textureSource",left.GetComponent<RawImage>());
+        Assign(cubeProof,"cefSurface",cefSurface);
+        Assign(cubeProof,"cubeRenderer",renderer);
+        Assign(cubeProof,"cubeTransform",cube.transform);
+        Assign(cubeProof,"occluder",occluder.transform);
+        Assign(cubeProof,"sceneCamera",camera);
         var imageRight=right.GetComponent<RawImage>();
         imageRight.color=new Color(0.90f,0.92f,0.98f,1);
         var overlayHost=right.gameObject.AddComponent<UnifiedOverlaySceneHost>();
@@ -91,6 +143,7 @@ public static class BuildUnifiedDualPlayer
         Assign(telemetry,"cefSurface",cefSurface);
         Assign(telemetry,"textureHost",textureHost);
         Assign(telemetry,"overlayHost",overlayHost);
+        Assign(telemetry,"cubeProof",cubeProof);
         var scenePath="Assets/Scenes/UnifiedDualPreview.unity";
         if(!EditorSceneManager.SaveScene(scene,scenePath))throw new Exception("Scene save failed");
         EditorBuildSettings.scenes=new[]{new EditorBuildSettingsScene(scenePath,true)};
