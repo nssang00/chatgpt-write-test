@@ -141,7 +141,7 @@ if(-not (Test-Path -LiteralPath (Join-Path $sourceBundle 'config.json') -PathTyp
       -not $name.StartsWith($prefix,[StringComparison]::Ordinal)){continue}
    if(-not $entry.Name){continue}
    $destination=[IO.Path]::GetFullPath((Join-Path $temp ($name.Replace('/',[IO.Path]::DirectorySeparatorChar))))
-   $safeRoot=[IO.Path]::GetFullPath($temp).TrimEnd('\\')+[IO.Path]::DirectorySeparatorChar
+   $safeRoot=[IO.Path]::GetFullPath($temp).TrimEnd([IO.Path]::DirectorySeparatorChar)+[IO.Path]::DirectorySeparatorChar
    if(-not $destination.StartsWith($safeRoot,[StringComparison]::OrdinalIgnoreCase)){
     throw 'Unsafe CEF source archive path'
    }
