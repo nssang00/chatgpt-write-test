@@ -224,7 +224,7 @@ public sealed class ObjectHost
                     {
                         var d = json.GetDouble();
                         if (double.IsFinite(d) && (target == typeof(double) || Math.Abs(d) <= float.MaxValue))
-                            return target == typeof(double) ? d : (float)d;
+                            return target == typeof(double) ? (object)d : (float)d;
                     }
                 }
             }
