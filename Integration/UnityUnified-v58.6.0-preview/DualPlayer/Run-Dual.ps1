@@ -185,6 +185,14 @@ try {
   Need ($e.overlayReady -and $e.overlayMessageCount -gt 0) 'WebView2 messaging not proven'
   Need ($e.cefShutdown -and $e.overlayJoined -and $p.ExitCode -eq 0) 'Dual shutdown failed'
   Need ($e.overlayUnicodeRoundtripCount -gt 0) 'Unicode JS-to-native-to-C# automation failed'
+  if(-not $NoScreenshots){
+   $verifier=Join-Path $root 'DualPlayer\Verify-TextureUvMarkers.ps1'
+   Need (Test-Path -LiteralPath $verifier -PathType Leaf) 'UV color-marker verifier missing'
+   & $verifier -EvidenceFolder $out
+   $uv=Get-Content -LiteralPath (Join-Path $out 'uv-visual-evidence.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+   $summary.uvVisualCheck=$uv.status
+   Need ($uv.status -ne 'FAIL') 'CEF texture orientation FAIL: BLUE TOP appears below RED BOTTOM in the front-facing screenshots'
+  }else{$summary.uvVisualCheck='SKIPPED_NO_SCREENSHOTS'}
   $summary.status='PENDING_MANUAL';$summary.autoChecks='PASS';$summary.stage='COMPLETE_AUTO';$code=0
  }
 } catch {
@@ -211,7 +219,7 @@ try {
  }
  # Never let a failed preflight be masked by PowerShell scalar unrolling:
  # @(... pipeline ...) is an array for zero, one and many result files.
- $safe=@(@('summary.json','diagnostics-redacted.log','player-runtime-evidence.json','screen-automation.json') |
+ $safe=@(@('summary.json','diagnostics-redacted.log','player-runtime-evidence.json','screen-automation.json','uv-visual-evidence.json') |
    ForEach-Object{Join-Path $out $_} | Where-Object{Test-Path -LiteralPath $_ -PathType Leaf})
  $shotDir=Join-Path $out 'screenshots'
  if(Test-Path -LiteralPath $shotDir){$safe+=@(Get-ChildItem -LiteralPath $shotDir -File -Filter '*.png'|Select-Object -ExpandProperty FullName)}
