@@ -83,6 +83,22 @@ $assets=Join-Path $scratch 'results\dual-20261015-090746\UnityProject\Assets'
 # Simulate exact previous Downloads/oneclick_bundle asset copy with an isolated
 # pinned-hash fixture only if the canonical source bytes are provided externally.
 # Do NOT fabricate a CEF WebView.cs solely to make a hosted-runner build pass.
+# Reproduce the exact former failure: source package with a deep Documentation~ path.
+$fixture=Join-Path $env:RUNNER_TEMP 'legacy-cef-source-fixture'
+$fixtureRuntime=Join-Path $fixture 'Runtime'
+New-Item -ItemType Directory -Force -Path $fixtureRuntime | Out-Null
+'// Compile-only source-copy test fixture, not a real CEF facade'|
+  Set-Content -LiteralPath (Join-Path $fixtureRuntime 'WebView.cs') -Encoding ASCII
+$docPath=Join-Path $fixture ('Documentation~\' + ('long-document-name-'*9) + '.md')
+New-Item -ItemType Directory -Force -Path (Split-Path $docPath -Parent) | Out-Null
+'irrelevant document'|Set-Content -LiteralPath $docPath -Encoding ASCII
+& (Join-Path $kit 'DualPlayer\Install-UnifiedManagedSources.ps1') -CefPackagePath $fixture -UnityAssetsDir $assets -KitRoot $kit
+foreach($needed in @('Runtime\WebView.cs','Runtime\UnifiedExperimental\UnifiedWebView.cs',
+ 'Runtime\UnifiedExperimental\CefTextureBackendBridge.cs')){
+ Require (Test-Path -LiteralPath (Join-Path $assets ('CompanyWebView\'+$needed)) -PathType Leaf) "Source copy failed: $needed"
+}
+Require (-not (Test-Path -LiteralPath (Join-Path $assets 'CompanyWebView\Documentation~'))) 'Documentation~ must never copy into Unity Assets'
+Write-Host '[PACKAGE] Regression: long Documentation~ path excluded, managed files copied PASS'
 Require (Test-Path -LiteralPath (Join-Path $kit 'DualPlayer\Import-CefUnitySources.ps1')) 'CEF Unity source auto-importer not packaged'
 Write-Host '[PACKAGE] Long-path documentation copy removed; CEF facade requires validated local original and is imported on first run'
 
