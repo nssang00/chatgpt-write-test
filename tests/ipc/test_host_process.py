@@ -63,7 +63,8 @@ def test_endpoint(make_child, plugin, method, prop):
         handle = worker.call(prefix + 'create', ['Ada'])
         assert handle['ok'] and handle['result'].startswith('xy_'), handle
         token = handle['result']
-        assert worker.call(prefix + 'method.' + method, [token, 9])['result'] == 91
+        response = worker.call(prefix + 'method.' + method, [token, 9])
+        assert response.get('ok') and response.get('result') == 91, response
         assert worker.call(prefix + 'get.' + prop, [token])['result'] == 91
         assert worker.call(prefix + 'set.' + prop, [token, 27])['ok']
         assert worker.call(prefix + 'get.' + prop, [token])['result'] == 27
