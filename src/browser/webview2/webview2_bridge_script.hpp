@@ -133,6 +133,8 @@ static const wchar_t kWebView2BridgeScript[] = LR"NATIVEWEBJS(
     return promise;
   };
 
+)NATIVEWEBJS"
+LR"NATIVEWEBJS(
   const createNativeObject = (value) => {
     const target = {
       __nativeweb_object: true,
