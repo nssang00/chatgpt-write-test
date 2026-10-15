@@ -227,6 +227,12 @@ Any BridgeRuntime::receive(const Any& message)
         return Any();
     }
 
+    if (parsed.type == BridgeMessageType::Cancel)
+    {
+        cancelIncoming(parsed.requestId);
+        return Any();
+    }
+
     if (parsed.type == BridgeMessageType::Event)
     {
         events_.emit(parsed.eventName, parsed.value);
@@ -270,11 +276,25 @@ void BridgeRuntime::receiveAsync(
         return;
     }
 
+    const std::shared_ptr<std::atomic<bool> > ticket(
+        new std::atomic<bool>(true));
+    {
+        std::lock_guard<std::mutex> lock(state->mutex);
+        if(!state->active.load()) return;
+        if(!state->requests.insert(std::make_pair(parsed.requestId,ticket)).second)
+        {
+            if(completion) completion(makeErrorMessage(
+                parsed.requestId,Error("duplicate_request","Request ID already in flight")));
+            return;
+        }
+    }
+
     const Callable function =
         findMethod(parsed.method);
 
     if (!function)
     {
+        cancelIncoming(parsed.requestId);
         if (completion)
         {
             completion(
@@ -291,34 +311,34 @@ void BridgeRuntime::receiveAsync(
     const bool queued =
         defaultWorkerPool().post(
             [state,
+             ticket,
              completion,
              function,
              parsed]() {
-                if (!state->active.load())
+                if (!state->active.load() || !ticket->load())
                     return;
-
                 const Any response =
-                    invokeBoundRequest(
-                        parsed.requestId,
-                        parsed.method,
-                        parsed.args,
-                        function);
-
-                if (state->active.load() &&
-                    completion)
+                    invokeBoundRequest(parsed.requestId,parsed.method,parsed.args,function);
+                bool deliver=false;
                 {
-                    completion(response);
+                    std::lock_guard<std::mutex> lock(state->mutex);
+                    std::map<RequestId,std::shared_ptr<std::atomic<bool> > >::iterator
+                        it=state->requests.find(parsed.requestId);
+                    if(it!=state->requests.end() && it->second==ticket)
+                    {
+                        state->requests.erase(it);
+                        deliver=ticket->exchange(false) && state->active.load();
+                    }
                 }
+                if(deliver && completion) completion(response);
             });
 
-    if (!queued && completion)
+    if(!queued)
     {
-        completion(
-            makeErrorMessage(
-                parsed.requestId,
-                Error(
-                    "queue_overloaded",
-                    "NativeWeb worker queue is full or stopped")));
+        cancelIncoming(parsed.requestId);
+        if(completion) completion(makeErrorMessage(
+            parsed.requestId,Error("queue_overloaded",
+                "NativeWeb worker queue is full or stopped")));
     }
 }
 
@@ -334,10 +354,43 @@ void BridgeRuntime::rejectPending(const Error& error)
     pending_.rejectAll(error);
 }
 
+bool BridgeRuntime::cancelIncoming(RequestId id)
+{
+    const std::shared_ptr<AsyncDispatchState> state=asyncState_;
+    if(!state) return false;
+    std::lock_guard<std::mutex> lock(state->mutex);
+    std::map<RequestId,std::shared_ptr<std::atomic<bool> > >::iterator it=
+        state->requests.find(id);
+    if(it==state->requests.end()) return false;
+    it->second->store(false);
+    state->requests.erase(it);
+    return true;
+}
+
+void BridgeRuntime::cancelAllIncoming()
+{
+    const std::shared_ptr<AsyncDispatchState> state=asyncState_;
+    if(!state) return;
+    std::lock_guard<std::mutex> lock(state->mutex);
+    for(std::map<RequestId,std::shared_ptr<std::atomic<bool> > >::iterator
+        it=state->requests.begin();it!=state->requests.end();++it)
+        it->second->store(false);
+    state->requests.clear();
+}
+
+std::size_t BridgeRuntime::incomingCount() const
+{
+    const std::shared_ptr<AsyncDispatchState> state=asyncState_;
+    if(!state) return 0;
+    std::lock_guard<std::mutex> lock(state->mutex);
+    return state->requests.size();
+}
+
 void BridgeRuntime::shutdown()
 {
     if (asyncState_)
         asyncState_->active.store(false);
+    cancelAllIncoming();
 
     pending_.rejectAll(
         Error(

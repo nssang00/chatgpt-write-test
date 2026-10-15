@@ -674,6 +674,7 @@ private:
             std::lock_guard<std::mutex> lock(responseSink_->mutex);
             ++responseSink_->generation;
         }
+        runtime_.cancelAllIncoming();
         runtime_.rejectPending(Error("navigation_changed",
             "JavaScript document changed before call completion"));
     }

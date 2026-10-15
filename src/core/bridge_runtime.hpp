@@ -10,6 +10,8 @@
 
 #include <atomic>
 #include <future>
+#include <map>
+#include <mutex>
 #include <functional>
 #include <memory>
 #include <string>
@@ -143,6 +145,9 @@ public:
     // Cancel all outstanding native-to-JS calls without shutting down
     // bindings, subscriptions or future calls (for document navigation).
     void rejectPending(const Error& error);
+    bool cancelIncoming(RequestId requestId);
+    void cancelAllIncoming();
+    std::size_t incomingCount() const;
     void shutdown();
 
     std::size_t pendingCount() const;
@@ -157,6 +162,8 @@ private:
         }
 
         std::atomic<bool> active;
+        std::mutex mutex;
+        std::map<RequestId,std::shared_ptr<std::atomic<bool> > > requests;
     };
 
     Callable findMethod(const std::string& method) const;

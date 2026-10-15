@@ -1,6 +1,7 @@
 #include "core/bridge_message.hpp"
 #include "core/bridge_runtime.hpp"
 
+#include <atomic>
 #include <chrono>
 #include <future>
 #include <iostream>
@@ -237,6 +238,75 @@ void testStoppedRuntimeRejectsNewRequest()
     CHECK(parsed.errorCode == "runtime_stopped");
 }
 
+void testCancellationSuppressesLateResult()
+{
+    nativeweb::detail::BridgeRuntime bridge;
+    std::promise<void> startedPromise;
+    std::future<void> started=startedPromise.get_future();
+    std::promise<void> releasePromise;
+    std::shared_future<void> release=releasePromise.get_future().share();
+    std::promise<void> finishedPromise;
+    std::future<void> finished=finishedPromise.get_future();
+    std::atomic<int> delivered(0);
+    bridge.bind("blocking",nativeweb::detail::makeDynamicFunction([&]() {
+        startedPromise.set_value();
+        release.wait();
+        finishedPromise.set_value();
+        return 99;
+    }));
+    bridge.receiveAsync(
+        nativeweb::detail::makeRequestMessage(440,"blocking",VariantList()),
+        [&](const Any&) { ++delivered; });
+    CHECK(started.wait_for(std::chrono::seconds(3))==std::future_status::ready);
+    CHECK(bridge.incomingCount()==1u);
+    bridge.receive(nativeweb::detail::makeCancelMessage(440));
+    CHECK(bridge.incomingCount()==0u);
+    CHECK(!bridge.cancelIncoming(440));
+    releasePromise.set_value();
+    CHECK(finished.wait_for(std::chrono::seconds(3))==std::future_status::ready);
+    std::this_thread::sleep_for(std::chrono::milliseconds(40));
+    CHECK(delivered.load()==0);
+
+    bridge.bind("fast",nativeweb::detail::makeDynamicFunction([](){return 42;}));
+    std::promise<Any> responsePromise;
+    std::future<Any> response=responsePromise.get_future();
+    bridge.receiveAsync(
+        nativeweb::detail::makeRequestMessage(441,"fast",VariantList()),
+        [&](const Any& value){responsePromise.set_value(value);});
+    CHECK(ready(response));
+    if(ready(response,0)) {
+        const nativeweb::detail::BridgeMessage result=
+            nativeweb::detail::parseBridgeMessage(response.get());
+        CHECK(result.requestId==441u);
+        CHECK(AnyCast<int>(result.value)==42);
+    }
+    CHECK(bridge.incomingCount()==0u);
+}
+
+void testCancellationOnNavigation()
+{
+    nativeweb::detail::BridgeRuntime bridge;
+    std::promise<void> startedPromise;
+    std::future<void> started=startedPromise.get_future();
+    std::promise<void> releasePromise;
+    std::shared_future<void> release=releasePromise.get_future().share();
+    std::atomic<int> callbacks(0);
+    bridge.bind("wait",nativeweb::detail::makeDynamicFunction([&](){
+        startedPromise.set_value();
+        release.wait();
+        return true;
+    }));
+    bridge.receiveAsync(
+        nativeweb::detail::makeRequestMessage(501,"wait",VariantList()),
+        [&](const Any&){++callbacks;});
+    CHECK(started.wait_for(std::chrono::seconds(3))==std::future_status::ready);
+    bridge.cancelAllIncoming();
+    CHECK(bridge.incomingCount()==0u);
+    releasePromise.set_value();
+    std::this_thread::sleep_for(std::chrono::milliseconds(80));
+    CHECK(callbacks.load()==0);
+}
+
 } // namespace
 
 int main()
@@ -245,6 +315,8 @@ int main()
     testConcurrentRequestsCanOverlap();
     testExceptionRejectsOnlyMatchingRequest();
     testStoppedRuntimeRejectsNewRequest();
+    testCancellationSuppressesLateResult();
+    testCancellationOnNavigation();
 
     if (failures != 0)
     {
