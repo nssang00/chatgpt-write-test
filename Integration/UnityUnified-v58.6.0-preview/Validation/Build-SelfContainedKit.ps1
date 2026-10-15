@@ -29,7 +29,10 @@ $cefDll=Get-ChildItem -LiteralPath $artifact -Recurse -File -Filter 'libcef.dll'
 Require ($null -ne $cefDll) 'Original CEF CI artifact does not contain CEF stage runtime'
 $sourceRuntimeBinary=Split-Path $cefDll.FullName -Parent
 Require ((Split-Path $sourceRuntimeBinary -Leaf) -eq 'Release') 'CEF artifact not runtime/Release'
-Require ((Split-Path (Split-Path $sourceRuntimeBinary -Parent) -Leaf) -eq 'runtime') 'CEF artifact stage layout unexpected'
+$parentFolder=Split-Path -Path $sourceRuntimeBinary -Parent
+$runtimeFolderName=Split-Path -Path $parentFolder -Leaf
+Write-Host "[CEF STAGE AUDIT] libcef.dll=$($cefDll.FullName), runtimeFolder=$sourceRuntimeBinary, parentFolder=$parentFolder, name=$runtimeFolderName"
+Require ($runtimeFolderName -eq 'runtime') "CEF artifact stage layout unexpected: $runtimeFolderName"
 $stageRoot=Split-Path (Split-Path $sourceRuntimeBinary -Parent) -Parent
 $sourceNative=Join-Path $stageRoot 'native\Release'
 Require (Test-Path -LiteralPath (Join-Path $sourceNative 'CompanyWebViewCefTextureProbe.dll') -PathType Leaf) 'Validated native CEF Texture probe missing'
