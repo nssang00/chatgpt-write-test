@@ -278,15 +278,21 @@ void BridgeRuntime::receiveAsync(
 
     const std::shared_ptr<std::atomic<bool> > ticket(
         new std::atomic<bool>(true));
+    // A duplicate callback is arbitrary embedder code and may reenter this
+    // runtime (for example, to query or cancel outstanding requests).
+    // Never invoke it while holding the request-map mutex.
+    bool duplicate=false;
     {
         std::lock_guard<std::mutex> lock(state->mutex);
         if(!state->active.load()) return;
-        if(!state->requests.insert(std::make_pair(parsed.requestId,ticket)).second)
-        {
-            if(completion) completion(makeErrorMessage(
-                parsed.requestId,Error("duplicate_request","Request ID already in flight")));
-            return;
-        }
+        duplicate=!state->requests.insert(
+            std::make_pair(parsed.requestId,ticket)).second;
+    }
+    if(duplicate)
+    {
+        if(completion) completion(makeErrorMessage(
+            parsed.requestId,Error("duplicate_request","Request ID already in flight")));
+        return;
     }
 
     const Callable function =
