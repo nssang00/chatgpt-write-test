@@ -26,28 +26,37 @@ New-Item -ItemType Directory -Force -Path $sourcePlaceholder|Out-Null
 $artifact=Join-Path $repo 'cef-windows-validated-artifact'
 Require (Test-Path -LiteralPath $artifact -PathType Container) 'Original CEF CI native artifact not downloaded'
 $candidates=@(Get-ChildItem -LiteralPath $artifact -Recurse -File -Filter 'libcef.dll')
-Require ($candidates.Count -gt 0) 'Original CEF CI artifact lacks libcef.dll'
-$sourceRuntimeBinary=$null
+Require ($candidates.Count -gt 0) 'Original v58.4.4 CEF CI artifact lacks libcef.dll'
+$stageRoot=$null
 foreach($candidate in $candidates){
-  $parent=Split-Path $candidate.FullName -Parent
-  $release=Split-Path $parent -Leaf
-  $runtimeParent=Split-Path $parent -Parent
-  $containerName=Split-Path $runtimeParent -Leaf
-  Write-Host "[CEF STAGE FIND] $($candidate.FullName) (release=$release, parent=$containerName)"
-  if($release -eq 'Release' -and $containerName -eq 'runtime'){
-    $sourceRuntimeBinary=$parent;break
-  }
+ $release=Split-Path $candidate.FullName -Parent
+ $parent=Split-Path $release -Parent
+ $kind=Split-Path $parent -Leaf
+ if((Split-Path $release -Leaf) -ne 'Release' -or $kind -notin @('native','runtime')){continue}
+ $testRoot=Split-Path $parent -Parent
+ if(Test-Path -LiteralPath (Join-Path $testRoot 'native\Release\CompanyWebViewCefTextureProbe.dll') -PathType Leaf){
+  $stageRoot=$testRoot;break
+ }
 }
-if(-not $sourceRuntimeBinary){
-  throw 'Validated CEF artifact includes libcef.dll but lacks expected runtime/Release stage; no fabricated bundle'
+if(-not $stageRoot){
+ Write-Host '[CEF STAGE] Artifact libcef candidates:'
+ foreach($candidate in $candidates|Select-Object -First 10){Write-Host $candidate.FullName}
+ throw 'Frozen v58.4.4 CEF artifact has no native/Release probe DLL beside libcef.dll'
 }
-$stageRoot=Split-Path (Split-Path $sourceRuntimeBinary -Parent) -Parent
 $sourceNative=Join-Path $stageRoot 'native\Release'
+$sourceRuntimeBinary=Join-Path $stageRoot 'runtime\Release'
+Write-Host "[CEF STAGE] Selected original stage root: $stageRoot"
 Require (Test-Path -LiteralPath (Join-Path $sourceNative 'CompanyWebViewCefTextureProbe.dll') -PathType Leaf) 'Validated native CEF Texture probe missing'
 $runtimeDest=Join-Path $oneclick 'Build\cef-native\stage\runtime\Release'
 $nativeDest=Join-Path $oneclick 'Build\cef-native\stage\native\Release'
-& robocopy $sourceRuntimeBinary $runtimeDest /E /R:1 /W:1 /NFL /NDL /NP /NJH /NJS /XF *.pdb *.log *.json /XD smoke-cache cef-cache profiles results | Out-Null
-Require ($LASTEXITCODE -lt 8) 'CEF native runtime resources robocopy failed'
+# Original CI stage keeps libcef.dll in native/Release on some builds.
+# Merge that native payload plus runtime/Release into final runtime/Release.
+& robocopy $sourceNative $runtimeDest /E /R:1 /W:1 /NFL /NDL /NP /NJH /NJS /XF *.pdb *.log *.json /XD smoke-cache cef-cache profiles results | Out-Null
+Require ($LASTEXITCODE -lt 8) 'CEF native binaries staging failed'
+if(Test-Path -LiteralPath $sourceRuntimeBinary -PathType Container){
+ & robocopy $sourceRuntimeBinary $runtimeDest /E /R:1 /W:1 /NFL /NDL /NP /NJH /NJS /XF *.pdb *.log *.json /XD smoke-cache cef-cache profiles results | Out-Null
+ Require ($LASTEXITCODE -lt 8) 'CEF native runtime resources staging failed'
+}
 Copy-Item -LiteralPath (Join-Path $sourceNative 'CompanyWebViewCefTextureProbe.dll') -Destination $nativeDest -Force
 foreach($required in @('libcef.dll','CompanyWebViewCefSubprocess.exe','icudtl.dat',
  'resources.pak','chrome_100_percent.pak','locales\en-US.pak')){
