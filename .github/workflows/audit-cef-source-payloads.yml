@@ -1,7 +1,5 @@
 name: Audit archived CEF managed facade source
 on:
-  push:
-    branches: [feature/unified-v58-6-0-bundled-cef-stage]
   workflow_dispatch:
 permissions:
   contents: read
