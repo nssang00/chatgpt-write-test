@@ -1,0 +1,37 @@
+name: PyWPDoc staging source preflight (NO PUBLISH)
+on:
+  push:
+    branches:
+      - 'pywpdoc/**'
+    paths:
+      - 'projects/pywpdoc/**'
+      - '.github/workflows/pywpdoc-source-preflight.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  require-complete-local-source:
+    name: Verify PyWPDoc sources and tests staged
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Fail closed when PyWPDoc source is not uploaded
+        shell: bash
+        run: |
+          set -euo pipefail
+          for path in \
+            projects/pywpdoc/pyproject.toml \
+            projects/pywpdoc/pywpdoc/__init__.py \
+            projects/pywpdoc/python_hwpx_next/__init__.py \
+            projects/pywpdoc/tests \
+            projects/pywpdoc/scripts/run_ci_regression_groups.py; do
+            if [[ ! -e "$path" ]]; then
+              echo "::error title=Missing staging source::$path is required. Upload the full vetted PyWPDoc staging overlay before declaring CI green."
+              exit 1
+            fi
+          done
+          echo "PyWPDoc source and tests are staged; actual regression is enforced by pywpdoc-regression.yml."
