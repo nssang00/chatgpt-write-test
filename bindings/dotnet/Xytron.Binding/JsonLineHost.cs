@@ -126,6 +126,13 @@ public static class JsonLineHost
                     continue;
                 }
                 previousId = id;
+                // The first argument of any non-create class operation is an
+                // opaque object handle. ObjectHost requires an actual string;
+                // retain JsonElement for remaining typed method arguments.
+                if (!operation.EndsWith(".create", StringComparison.Ordinal) &&
+                    args.Length > 0 && args[0] is JsonElement handle &&
+                    handle.ValueKind == JsonValueKind.String)
+                    args[0] = handle.GetString();
                 try
                 {
                     object? value = host.Invoke(owner, operation, args);
