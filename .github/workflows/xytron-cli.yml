@@ -74,3 +74,8 @@ jobs:
           --binary "${{ github.workspace }}/build-cli/tests/core/${{ matrix.os == 'windows-latest' && 'Release/nativeweb_process_broker_regression.exe' || 'nativeweb_process_broker_regression' }}"
           --fixture "${{ github.workspace }}/tests/ipc/broker_fixture.py"
           --dotnet-dll "${{ github.workspace }}/bindings/dotnet/HostProcessDemo/bin/Release/net8.0/HostProcessDemo.dll"
+
+      - name: Native packaged managed C++ bridge to real Python worker
+        run: |
+          cmake --build build-cli --config Release --target nativeweb_managed_bridge_integration
+          ctest --test-dir build-cli -C Release -R '^core\\.managed_bridge$' --output-on-failure

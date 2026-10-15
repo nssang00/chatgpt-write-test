@@ -42,6 +42,7 @@ add_library(nativeweb_core_for_cef STATIC
   "${NATIVEWEB_ROOT}/src/core/event_dispatcher.cpp"
   "${NATIVEWEB_ROOT}/src/core/bridge_message.cpp"
   "${NATIVEWEB_ROOT}/src/core/json_codec.cpp"
+  "${NATIVEWEB_ROOT}/src/core/process_broker.cpp"
   "${NATIVEWEB_ROOT}/src/core/bridge_runtime.cpp"
   "${NATIVEWEB_ROOT}/src/core/app_resources.cpp"
   "${NATIVEWEB_ROOT}/src/core/module_registry.cpp"

@@ -85,6 +85,16 @@ public:
     // Returns plugin_busy while native objects or calls are active.
     void unloadPlugin(const std::string& pluginId);
 
+    // EXPERIMENTAL: bind explicit managed worker operations for a trusted
+    // packaged app:// main document only. Register after initial load.
+    // Any navigation or reload revokes the worker session permanently.
+    // The executable must be an absolute, host-trusted local path.
+    void bindManagedWorker(
+        const std::string& pluginId,
+        const std::vector<std::string>& allowedOperations,
+        const std::vector<std::string>& command,
+        unsigned timeoutMs = 5000);
+
     // Dynamic primitive API. Typed bind below adapts ordinary C++ callables to
     // this canonical Any/VariantList contract.
     void bind(const std::string& method, const DynamicFunction& function);

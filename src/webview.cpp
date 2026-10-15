@@ -4,10 +4,14 @@
 #include "browser/common/backend_registry.hpp"
 #include "core/bridge_runtime.hpp"
 #include "core/native_object_runtime.hpp"
+#include "core/process_broker.hpp"
 #include "nativeweb/error.hpp"
 #include "plugin/plugin_module.hpp"
 
 #include <map>
+#include <atomic>
+#include <set>
+#include <thread>
 
 #include <cstdint>
 #include <mutex>
@@ -16,6 +20,42 @@
 
 namespace nativeweb {
 
+namespace {
+bool validManagedId(const std::string& s)
+{
+    if(s.empty() || s.size()>128 || s.find("__")!=std::string::npos)
+        return false;
+    const std::string forbidden[]={"constructor","prototype","then","toString",
+        "valueOf","hasOwnProperty","__proto__","create","dispose"};
+    for(size_t i=0;i<sizeof(forbidden)/sizeof(forbidden[0]);++i)
+        if(s==forbidden[i])return false;
+    for(size_t i=0;i<s.size();++i){
+        const char c=s[i];
+        if(i==0 && !((c>='A' && c<='Z')||(c>='a' && c<='z')))
+            return false;
+        if(!((c>='A' && c<='Z')||(c>='a' && c<='z')||
+             (c>='0' && c<='9')||c=='_'))return false;
+    }
+    return true;
+}
+bool validManagedOperation(const std::string& plugin,const std::string& op)
+{
+    if(op.size()>256 || op.compare(0,plugin.size()+1,plugin+".")!=0)
+        return false;
+    const std::string name=op.substr(plugin.size()+1);
+    const std::size_t d1=name.find('.');
+    if(d1==std::string::npos)return false;
+    const std::string cls=name.substr(0,d1);
+    if(!validManagedId(cls))return false;
+    const std::string tail=name.substr(d1+1);
+    if(tail=="create" || tail=="dispose")return true;
+    const std::size_t d2=tail.find('.');
+    if(d2==std::string::npos)return false;
+    const std::string verb=tail.substr(0,d2);
+    return (verb=="method" || verb=="get" || verb=="set") &&
+         validManagedId(tail.substr(d2+1));
+}
+}
 class WebView::Impl :
     public detail::BrowserBackendListener
 {
@@ -54,6 +94,16 @@ private:
         detail::NativeObjectRuntime objects;
     };
 
+    struct ManagedWorkerState
+    {
+        explicit ManagedWorkerState(const std::shared_ptr<detail::ProcessBroker>& p)
+            : broker(p), accepting(true) {}
+        std::shared_ptr<detail::ProcessBroker> broker;
+        std::atomic<bool> accepting;
+        std::vector<detail::RegistrationToken> registrations;
+        std::vector<std::string> names;
+    };
+
     struct ResponseSinkState
     {
         explicit ResponseSinkState(Impl* valueOwner)
@@ -63,6 +113,7 @@ private:
 
         std::mutex mutex;
         Impl* owner;
+        std::uint64_t generation = 0;
     };
 
 public:
@@ -167,6 +218,10 @@ public:
             throw Error("app_resource_not_found",
                 "app:// entry must be present in its packaged resource bundle");
 
+        packagedEntry_.clear();
+        if(AppResourceBundle::isCanonicalUrl(source) && options.appResources &&
+           options.appResources->contains(source))packagedEntry_=source;
+
         backend_ =
             detail::createBrowserBackend(
                 options.engine,
@@ -199,6 +254,8 @@ public:
 
     void destroy()
     {
+        revokeManagedWorkers();
+        invalidateDocument();
         detachResponseSink();
         objects_->stop();
         runtime_.shutdown();
@@ -209,6 +266,8 @@ public:
 
     void shutdown()
     {
+        revokeManagedWorkers();
+        invalidateDocument();
         detachResponseSink();
         objects_->stop();
         runtime_.shutdown();
@@ -251,11 +310,15 @@ public:
 
     void load(const std::string& source)
     {
+        revokeManagedWorkers();
+        invalidateDocument();
         requireBackend()->load(source);
     }
 
     void reload()
     {
+        revokeManagedWorkers();
+        invalidateDocument();
         requireBackend()->reload();
     }
 
@@ -319,10 +382,43 @@ public:
         plugins_.erase(it);
     }
 
+    void bindManagedWorker(const std::string& plugin,
+        const std::vector<std::string>& operations,
+        const std::vector<std::string>& command,unsigned timeoutMs)
+    {
+        if(!isCreated() || packagedEntry_.empty())
+            throw Error("permission_denied","Managed workers require packaged app://");
+        if(!validManagedId(plugin) || operations.empty() || operations.size()>128)
+            throw Error("invalid_grant","Invalid managed worker grant");
+        std::set<std::string> unique;
+        for(size_t i=0;i<operations.size();++i){
+            if(!validManagedOperation(plugin,operations[i]) ||
+               !unique.insert(operations[i]).second || runtime_.hasMethod(operations[i]))
+                throw Error("invalid_grant","Invalid or duplicate managed operation");
+        }
+        std::shared_ptr<detail::ProcessBroker> broker(new detail::ProcessBroker(command,timeoutMs));
+        std::shared_ptr<ManagedWorkerState> state(new ManagedWorkerState(broker));
+        for(size_t i=0;i<operations.size();++i){
+            const std::string op=operations[i];
+            state->registrations.push_back(runtime_.registerBinding(op,
+                detail::Callable(DynamicFunction([state,op](const VariantList& args)->Any{
+                    if(!state->accepting.load())
+                        throw Error("managed_session_revoked","Managed session revoked");
+                    const Any value=state->broker->invoke(op,args);
+                    if(!state->accepting.load())
+                        throw Error("managed_session_revoked","Managed session revoked");
+                    return value;
+                }))));
+            state->names.push_back(op);
+        }
+        managedWorkers_.push_back(state);
+    }
+
     void bind(
         const std::string& method,
         const DynamicFunction& function)
     {
+        requireNotManaged(method);
         if (method.find("__native_object.") == 0)
         {
             throw Error(
@@ -337,6 +433,7 @@ public:
         const std::string& method,
         const detail::Callable& callable)
     {
+        requireNotManaged(method);
         if (method.find("__native_object.") == 0)
         {
             throw Error(
@@ -423,6 +520,8 @@ public:
 
     void onLoadStarted(const std::string& source) override
     {
+        revokeManagedWorkers();
+        invalidateDocument();
         if (listener_)
             listener_->onLoadStarted(source);
     }
@@ -435,12 +534,15 @@ public:
 
     void onBridgeMessage(const Any& message) override
     {
-        const std::shared_ptr<ResponseSinkState> sink =
-            responseSink_;
-
+        const std::shared_ptr<ResponseSinkState> sink = responseSink_;
+        std::uint64_t docGeneration=0;
+        {
+            std::lock_guard<std::mutex> lock(sink->mutex);
+            docGeneration=sink->generation;
+        }
         runtime_.receiveAsync(
             message,
-            [sink](const Any& response) {
+            [sink,docGeneration](const Any& response) {
                 if (!sink || response.empty())
                     return;
 
@@ -449,7 +551,7 @@ public:
 
                 Impl* owner = sink->owner;
 
-                if (owner && owner->backend_)
+                if (owner && owner->backend_ && sink->generation==docGeneration)
                     owner->backend_->postBridgeMessage(
                         response);
             });
@@ -457,6 +559,8 @@ public:
 
     void onBrowserClosed() override
     {
+        revokeManagedWorkers();
+        invalidateDocument();
         detachResponseSink();
         runtime_.shutdown();
         objects_->stop();
@@ -466,6 +570,29 @@ public:
     }
 
 private:
+    void requireNotManaged(const std::string& method) const
+    {
+        for(size_t i=0;i<managedWorkers_.size();++i)
+            for(size_t j=0;j<managedWorkers_[i]->names.size();++j)
+                if(managedWorkers_[i]->names[j]==method)
+                    throw Error("reserved_method","Managed method cannot be overwritten");
+    }
+    void invalidateDocument()
+    {
+        std::lock_guard<std::mutex> lock(responseSink_->mutex);
+        ++responseSink_->generation;
+    }
+    void revokeManagedWorkers()
+    {
+        std::vector<std::shared_ptr<ManagedWorkerState> > old;
+        old.swap(managedWorkers_);
+        for(size_t i=0;i<old.size();++i){
+            old[i]->accepting.store(false);
+            old[i]->registrations.clear();
+            const std::shared_ptr<detail::ProcessBroker> broker=old[i]->broker;
+            std::thread([broker](){broker->stop();}).detach();
+        }
+    }
     void detachResponseSink()
     {
         if (!responseSink_)
@@ -511,6 +638,8 @@ private:
     detail::BridgeRuntime runtime_;
     std::shared_ptr<ObjectBridgeState> objects_;
     std::map<std::string, LoadedPlugin> plugins_;
+    std::vector<std::shared_ptr<ManagedWorkerState> > managedWorkers_;
+    std::string packagedEntry_;
     std::mutex pluginsMutex_;
     std::unique_ptr<detail::BrowserBackend> backend_;
     WebViewListener* listener_;
@@ -618,6 +747,13 @@ NativeObjectHandle WebView::createPluginObject(const std::string& pluginId,
 void WebView::unloadPlugin(const std::string& pluginId)
 {
     impl_->unloadPlugin(pluginId);
+}
+
+void WebView::bindManagedWorker(const std::string& plugin,
+    const std::vector<std::string>& operations,
+    const std::vector<std::string>& command,unsigned timeoutMs)
+{
+    impl_->bindManagedWorker(plugin,operations,command,timeoutMs);
 }
 
 void WebView::bind(
