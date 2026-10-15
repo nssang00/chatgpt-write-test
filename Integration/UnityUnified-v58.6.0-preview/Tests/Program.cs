@@ -1,4 +1,6 @@
 using System;
+using System.Reflection;
+using System.Runtime.InteropServices;
 using Company.WebView.Unified.Experimental;
 
 internal sealed class RecordingBackend : IUnifiedBackend
