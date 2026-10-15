@@ -1,0 +1,61 @@
+name: Export v58.6.0 Unity Handoff Sources
+on:
+  push:
+    branches:
+      - feature/unified-unity-v58-6-0-nested-oneclick-longpath-fix
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  export:
+    runs-on: windows-2022
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Export exact current branch source snapshot (no proprietary CEF binary)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $root=Join-Path $env:RUNNER_TEMP 'CompanyWebView-v58.6.0-latest-git'
+          $items=@(
+           'Integration/UnityUnified-v58.6.0-preview',
+           'Prototypes/WebView2Overlay/OneClick-v58.5.2/Native',
+           'Prototypes/WebView2Overlay/OneClick-v58.5.2/UnityProject/Assets',
+           '.github/workflows/unified-v58-6-0-contract.yml',
+           '.github/workflows/unified-single-unzip.yml',
+           '.github/workflows/unified-handoff-export.yml'
+          )
+          foreach($relative in $items){
+            if(-not (Test-Path -LiteralPath $relative)){throw "Missing handoff code: $relative"}
+            $target=Join-Path $root $relative
+            New-Item -ItemType Directory -Force -Path (Split-Path $target -Parent) | Out-Null
+            Copy-Item -LiteralPath $relative -Destination $target -Recurse -Force
+          }
+          $sha=(git rev-parse HEAD)
+          $metadata=[ordered]@{
+            repo="$env:GITHUB_REPOSITORY"
+            commit=$sha
+            branch="$env:GITHUB_REF_NAME"
+            exported_utc=[DateTime]::UtcNow.ToString('o')
+            validation='UNVALIDATED_LATEST_BRANCH (source snapshot only)'
+            baseline_cef='7ef558da3a4f7a9b1b133d80247e0cf45aa3268f'
+            baseline_webview2='968f39e33c9c939802153cee13c68e1339ea9f54'
+            note='Do not claim this snapshot has passed Unity Player/CEF runtime tests'
+          }
+          New-Item -ItemType Directory -Force -Path $root | Out-Null
+          $metadata | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $root 'SOURCE_COMMIT.json') -Encoding UTF8
+          $sources=@(Get-ChildItem -LiteralPath $root -File -Recurse | Sort-Object FullName)
+          $manifest=@(foreach($f in $sources){
+            $rel=$f.FullName.Substring($root.Length+1).Replace('\','/')
+            "{0}  {1}" -f ((Get-FileHash -Algorithm SHA256 -LiteralPath $f.FullName).Hash.ToLowerInvariant()),$rel
+          })
+          $manifest | Set-Content -LiteralPath (Join-Path $root 'SHA256SUMS.txt') -Encoding UTF8
+          Write-Host "Exported $($sources.Count) source files from commit $sha"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: unified-v58-6-0-latest-git-snapshot
+          path: ${{ runner.temp }}/CompanyWebView-v58.6.0-latest-git/
+          retention-days: 30
+          if-no-files-found: error
