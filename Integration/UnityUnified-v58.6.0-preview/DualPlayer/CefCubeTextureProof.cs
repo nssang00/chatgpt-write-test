@@ -17,6 +17,12 @@ namespace Company.WebView.Unified.Experimental
         [SerializeField] private Camera sceneCamera;
         private Material materialInstance;
         private ulong lastAcceleratedCount;
+        private float startTime,lastSampleTime;
+        private int durationSeconds=120;
+        private bool wasRotating;
+        private RenderTexture sampleTarget;
+        private Texture2D samplePixels;
+        private Color32[] previousPixels;
         public bool IsCubeTextureBound { get; private set; }
         public int TextureBindCount { get; private set; }
         public ulong ObservedCefFrameAdvances { get; private set; }
@@ -24,10 +30,52 @@ namespace Company.WebView.Unified.Experimental
         public int VisibleFrames { get; private set; }
         // Collider ray order proves scene depth geometry, NOT correct GPU depth pixels.
         public bool OccluderBeforeCubeRay { get; private set; }
+        public bool FrontPoseInitialObserved { get; private set; }
+        public bool FrontPoseRestoredObserved { get; private set; }
+        public int SourcePixelSamples { get; private set; }
+        public int SourcePixelChangeEvents { get; private set; }
+        public int MaxChangedPixels { get; private set; }
+        public string PixelReadbackError { get; private set; } = "";
 
         private void Awake()
         {
             if(cubeRenderer!=null) materialInstance=cubeRenderer.material;
+            startTime=Time.realtimeSinceStartup;
+            string[] args=Environment.GetCommandLineArgs();
+            for(int i=0;i<args.Length-1;i++)
+                if(args[i]=="-dualDuration" && Int32.TryParse(args[i+1],out int seconds))
+                    durationSeconds=Math.Max(30,Math.Min(300,seconds));
+            if(cubeTransform!=null)cubeTransform.rotation=Quaternion.identity;
+        }
+        private void ReadGpuPixels(Texture source)
+        {
+            if(source==null || !String.IsNullOrEmpty(PixelReadbackError))return;
+            try
+            {
+                const int edge=96;
+                if(sampleTarget==null){sampleTarget=new RenderTexture(edge,edge,0,RenderTextureFormat.ARGB32);sampleTarget.Create();}
+                if(samplePixels==null)samplePixels=new Texture2D(edge,edge,TextureFormat.RGBA32,false);
+                // Source GPU texture: pixel difference is independent of cube motion.
+                Graphics.Blit(source,sampleTarget);
+                var prior=RenderTexture.active;
+                try {
+                    RenderTexture.active=sampleTarget;
+                    samplePixels.ReadPixels(new Rect(0,0,edge,edge),0,0,false);
+                    samplePixels.Apply(false,false);
+                } finally { RenderTexture.active=prior; }
+                var pixels=samplePixels.GetPixels32();
+                if(previousPixels!=null) {
+                    int changed=0;
+                    for(int i=0;i<pixels.Length;i++){
+                        var a=pixels[i];var b=previousPixels[i];
+                        if(Math.Abs(a.r-b.r)+Math.Abs(a.g-b.g)+Math.Abs(a.b-b.b)>48)changed++;
+                    }
+                    if(changed>=16)SourcePixelChangeEvents++;
+                    MaxChangedPixels=Math.Max(MaxChangedPixels,changed);
+                }
+                previousPixels=pixels;
+                SourcePixelSamples++;
+            }catch(Exception e){PixelReadbackError=e.GetType().Name+": "+e.Message;}
         }
         private void Update()
         {
@@ -44,13 +92,27 @@ namespace Company.WebView.Unified.Experimental
             ulong count=cefSurface.AcceleratedFrameCount;
             if(count>lastAcceleratedCount)ObservedCefFrameAdvances+=count-lastAcceleratedCount;
             lastAcceleratedCount=count;
-            if(Time.deltaTime>0f)
-            {
+            float elapsed=Math.Max(0f,Time.realtimeSinceStartup-startTime);
+            float progress=elapsed/Math.Max(1,durationSeconds);
+            // Screenshot schedule: 22% FRONT / 53% ROTATING / 81% FRONT.
+            if(progress<.30f){
+                cubeTransform.rotation=Quaternion.identity;
+                if(IsCubeTextureBound && elapsed>2f)FrontPoseInitialObserved=true;
+            }else if(progress<.72f){
+                wasRotating=true;
                 var angularVelocity=new Vector3(13f,32f,9f);
-                cubeTransform.Rotate(angularVelocity*Time.deltaTime,Space.World);
-                AngularTravelDegrees+=angularVelocity.magnitude*Time.deltaTime;
+                float step=Time.deltaTime;
+                if(step>0f){cubeTransform.Rotate(angularVelocity*step,Space.World);
+                    AngularTravelDegrees+=angularVelocity.magnitude*step;}
+            }else{
+                cubeTransform.rotation=Quaternion.identity;
+                if(wasRotating && IsCubeTextureBound)FrontPoseRestoredObserved=true;
             }
             if(cubeRenderer.isVisible)VisibleFrames++;
+            if(IsCubeTextureBound && progress<.28f && elapsed-lastSampleTime>=.43f && SourcePixelSamples<50){
+                lastSampleTime=elapsed;
+                ReadGpuPixels(tex);
+            }
             if(!OccluderBeforeCubeRay && occluder!=null && sceneCamera!=null)
             {
                 // Orthographic camera: a screen ray through the sphere center must
@@ -70,6 +132,8 @@ namespace Company.WebView.Unified.Experimental
         }
         private void OnDestroy()
         {
+            if(sampleTarget!=null){sampleTarget.Release();Destroy(sampleTarget);}
+            if(samplePixels!=null)Destroy(samplePixels);
             if(materialInstance!=null)Destroy(materialInstance);
         }
     }
