@@ -6,6 +6,7 @@ on:
       - feature/unified-unity-v58-6-0-dual-utf16-uv-fix
       - feature/unified-unity-v58-6-0-cef-3d-cube-proof
       - feature/unified-unity-v58-6-0-front-uv-css-pixel-proof
+      - feature/unified-unity-v58-6-0-cube-uv-orientation-fix
   workflow_dispatch:
 permissions:
   contents: read
@@ -32,7 +33,7 @@ jobs:
             python "$r/Validation/$name"
             if($LASTEXITCODE -ne 0){throw "Python contract failed: $name"}
           }
-          foreach($name in @('Run-Dual.ps1','Ensure-CefRuntime.ps1','Install-UnifiedManagedSources.ps1','Screen-Automation.ps1')){
+          foreach($name in @('Run-Dual.ps1','Ensure-CefRuntime.ps1','Install-UnifiedManagedSources.ps1','Screen-Automation.ps1','Verify-TextureUvMarkers.ps1')){
             $file=(Resolve-Path "$r/DualPlayer/$name").Path
             $tokens=$null;$errs=$null
             [System.Management.Automation.Language.Parser]::ParseFile($file,[ref]$tokens,[ref]$errs)|Out-Null
@@ -48,6 +49,36 @@ jobs:
           $bootstrap=Get-Content "$r/DualPlayer/Ensure-CefRuntime.ps1" -Raw
           if($bootstrap -match 'Expand-Archive' -or $bootstrap -notmatch 'ZipFileExtensions'){
             throw 'Pinned source extraction must filter out long documentation paths'
+          }
+      - name: Front-face screenshot marker scanner positive and negative fixtures
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          Add-Type -AssemblyName System.Drawing
+          $base=Join-Path $env:RUNNER_TEMP 'uv-screen-fixture'
+          $script=(Resolve-Path 'Integration/UnityUnified-v58.6.0-preview/DualPlayer/Verify-TextureUvMarkers.ps1').Path
+          foreach($test in @('upright','inverted')){
+            $dir=Join-Path $base $test
+            $shots=Join-Path $dir 'screenshots'
+            New-Item -ItemType Directory -Force -Path $shots | Out-Null
+            foreach($name in @('01_initial','03_restored')){
+              $bitmap=New-Object Drawing.Bitmap(800,600)
+              $gfx=[Drawing.Graphics]::FromImage($bitmap)
+              $blue=New-Object Drawing.SolidBrush([Drawing.Color]::FromArgb(40,77,255))
+              $red=New-Object Drawing.SolidBrush([Drawing.Color]::FromArgb(229,59,85))
+              try {
+                $gfx.Clear([Drawing.Color]::White)
+                $blueY=if($test -eq 'upright'){130}else{410}
+                $redY=if($test -eq 'upright'){410}else{130}
+                $gfx.FillRectangle($blue,50,$blueY,300,70)
+                $gfx.FillRectangle($red,50,$redY,300,70)
+                $bitmap.Save((Join-Path $shots ($name+'.png')),[Drawing.Imaging.ImageFormat]::Png)
+              } finally {$red.Dispose();$blue.Dispose();$gfx.Dispose();$bitmap.Dispose()}
+            }
+            & $script -EvidenceFolder $dir
+            $result=Get-Content (Join-Path $dir 'uv-visual-evidence.json') -Raw | ConvertFrom-Json
+            $expected=if($test -eq 'upright'){'PASS'}else{'FAIL'}
+            if($result.status -ne $expected){throw "UV screenshot fixture $test expected $expected, got $($result.status)"}
           }
       - name: Offline CEF discovery and runtime-only Unity installation fixture
         shell: powershell
