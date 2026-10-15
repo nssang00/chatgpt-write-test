@@ -13,6 +13,14 @@ jobs:
     timeout-minutes: 12
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Managed WebView2 UTF-16 import ABI regression
+        shell: pwsh
+        run: |
+          dotnet run --configuration Release --project Integration/UnityUnified-v58.6.0-preview/Tests/UnifiedContract.Tests.csproj
+          if($LASTEXITCODE -ne 0){throw 'Managed ABI contract failed'}
       - name: Contract and PowerShell 5.1 syntax checks
         shell: powershell
         run: |
