@@ -52,3 +52,6 @@ jobs:
 
       - name: Python and trusted C# class descriptor / mock bridge contract
         run: python tools/cli/test_class_bindings.py --xytron "${{ github.workspace }}/build-cli/sdk/bin/${{ matrix.os == 'windows-latest' && 'xytron.exe' || 'xytron' }}" --require-dotnet
+
+      - name: Python managed-object host ownership and lifecycle regression
+        run: python bindings/python/tests/test_object_host.py
