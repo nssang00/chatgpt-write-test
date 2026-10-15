@@ -454,6 +454,87 @@ void testCancellationOnNavigation()
     CHECK(callbacks.load()==0);
 }
 
+// Repeated cancellation must never poison an unrelated in-flight call.
+// Use a gate rather than sleeps to make the cancellation happen while the
+// cancelled worker is actually executing.
+void testCancellationIsolationRepeated()
+{
+    for (int iteration = 0; iteration < 32; ++iteration)
+    {
+        nativeweb::detail::BridgeRuntime bridge;
+        std::promise<void> startedPromise;
+        std::future<void> started = startedPromise.get_future();
+        std::promise<void> releasePromise;
+        std::shared_future<void> release = releasePromise.get_future().share();
+        std::promise<void> finishedPromise;
+        std::future<void> finished = finishedPromise.get_future();
+        std::atomic<int> cancelledCallbacks(0);
+
+        bridge.bind("blocked", nativeweb::detail::makeDynamicFunction([&]() {
+            startedPromise.set_value();
+            release.wait();
+            finishedPromise.set_value();
+            return 99;
+        }));
+        bridge.bind("healthy", nativeweb::detail::makeDynamicFunction([]() {
+            return 17;
+        }));
+
+        const nativeweb::detail::RequestId blockedId =
+            static_cast<nativeweb::detail::RequestId>(1000 + iteration * 2);
+        const nativeweb::detail::RequestId healthyId = blockedId + 1;
+
+        bridge.receiveAsync(
+            nativeweb::detail::makeRequestMessage(
+                blockedId, "blocked", VariantList()),
+            [&](const Any&) { ++cancelledCallbacks; });
+
+        const bool didStart =
+            started.wait_for(std::chrono::seconds(3)) ==
+            std::future_status::ready;
+        CHECK(didStart);
+        if (!didStart)
+        {
+            // Avoid waiting forever in a broken implementation.
+            releasePromise.set_value();
+            continue;
+        }
+
+        bridge.receive(nativeweb::detail::makeCancelMessage(blockedId));
+        bridge.receive(nativeweb::detail::makeCancelMessage(blockedId));
+        // Cancelling an unrelated, nonexistent ID must be harmless.
+        bridge.receive(nativeweb::detail::makeCancelMessage(healthyId + 100000));
+
+        std::promise<Any> healthyPromise;
+        std::future<Any> healthy = healthyPromise.get_future();
+        bridge.receiveAsync(
+            nativeweb::detail::makeRequestMessage(
+                healthyId, "healthy", VariantList()),
+            [&](const Any& value) { healthyPromise.set_value(value); });
+
+        const bool healthyReady = ready(healthy);
+        CHECK(healthyReady);
+        if (healthyReady)
+        {
+            const nativeweb::detail::BridgeMessage parsed =
+                nativeweb::detail::parseBridgeMessage(healthy.get());
+            CHECK(parsed.requestId == healthyId);
+            CHECK(parsed.type ==
+                  nativeweb::detail::BridgeMessageType::Response);
+            CHECK(AnyCast<int>(parsed.value) == 17);
+        }
+
+        releasePromise.set_value();
+        CHECK(finished.wait_for(std::chrono::seconds(3)) ==
+              std::future_status::ready);
+        // The worker has finished, but async delivery may still be scheduled;
+        // shutdown joins the runtime and drains the outstanding dispatch.
+        bridge.shutdown();
+        CHECK(cancelledCallbacks.load() == 0);
+        CHECK(bridge.incomingCount() == 0u);
+    }
+}
+
 } // namespace
 
 int main()
@@ -464,6 +545,7 @@ int main()
     testStoppedRuntimeRejectsNewRequest();
     testCancellationSuppressesLateResult();
     testCancellationOnNavigation();
+    testCancellationIsolationRepeated();
     testDuplicateCompletionCanReenterRuntime();
     testCancelledRequestIdReuseDoesNotDeliverOldCompletion();
     testShutdownSuppressesInFlightCompletion();
