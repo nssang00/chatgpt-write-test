@@ -71,7 +71,7 @@ public sealed class UnifiedDualPlayerEvidence : MonoBehaviour
             Sample();
             float elapsed=Time.realtimeSinceStartup-start;
             if(!closing && overlayHost!=null && overlayHost.IsOverlayReady &&
-               evidence.overlayMessageCount==0 && probes<8 &&
+               (evidence.overlayUnicodeRoundtripCount==0 || evidence.overlayPingRoundtripCount==0) && probes<8 &&
                Time.realtimeSinceStartup-lastProbe>3f){
                 overlayHost.SendDualProbe();
                 probes++;
