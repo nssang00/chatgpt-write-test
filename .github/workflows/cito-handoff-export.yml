@@ -24,11 +24,13 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p handoff/.github/workflows
+          mkdir -p handoff/.github/workflows handoff/ci
 
           cp -a cito handoff/cito
           cp .github/workflows/cito-linux-network.yml handoff/.github/workflows/
           cp .github/workflows/cito-quic.yml handoff/.github/workflows/
+          cp .github/workflows/cito-linux-network.yml handoff/ci/
+          cp .github/workflows/cito-quic.yml handoff/ci/
 
           if [ -f README.md ]; then cp README.md handoff/ROOT_README.md; fi
           for f in LICENSE LICENSE.md LICENSE.txt; do
@@ -237,3 +239,4 @@ jobs:
           if-no-files-found: error
           retention-days: 7
           compression-level: 9
+          include-hidden-files: true
