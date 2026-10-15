@@ -40,6 +40,57 @@
     if (!condition) throw new Error(message);
   }
   try {
+    // WebView2 integration: record the actual host-issued document token,
+    // reload the EXACT SAME URL, then replay the old document's wire envelopes
+    // from the new document. Native side effects must remain zero.
+    // CEF keeps its token within the private V8 context; this probe does not
+    // purport to simulate a retired CEF renderer IPC.
+    const webview2 = window.chrome && window.chrome.webview &&
+      typeof window.chrome.webview.postMessage === "function";
+    if (webview2) {
+      const currentSession = await new Promise((resolve, reject) => {
+        const timer = setTimeout(
+          () => reject(new Error("WebView2 document-session handshake timed out")),
+          8000);
+        window.chrome.webview.addEventListener("message", function onMessage(event) {
+          if (!event.data || event.data.type !== "nativeweb_session") return;
+          clearTimeout(timer);
+          window.chrome.webview.removeEventListener("message", onMessage);
+          resolve(event.data.token);
+        });
+      });
+      ensure(/^[0-9a-f]{48}$/.test(currentSession),
+             "Invalid WebView2 document-session token");
+      const prefix = "xytron-e2e-retired-session:";
+      const retiredSession = window.name.indexOf(prefix) === 0
+        ? window.name.slice(prefix.length) : null;
+      if (!retiredSession) {
+        window.name = prefix + currentSession;
+        location.reload(); // identical URL; must still rotate the token
+        return;
+      }
+      window.name = "";
+      ensure(/^[0-9a-f]{48}$/.test(retiredSession),
+             "Retired session token was lost across same-URL reload");
+      ensure(retiredSession !== currentSession,
+             "Document session did not rotate on same-URL reload");
+      ensure(await xytron.test.replay.count() === 0,
+             "Replay fixture was already modified");
+      window.chrome.webview.postMessage({
+        type: "request", id: "990001", method: "test.replay.bump",
+        args: [], session: retiredSession
+      });
+      window.chrome.webview.postMessage({
+        type: "cancel", id: "990001", session: retiredSession
+      });
+      // The legitimate call is sent over the same WebView2 channel after
+      // the malicious messages, so the observation follows their dispatch.
+      ensure(await xytron.test.replay.count() === 0,
+             "Retired document-session request reached native dispatch");
+      ensure(await xytron.test.replay.bump() === 1,
+             "Current document was blocked after stale IPC replay");
+      await xytron.test.checkpoint("security-stale-session-replay-blocked");
+    }
     // Real browser: deadline and AbortSignal must settle the JS Promise,
     // cancel the native request ID and preserve unrelated subsequent calls.
     ensure(typeof xytron.invokeWithOptions === "function",
