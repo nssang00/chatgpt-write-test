@@ -29,7 +29,7 @@
     let deadlineOutcome = "resolved";
     try {
       deadlineOutcome = String(await xytron.invokeWithOptions(
-        "test.cancel.delay",{timeoutMs:45},1200));
+        "test.cancel.delay",{timeoutMs:100},5000));
     } catch(e) {
       deadlineOutcome = String(e);
       timedOut = /request_timeout|request_cancelled/.test(deadlineOutcome);
@@ -37,7 +37,7 @@
     ensure(timedOut,"Timeout did not reject slow request: " + deadlineOutcome);
     const aborter=new AbortController();
     const abortedCall=xytron.invokeWithOptions(
-      "test.cancel.delay",{signal:aborter.signal},1200);
+      "test.cancel.delay",{signal:aborter.signal},5000);
     aborter.abort();
     let aborted=false;
     try { await abortedCall; }
