@@ -74,8 +74,19 @@
              "Retired session token was lost across same-URL reload");
       ensure(retiredSession !== currentSession,
              "Document session did not rotate on same-URL reload");
+      // A fresh WebView2 document starts JS request IDs from 1. Submit
+      // request #1, wait for request #2 to return (ensures native has already
+      // registered #1), then attempt to cancel #1 with the retired token.
+      const liveRequest = xytron.invokeWithOptions(
+        "test.cancel.delay", {timeoutMs:3000}, 350);
       ensure(await xytron.test.replay.count() === 0,
              "Replay fixture was already modified");
+      window.chrome.webview.postMessage({
+        type: "cancel", id: "1", session: retiredSession
+      });
+      ensure(await liveRequest === 350,
+             "Retired document token cancelled a live request");
+
       window.chrome.webview.postMessage({
         type: "request", id: "990001", method: "test.replay.bump",
         args: [], session: retiredSession
