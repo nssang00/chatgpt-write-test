@@ -4,6 +4,7 @@
 #include "browser/cef/cef_value_converter.hpp"
 #include "browser/common/backend_registry.hpp"
 #include "browser/common/trusted_document.hpp"
+#include "browser/common/document_session_token.hpp"
 #include "core/bridge_message.hpp"
 #include "include/cef_process_message.h"
 #include "include/cef_render_handler.h"
@@ -542,6 +543,7 @@ void CefBackend::onLoadStart(
     {
         mainFrameReady_ = false;
         activeMainFrameIdentifier_.clear();
+        documentSessionToken_.clear();
         ++navigation_;
         if (listener_)
             listener_->onLoadStarted(frame->GetURL().ToString());
@@ -558,7 +560,9 @@ void CefBackend::onLoadEnd(
         if (navigation_ && !frameIdentity.empty() &&
             trustedEntryDocument(trustedEntryUrl_,url,true))
         {
-            mainFrameReady_=true;
+            try { documentSessionToken_ = createDocumentSessionToken(); }
+            catch (...) { documentSessionToken_.clear(); }
+            if (!documentSessionToken_.empty()) mainFrameReady_=true;
             activeMainFrameIdentifier_=frameIdentity;
             VerifiedFrameContext ctx;
             // Numeric slot remains private to the native backend. The exact
@@ -568,7 +572,13 @@ void CefBackend::onLoadEnd(
             ctx.engineVerified=true;
             ctx.mainFrame=true;
             ctx.trustedContent=true;
-            listener_->onTrustedFrameActivated(ctx);
+            if (mainFrameReady_) {
+                listener_->onTrustedFrameActivated(ctx);
+                CefRefPtr<CefProcessMessage> offer =
+                    CefProcessMessage::Create("nativeweb.document.session");
+                offer->GetArgumentList()->SetString(0,documentSessionToken_);
+                frame->SendProcessMessage(PID_RENDERER,offer);
+            }
         }
         listener_->onLoadFinished(url);
     }
@@ -588,8 +598,12 @@ bool CefBackend::onProcessMessage(
     {
         // Renderer -> native responses are untrusted IPC too. A child
         // frame/remote page cannot forge an answer to WebView::execute().
-        if (!frame || !trustedEntryDocument(
-                trustedEntryUrl_, frame->GetURL().ToString(), frame->IsMain()))
+        if (!frame || !mainFrameReady_ ||
+            frame->GetIdentifier().ToString()!=activeMainFrameIdentifier_ ||
+            !trustedEntryDocument(
+                trustedEntryUrl_, frame->GetURL().ToString(), frame->IsMain()) ||
+            !matchesDocumentSessionToken(
+                list->GetString(4).ToString(),documentSessionToken_))
             return true;
 
         const RequestId requestId =
@@ -646,6 +660,14 @@ bool CefBackend::onProcessMessage(
         }
         return true;
     }
+
+    // Do not emit a rejection to the new main page: a stale document's
+    // request ID can collide with a new document's Promise request ID.
+    if (!mainFrameReady_ ||
+        frame->GetIdentifier().ToString()!=activeMainFrameIdentifier_ ||
+        !matchesDocumentSessionToken(
+            list->GetString(3).ToString(),documentSessionToken_))
+        return true;
 
     const std::string method =
         list->GetString(1).ToString();

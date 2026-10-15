@@ -2,6 +2,7 @@
 
 #include "browser/common/backend_registry.hpp"
 #include "browser/common/trusted_document.hpp"
+#include "browser/common/document_session_token.hpp"
 #include "core/bridge_message.hpp"
 #include "browser/webview2/webview2_bridge_script.hpp"
 #include "core/json_codec.hpp"
@@ -426,6 +427,7 @@ HRESULT WebView2Backend::installHandlers()
                         json = 0;
 
                         const Any message = jsonToAny(utf8);
+                        const VariantDict& fields=AnyCast<const VariantDict&>(message);
                         const BridgeMessage parsed = parseBridgeMessage(message);
                         {
                             // ALL renderer-originated envelope types must
@@ -465,6 +467,12 @@ HRESULT WebView2Backend::installHandlers()
                                 return S_OK;
                             }
                         }
+                        const VariantDict::const_iterator tokenField=fields.find("session");
+                        const std::string token=tokenField!=fields.end()
+                            ? AnyCast<std::string>(tokenField->second) : std::string();
+                        if (!mainFrameReady_ ||
+                            !matchesDocumentSessionToken(token,documentSessionToken_))
+                            return S_OK; // stale same-URL document or missing token
                         if(parsed.type==BridgeMessageType::Request)
                         {
                             VerifiedFrameContext ctx;
@@ -793,7 +801,10 @@ void WebView2Backend::notifyLoadStarted(
     const std::wstring& source)
 {
     mainFrameReady_=false;
+    documentSessionToken_.clear();
     ++navigation_;
+    try { documentSessionToken_=createDocumentSessionToken(); }
+    catch (...) { documentSessionToken_.clear(); } // fail closed
     if (listener_)
     {
         listener_->onLoadStarted(
@@ -816,7 +827,8 @@ void WebView2Backend::notifyLoadFinished()
         source)
     {
         const std::string url=wideToUtf8(source);
-        if(navigation_ && trustedEntryDocument(trustedEntryUrl_,url,true))
+        if(navigation_ && !documentSessionToken_.empty() &&
+           trustedEntryDocument(trustedEntryUrl_,url,true))
         {
             mainFrameReady_=true;
             VerifiedFrameContext ctx;
@@ -826,6 +838,10 @@ void WebView2Backend::notifyLoadFinished()
             ctx.mainFrame=true;
             ctx.trustedContent=true;
             listener_->onTrustedFrameActivated(ctx);
+            VariantDict handshake;
+            handshake["type"]=std::string("nativeweb_session");
+            handshake["token"]=documentSessionToken_;
+            postBridgeMessageOnUi(Any(handshake));
         }
         listener_->onLoadFinished(url);
         CoTaskMemFree(source);

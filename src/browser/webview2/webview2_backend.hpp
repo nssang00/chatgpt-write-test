@@ -101,6 +101,7 @@ private:
     std::string trustedEntryUrl_;
     std::uint64_t navigation_ = 0;
     bool mainFrameReady_ = false;
+    std::string documentSessionToken_;
     std::shared_ptr<const AppResourceBundle> appResources_;
 
     Microsoft::WRL::ComPtr<ICoreWebView2Environment> environment_;

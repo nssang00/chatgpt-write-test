@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <functional>
 #include <map>
+#include <vector>
 #include <string>
 
 namespace nativeweb {
@@ -77,6 +78,13 @@ private:
         CefRefPtr<CefV8Value> promise;
     };
 
+    struct QueuedDocumentRequest
+    {
+        CefRefPtr<CefFrame> frame;
+        CefRefPtr<CefV8Context> context;
+        CefRefPtr<CefProcessMessage> message;
+    };
+
     struct EventSubscription
     {
         CefRefPtr<CefV8Context> context;
@@ -91,6 +99,8 @@ private:
     std::uint64_t nextRequestId_;
     std::uint64_t nextSubscriptionId_;
     std::map<std::string, PendingPromise> pending_;
+    std::map<CefV8Context*,std::string> documentSessions_;
+    std::vector<QueuedDocumentRequest> queuedDocumentRequests_;
     std::map<std::string, EventSubscription> subscriptions_;
 
     IMPLEMENT_REFCOUNTING(CefRendererApp);

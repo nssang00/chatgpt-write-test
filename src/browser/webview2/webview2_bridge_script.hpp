@@ -10,6 +10,8 @@ static const wchar_t kWebView2BridgeScript[] = LR"NATIVEWEBJS(
 
   const pending = new Map();
   const subscriptions = new Map();
+  const queuedUntilSession = [];
+  let documentSession = null;
   let nextRequestId = 1;
   let nextSubscriptionId = 1;
 
@@ -51,6 +53,8 @@ static const wchar_t kWebView2BridgeScript[] = LR"NATIVEWEBJS(
   };
 
   const invokeRaw = (method, ...args) => {
+    if (global !== global.top)
+      return Promise.reject(new Error("permission_denied: not main frame"));
     if (typeof method !== "string") {
       return Promise.reject(
         new TypeError("xytron.invoke(method, ...args) requires a method string")
@@ -62,9 +66,15 @@ static const wchar_t kWebView2BridgeScript[] = LR"NATIVEWEBJS(
       pending.set(id, { resolve, reject });
     });
 
-    global.chrome.webview.postMessage(
-      encode({ type: "request", id, method, args })
+    const transmit = () => global.chrome.webview.postMessage(
+      encode({ type: "request", id, method, args, session: documentSession })
     );
+    if (documentSession) transmit();
+    else if (queuedUntilSession.length < 256) queuedUntilSession.push(transmit);
+    else {
+      pending.delete(id);
+      return Promise.reject(new Error("session_unavailable: pending queue full"));
+    }
 
     return promise;
   };
@@ -141,7 +151,8 @@ static const wchar_t kWebView2BridgeScript[] = LR"NATIVEWEBJS(
         type: "error",
         id: String(id),
         code,
-        message: String(message)
+        message: String(message),
+        session: documentSession
       })
     );
   };
@@ -170,7 +181,7 @@ static const wchar_t kWebView2BridgeScript[] = LR"NATIVEWEBJS(
     Promise.resolve(result).then(
       (value) => {
         global.chrome.webview.postMessage(
-          encode({ type: "response", id: String(message.id), value })
+          encode({ type: "response", id: String(message.id), value, session: documentSession })
         );
       },
       (error) => {
@@ -182,6 +193,15 @@ static const wchar_t kWebView2BridgeScript[] = LR"NATIVEWEBJS(
   global.chrome.webview.addEventListener("message", (event) => {
     const message = decode(event.data);
     if (!message || typeof message !== "object") return;
+
+    if (message.type === "nativeweb_session") {
+      if (global !== global.top || documentSession ||
+          typeof message.token !== "string" ||
+          !/^[0-9a-f]{48}$/.test(message.token)) return;
+      documentSession = message.token;
+      for (const transmit of queuedUntilSession.splice(0)) transmit();
+      return;
+    }
 
     if (message.type === "response" || message.type === "error") {
       const id = String(message.id);

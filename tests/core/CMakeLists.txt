@@ -346,3 +346,11 @@ if(Python3_Interpreter_FOUND)
     "${Python3_EXECUTABLE}" "${PROJECT_SOURCE_DIR}/tests/ipc/broker_fixture.py")
   set_tests_properties(core.managed_bridge PROPERTIES TIMEOUT 25)
 endif()
+
+# Per-navigation OS entropy and stale-token rejection (C++11).
+add_executable(nativeweb_document_session_regression document_session_token_regression.cpp)
+target_include_directories(nativeweb_document_session_regression PRIVATE ${PROJECT_SOURCE_DIR}/src)
+target_link_libraries(nativeweb_document_session_regression PRIVATE NativeWeb::Core)
+set_target_properties(nativeweb_document_session_regression PROPERTIES
+  CXX_STANDARD 11 CXX_STANDARD_REQUIRED YES CXX_EXTENSIONS NO)
+add_test(NAME core.document_session COMMAND nativeweb_document_session_regression)

@@ -62,7 +62,8 @@ void sendCallError(
     CefRefPtr<CefFrame> frame,
     const std::string& id,
     const std::string& code,
-    const std::string& message)
+    const std::string& message,
+    const std::string& documentSession = std::string())
 {
     CefRefPtr<CefProcessMessage> response =
         CefProcessMessage::Create("nativeweb.call.response");
@@ -74,6 +75,7 @@ void sendCallError(
     args->SetBool(1, false);
     args->SetString(2, code);
     args->SetString(3, message);
+    args->SetString(4, documentSession);
 
     frame->SendProcessMessage(PID_BROWSER, response);
 }
@@ -81,7 +83,8 @@ void sendCallError(
 void sendCallSuccess(
     CefRefPtr<CefFrame> frame,
     const std::string& id,
-    CefRefPtr<CefValue> value)
+    CefRefPtr<CefValue> value,
+    const std::string& documentSession)
 {
     CefRefPtr<CefProcessMessage> response =
         CefProcessMessage::Create("nativeweb.call.response");
@@ -92,6 +95,7 @@ void sendCallSuccess(
     args->SetString(0, id);
     args->SetBool(1, true);
     args->SetValue(2, value);
+    args->SetString(4, documentSession);
 
     frame->SendProcessMessage(PID_BROWSER, response);
 }
@@ -123,10 +127,12 @@ public:
     CallPromiseHandler(
         CefRefPtr<CefFrame> frame,
         const std::string& id,
-        bool success)
+        bool success,
+        const std::string& documentSession)
         : frame_(frame),
           id_(id),
-          success_(success)
+          success_(success),
+          documentSession_(documentSession)
     {
     }
 
@@ -147,7 +153,8 @@ public:
             sendCallSuccess(
                 frame_,
                 id_,
-                v8ToCefValue(value));
+                v8ToCefValue(value),
+                documentSession_);
         }
         else
         {
@@ -158,7 +165,8 @@ public:
                 promiseRejectionMessage(
                     arguments.empty()
                         ? nullptr
-                        : arguments[0]));
+                        : arguments[0]),
+                documentSession_);
         }
 
         retval = CefV8Value::CreateUndefined();
@@ -169,6 +177,7 @@ private:
     CefRefPtr<CefFrame> frame_;
     std::string id_;
     bool success_;
+    std::string documentSession_;
 
     IMPLEMENT_REFCOUNTING(CallPromiseHandler);
 };
@@ -431,6 +440,13 @@ void CefRendererApp::OnContextReleased(
     CefRefPtr<CefFrame> frame,
     CefRefPtr<CefV8Context> context)
 {
+    documentSessions_.erase(context.get());
+    for (std::vector<QueuedDocumentRequest>::iterator it=
+             queuedDocumentRequests_.begin(); it!=queuedDocumentRequests_.end();)
+    {
+        if(it->context.get()==context.get()) it=queuedDocumentRequests_.erase(it);
+        else ++it;
+    }
     for (std::map<std::string, PendingPromise>::iterator it =
              pending_.begin();
          it != pending_.end();)
@@ -468,6 +484,13 @@ std::string CefRendererApp::beginInvoke(
     pending.promise = promise;
     pending_[id] = pending;
 
+    if(!frame || !frame->IsMain())
+    {
+        promise->RejectPromise("permission_denied: not main frame");
+        pending_.erase(id);
+        return id;
+    }
+
     CefRefPtr<CefProcessMessage> message =
         CefProcessMessage::Create("nativeweb.request");
 
@@ -486,7 +509,26 @@ std::string CefRendererApp::beginInvoke(
 
     list->SetList(2, args);
 
-    frame->SendProcessMessage(PID_BROWSER, message);
+    const std::map<CefV8Context*,std::string>::const_iterator session=
+        documentSessions_.find(context.get());
+    if(session!=documentSessions_.end() && !session->second.empty())
+    {
+        list->SetString(3,session->second);
+        frame->SendProcessMessage(PID_BROWSER,message);
+    }
+    else if(queuedDocumentRequests_.size() < 256)
+    {
+        QueuedDocumentRequest queued;
+        queued.frame=frame;
+        queued.context=context;
+        queued.message=message;
+        queuedDocumentRequests_.push_back(queued);
+    }
+    else
+    {
+        pending_.erase(id);
+        promise->RejectPromise("session_unavailable: pending queue full");
+    }
     return id;
 }
 
@@ -531,6 +573,30 @@ bool CefRendererApp::OnProcessMessageReceived(
     CefRefPtr<CefListValue> args =
         message->GetArgumentList();
 
+    if (name == "nativeweb.document.session")
+    {
+        if(sourceProcess!=PID_BROWSER || !frame || !frame->IsMain())
+            return true;
+        CefRefPtr<CefV8Context> context=frame->GetV8Context();
+        if (!context || !context->IsValid()) return true;
+        const std::string token=args->GetString(0).ToString();
+        if(token.size()!=48) return true;
+        documentSessions_[context.get()]=token;
+        for(std::vector<QueuedDocumentRequest>::iterator it=
+                queuedDocumentRequests_.begin();
+            it!=queuedDocumentRequests_.end();)
+        {
+            if(it->context.get()==context.get())
+            {
+                it->message->GetArgumentList()->SetString(3,token);
+                it->frame->SendProcessMessage(PID_BROWSER,it->message);
+                it=queuedDocumentRequests_.erase(it);
+            }
+            else ++it;
+        }
+        return true;
+    }
+
     if (name == "nativeweb.call")
     {
         const std::string id =
@@ -555,6 +621,10 @@ bool CefRendererApp::OnProcessMessageReceived(
             return true;
         }
 
+        const std::map<CefV8Context*,std::string>::const_iterator session=
+            documentSessions_.find(context.get());
+        const std::string currentSession=
+            session!=documentSessions_.end() ? session->second : std::string();
         CefRefPtr<CefV8Value> receiver;
         CefRefPtr<CefV8Value> function;
 
@@ -569,7 +639,8 @@ bool CefRendererApp::OnProcessMessageReceived(
                 frame,
                 id,
                 "js_method_not_found",
-                "JavaScript method not found: " + method);
+                "JavaScript method not found: " + method,
+                currentSession);
             return true;
         }
 
@@ -597,7 +668,8 @@ bool CefRendererApp::OnProcessMessageReceived(
                 frame,
                 id,
                 "js_exception",
-                "JavaScript method execution failed: " + method);
+                "JavaScript method execution failed: " + method,
+                currentSession);
             return true;
         }
 
@@ -614,7 +686,8 @@ bool CefRendererApp::OnProcessMessageReceived(
                     frame,
                     id,
                     "js_promise_invalid",
-                    "JavaScript Promise has no callable then()");
+                    "JavaScript Promise has no callable then()",
+                    currentSession);
                 return true;
             }
 
@@ -625,7 +698,8 @@ bool CefRendererApp::OnProcessMessageReceived(
                     new CallPromiseHandler(
                         frame,
                         id,
-                        true)));
+                        true,
+                        currentSession)));
 
             thenArguments.push_back(
                 CefV8Value::CreateFunction(
@@ -633,7 +707,8 @@ bool CefRendererApp::OnProcessMessageReceived(
                     new CallPromiseHandler(
                         frame,
                         id,
-                        false)));
+                        false,
+                        currentSession)));
 
             CefRefPtr<CefV8Value> chained =
                 thenFunction->ExecuteFunction(
@@ -647,7 +722,8 @@ bool CefRendererApp::OnProcessMessageReceived(
                     frame,
                     id,
                     "js_promise_attach_failed",
-                    "Failed to attach NativeWeb Promise handlers");
+                    "Failed to attach NativeWeb Promise handlers",
+                    currentSession);
                 return true;
             }
 
@@ -663,7 +739,8 @@ bool CefRendererApp::OnProcessMessageReceived(
         sendCallSuccess(
             frame,
             id,
-            cefResult);
+            cefResult,
+            currentSession);
 
         return true;
     }
