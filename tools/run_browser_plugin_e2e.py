@@ -124,6 +124,8 @@ def main():
                'checkpoint: plugin-unloaded',
                'checkpoint: plugin-e2e-complete'))
     markers = ('checkpoint: request-cancel-verified',) + markers
+    if args.engine == 'webview2' and not args.managed:
+        markers += ('checkpoint: security-stale-session-replay-blocked',)
     missing = [m for m in markers if m not in output]
     forbidden = ('checkpoint: security-UNTRUSTED-CALL-EXECUTED' in output or
                  'managed-worker-setup-failed:' in output)
