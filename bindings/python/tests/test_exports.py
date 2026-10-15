@@ -17,13 +17,16 @@ class ExportsTests(unittest.TestCase):
         class Player:
             def __init__(self):
                 self._hp = 100
+            @xytron.export
             def move(self, x: float, y: float):
                 return (x, y)
             def _secret(self):
                 raise RuntimeError("Not exported")
             @property
+            @xytron.export
             def hp(self):
                 return self._hp
+        Player.unmarked = lambda self: None
         local.add = add
         local.Player = Player
         local.secret = lambda: 99

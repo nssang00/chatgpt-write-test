@@ -37,9 +37,9 @@ def discover_exports(module):
             for member_name, member in vars(obj).items():
                 if member_name.startswith("_"):
                     continue
-                if inspect.isfunction(member):
+                if inspect.isfunction(member) and getattr(member, "__xytron_export__", False):
                     methods.append(member_name)
-                elif isinstance(member, property):
+                elif isinstance(member, property) and member.fget and getattr(member.fget, "__xytron_export__", False):
                     properties.append(member_name)
             discovered[name] = {
                 "kind": "class",

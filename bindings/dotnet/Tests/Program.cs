@@ -11,9 +11,10 @@ public static class Functions
 [Export]
 public class Player
 {
-    public int Hp { get; set; } = 100;
-    public void Move(float x, float y) { }
+    [Export] public int Hp { get; set; } = 100;
+    [Export] public void Move(float x, float y) { }
     private void Secret() { }
+    public void Unmarked() { }
     public string Field = "";
 }
 

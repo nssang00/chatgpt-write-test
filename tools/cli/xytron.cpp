@@ -190,7 +190,7 @@ static void pluginManaged(const std::string& id,const std::string& lang) {
       "// Temporary metadata-only contract copied into standalone templates.\n"
       "// Replace with the official Xytron.Binding SDK reference when available.\n"
       "using System;\nnamespace Xytron\n{\n"
-      "    [AttributeUsage(AttributeTargets.Class | AttributeTargets.Method)]\n"
+      "    [AttributeUsage(AttributeTargets.Class | AttributeTargets.Method | AttributeTargets.Constructor | AttributeTargets.Property)]\n"
       "    public sealed class ExportAttribute : Attribute { }\n}\n");
     file(p+"/tests/README.md",
       "Test the Hello method with your preferred .NET test runner.\n"

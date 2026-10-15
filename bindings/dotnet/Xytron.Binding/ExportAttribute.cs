@@ -5,7 +5,7 @@ using System.Reflection;
 
 namespace Xytron;
 
-[AttributeUsage(AttributeTargets.Class | AttributeTargets.Method,
+[AttributeUsage(AttributeTargets.Class | AttributeTargets.Method | AttributeTargets.Constructor | AttributeTargets.Property,
     AllowMultiple = false, Inherited = false)]
 public sealed class ExportAttribute : Attribute { }
 
@@ -41,10 +41,11 @@ public static class ExportDiscovery
                 Add(new ExportMetadata(type.Name, "class",
                     type.GetMethods(BindingFlags.DeclaredOnly | BindingFlags.Public |
                                     BindingFlags.Instance)
-                        .Where(m => !m.IsSpecialName)
+                        .Where(m => !m.IsSpecialName && m.IsDefined(typeof(ExportAttribute), false))
                         .Select(m => LowerFirst(m.Name)),
                     type.GetProperties(BindingFlags.DeclaredOnly |
                                        BindingFlags.Public | BindingFlags.Instance)
+                        .Where(p => p.IsDefined(typeof(ExportAttribute), false))
                         .Select(p => LowerFirst(p.Name))),
                     exports, known);
             }

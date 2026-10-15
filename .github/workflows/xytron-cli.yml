@@ -49,3 +49,6 @@ jobs:
 
       - name: Managed Python AST and trusted C# Reflection bindings
         run: python tools/cli/test_managed_bindings.py --xytron "${{ github.workspace }}/build-cli/sdk/bin/${{ matrix.os == 'windows-latest' && 'xytron.exe' || 'xytron' }}" --require-dotnet
+
+      - name: Python and trusted C# class descriptor / mock bridge contract
+        run: python tools/cli/test_class_bindings.py --xytron "${{ github.workspace }}/build-cli/sdk/bin/${{ matrix.os == 'windows-latest' && 'xytron.exe' || 'xytron' }}" --require-dotnet
