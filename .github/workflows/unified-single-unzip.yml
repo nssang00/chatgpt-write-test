@@ -157,9 +157,9 @@ jobs:
           call "Run-Dual.cmd" %*
           exit /b %ERRORLEVEL%
           '@ | Set-Content -LiteralPath (Join-Path $release 'Run-Dual.cmd') -Encoding ASCII
-          foreach($filename in @('Build/cef-native/stage/native/Release/.placeholder',
-             'Build/cef-native/stage/runtime/Release/.placeholder',
-             'Package/com.company.webview/.placeholder')){
+          foreach($filename in @('Build/cef-native/stage/native/Release/PLACEHOLDER.txt',
+             'Build/cef-native/stage/runtime/Release/PLACEHOLDER.txt',
+             'Package/com.company.webview/PLACEHOLDER.txt')){
             Set-Content -LiteralPath (Join-Path $kit $filename) -Value 'Auto-filled from the existing validated oneclick_bundle on first run' -Encoding ASCII
           }
           # The ZIP is its own launch root. No patch archive, no nested ZIP.
