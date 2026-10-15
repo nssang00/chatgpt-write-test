@@ -110,7 +110,8 @@ public static class BuildUnifiedDualPlayer
         cubeMaterial.name="CEF external GPU texture material";
         cubeMaterial.mainTextureScale=new Vector2(1,-1);
         cubeMaterial.mainTextureOffset=new Vector2(0,1);
-        Directory.CreateDirectory("Assets/Materials");
+        if(!AssetDatabase.IsValidFolder("Assets/Materials"))
+            AssetDatabase.CreateFolder("Assets","Materials");
         AssetDatabase.CreateAsset(cubeMaterial,"Assets/Materials/CefGpuCube.mat");
         var renderer=cube.GetComponent<MeshRenderer>();
         renderer.sharedMaterial=cubeMaterial;
