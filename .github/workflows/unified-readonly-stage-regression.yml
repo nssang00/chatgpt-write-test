@@ -62,10 +62,10 @@ jobs:
             $shots=Join-Path $dir 'screenshots'
             New-Item -ItemType Directory -Force -Path $shots | Out-Null
             foreach($name in @('01_initial','03_restored')){
-              $bitmap=New-Object Drawing.Bitmap(800,600)
+              $bitmap=[Drawing.Bitmap]::new(800,600)
               $gfx=[Drawing.Graphics]::FromImage($bitmap)
-              $blue=New-Object Drawing.SolidBrush([Drawing.Color]::FromArgb(40,77,255))
-              $red=New-Object Drawing.SolidBrush([Drawing.Color]::FromArgb(229,59,85))
+              $blue=[Drawing.SolidBrush]::new([Drawing.Color]::FromArgb(40,77,255))
+              $red=[Drawing.SolidBrush]::new([Drawing.Color]::FromArgb(229,59,85))
               try {
                 $gfx.Clear([Drawing.Color]::White)
                 $blueY=if($test -eq 'upright'){130}else{410}
