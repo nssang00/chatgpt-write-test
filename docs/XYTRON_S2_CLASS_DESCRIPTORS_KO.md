@@ -74,3 +74,13 @@ game.Player.dispose(handle)              -> Promise<void>
 2. NW-014 출처/프레임 권한 및 인스턴스 소유자/프로세스 격리
 3. WebView2/CEF에서 실제 JS→객체 생성/메서드/프로퍼티/해제 E2E
 4. PluginManager 자동 로딩·언로드와 busy object 수명 관리
+
+## S2-4 실험적 Python 객체 호스트 (2026-10-15)
+
+- `bindings/python/xytron/object_host.py`에 **독립 프로세스 연결 전 단계의 인프로세스 호스트**를 추가했다.
+- 명시적 `@export` 클래스/멤버만 접근 가능하며, 생성·메서드·get·set·dispose를 S2-3 호출 규약과 동일한 이름으로 처리한다.
+- `secrets.token_urlsafe` 기반 예측 불가능한 객체 핸들, **브릿지가 발급한 소유자 ID**별 검증, 객체 수 제한, 중복 해제 거부 및 소유자 연결 종료 시 일괄 정리를 구현했다.
+- `authorize(owner, operation)` 콜백을 필수로 요구하며, 허용 결정이 명시적 `True`가 아니면 거부한다. 이 콜백은 **NW-014 권한 시스템을 구현한 것은 아니다.** 프레임/출처 신원 확인과 권한 판정은 실제 네이티브 브릿지가 수행해야 한다.
+- `close()` 구현 시 dispose/cleanup에서 호출하되, 해당 메서드는 JS로 직접 export하지 않는다.
+- `python bindings/python/tests/test_object_host.py`의 5개 테스트를 Windows/Linux CLI CI에 연결했다.
+- **주의:** 현재 프로세스 간 IPC, 실제 브라우저 호출, Python 호스트 프로세스 배포, .NET 객체 호스트는 여전히 미구현이다. 객체 핸들을 브라우저에서 받아 그대로 소유자 ID로 사용하면 안 된다.
