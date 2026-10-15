@@ -29,9 +29,9 @@ Copy-Item -LiteralPath (Join-Path $cef 'Runtime') -Destination $targetPackage -R
 if(-not (Test-Path -LiteralPath (Join-Path $targetRuntime 'WebView.cs') -PathType Leaf)){
   throw 'CEF Runtime-only copy did not preserve Runtime\WebView.cs'
 }
-$unexpected=Get-ChildItem -LiteralPath $targetPackage -Directory |
-  Where-Object {$_.Name -notin @('Runtime')}
-if(@($unexpected).Count -gt 0){throw 'Unexpected non-runtime CEF package directories copied into Unity project'}
+$unexpected=@(Get-ChildItem -LiteralPath $targetPackage -Directory |
+  Where-Object {$_.Name -notin @('Runtime')})
+if($unexpected.Count -gt 0){throw 'Unexpected non-runtime CEF package directories copied into Unity project'}
 # This directory does NOT exist in the frozen CEF baseline: always make it before copying.
 $unified=Join-Path $targetRuntime 'UnifiedExperimental'
 New-Item -ItemType Directory -Force -Path $unified | Out-Null
