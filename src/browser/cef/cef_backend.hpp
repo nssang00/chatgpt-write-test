@@ -49,6 +49,7 @@ private:
     std::string trustedEntryUrl_;
     std::uint64_t navigation_ = 0;
     bool mainFrameReady_ = false;
+    std::string activeMainFrameIdentifier_;
 };
 
 void registerCefBackendFactory();

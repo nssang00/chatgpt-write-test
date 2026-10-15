@@ -541,6 +541,7 @@ void CefBackend::onLoadStart(
     if (frame && frame->IsMain())
     {
         mainFrameReady_ = false;
+        activeMainFrameIdentifier_.clear();
         ++navigation_;
         if (listener_)
             listener_->onLoadStarted(frame->GetURL().ToString());
@@ -553,12 +554,16 @@ void CefBackend::onLoadEnd(
     if (listener_ && frame && frame->IsMain())
     {
         const std::string url=frame->GetURL().ToString();
-        if (navigation_ && frame->GetIdentifier()>0 &&
+        const std::string frameIdentity=frame->GetIdentifier().ToString();
+        if (navigation_ && !frameIdentity.empty() &&
             trustedEntryDocument(trustedEntryUrl_,url,true))
         {
             mainFrameReady_=true;
+            activeMainFrameIdentifier_=frameIdentity;
             VerifiedFrameContext ctx;
-            ctx.frameId=static_cast<std::uint64_t>(frame->GetIdentifier());
+            // Numeric slot remains private to the native backend. The exact
+            // engine string identifier is verified before accepting requests.
+            ctx.frameId=1;
             ctx.navigation=navigation_;
             ctx.engineVerified=true;
             ctx.mainFrame=true;
@@ -661,9 +666,11 @@ bool CefBackend::onProcessMessage(
     if (listener_)
     {
         VerifiedFrameContext ctx;
-        ctx.frameId=static_cast<std::uint64_t>(frame->GetIdentifier());
+        ctx.frameId=1;
         ctx.navigation=navigation_;
-        ctx.engineVerified=mainFrameReady_ && frame->GetIdentifier()>0;
+        ctx.engineVerified=mainFrameReady_ &&
+            !activeMainFrameIdentifier_.empty() &&
+            frame->GetIdentifier().ToString()==activeMainFrameIdentifier_;
         ctx.mainFrame=frame->IsMain();
         ctx.trustedContent=trustedEntryDocument(
             trustedEntryUrl_,frame->GetURL().ToString(),ctx.mainFrame);
