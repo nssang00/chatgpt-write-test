@@ -74,6 +74,42 @@ jobs:
             throw 'Standalone kit unexpectedly depends on separately unpacked source snapshot'
           }
           Write-Host 'Sibling compiled oneclick_bundle static discovery PASS'
+      - name: Regression - assemble Unity Assets even if OneClick sits inside old oneclick_bundle
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $r='Integration/UnityUnified-v58.6.0-preview'
+          $fixture=Join-Path $env:RUNNER_TEMP 'missing-unified-directory-regression'
+          $old=Join-Path $fixture 'oneclick_bundle\Package\com.company.webview'
+          $src=Join-Path $old 'Runtime'
+          $kit=Join-Path $fixture 'oneclick_bundle\CompanyWebView-Dual-OneClick'
+          $kitRuntime=Join-Path $kit 'Runtime'
+          New-Item -ItemType Directory -Force -Path $src,$kitRuntime | Out-Null
+          Set-Content -LiteralPath (Join-Path $src 'WebView.cs') -Value '// protected CEF fixture'
+          foreach($name in @('UnifiedWebView.cs','CefTextureBackendBridge.cs',
+             'WebView2OverlayBackendBridge.cs','UnifiedTextureSceneHost.cs','UnifiedOverlaySceneHost.cs')){
+            Copy-Item -LiteralPath (Join-Path "$r/Runtime" $name) -Destination (Join-Path $kitRuntime $name)
+          }
+          $installer=(Resolve-Path "$r/DualPlayer/Install-UnifiedManagedSources.ps1").Path
+          foreach($location in @('oneclick_bundle/results/dual-20261015-085618/UnityProject/Assets',
+                                  'separate-sibling-kit/results/dual-smoke/UnityProject/Assets')){
+            $assets=Join-Path $fixture $location
+            & $installer -CefPackagePath $old -UnityAssetsDir $assets -KitRoot $kit
+            $target=Join-Path $assets 'CompanyWebView\Runtime\UnifiedExperimental'
+            foreach($name in @('UnifiedWebView.cs','CefTextureBackendBridge.cs',
+               'WebView2OverlayBackendBridge.cs','UnifiedTextureSceneHost.cs','UnifiedOverlaySceneHost.cs')){
+              if(-not (Test-Path -LiteralPath (Join-Path $target $name) -PathType Leaf)){
+                throw "Regression: Managed C# file missing under $target : $name"
+              }
+            }
+            if(-not (Test-Path -LiteralPath (Join-Path $assets 'CompanyWebView\Runtime\WebView.cs'))){
+              throw 'Original CEF WebView.cs was not copied into scratch Unity Assets'
+            }
+          }
+          if((Get-Content -LiteralPath (Join-Path $src 'WebView.cs') -Raw) -notmatch 'protected CEF fixture'){
+            throw 'Original oneclick_bundle CEF managed source modified'
+          }
+          Write-Host 'Both user-observed nested Downloads/oneclick_bundle and sibling extraction layouts PASS'
       - name: Assemble ONE unzip folder with Run-Dual.cmd at root
         shell: pwsh
         run: |
@@ -86,7 +122,8 @@ jobs:
           Copy-Item "$r/DualPlayer/Run-Dual.cmd" "$kit/Run-Dual.cmd"
           Copy-Item "$r/DualPlayer/Run-Dual.ps1" "$kit/Run-Dual.ps1"
           foreach($f in @('Ensure-CefRuntime.ps1','Screen-Automation.ps1',
-           'BuildUnifiedDualPlayer.cs','UnifiedDualPlayerEvidence.cs','README_FIRST_KO.md')){
+           'BuildUnifiedDualPlayer.cs','UnifiedDualPlayerEvidence.cs',
+           'Install-UnifiedManagedSources.ps1','README_FIRST_KO.md')){
             Copy-Item "$r/DualPlayer/$f" "$kit/DualPlayer/$f"
           }
           foreach($f in @('UnifiedWebView.cs','CefTextureBackendBridge.cs',
