@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Managed .NET browser E2E</title></head>
+<body><script>
+(async function() {
+  if (window !== window.top) {
+    let outcome = "no-bridge";
+    try {
+      if (typeof xytron !== "undefined") {
+        await xytron.example_cs.Player.create("unauthorized-child");
+        outcome = "allowed";
+      }
+    } catch (_) { outcome = "denied"; }
+    parent.postMessage({kind:"managed-dotnet-child-probe",outcome}, "*");
+    return;
+  }
+  const fail = async (e) => {
+    try { await xytron.test.fail(String(e && e.stack || e)); } catch (_) {}
+  };
+  try {
+    let ready = false;
+    for (let n = 0; n < 100; n++) {
+      if (await xytron.test.managed.ready()) { ready=true; break; }
+      await new Promise(resolve => setTimeout(resolve,30));
+    }
+    if (!ready) throw new Error(".NET worker never ready");
+    const handle = await xytron.example_cs.Player.create("Ada");
+    if (typeof handle !== "string" || !handle.startsWith("xy_"))
+      throw new Error(".NET managed handle missing");
+    if (await xytron.example_cs.Player.method.Hit(handle,9) !== 91)
+      throw new Error(".NET method invocation failed");
+    if (await xytron.example_cs.Player.get.Health(handle) !== 91)
+      throw new Error(".NET getter failed");
+    await xytron.example_cs.Player.set.Health(handle,42);
+    if (await xytron.example_cs.Player.get.Health(handle) !== 42)
+      throw new Error(".NET property setter failed");
+    let denied = false;
+    try { await xytron.example_cs.Player.method.Secret(handle); }
+    catch (e) { denied = String(e).includes("method_not_found"); }
+    if (!denied) throw new Error("Unexported .NET member was exposed");
+    await xytron.example_cs.Player.dispose(handle);
+    denied = false;
+    try { await xytron.example_cs.Player.get.Health(handle); }
+    catch (e) { denied = String(e).includes("worker_rejected"); }
+    if (!denied) throw new Error("Disposed .NET handle usable");
+    await xytron.test.checkpoint("managed-dotnet-object-lifecycle");
+
+    const frame = document.createElement("iframe");
+    frame.style.display = "none";
+    const probe = new Promise(resolve => {
+      const timer = setTimeout(() => {window.removeEventListener("message",seen);resolve("timeout");},7000);
+      function seen(event) {
+        if (event.source !== frame.contentWindow || !event.data ||
+            event.data.kind !== "managed-dotnet-child-probe") return;
+        clearTimeout(timer);window.removeEventListener("message",seen);
+        resolve(event.data.outcome);
+      }
+      window.addEventListener("message",seen);
+    });
+    frame.src="managed_dotnet_test.html";
+    document.body.appendChild(frame);
+    const outcome=await probe;
+    frame.remove();
+    if (outcome==="allowed") throw new Error("Child frame executed .NET worker");
+    if (!["no-bridge","denied","timeout"].includes(outcome))
+      throw new Error("Invalid child frame outcome: "+outcome);
+    await xytron.test.checkpoint("managed-dotnet-child-denied");
+    await xytron.test.managed.done();
+  } catch(e) { await fail(e); }
+})();
+</script></body></html>

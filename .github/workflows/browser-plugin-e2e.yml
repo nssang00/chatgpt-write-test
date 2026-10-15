@@ -22,6 +22,12 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y cmake build-essential python3 xvfb \
             libgtk-3-dev libnss3 libgbm1 libasound2t64 libxss1
+      - name: Set up .NET 8 for managed browser worker
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Build actual .NET browser worker
+        run: dotnet build bindings/dotnet/HostProcessDemo/HostProcessDemo.csproj -c Release --nologo
       - name: Download pinned Linux CEF
         shell: bash
         run: |
@@ -52,6 +58,12 @@ jobs:
         shell: pwsh
         timeout-minutes: 3
         run: ./tools/test_expand_cef_archive_windows.ps1
+      - name: Set up .NET 8 for managed browser worker
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Build actual .NET browser worker
+        run: dotnet build bindings/dotnet/HostProcessDemo/HostProcessDemo.csproj -c Release --nologo
       - name: Download pinned Windows CEF
         shell: pwsh
         timeout-minutes: 20
@@ -73,6 +85,12 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
+      - name: Set up .NET 8 for managed browser worker
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Build actual .NET browser worker
+        run: dotnet build bindings/dotnet/HostProcessDemo/HostProcessDemo.csproj -c Release --nologo
       - name: Download pinned WebView2 SDK
         shell: pwsh
         run: |

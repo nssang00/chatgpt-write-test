@@ -275,3 +275,12 @@ add_test(
     --engine cef --build-dir "${CMAKE_BINARY_DIR}" --managed
 )
 set_tests_properties(browser.managed_python PROPERTIES TIMEOUT 150)
+
+# Real browser -> C++ ProcessBroker -> .NET 8 worker (requires built test assembly).
+add_test(
+  NAME browser.managed_dotnet
+  COMMAND "${Python3_EXECUTABLE}"
+    "${NATIVEWEB_ROOT}/tools/run_browser_plugin_e2e.py"
+    --engine cef --build-dir "${CMAKE_BINARY_DIR}" --managed-dotnet
+)
+set_tests_properties(browser.managed_dotnet PROPERTIES TIMEOUT 150)

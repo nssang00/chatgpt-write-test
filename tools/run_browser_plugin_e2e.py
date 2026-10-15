@@ -18,17 +18,22 @@ def main():
     parser.add_argument('--timeout', type=int, default=120)
     parser.add_argument('--managed', action='store_true',
                         help='exercise actual managed Python browser bridge')
+    parser.add_argument('--managed-dotnet', action='store_true',
+                        help='exercise actual managed .NET 8 browser bridge')
     parser.add_argument('--app-resources', action='store_true',
                         help='run real packaged app:// UI test')
     args = parser.parse_args()
 
+    if args.managed and args.managed_dotnet:
+        parser.error('Choose one managed runtime')
     if args.engine == 'webview2' and os.name != 'nt':
         parser.error('WebView2 must be tested on Windows')
 
     project = Path(__file__).resolve().parent.parent
     html = project / 'tests/integration/cef' / (
+        'managed_dotnet_test.html' if args.managed_dotnet else
         'managed_bridge_test.html' if args.managed else 'plugin_bridge_test.html')
-    if args.managed:
+    if args.managed or args.managed_dotnet:
         args.app_resources = True
     bin_dir = args.build_dir.resolve() / 'bin'
     exe_suffix = '.exe' if os.name == 'nt' else ''
@@ -43,17 +48,26 @@ def main():
         ("app_resource_script.js", "app_resource_style.css",
          "app_resource_icon.svg", "app_camera_private.html")
     ] if args.app_resources else []
-    needed = (html, executable, *additional) if args.managed else (
+    needed = (html, executable, *additional) if (args.managed or args.managed_dotnet) else (
         html, child, executable, plugin, *additional)
     for path in needed:
         if not path.is_file():
             parser.error('Required E2E input missing: ' + str(path))
 
-    entry_url = ('app://desktop/managed_bridge_test.html' if args.managed
+    entry_url = ('app://desktop/managed_dotnet_test.html' if args.managed_dotnet
+                 else 'app://desktop/managed_bridge_test.html' if args.managed
                  else 'app://desktop/plugin_bridge_test.html'
                  if args.app_resources else html.as_uri())
     command = [str(executable), '--url=' + entry_url]
-    if args.managed:
+    if args.managed_dotnet:
+        from shutil import which
+        runtime = which('dotnet')
+        assembly = (project / 'bindings/dotnet/HostProcessDemo/bin/Release/net8.0/HostProcessDemo.dll').resolve()
+        if not runtime or not assembly.is_file():
+            parser.error('Real .NET 8 runtime / built HostProcessDemo.dll required')
+        command.extend(['--managed-dotnet-runtime=' + runtime,
+                        '--managed-dotnet-assembly=' + str(assembly)])
+    elif args.managed:
         command.extend([
             '--managed-python=' + str(Path(sys.executable).resolve()),
             '--managed-fixture=' + str((project / 'tests/ipc/broker_fixture.py').resolve())
@@ -97,7 +111,10 @@ def main():
         return 124
 
     print(output, end='')
-    markers = (('checkpoint: managed-python-object-lifecycle',
+    markers = (('checkpoint: managed-dotnet-object-lifecycle',
+                'checkpoint: managed-dotnet-child-denied',
+                'checkpoint: managed-dotnet-complete') if args.managed_dotnet else
+               ('checkpoint: managed-python-object-lifecycle',
                 'checkpoint: managed-python-child-denied',
                 'checkpoint: managed-python-complete') if args.managed else
                ('checkpoint: security-same-entry-iframe-blocked',
