@@ -321,3 +321,16 @@ target_link_libraries(nativeweb_app_resources_regression PRIVATE NativeWeb::Core
 set_target_properties(nativeweb_app_resources_regression PROPERTIES
     CXX_STANDARD 11 CXX_STANDARD_REQUIRED YES CXX_EXTENSIONS NO)
 add_test(NAME core.app_resources COMMAND nativeweb_app_resources_regression)
+
+# Native C++11 broker against a separately launched real Python worker.
+find_package(Python3 COMPONENTS Interpreter QUIET)
+if(Python3_Interpreter_FOUND)
+add_executable(nativeweb_process_broker_regression process_broker_regression.cpp)
+target_include_directories(nativeweb_process_broker_regression PRIVATE ${PROJECT_SOURCE_DIR}/src)
+target_link_libraries(nativeweb_process_broker_regression PRIVATE NativeWeb::Core)
+set_target_properties(nativeweb_process_broker_regression PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED YES CXX_EXTENSIONS NO)
+add_test(NAME core.process_broker COMMAND nativeweb_process_broker_regression
+    "${Python3_EXECUTABLE}" "${PROJECT_SOURCE_DIR}/tests/ipc/broker_fixture.py")
+set_tests_properties(core.process_broker PROPERTIES TIMEOUT 25)
+
+endif() # Python3_Interpreter_FOUND: native process IPC integration regression

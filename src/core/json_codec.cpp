@@ -651,6 +651,9 @@ private:
             require(':');
             skipWhitespace();
 
+            if (dict.find(key) != dict.end())
+                fail("Duplicate JSON object key");
+
             dict[key] = parseValue();
 
             skipWhitespace();
