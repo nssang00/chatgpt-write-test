@@ -25,7 +25,9 @@ namespace Company.WebView.Unified.Experimental
         private static extern int WV2Unified_GoBack();
         [DllImport(Dll, CallingConvention=CallingConvention.Cdecl, CharSet=CharSet.Unicode)]
         private static extern int WV2Unified_GoForward();
-        [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)]
+        // Native WV2Unified_ReadMessage writes UTF-16 wchar_t*, including Korean and surrogate pairs.
+        // Without CharSet.Unicode, StringBuilder defaults to ANSI and truncates at the first UTF-16 zero byte.
+        [DllImport(Dll, CallingConvention=CallingConvention.Cdecl, CharSet=CharSet.Unicode)]
         private static extern int WV2Unified_ReadMessage([Out] StringBuilder output,int capacity);
         [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)]
         private static extern int WV2Unified_GetState();
