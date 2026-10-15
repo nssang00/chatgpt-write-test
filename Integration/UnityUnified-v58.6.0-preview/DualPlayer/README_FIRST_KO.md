@@ -39,3 +39,11 @@ Note: The raycast verifies scene Collider depth order, NOT rendered framebuffer 
 2. Where supported, repeat at Windows display scales 100%, 125%, 150%. Move and resize the window across available monitors; check the right HWND stays clipped to its panel.
 3. Alt+Tab away and back, minimize/restore, and overlap Unity with another application. Verify that WebView2 does not remain over unrelated foreground windows.
 4. Mark each manual check PASS, FAIL (include reproduction step), or NOT_TESTED. Do not treat automated CI or Player PASS as an IME/DPI/z-order result.
+
+### v58.6.0 fixed CEF 3D cube front-face UV orientation
+
+2026-10-16 Windows Player evidence (`dual-20261016-075531.zip`) proved a real visual defect despite `PASS_AUTO`: in **both front-facing screenshots**, BLUE TOP was BELOW RED BOTTOM and the entire text appeared rotated 180 degrees. CEF GPU rendering, pixel changes and WebView2 all passed independently, so this is a visual UV mapping problem rather than an overlay substitution.
+
+The isolated Unity test cube's material was corrected from `scale=(1,-1), offset=(0,1)` to `scale=(-1,1), offset=(1,0)`. The hidden RawImage uvRect was reset to identity; it is only a texture source and does not render the mesh. Neither the validated CEF native plugin nor WebView2 DLL is modified.
+
+`DualPlayer/Verify-TextureUvMarkers.ps1` now reads **only** existing foreground screenshots `01_initial.png` and `03_restored.png`, checks that the BLUE TOP marker is visibly above the RED BOTTOM marker on screen, and writes `uv-visual-evidence.json`. When both captures are available and colors are inverted, OneClick reports a failure instead of silently accepting Player `PASS_AUTO`. If screenshots are missing, it reports INCOMPLETE rather than a visual PASS. Glyph readability and real IME/DPI/z-order still require review. This screenshot check applies to this specific dual-cube fixture, not arbitrary web pages.
