@@ -3,6 +3,7 @@ on:
   push:
     branches:
       - feature/unified-unity-v58-6-0-readonly-stage-fix
+      - feature/unified-unity-v58-6-0-dual-utf16-uv-fix
   workflow_dispatch:
 permissions:
   contents: read
