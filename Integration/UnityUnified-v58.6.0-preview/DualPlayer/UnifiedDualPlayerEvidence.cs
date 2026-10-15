@@ -26,6 +26,12 @@ public sealed class UnifiedDualPlayerEvidence : MonoBehaviour
         public int cubeVisibleFrames;
         public bool cubeOccluderBeforeCubeRay;
         public bool cubeVisualDepthAndUvPending=true;
+        public bool cubeFrontInitialObserved;
+        public bool cubeFrontRestoredObserved;
+        public int cubeSourcePixelSamples;
+        public int cubeSourcePixelChangeEvents;
+        public int cubeMaxChangedPixels;
+        public string cubePixelReadbackError="";
         public int overlayMessageCount;
         public int overlayUnicodeRoundtripCount;
         public int overlayPingRoundtripCount;
@@ -71,6 +77,13 @@ public sealed class UnifiedDualPlayerEvidence : MonoBehaviour
             evidence.cubeRotationDegrees=Math.Max(evidence.cubeRotationDegrees,cubeProof.AngularTravelDegrees);
             evidence.cubeVisibleFrames=Math.Max(evidence.cubeVisibleFrames,cubeProof.VisibleFrames);
             evidence.cubeOccluderBeforeCubeRay |= cubeProof.OccluderBeforeCubeRay;
+            evidence.cubeFrontInitialObserved |= cubeProof.FrontPoseInitialObserved;
+            evidence.cubeFrontRestoredObserved |= cubeProof.FrontPoseRestoredObserved;
+            evidence.cubeSourcePixelSamples=Math.Max(evidence.cubeSourcePixelSamples,cubeProof.SourcePixelSamples);
+            evidence.cubeSourcePixelChangeEvents=Math.Max(evidence.cubeSourcePixelChangeEvents,cubeProof.SourcePixelChangeEvents);
+            evidence.cubeMaxChangedPixels=Math.Max(evidence.cubeMaxChangedPixels,cubeProof.MaxChangedPixels);
+            if(!String.IsNullOrEmpty(cubeProof.PixelReadbackError))
+                evidence.cubePixelReadbackError=cubeProof.PixelReadbackError;
         }
         if(overlayHost!=null) {
             if(overlayHost.IsOverlayReady)evidence.overlayReady=true;
@@ -122,6 +135,9 @@ public sealed class UnifiedDualPlayerEvidence : MonoBehaviour
             evidence.cubeTextureBound && evidence.cubeTextureBindCount>0 &&
             evidence.cubeObservedFrameAdvances>=3 && evidence.cubeRotationDegrees>180f &&
             evidence.cubeVisibleFrames>0 && evidence.cubeOccluderBeforeCubeRay &&
+            evidence.cubeFrontInitialObserved && evidence.cubeFrontRestoredObserved &&
+            evidence.cubeSourcePixelSamples>=3 && evidence.cubeSourcePixelChangeEvents>=2 &&
+            evidence.cubeMaxChangedPixels>=16 && String.IsNullOrEmpty(evidence.cubePixelReadbackError) &&
             evidence.overlayReady && evidence.overlayMessageCount>0 &&
             evidence.overlayUnicodeRoundtripCount>0 && evidence.overlayPingRoundtripCount>0 &&
             evidence.overlayCloseRequested && evidence.overlayJoined && evidence.cefShutdown &&
@@ -135,6 +151,9 @@ public sealed class UnifiedDualPlayerEvidence : MonoBehaviour
                 " RawImage="+evidence.cefRawImageBound+" WebView2 unicode="+evidence.overlayUnicodeRoundtripCount+" WebView2 msgs="+evidence.overlayMessageCount+
                 " cubeBound="+evidence.cubeTextureBound+" cubeFrameAdvances="+evidence.cubeObservedFrameAdvances+
                 " cubeRotation="+evidence.cubeRotationDegrees+" occlusionRay="+evidence.cubeOccluderBeforeCubeRay+
+                " frontInitial="+evidence.cubeFrontInitialObserved+" frontRestored="+evidence.cubeFrontRestoredObserved+
+                " sourcePixels="+evidence.cubeSourcePixelSamples+" pixelChanges="+evidence.cubeSourcePixelChangeEvents+
+                " maxChanged="+evidence.cubeMaxChangedPixels+" gpuReadbackError="+evidence.cubePixelReadbackError+
                 " joined="+evidence.overlayJoined+" CEF shutdown="+evidence.cefShutdown);
         }catch(Exception ex){Debug.LogError("[UNIFIED-DUAL] Evidence write FAILED "+ex);}
         Application.Quit(evidence.status=="PASS_AUTO"?0:3);
