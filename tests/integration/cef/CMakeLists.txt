@@ -35,25 +35,8 @@ ADD_LOGICAL_TARGET(
   "${CEF_LIB_RELEASE}"
 )
 
-add_library(nativeweb_core_for_cef STATIC
-  "${NATIVEWEB_ROOT}/src/core/pending_call_registry.cpp"
-  "${NATIVEWEB_ROOT}/src/core/object_registry.cpp"
-  "${NATIVEWEB_ROOT}/src/core/native_object_runtime.cpp"
-  "${NATIVEWEB_ROOT}/src/core/event_dispatcher.cpp"
-  "${NATIVEWEB_ROOT}/src/core/bridge_message.cpp"
-  "${NATIVEWEB_ROOT}/src/core/json_codec.cpp"
-  "${NATIVEWEB_ROOT}/src/core/process_broker.cpp"
-  "${NATIVEWEB_ROOT}/src/core/native_permission_policy.cpp"
-  "${NATIVEWEB_ROOT}/src/core/bridge_runtime.cpp"
-  "${NATIVEWEB_ROOT}/src/core/app_resources.cpp"
-  "${NATIVEWEB_ROOT}/src/core/module_registry.cpp"
-  "${NATIVEWEB_ROOT}/src/core/binding_registry.cpp"
-  "${NATIVEWEB_ROOT}/src/core/worker_pool.cpp"
-  "${NATIVEWEB_ROOT}/src/browser/common/backend_registry.cpp"
-  "${NATIVEWEB_ROOT}/src/plugin/shared_library.cpp"
-  "${NATIVEWEB_ROOT}/src/plugin/plugin_module.cpp"
-  "${NATIVEWEB_ROOT}/src/webview.cpp"
-)
+include("${NATIVEWEB_ROOT}/cmake/NativeWebCoreSources.cmake")
+add_library(nativeweb_core_for_cef STATIC ${NATIVEWEB_CORE_SOURCES})
 
 target_include_directories(nativeweb_core_for_cef
   PUBLIC

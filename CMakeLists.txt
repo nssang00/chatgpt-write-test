@@ -9,25 +9,9 @@ include(CMakePackageConfigHelpers)
 
 find_package(Threads REQUIRED)
 
-add_library(nativeweb_core STATIC
-    src/core/app_resources.cpp
-    src/core/pending_call_registry.cpp
-    src/core/object_registry.cpp
-    src/core/native_object_runtime.cpp
-    src/core/event_dispatcher.cpp
-    src/core/bridge_message.cpp
-    src/core/json_codec.cpp
-    src/core/bridge_runtime.cpp
-    src/core/process_broker.cpp
-    src/core/native_permission_policy.cpp
-    src/core/module_registry.cpp
-    src/core/binding_registry.cpp
-    src/core/worker_pool.cpp
-    src/browser/common/backend_registry.cpp
-    src/plugin/shared_library.cpp
-    src/plugin/plugin_module.cpp
-    src/webview.cpp
-)
+set(NATIVEWEB_ROOT "${CMAKE_CURRENT_SOURCE_DIR}")
+include("${NATIVEWEB_ROOT}/cmake/NativeWebCoreSources.cmake")
+add_library(nativeweb_core STATIC ${NATIVEWEB_CORE_SOURCES})
 add_library(NativeWeb::Core ALIAS nativeweb_core)
 set_target_properties(nativeweb_core PROPERTIES EXPORT_NAME Core)
 

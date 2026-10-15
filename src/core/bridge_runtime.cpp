@@ -329,6 +329,11 @@ Any BridgeRuntime::eventMessage(
     return makeEventMessage(eventName, payload);
 }
 
+void BridgeRuntime::rejectPending(const Error& error)
+{
+    pending_.rejectAll(error);
+}
+
 void BridgeRuntime::shutdown()
 {
     if (asyncState_)

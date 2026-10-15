@@ -135,6 +135,11 @@ public:
             listener_->onBridgeMessage(message);
     }
 
+    void notifyNavigation(const std::string& url)
+    {
+        if (listener_) listener_->onLoadStarted(url);
+    }
+
     static FakeBackend* instance;
 
     bool reloaded_ = false;
@@ -342,6 +347,53 @@ void testPublicOrchestration()
             Any(42)));
 
     CHECK(outbound.get() == 42);
+
+    // An outstanding C++->JS Promise must not hang after navigation.
+    const std::size_t staleVersion =
+        FakeBackend::instance->messageVersion();
+    std::future<int> stale = webview.execute<int>("ui.slow");
+    const nativeweb::detail::BridgeMessage staleRequest =
+        nativeweb::detail::parseBridgeMessage(
+            FakeBackend::instance->waitForMessageAfter(staleVersion));
+    webview.reload();
+    CHECK(stale.wait_for(std::chrono::milliseconds(0)) ==
+          std::future_status::ready);
+    bool wasCancelled = false;
+    try { (void)stale.get(); }
+    catch (const nativeweb::Error& error) {
+        wasCancelled = error.code() == "navigation_changed";
+    }
+    CHECK(wasCancelled);
+    // Responses from the old document must not resolve fresh calls.
+    FakeBackend::instance->deliver(
+        nativeweb::detail::makeResponseMessage(
+            staleRequest.requestId, Any(999)));
+    const std::size_t freshVersion =
+        FakeBackend::instance->messageVersion();
+    std::future<int> fresh = webview.execute<int>("ui.fresh");
+    const nativeweb::detail::BridgeMessage freshRequest =
+        nativeweb::detail::parseBridgeMessage(
+            FakeBackend::instance->waitForMessageAfter(freshVersion));
+    CHECK(freshRequest.requestId != staleRequest.requestId);
+    CHECK(fresh.wait_for(std::chrono::milliseconds(0)) ==
+          std::future_status::timeout);
+    FakeBackend::instance->deliver(
+        nativeweb::detail::makeResponseMessage(
+            freshRequest.requestId, Any(84)));
+    CHECK(fresh.get() == 84);
+
+    // Simulate a browser-initiated navigation (not WebView::load/reload).
+    const std::size_t engineVersion =
+        FakeBackend::instance->messageVersion();
+    std::future<int> enginePending = webview.execute<int>("ui.enginePending");
+    (void)FakeBackend::instance->waitForMessageAfter(engineVersion);
+    FakeBackend::instance->notifyNavigation("app://desktop/other.html");
+    bool engineCancelled = false;
+    try { (void)enginePending.get(); }
+    catch (const nativeweb::Error& error) {
+        engineCancelled = error.code() == "navigation_changed";
+    }
+    CHECK(engineCancelled);
 
     const std::size_t eventVersion =
         FakeBackend::instance->messageVersion();

@@ -140,6 +140,9 @@ public:
 
     BindingRegistry& bindingRegistry() { return bindings_; }
 
+    // Cancel all outstanding native-to-JS calls without shutting down
+    // bindings, subscriptions or future calls (for document navigation).
+    void rejectPending(const Error& error);
     void shutdown();
 
     std::size_t pendingCount() const;

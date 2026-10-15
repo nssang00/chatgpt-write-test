@@ -617,8 +617,15 @@ private:
     }
     void invalidateDocument()
     {
-        std::lock_guard<std::mutex> lock(responseSink_->mutex);
-        ++responseSink_->generation;
+        // Do not let a native->JS std::future wait for a Promise belonging to
+        // a document that has navigated away. Preserve ordinary bindings and
+        // permit fresh calls in the new document. Request IDs stay monotonic.
+        {
+            std::lock_guard<std::mutex> lock(responseSink_->mutex);
+            ++responseSink_->generation;
+        }
+        runtime_.rejectPending(Error("navigation_changed",
+            "JavaScript document changed before call completion"));
     }
     void revokeManagedWorkers()
     {
