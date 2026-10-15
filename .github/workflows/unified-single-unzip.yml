@@ -2,7 +2,7 @@ name: v58.6.0 Single ZIP Unity Dual OneClick (no Player runtime claim)
 on:
   push:
     branches:
-      - feature/unified-unity-v58-6-0-single-unzip-kit
+      - feature/unified-unity-v58-6-0-nested-oneclick-longpath-fix
   workflow_dispatch:
 permissions:
   contents: read
@@ -62,7 +62,7 @@ jobs:
           }
           New-Item -ItemType File -Force -Path (Join-Path $locales 'en-US.pak') | Out-Null
           Set-Content -LiteralPath (Join-Path $package 'WebView.cs') -Value '// static fixture, not a runnable CEF browser'
-          $kit=Join-Path $root 'CompanyWebView-Dual-OneClick'
+          $kit=Join-Path $root 'CompanyWebView_v58_6_0\oneclick_bundle'
           New-Item -ItemType Directory -Force -Path $kit | Out-Null
           $helper=(Resolve-Path (Join-Path $r 'Ensure-CefRuntime.ps1')).Path
           $nativeStage=@(& $helper -BundleRoot $kit -UnityExe 'not-used-when-existing-stage' -NoAutoDownload)
@@ -73,7 +73,22 @@ jobs:
           if($sourceText -notmatch 'GetCefPackageFromBundle' -or $sourceText -match 'UnifiedSource-v58.6.0.zip'){
             throw 'Standalone kit unexpectedly depends on separately unpacked source snapshot'
           }
-          Write-Host 'Sibling compiled oneclick_bundle static discovery PASS'
+          $docs=Join-Path (Join-Path $old 'Package\com.company.webview') 'Documentation~'
+          New-Item -ItemType Directory -Force -Path $docs | Out-Null
+          $longDoc=Join-Path $docs 'PHASE1_CEF_INTERACTION_REAL_INPUT_IME_AUDIT.md'
+          Set-Content -LiteralPath $longDoc -Value 'Protected long-path documentation fixture'
+          $importer=(Resolve-Path (Join-Path $r 'Import-ExistingOneClick.ps1')).Path
+          & $importer -LegacyPackagePath (Join-Path $old 'Package\com.company.webview') -LegacyStagePath $stage -TargetBundleRoot $kit
+          if(-not (Test-Path -LiteralPath (Join-Path $kit 'Package\com.company.webview\Runtime\WebView.cs'))){
+            throw 'Nested oneclick_bundle did not import CEF Runtime source'
+          }
+          if(-not (Test-Path -LiteralPath (Join-Path $kit 'Build\cef-native\stage\runtime\Release\libcef.dll'))){
+            throw 'Nested oneclick_bundle did not import validated native stage'
+          }
+          if(Test-Path -LiteralPath (Join-Path $kit 'Package\com.company.webview\Documentation~')){
+            throw 'Documentation~ accidentally imported into nested kit'
+          }
+          Write-Host 'Nested oneclick_bundle auto-import and long-doc exclusion PASS'
       - name: Regression - assemble Unity Assets even if OneClick sits inside old oneclick_bundle
         shell: powershell
         run: |
@@ -115,15 +130,18 @@ jobs:
         run: |
           $ErrorActionPreference='Stop'
           $r='Integration/UnityUnified-v58.6.0-preview'
-          $kit=Join-Path $env:GITHUB_WORKSPACE 'CompanyWebView-Dual-OneClick'
-          foreach($p in @('DualPlayer','Runtime','Plugins/x86_64')){
+          $release=Join-Path $env:GITHUB_WORKSPACE 'CompanyWebView_v58_6_0'
+          $kit=Join-Path $release 'oneclick_bundle'
+          foreach($p in @('DualPlayer','Runtime','Plugins/x86_64',
+            'Build/cef-native/stage/native/Release','Build/cef-native/stage/runtime/Release',
+            'Package/com.company.webview')){
             New-Item -ItemType Directory -Force -Path (Join-Path $kit $p) | Out-Null
           }
           Copy-Item "$r/DualPlayer/Run-Dual.cmd" "$kit/Run-Dual.cmd"
           Copy-Item "$r/DualPlayer/Run-Dual.ps1" "$kit/Run-Dual.ps1"
           foreach($f in @('Ensure-CefRuntime.ps1','Screen-Automation.ps1',
            'BuildUnifiedDualPlayer.cs','UnifiedDualPlayerEvidence.cs',
-           'Install-UnifiedManagedSources.ps1','README_FIRST_KO.md')){
+           'Install-UnifiedManagedSources.ps1','Import-ExistingOneClick.ps1','README_FIRST_KO.md')){
             Copy-Item "$r/DualPlayer/$f" "$kit/DualPlayer/$f"
           }
           foreach($f in @('UnifiedWebView.cs','CefTextureBackendBridge.cs',
@@ -132,6 +150,18 @@ jobs:
           }
           Copy-Item 'build-wv2-single/Release/CompanyWebView2UnifiedPreview.dll' "$kit/Plugins/x86_64/CompanyWebView2UnifiedPreview.dll"
           Copy-Item "$r/DualPlayer/README_FIRST_KO.md" "$kit/README_FIRST_KO.md"
+          @'
+@echo off
+setlocal
+cd /d "%~dp0oneclick_bundle"
+call "Run-Dual.cmd" %*
+exit /b %ERRORLEVEL%
+'@ | Set-Content -LiteralPath (Join-Path $release 'Run-Dual.cmd') -Encoding ASCII
+          foreach($filename in @('Build/cef-native/stage/native/Release/.placeholder',
+             'Build/cef-native/stage/runtime/Release/.placeholder',
+             'Package/com.company.webview/.placeholder')){
+            Set-Content -LiteralPath (Join-Path $kit $filename) -Value 'Auto-filled from the existing validated oneclick_bundle on first run' -Encoding ASCII
+          }
           # The ZIP is its own launch root. No patch archive, no nested ZIP.
           $items=@(Get-ChildItem -LiteralPath $kit -File -Recurse | Sort-Object FullName)
           if($items.Count -lt 14){throw "Kit incomplete: $($items.Count) files"}
@@ -140,17 +170,18 @@ jobs:
             "{0}  {1}" -f ((Get-FileHash -LiteralPath $item.FullName -Algorithm SHA256).Hash.ToLowerInvariant()),$relative
           })
           $hashes | Set-Content -LiteralPath (Join-Path $kit 'SHA256SUMS.txt') -Encoding UTF8
-          if(-not (Test-Path -LiteralPath (Join-Path $kit 'Run-Dual.cmd'))){throw 'Launcher not at ZIP root'}
+          if(-not (Test-Path -LiteralPath (Join-Path $kit 'Run-Dual.cmd')) -or
+             -not (Test-Path -LiteralPath (Join-Path $release 'Run-Dual.cmd'))){throw 'Outer/nested launcher missing'}
           if(Test-Path -LiteralPath (Join-Path $kit 'UnifiedSource-v58.6.0.zip')){throw 'Nested ZIP unacceptable'}
           $copy=Join-Path $env:RUNNER_TEMP 'single-unzip-selftest'
-          Copy-Item -LiteralPath $kit -Destination $copy -Recurse
-          $tester=Join-Path $copy 'Run-Dual.ps1'
-          & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $tester -BundleRoot $copy -SelfTest
+          Copy-Item -LiteralPath $release -Destination $copy -Recurse
+          $tester=Join-Path $copy 'oneclick_bundle/Run-Dual.ps1'
+          & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $tester -BundleRoot (Join-Path $copy 'oneclick_bundle') -SelfTest
           if($LASTEXITCODE -ne 0){throw 'Unpacked single-folder checksum self-test failed'}
-          Write-Host "One-zip-root PASS ($($items.Count) checksummed files); no CEF or Unity Player run"
+          Write-Host "ASCII nested oneclick_bundle single ZIP PASS ($($items.Count) checksummed files); no Unity Player run"
       - uses: actions/upload-artifact@v4
         with:
-          name: CompanyWebView_Dual_OneClick_Unzip_And_Run
-          path: CompanyWebView-Dual-OneClick/
+          name: CompanyWebView_v58_6_0_oneclick_bundle_ascii_longpath_fix
+          path: CompanyWebView_v58_6_0/
           if-no-files-found: error
           retention-days: 30
