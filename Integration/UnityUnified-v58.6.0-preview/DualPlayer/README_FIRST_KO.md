@@ -1,31 +1,15 @@
-# CompanyWebView v58.6.0 - one zip, nested oneclick_bundle
+# CompanyWebView Unity Dual OneClick v58.6.0 — 실험 검증
 
-**사용법: 영문 ZIP 1개 압축 해제 -> 새로 생긴 폴더에서 Run-Dual.cmd 실행.**
+**실행:** 짧은 영문/숫자 경로에 배포 ZIP 1개를 풀고, 바깥쪽 `Run-Dual.cmd` 또는 내부 `oneclick_bundle/Run-Dual.cmd`를 실행합니다. 검증된 CEF v58.4.4 및 WebView2 v58.5.2 원본을 변경하지 않습니다.
 
-파일과 폴더 이름은 모두 영문입니다. 원래의 검증된 oneclick_bundle은 절대로 덮어쓰지 않습니다.
+현재 OneClick 원칙:
 
-```text
-Downloads/
-├── oneclick_bundle/                      <-- 기존 CEF v58.4.4 검증본 (변경 금지)
-│   ├── Package/com.company.webview/Runtime/
-│   └── Build/cef-native/stage/
-└── CompanyWebView_v58_6_0/              <-- 새 ZIP을 풀어서 생성된 영문 폴더
-    ├── Run-Dual.cmd                     <-- 이것만 더블클릭
-    └── oneclick_bundle/                 <-- ZIP에 미리 포함된 새 폴더
-        ├── Run-Dual.cmd
-        ├── Run-Dual.ps1
-        ├── Runtime/                      <-- 공통 Unity API
-        ├── DualPlayer/                   <-- Unity 빌드/검증/스크린샷
-        ├── Plugins/x86_64/              <-- WebView2 x64 DLL
-        ├── Package/com.company.webview/  <-- 최초 실행 때 기존 CEF Runtime만 자동 복사
-        ├── Build/cef-native/stage/       <-- 최초 실행 때 기존 검증 CEF native 자동 복사
-        └── results/                      <-- 실행 후 결과 JSON/PNG ZIP
-```
+- CEF v58.4.4 기존 `oneclick_bundle/Build/cef-native/stage` 및 `Package/com.company.webview/Runtime`를 자동으로 찾아 **읽기 전용 재사용**합니다.
+- 컴파일된 CEF DLL을 새 압축 해제 폴더의 `Build/`로 다시 복사하지 않습니다. `Build/`와 `Package/`의 PLACEHOLDER는 바이너리가 아닙니다. 실제 바이너리는 `%LOCALAPPDATA%\\CWV58`의 짧은 Unity 빌드/Player 폴더에 직접 배치합니다.
+- 기존 CEF 런타임이 없으면 `oneclick_bundle/CefOneClick-v58.4.4-source.zip`를 검증 후 빌드하는 경로를 시도합니다. **이 정확한 이름의 SHA-256 고정 소스 ZIP은 실행 배포본에 반드시 포함해야 합니다.** 기본 CI 조립 아티팩트에는 포함되지 않을 수 있으며, 현재 인계 기반 로컬 보완 ZIP에만 확인되어 있습니다. 기존 stage가 없고 소스 ZIP도 없다면 명시적으로 실패합니다.
+- 첫 CEF 빌드에는 Unity 2022.3.62f3 Windows Build Support, VS 2022 MSVC C++ Build Tools, CMake, 네트워크 및 큰 여유 디스크가 필요합니다. 공식 CEF 배포판 SHA-1을 검증합니다.
+- `Documentation~`, `Samples~`, `Tests~` 및 긴 UnityHarness 경로는 native 소스 추출이나 Unity Assets에 포함하지 않습니다. 유니티에는 기존 CEF `Runtime` 폴더만 복사합니다.
 
-새 ZIP 내부에 `oneclick_bundle` **폴더 구조는 미리 만들어 두었습니다.** 대용량 CEF libcef.dll과 소스는 이전에 검증된 폴더에서 최초 실행 시 새 하위 폴더로 복사합니다. 현재 ZIP 자체에 대용량 CEF 런타임은 내장돼 있지 않습니다. 외부 폴더를 사용자에게 선택시키지 않고 자동 검색하되, 이전 런타임이 없다면 환경에 따라 빌드 단계가 필요합니다.
+**검증 범위:** Source/ABI/PowerShell 정적 검사와 실제 Unity Windows Player 동시 실행은 다릅니다. Unity Player 양쪽 Backend 렌더링, 한글/이모지 메시지, STA 종료, 창 캡처, IME 후보창/DPI/z-order는 실기 결과가 나오기 전까지 PASS로 간주하지 않습니다.
 
-**이번 오류 수정:** `Documentation~` 및 긴 감사 문서 경로는 Unity 프로젝트로 복사하지 않습니다. 검증된 `Package/com.company.webview/Runtime` 디렉터리만 사용합니다. Unity 임시 프로젝트와 Player 출력은 `%LOCALAPPDATA%\\CWV58`의 짧은 경로에서 만듭니다.
-
-자동 검증: CEF Texture RawImage 프레임, WebView2 메시지 및 한글 문자열 왕복, 창 축소/복구, 스크린샷 3장, 종료와 결과 ZIP. **실제 Unity Player에서 모든 동작을 통과했는지 여부는 사용자 Windows 실기 결과로만 판정**합니다.
-
-테스트 결과는 새 폴더 내부 `oneclick_bundle/results/dual-날짜.zip`만 업로드하세요. 사용자가 직접 확인할 것은 실제 한국어 IME 후보창 등 자동 판정하기 어려운 화면 품질입니다.
+검증 후 `oneclick_bundle/results/dual-날짜.zip`를 확인하세요. 해당 결과물은 경로/환경 정보를 검토하고 공유합니다.
