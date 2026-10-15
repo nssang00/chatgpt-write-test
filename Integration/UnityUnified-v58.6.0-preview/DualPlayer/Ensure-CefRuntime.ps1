@@ -53,6 +53,7 @@ function CandidateSearch {
  $roots=@(
   $BundleRoot,
   (Split-Path -Parent $BundleRoot),
+  (Split-Path -Parent (Split-Path -Parent $BundleRoot)),
   (Join-Path $env:USERPROFILE 'Downloads'),
   (Join-Path $env:USERPROFILE 'Desktop'),
   (Join-Path $env:LOCALAPPDATA 'CompanyWebView\CEF-v58.4.4\oneclick_bundle')
