@@ -76,7 +76,14 @@ public static class DualWindowCapture {
    $Player.Refresh();$h=$Player.MainWindowHandle
    if($phase.op -eq 'capture'){
     $png=Join-Path $images ($phase.name+'.png')
-    $code=[DualWindowCapture]::Capture($h,$Player.Id,$png)
+    $code='NOT_ATTEMPTED'
+    # Retry foreground-only. Never force focus or capture another application's window.
+    for($attempt=0;$attempt -lt 16;$attempt++){
+     $Player.Refresh();$h=$Player.MainWindowHandle
+     $code=[DualWindowCapture]::Capture($h,$Player.Id,$png)
+     if($code -eq 'CAPTURED' -or $Player.HasExited){break}
+     Start-Sleep -Milliseconds 250
+    }
     $entry=[ordered]@{name=$phase.name;result=$code;file=$null;bytes=0;sha256=$null;width=0;height=0}
     if($code -eq 'CAPTURED' -and (Test-Path -LiteralPath $png)){
      $entry.file='screenshots/'+$phase.name+'.png'
