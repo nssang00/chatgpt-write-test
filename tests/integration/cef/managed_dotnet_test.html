@@ -23,6 +23,19 @@
       await new Promise(resolve => setTimeout(resolve,30));
     }
     if (!ready) throw new Error(".NET worker never ready");
+    // WebView2 security regression: forged/missing document sessions
+    // must never reach the trusted host's test.fail binding.
+    if (window.chrome && window.chrome.webview) {
+      const forged = (id, session) =>
+        window.chrome.webview.postMessage({
+          type:"request", id, method:"test.fail",
+          args:["bridge-fail: forged document session was accepted"], ...session
+        });
+      forged("987654321", {session:"0".repeat(48)});
+      forged("987654322", {});
+      await new Promise(resolve => setTimeout(resolve, 350));
+    }
+
     const handle = await xytron.example_cs.Player.create("Ada");
     if (typeof handle !== "string" || !handle.startsWith("xy_"))
       throw new Error(".NET managed handle missing");

@@ -21,6 +21,19 @@
       await new Promise(r=>setTimeout(r,30));
     }
     ensure(ready,"Worker not ready");
+    // WebView2 security regression: forged/missing document sessions
+    // must never reach the trusted host's test.fail binding.
+    if (window.chrome && window.chrome.webview) {
+      const forged = (id, session) =>
+        window.chrome.webview.postMessage({
+          type:"request", id, method:"test.fail",
+          args:["bridge-fail: forged document session was accepted"], ...session
+        });
+      forged("987654321", {session:"0".repeat(48)});
+      forged("987654322", {});
+      await new Promise(resolve => setTimeout(resolve, 350));
+    }
+
     const h = await xytron.example_py.Player.create("Ada");
     ensure(typeof h==="string" && h.startsWith("xy_"),"Invalid opaque handle");
     ensure(await xytron.example_py.Player.method.hit(h,9)===91,"Python method");
