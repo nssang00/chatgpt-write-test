@@ -9,6 +9,7 @@ public sealed class UnifiedDualPlayerEvidence : MonoBehaviour
     [SerializeField] private CefTextureSurface cefSurface;
     [SerializeField] private UnifiedTextureSceneHost textureHost;
     [SerializeField] private UnifiedOverlaySceneHost overlayHost;
+    [SerializeField] private CefCubeTextureProof cubeProof;
     [Serializable] private sealed class Evidence {
         public string harness="58.6.0-dual-experimental";
         public string status="FAIL_AUTO";
@@ -18,6 +19,13 @@ public sealed class UnifiedDualPlayerEvidence : MonoBehaviour
         public long cefAcceleratedFrames;
         public long cefSoftwareFrames;
         public bool overlayReady;
+        public bool cubeTextureBound;
+        public int cubeTextureBindCount;
+        public ulong cubeObservedFrameAdvances;
+        public float cubeRotationDegrees;
+        public int cubeVisibleFrames;
+        public bool cubeOccluderBeforeCubeRay;
+        public bool cubeVisualDepthAndUvPending=true;
         public int overlayMessageCount;
         public int overlayUnicodeRoundtripCount;
         public int overlayPingRoundtripCount;
@@ -55,6 +63,14 @@ public sealed class UnifiedDualPlayerEvidence : MonoBehaviour
         if(cefSurface!=null) {
             evidence.cefAcceleratedFrames=Math.Max(evidence.cefAcceleratedFrames,(long)cefSurface.AcceleratedFrameCount);
             evidence.cefSoftwareFrames=Math.Max(evidence.cefSoftwareFrames,(long)cefSurface.SoftwareFrameCount);
+        }
+        if(cubeProof!=null){
+            evidence.cubeTextureBound |= cubeProof.IsCubeTextureBound;
+            evidence.cubeTextureBindCount=Math.Max(evidence.cubeTextureBindCount,cubeProof.TextureBindCount);
+            evidence.cubeObservedFrameAdvances=Math.Max(evidence.cubeObservedFrameAdvances,cubeProof.ObservedCefFrameAdvances);
+            evidence.cubeRotationDegrees=Math.Max(evidence.cubeRotationDegrees,cubeProof.AngularTravelDegrees);
+            evidence.cubeVisibleFrames=Math.Max(evidence.cubeVisibleFrames,cubeProof.VisibleFrames);
+            evidence.cubeOccluderBeforeCubeRay |= cubeProof.OccluderBeforeCubeRay;
         }
         if(overlayHost!=null) {
             if(overlayHost.IsOverlayReady)evidence.overlayReady=true;
@@ -102,7 +118,11 @@ public sealed class UnifiedDualPlayerEvidence : MonoBehaviour
         if(reportSaved)return;
         reportSaved=true;
         evidence.status=evidence.cefReady && evidence.cefAcceleratedFrames>0 &&
-            evidence.cefRawImageBound && evidence.overlayReady && evidence.overlayMessageCount>0 &&
+            evidence.cefRawImageBound && evidence.cefAcceleratedFrames>=3 &&
+            evidence.cubeTextureBound && evidence.cubeTextureBindCount>0 &&
+            evidence.cubeObservedFrameAdvances>=3 && evidence.cubeRotationDegrees>180f &&
+            evidence.cubeVisibleFrames>0 && evidence.cubeOccluderBeforeCubeRay &&
+            evidence.overlayReady && evidence.overlayMessageCount>0 &&
             evidence.overlayUnicodeRoundtripCount>0 && evidence.overlayPingRoundtripCount>0 &&
             evidence.overlayCloseRequested && evidence.overlayJoined && evidence.cefShutdown &&
             String.IsNullOrEmpty(evidence.error) ? "PASS_AUTO" : "FAIL_AUTO";
@@ -113,6 +133,8 @@ public sealed class UnifiedDualPlayerEvidence : MonoBehaviour
             File.WriteAllText(reportFile,JsonUtility.ToJson(evidence,true));
             Debug.Log("[UNIFIED-DUAL] "+evidence.status+" CEF accelerated="+evidence.cefAcceleratedFrames+
                 " RawImage="+evidence.cefRawImageBound+" WebView2 unicode="+evidence.overlayUnicodeRoundtripCount+" WebView2 msgs="+evidence.overlayMessageCount+
+                " cubeBound="+evidence.cubeTextureBound+" cubeFrameAdvances="+evidence.cubeObservedFrameAdvances+
+                " cubeRotation="+evidence.cubeRotationDegrees+" occlusionRay="+evidence.cubeOccluderBeforeCubeRay+
                 " joined="+evidence.overlayJoined+" CEF shutdown="+evidence.cefShutdown);
         }catch(Exception ex){Debug.LogError("[UNIFIED-DUAL] Evidence write FAILED "+ex);}
         Application.Quit(evidence.status=="PASS_AUTO"?0:3);
