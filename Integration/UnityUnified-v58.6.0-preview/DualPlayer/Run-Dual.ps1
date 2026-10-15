@@ -116,25 +116,15 @@ try {
   $legacySource=GetCefPackageFromBundle $CefRuntimeDir
   New-Item -ItemType Directory -Force -Path $out,$work | Out-Null
 
-  # User-requested archive structure: oneclick_bundle/Package and Build/cef-native/stage
-  # are populated automatically from the previously validated oneclick_bundle.
-  # The old oneclick_bundle is read-only and never overwritten.
+  # New extracted archive has its OWN oneclick_bundle/ with Package and Build.
   $bundledPackage=Join-Path $root 'Package\com.company.webview'
-  $bundledRuntime=Join-Path $bundledPackage 'Runtime'
-  if(-not (Test-Path -LiteralPath (Join-Path $bundledRuntime 'WebView.cs') -PathType Leaf)){
-    New-Item -ItemType Directory -Force -Path $bundledPackage | Out-Null
-    Copy-Item -LiteralPath (Join-Path $legacySource 'Runtime') -Destination $bundledPackage -Recurse -Force
-  }
-  Need (Test-Path -LiteralPath (Join-Path $bundledRuntime 'WebView.cs') -PathType Leaf) 'CEF Runtime managed sources not populated'
-
   $localStage=Join-Path $root 'Build\cef-native\stage'
-  $localNative=Join-Path $localStage 'native\Release'
-  $localRuntime=Join-Path $localStage 'runtime\Release'
-  if(-not (Test-Path -LiteralPath (Join-Path $localNative 'CompanyWebViewCefTextureProbe.dll') -PathType Leaf) -or
-     -not (Test-Path -LiteralPath (Join-Path $localRuntime 'libcef.dll') -PathType Leaf)){
-    New-Item -ItemType Directory -Force -Path $localNative,$localRuntime | Out-Null
-    StageCef $CefRuntimeDir $localRuntime
-    Copy-Item -LiteralPath (Join-Path $layout.native 'CompanyWebViewCefTextureProbe.dll') -Destination $localNative -Force
+  $localManaged=Join-Path $bundledPackage 'Runtime\WebView.cs'
+  if(-not (Test-Path -LiteralPath $localManaged -PathType Leaf) -or
+     -not (Test-Path -LiteralPath (Join-Path $localStage 'runtime\Release\libcef.dll') -PathType Leaf)){
+    $importer=Join-Path $root 'DualPlayer\Import-ExistingOneClick.ps1'
+    Need (Test-Path -LiteralPath $importer -PathType Leaf) 'Missing existing OneClick importer'
+    & $importer -LegacyPackagePath $legacySource -LegacyStagePath $CefRuntimeDir -TargetBundleRoot $root
   }
   $null=GetCefStageLayout $localStage
   $source=$bundledPackage
