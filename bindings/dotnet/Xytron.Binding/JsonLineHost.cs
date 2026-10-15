@@ -66,6 +66,9 @@ public static class JsonLineHost
             if (arg.ValueKind is not (JsonValueKind.Null or JsonValueKind.String or
                 JsonValueKind.Number or JsonValueKind.True or JsonValueKind.False))
                 throw new RequestRejected();
+            if (arg.ValueKind == JsonValueKind.Number &&
+                (!arg.TryGetDouble(out double numeric) || !double.IsFinite(numeric)))
+                throw new RequestRejected();
             result.Add(arg.Clone());
         }
         return (id, operation, result.ToArray());
