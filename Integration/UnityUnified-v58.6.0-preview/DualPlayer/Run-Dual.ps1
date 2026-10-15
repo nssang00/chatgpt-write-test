@@ -116,20 +116,13 @@ try {
   $legacySource=GetCefPackageFromBundle $CefRuntimeDir
   New-Item -ItemType Directory -Force -Path $out,$work | Out-Null
 
-  # New extracted archive has its OWN oneclick_bundle/ with Package and Build.
-  $bundledPackage=Join-Path $root 'Package\com.company.webview'
-  $localStage=Join-Path $root 'Build\cef-native\stage'
-  $localManaged=Join-Path $bundledPackage 'Runtime\WebView.cs'
-  if(-not (Test-Path -LiteralPath $localManaged -PathType Leaf) -or
-     -not (Test-Path -LiteralPath (Join-Path $localStage 'runtime\Release\libcef.dll') -PathType Leaf)){
-    $importer=Join-Path $root 'DualPlayer\Import-ExistingOneClick.ps1'
-    Need (Test-Path -LiteralPath $importer -PathType Leaf) 'Missing existing OneClick importer'
-    & $importer -LegacyPackagePath $legacySource -LegacyStagePath $CefRuntimeDir -TargetBundleRoot $root
-  }
-  $null=GetCefStageLayout $localStage
-  $source=$bundledPackage
-  $CefRuntimeDir=$localStage
-  Write-Host '[DUAL] Local oneclick_bundle Package + Build stage populated and verified'
+  # Keep the validated legacy CEF source and compiled stage READ-ONLY. In particular,
+  # do not copy ~300 MB of CEF binaries into the user's possibly deep Downloads path.
+  # Stage only the minimal C# Runtime into the short scratch Unity project, then
+  # stage native binaries directly from the validated stage into Assets and Player.
+  $source=$legacySource
+  $null=GetCefStageLayout $CefRuntimeDir
+  Write-Host '[DUAL] Reusing validated CEF source + native stage read-only; native files stay in short LOCALAPPDATA workspace'
   $project=Join-Path $work 'UnityProject'
   foreach($p in @('Assets\Editor','Assets\Scripts','Packages','ProjectSettings')){New-Item -ItemType Directory -Force -Path (Join-Path $project $p) | Out-Null}
   # Create and verify the missing UnifiedExperimental directory BEFORE copying sources.
