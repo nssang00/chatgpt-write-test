@@ -173,7 +173,11 @@ try {
   if(-not $p.WaitForExit(($AutoSeconds+90)*1000)){Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue;throw 'Player timeout'}
   Need (Test-Path -LiteralPath $runtimeJson) 'Player did not write evidence'
   $e=Get-Content -LiteralPath $runtimeJson -Raw -Encoding UTF8 | ConvertFrom-Json
-  Need ($e.harness -eq '58.6.0-dual-experimental' -and $e.status -eq 'PASS_AUTO') "Dual runtime failed: $($e.error)"
+  Need ($e.harness -eq '58.6.0-dual-experimental') "Unexpected Dual runtime harness: $($e.harness)"
+  if($e.status -ne 'PASS_AUTO'){
+   throw ("Dual runtime {0}: cefReady={1}, acceleratedFrames={2}, rawImage={3}, overlayReady={4}, received={5}, unicode={6}, ping={7}, joined={8}, cefShutdown={9}; playerError='{10}'" -f
+    $e.status,$e.cefReady,$e.cefAcceleratedFrames,$e.cefRawImageBound,$e.overlayReady,$e.overlayMessageCount,$e.overlayUnicodeRoundtripCount,$e.overlayPingRoundtripCount,$e.overlayJoined,$e.cefShutdown,$e.error)
+  }
   Need ($e.cefReady -and $e.cefRawImageBound -and $e.cefAcceleratedFrames -gt 0) 'CEF Texture not proven'
   Need ($e.overlayReady -and $e.overlayMessageCount -gt 0) 'WebView2 messaging not proven'
   Need ($e.cefShutdown -and $e.overlayJoined -and $p.ExitCode -eq 0) 'Dual shutdown failed'
