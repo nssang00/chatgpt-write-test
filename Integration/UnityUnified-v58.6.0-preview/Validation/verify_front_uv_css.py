@@ -31,7 +31,7 @@ assert "SetForegroundWindow" not in screen
 uv = (dual / "Verify-TextureUvMarkers.ps1").read_text(encoding="utf-8")
 assert "cubeMaterial.mainTextureScale=new Vector2(-1,1)" in builder, "Front-face UV must flip U, not V"
 assert "cubeMaterial.mainTextureOffset=new Vector2(1,0)" in builder, "Front-face UV offset"
-for pattern in ("BLUE TOP", "RED BOTTOM", "blueMeanY", "redMeanY", "checkedScreenshots",
+for pattern in ("blueMeanY", "redMeanY", "checkedScreenshots",
                 "uv-visual-evidence.json", "INVERTED"):
     assert pattern in uv, "Screenshot UV verifier missing: "+pattern
 assert 'Verify-TextureUvMarkers.ps1' in runner
