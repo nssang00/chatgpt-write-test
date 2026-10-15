@@ -67,6 +67,10 @@ public static class BuildUnifiedDualPlayer
         canvas.renderMode=RenderMode.ScreenSpaceOverlay;
         var left=CreatePanel(canvas,"LEFT - CEF Accelerated Texture",0,0.5f);
         var right=CreatePanel(canvas,"RIGHT - WebView2 Native Overlay",0.5f,1);
+        // CEF accelerated D3D11 surface arrives with top-left texture origin;
+        // RawImage samples bottom-left origin. Flip V on the isolated dual-test panel only.
+        // Do not modify the validated v58.4.4 CefTextureSurface implementation.
+        left.GetComponent<RawImage>().uvRect=new Rect(0f,1f,1f,-1f);
         var cefSurface=left.gameObject.AddComponent<CefTextureSurface>();
         var textureHost=left.gameObject.AddComponent<UnifiedTextureSceneHost>();
         Assign(cefSurface,"target",left.GetComponent<RawImage>());
