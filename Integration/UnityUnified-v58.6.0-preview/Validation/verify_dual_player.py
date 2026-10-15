@@ -23,6 +23,10 @@ for required in ['GetCefPackageFromBundle','Get-FileHash','SHA256SUMS.txt',
 assert 'Run-Dual.ps1' in cmd and 'oneclick_bundle' in guide
 assert 'UnityProject' not in ps.split("$safe=@(")[1].split(")")[0]
 assert '50e8c2' not in ps, 'Do not invent source identity'
+assert 'new Rect(0f,1f,1f,-1f)' in builder, 'CEF dual RawImage must flip native top-left V origin'
+assert '(evidence.overlayUnicodeRoundtripCount==0 || evidence.overlayPingRoundtripCount==0)' in tele, 'Retry until both probes are proven'
+bridge=(root/'Runtime'/'WebView2OverlayBackendBridge.cs').read_text(encoding='utf-8')
+assert 'CallingConvention=CallingConvention.Cdecl, CharSet=CharSet.Unicode)]\n        private static extern int WV2Unified_ReadMessage' in bridge, 'Incoming native wchar_t* buffer requires UTF-16 marshal'
 print('Dual Player CEF Texture + WebView2 HWND source/evidence contract PASS; Unity runtime NOT RUN')
 
 assert 'UnifiedSource-v58.6.0.zip' not in ps, 'One folder kit must not require the old source snapshot ZIP'
