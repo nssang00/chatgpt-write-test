@@ -1,0 +1,239 @@
+name: Cito Handoff Export
+
+on:
+  push:
+    branches: [cito-handoff-export-20261015]
+    paths:
+      - ".github/workflows/cito-handoff-export.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  export:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout exact Cito source snapshot
+        uses: actions/checkout@v4
+        with:
+          ref: 9f6c8e2a02112daf0de091b75e971e1ef229ff26
+          fetch-depth: 50
+
+      - name: Build handoff package
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p handoff/.github/workflows
+
+          cp -a cito handoff/cito
+          cp .github/workflows/cito-linux-network.yml handoff/.github/workflows/
+          cp .github/workflows/cito-quic.yml handoff/.github/workflows/
+
+          if [ -f README.md ]; then cp README.md handoff/ROOT_README.md; fi
+          for f in LICENSE LICENSE.md LICENSE.txt; do
+            if [ -f "$f" ]; then cp "$f" handoff/; fi
+          done
+
+          printf '%s\n' '9f6c8e2a02112daf0de091b75e971e1ef229ff26' > handoff/SOURCE_HEAD.txt
+          git log -20 --date=iso --pretty=format:'%h %ad %s' > handoff/RECENT_COMMITS.txt
+
+          cat > handoff/HANDOFF.md <<'EOF'
+          # Cito Handoff
+
+          ## Source snapshot
+
+          - Repository: `nssang00/chatgpt-write-test`
+          - Development branch: `cito-dev`
+          - Exact source commit: `9f6c8e2a02112daf0de091b75e971e1ef229ff26`
+          - Cito lives under `cito/`; the root project is separate.
+
+          ## Product goal
+
+          Cito is a lightweight typed distributed messaging runtime focused on:
+          1. intent-first, easy APIs;
+          2. demand-indexed discovery/delivery using `ScopeId + ResourceId + TypeId`;
+          3. one event-loop owner with bounded/lazy worker-pool offload;
+          4. no-demand fast path: encode 0 / send 0;
+          5. direct/local transport selection hidden from normal users.
+
+          Public mental model:
+
+          ```text
+          Context
+
+          Publish / Subscribe
+            publish()
+            subscribe()
+
+          Request / Reply
+            request()
+            handle()
+          ```
+
+          Normal users should not manage participants, endpoints, sockets, discovery,
+          serialization, event loops, worker pools, SHM/UDP/QUIC selection, or broker
+          topology.
+
+          ## Current API direction
+
+          C++:
+
+          ```cpp
+          cito::Context ctx("acme");
+
+          ctx.subscribe<Position>(
+              "drone_17",
+              on_position);
+
+          ctx.publish(
+              "drone_17",
+              position);
+
+          ctx.handle<GetStatus>(
+              "drone_17",
+              [](const GetStatus& req) {
+                  return Status{...};
+              });
+
+          auto result =
+              co_await ctx.request(
+                  "drone_17",
+                  GetStatus{...});
+          ```
+
+          Python mirrors the same concepts with typed generated messages and
+          `await ctx.request(...)`.
+
+          `subscribe()` is Context-owned: ignoring the returned handle keeps the
+          subscription alive until Context shutdown. `on()` remains a compatibility
+          scoped/RAII helper.
+
+          ## Implemented architecture
+
+          - canonical platform-independent TypeId / SchemaHash
+          - OMG-IDL subset with C++ and Python generation
+          - cross-language byte-compatible CTO1 typed encoding
+          - stable C ABI and Python binding
+          - shared compiled process-level runtime across C++ / C ABI / Python
+          - HostRuntimeCore exact demand index
+          - DiscoveryControlCore with lease/incarnation/snapshot/route handling
+          - UDP runtime adapter and real Linux namespace selective-delivery tests
+          - same-host SHM tests
+          - RequestReplyCore with correlation, cancellation, late-reply rejection,
+            teardown safety and typed statuses
+          - type-first IDL relation: `request RequestType returns ReplyType;`
+          - C++ `request()/handle()`
+          - C ABI request/handler/reply/cancel primitives
+          - Python `await request()` / `handle()`
+          - synthetic handler-capability TypeId so normal subscribers are not mistaken
+            for Request/Reply handlers
+          - versioned CTX1 request/reply/cancel transport envelope
+          - peer/session + RequestId inbound correlation
+          - expected-destination validation for replies
+          - real two-node MsQuic CTX1 Request/Reply stream smoke
+          - RequestNetworkAdapter connecting public request semantics to remote transport
+          - transport-aware route endpoint metadata with QUIC endpoint support
+          - RequestSessionLifecycleCore for desired/connect/disconnect state
+
+          ## Current boundary / next task
+
+          The next major step is to connect a concrete MsQuic session manager to
+          `RequestSessionLifecycleCore` so discovered QUIC endpoints automatically
+          create/destroy sessions and public `Context::request()` reaches remote nodes
+          without test-only session wiring.
+
+          Preserve these rules while doing that:
+
+          - MsQuic callbacks must not own mutable discovery/request runtime state.
+            Post events/completions back to the Cito loop.
+          - Request/Reply remains a protocol on the same runtime, not a second RPC runtime.
+          - Same-process local handler should remain the preferred path.
+          - No handler / no ready route must not serialize a typed request.
+          - Remote reliable Request/Reply should use QUIC stream.
+          - Handler discovery must reuse the demand index via the synthetic
+            request-handler capability TypeId.
+          - Do not expose QUIC/session/address objects in normal public API.
+          - Do not claim full public remote Request/Reply until Context automatically
+            owns discovery readiness + session lifecycle + transport delivery.
+
+          After session-manager integration, priorities are:
+          1. public Context automatic remote Request/Reply;
+          2. route withdrawal / lease expiry -> session disconnect + pending cleanup;
+          3. deadline/timer integration on the single event loop;
+          4. same-host cross-process Request/Reply via direct/SHM path;
+          5. Python async handler execution through the Cito loop/worker model;
+          6. Windows C ABI/runtime/QUIC/SHM gates;
+          7. protobuf migration tooling.
+
+          ## Testing doctrine
+
+          Every milestone must pass cumulative:
+          - Unit
+          - Regression
+          - minimal Smoke
+          - ASan/UBSan where meaningful
+          - Linux namespace when real network semantics matter
+          - MsQuic smoke for QUIC changes
+
+          Do not make absolute NIC/switch/performance claims from CI/netns.
+
+          ## Important files
+
+          Start with:
+          - `cito/README.md`
+          - `cito/docs/PUBLIC_API.md`
+          - `cito/docs/V1_SCOPE.md`
+          - `cito/docs/AUTONOMOUS_DEVELOPMENT.md`
+          - `cito/docs/REQUEST_REPLY_CORE.md`
+          - `cito/docs/REQUEST_REPLY_IDL.md`
+          - `cito/docs/REQUEST_TRANSPORT.md`
+          - `cito/include/cito/cito.hpp`
+          - `cito/include/cito/detail/embedded_host_runtime.hpp`
+          - `cito/include/cito/detail/host_runtime_core.hpp`
+          - `cito/include/cito/detail/discovery_control_core.hpp`
+          - `cito/include/cito/detail/request_reply_core.hpp`
+          - `cito/include/cito/detail/request_transport.hpp`
+          - `cito/include/cito/detail/request_network_adapter.hpp`
+          - `cito/include/cito/detail/request_session_lifecycle.hpp`
+          - `cito/include/cito/detail/udp_runtime_adapter.hpp`
+          - `cito/src/c_api.cpp`
+          - `cito/tools/cito_idlc.py`
+          - `.github/workflows/cito-linux-network.yml`
+          - `.github/workflows/cito-quic.yml`
+
+          Key tests:
+          - `cito/tests/request_reply_core_test.cpp`
+          - `cito/tests/request_api_test.cpp`
+          - `cito/tests/request_discovery_test.cpp`
+          - `cito/tests/request_transport_test.cpp`
+          - `cito/tests/request_network_adapter_test.cpp`
+          - `cito/tests/request_public_remote_test.cpp`
+          - `cito/tests/request_session_lifecycle_test.cpp`
+          - `cito/tests/c_request_api_test.c`
+          - `cito/tests/test_python_request_reply.py`
+          - `cito/tests/net/quic_request_node.cpp`
+
+          ## CI status at handoff
+
+          The source snapshot immediately before this handoff had the Cito Linux network
+          gate and MsQuic gate green in the working conversation. Re-run the workflows
+          after any new runtime/session changes.
+
+          EOF
+
+          {
+            echo "Cito handoff manifest"
+            echo "source_head=9f6c8e2a02112daf0de091b75e971e1ef229ff26"
+            echo
+            find handoff -type f -print | sort
+          } > handoff/MANIFEST.txt
+
+      - name: Upload handoff archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: cito-handoff-9f6c8e2a02112daf0de091b75e971e1ef229ff26
+          path: handoff
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 9
