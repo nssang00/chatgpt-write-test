@@ -99,6 +99,8 @@ private:
     std::atomic<bool> closing_;
     std::string source_;
     std::string trustedEntryUrl_;
+    std::uint64_t navigation_ = 0;
+    bool mainFrameReady_ = false;
     std::shared_ptr<const AppResourceBundle> appResources_;
 
     Microsoft::WRL::ComPtr<ICoreWebView2Environment> environment_;

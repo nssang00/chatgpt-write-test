@@ -24,15 +24,27 @@ public:
  std::condition_variable cv;
  unsigned serial;
  Any message;
+ nativeweb::detail::VerifiedFrameContext caller;
  const char* engineName()const override{return "test-cef";}
  nativeweb::Engine engine()const override{return nativeweb::Engine::Cef;}
  nativeweb::Capabilities capabilities()const override{return nativeweb::Capabilities();}
  void setListener(nativeweb::detail::BrowserBackendListener* l)override{listener=l;}
- void create(const nativeweb::detail::BrowserCreateParams&)override{started=true;if(listener)listener->onBrowserCreated();}
+ void create(const nativeweb::detail::BrowserCreateParams& params)override{
+  started=true;
+  if(listener)listener->onBrowserCreated();
+  if(listener && params.source=="app://desktop/index.html"){
+   caller.frameId=42;caller.navigation=1;
+   caller.engineVerified=true;caller.mainFrame=true;caller.trustedContent=true;
+   listener->onTrustedFrameActivated(caller);
+  }
+ }
  void destroy()override{started=false;if(listener)listener->onBrowserClosed();}
  bool isCreated()const override{return started;}
  void load(const std::string& u)override{if(listener)listener->onLoadStarted(u);}
- void reload()override{if(listener)listener->onLoadStarted("app://desktop/index.html");}
+ void reload()override{
+  caller.engineVerified=false;
+  if(listener)listener->onLoadStarted("app://desktop/index.html");
+ }
  void postBridgeMessage(const Any& m)override{{std::lock_guard<std::mutex> lk(mu);message=m;++serial;}cv.notify_all();}
  unsigned count(){std::lock_guard<std::mutex> lk(mu);return serial;}
  Any wait(unsigned after,int millis=5000){std::unique_lock<std::mutex> lk(mu);
@@ -43,9 +55,13 @@ public:
 Backend* Backend::instance=0;
 void registration(){nativeweb::detail::registerBrowserBackendFactory(nativeweb::Engine::Cef,
  [](){return std::unique_ptr<nativeweb::detail::BrowserBackend>(new Backend());});}
-nativeweb::detail::BridgeMessage call(unsigned id,const std::string& op,const VariantList& args=VariantList()){
+nativeweb::detail::BridgeMessage call(unsigned id,const std::string& op,
+ const VariantList& args=VariantList(),
+ const nativeweb::detail::VerifiedFrameContext* context=nullptr){
  Backend* b=Backend::instance;unsigned n=b->count();
- b->listener->onBridgeMessage(nativeweb::detail::makeRequestMessage(id,op,args));
+ b->listener->onVerifiedBridgeMessage(
+  nativeweb::detail::makeRequestMessage(id,op,args),
+  context?*context:b->caller);
  Any msg=b->wait(n);
  if(msg.empty())throw std::runtime_error("Managed bridge no response");
  return nativeweb::detail::parseBridgeMessage(msg);
@@ -78,6 +94,23 @@ void run(const std::string& python,const std::string& fixture){
  catch(const nativeweb::Error& e){reserved=e.code()=="reserved_method";}
  CHECK(reserved);
  VariantList name;name.push_back(std::string("Ada"));
+ Backend* active=Backend::instance;
+ nativeweb::detail::VerifiedFrameContext invalid=active->caller;
+ invalid.mainFrame=false;
+ CHECK(call(50,"example_py.Player.create",name,&invalid).errorCode=="permission_denied");
+ invalid=active->caller; invalid.navigation+=1;
+ CHECK(call(51,"example_py.Player.create",name,&invalid).errorCode=="permission_denied");
+ invalid=active->caller; invalid.engineVerified=false;
+ CHECK(call(52,"example_py.Player.create",name,&invalid).errorCode=="permission_denied");
+ invalid=active->caller; invalid.frameId+=1;
+ CHECK(call(53,"example_py.Player.create",name,&invalid).errorCode=="permission_denied");
+ invalid=active->caller; invalid.trustedContent=false;
+ CHECK(call(54,"example_py.Player.create",name,&invalid).errorCode=="permission_denied");
+ unsigned legacyVersion=active->count();
+ active->listener->onBridgeMessage(
+  nativeweb::detail::makeRequestMessage(55,"example_py.Player.create",name));
+ CHECK(nativeweb::detail::parseBridgeMessage(active->wait(legacyVersion))
+       .errorCode=="permission_denied");
  auto res=call(1,"example_py.Player.create",name);
  CHECK(res.type==nativeweb::detail::BridgeMessageType::Response);
  std::string handle=AnyCast<std::string>(res.value);
@@ -109,8 +142,8 @@ void run(const std::string& python,const std::string& fixture){
  late.bindManagedWorker("example_py",{"example_py.Player.create"},
   {python,fixture,"stall"},150);
  Backend* backend=Backend::instance;unsigned n=backend->count();
- backend->listener->onBridgeMessage(nativeweb::detail::makeRequestMessage(
-  10,"example_py.Player.create",VariantList()));
+ backend->listener->onVerifiedBridgeMessage(nativeweb::detail::makeRequestMessage(
+  10,"example_py.Player.create",VariantList()),backend->caller);
  std::this_thread::sleep_for(std::chrono::milliseconds(55));
  backend->reload();
  CHECK(backend->wait(n,500).empty());

@@ -400,8 +400,14 @@ public:
                !unique.insert(operations[i]).second || runtime_.hasMethod(operations[i]))
                 throw Error("invalid_grant","Invalid or duplicate managed operation");
         }
+        if(!trustedFrame_.engineVerified || !trustedFrame_.mainFrame ||
+           !trustedFrame_.trustedContent || !trustedFrame_.frameId ||
+           !trustedFrame_.navigation)
+            throw Error("permission_denied","No verified trusted document");
         std::shared_ptr<detail::ProcessBroker> broker(new detail::ProcessBroker(command,timeoutMs));
         std::shared_ptr<ManagedWorkerState> state(new ManagedWorkerState(plugin,broker));
+        state->permissions.adoptTrustedMainFrame(
+            trustedFrame_.frameId,trustedFrame_.navigation);
         for(size_t i=0;i<operations.size();++i){
             const std::string op=operations[i];
             if (!state->permissions.grantExactMethod(op))
@@ -570,8 +576,51 @@ public:
             listener_->onLoadFinished(source);
     }
 
+    void onTrustedFrameActivated(const detail::VerifiedFrameContext& ctx) override
+    {
+        if (ctx.engineVerified && ctx.mainFrame && ctx.trustedContent &&
+            ctx.frameId && ctx.navigation)
+            trustedFrame_ = ctx;
+    }
+
     void onBridgeMessage(const Any& message) override
     {
+        dispatchBridgeMessage(message,nullptr);
+    }
+
+    void onVerifiedBridgeMessage(const Any& message,
+                                 const detail::VerifiedFrameContext& ctx) override
+    {
+        dispatchBridgeMessage(message,&ctx);
+    }
+
+    void dispatchBridgeMessage(const Any& message,
+                               const detail::VerifiedFrameContext* ctx)
+    {
+        const detail::BridgeMessage parsed=detail::parseBridgeMessage(message);
+        if(parsed.type==detail::BridgeMessageType::Request)
+        {
+            for(std::size_t i=0;i<managedWorkers_.size();++i)
+            {
+                const std::shared_ptr<ManagedWorkerState> state=managedWorkers_[i];
+                for(std::size_t j=0;j<state->names.size();++j)
+                {
+                    if(state->names[j]!=parsed.method)continue;
+                    if(!ctx || !state->permissions.allows(*ctx,parsed.method))
+                    {
+                        const Any denied=detail::makeErrorMessage(
+                            parsed.requestId,Error("permission_denied",
+                                "Managed operation denied for caller frame"));
+                        const std::shared_ptr<ResponseSinkState> sink=responseSink_;
+                        std::lock_guard<std::mutex> lock(sink->mutex);
+                        if(sink->owner && sink->owner->backend_)
+                            sink->owner->backend_->postBridgeMessage(denied);
+                        return;
+                    }
+                    break;
+                }
+            }
+        }
         const std::shared_ptr<ResponseSinkState> sink = responseSink_;
         std::uint64_t docGeneration=0;
         {
@@ -617,6 +666,7 @@ private:
     }
     void invalidateDocument()
     {
+        trustedFrame_ = detail::VerifiedFrameContext();
         // Do not let a native->JS std::future wait for a Promise belonging to
         // a document that has navigated away. Preserve ordinary bindings and
         // permit fresh calls in the new document. Request IDs stay monotonic.
@@ -681,6 +731,7 @@ private:
     }
 
     std::shared_ptr<ResponseSinkState> responseSink_;
+    detail::VerifiedFrameContext trustedFrame_;
     detail::BridgeRuntime runtime_;
     std::shared_ptr<ObjectBridgeState> objects_;
     std::map<std::string, LoadedPlugin> plugins_;

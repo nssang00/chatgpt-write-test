@@ -465,7 +465,18 @@ HRESULT WebView2Backend::installHandlers()
                                 return S_OK;
                             }
                         }
-                        listener_->onBridgeMessage(message);
+                        if(parsed.type==BridgeMessageType::Request)
+                        {
+                            VerifiedFrameContext ctx;
+                            ctx.frameId=1; // engine top-level event slot
+                            ctx.navigation=navigation_;
+                            ctx.engineVerified=mainFrameReady_ && navigation_!=0;
+                            ctx.mainFrame=true;
+                            ctx.trustedContent=true; // checked above using engine URLs
+                            listener_->onVerifiedBridgeMessage(message,ctx);
+                        }
+                        else
+                            listener_->onBridgeMessage(message);
                     }
                     catch (...)
                     {
@@ -781,6 +792,8 @@ void WebView2Backend::postBridgeMessageOnUi(
 void WebView2Backend::notifyLoadStarted(
     const std::wstring& source)
 {
+    mainFrameReady_=false;
+    ++navigation_;
     if (listener_)
     {
         listener_->onLoadStarted(
@@ -802,9 +815,19 @@ void WebView2Backend::notifyLoadFinished()
                 &source)) &&
         source)
     {
-        listener_->onLoadFinished(
-            wideToUtf8(source));
-
+        const std::string url=wideToUtf8(source);
+        if(navigation_ && trustedEntryDocument(trustedEntryUrl_,url,true))
+        {
+            mainFrameReady_=true;
+            VerifiedFrameContext ctx;
+            ctx.frameId=1;
+            ctx.navigation=navigation_;
+            ctx.engineVerified=true;
+            ctx.mainFrame=true;
+            ctx.trustedContent=true;
+            listener_->onTrustedFrameActivated(ctx);
+        }
+        listener_->onLoadFinished(url);
         CoTaskMemFree(source);
     }
 }

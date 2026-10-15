@@ -47,6 +47,8 @@ private:
     CefRefPtr<CefBrowser> browser_;
     CefRefPtr<CefRequestContext> appRequestContext_;
     std::string trustedEntryUrl_;
+    std::uint64_t navigation_ = 0;
+    bool mainFrameReady_ = false;
 };
 
 void registerCefBackendFactory();

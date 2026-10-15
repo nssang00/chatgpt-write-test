@@ -538,15 +538,35 @@ void CefBackend::onBeforeClose(
 void CefBackend::onLoadStart(
     CefRefPtr<CefFrame> frame)
 {
-    if (listener_ && frame && frame->IsMain())
-        listener_->onLoadStarted(frame->GetURL().ToString());
+    if (frame && frame->IsMain())
+    {
+        mainFrameReady_ = false;
+        ++navigation_;
+        if (listener_)
+            listener_->onLoadStarted(frame->GetURL().ToString());
+    }
 }
 
 void CefBackend::onLoadEnd(
     CefRefPtr<CefFrame> frame)
 {
     if (listener_ && frame && frame->IsMain())
-        listener_->onLoadFinished(frame->GetURL().ToString());
+    {
+        const std::string url=frame->GetURL().ToString();
+        if (navigation_ && frame->GetIdentifier()>0 &&
+            trustedEntryDocument(trustedEntryUrl_,url,true))
+        {
+            mainFrameReady_=true;
+            VerifiedFrameContext ctx;
+            ctx.frameId=static_cast<std::uint64_t>(frame->GetIdentifier());
+            ctx.navigation=navigation_;
+            ctx.engineVerified=true;
+            ctx.mainFrame=true;
+            ctx.trustedContent=true;
+            listener_->onTrustedFrameActivated(ctx);
+        }
+        listener_->onLoadFinished(url);
+    }
 }
 
 bool CefBackend::onProcessMessage(
@@ -640,11 +660,15 @@ bool CefBackend::onProcessMessage(
 
     if (listener_)
     {
-        listener_->onBridgeMessage(
-            makeRequestMessage(
-                requestId,
-                method,
-                args));
+        VerifiedFrameContext ctx;
+        ctx.frameId=static_cast<std::uint64_t>(frame->GetIdentifier());
+        ctx.navigation=navigation_;
+        ctx.engineVerified=mainFrameReady_ && frame->GetIdentifier()>0;
+        ctx.mainFrame=frame->IsMain();
+        ctx.trustedContent=trustedEntryDocument(
+            trustedEntryUrl_,frame->GetURL().ToString(),ctx.mainFrame);
+        listener_->onVerifiedBridgeMessage(
+            makeRequestMessage(requestId,method,args),ctx);
     }
 
     return true;
