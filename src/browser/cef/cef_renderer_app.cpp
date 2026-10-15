@@ -250,9 +250,11 @@ public:
 
         if (name == "cancelRaw")
         {
-            if(arguments.size()!=1 || !arguments[0]->IsString())
+            if ((arguments.size()!=1 && arguments.size()!=2) ||
+                !arguments[0]->IsString() ||
+                (arguments.size()==2 && !arguments[1]->IsString()))
             {
-                exception="cancelRaw requires a request ID";
+                exception="cancelRaw requires an ID and optional reason string";
                 return true;
             }
             const std::string reason =
