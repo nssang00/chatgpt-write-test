@@ -25,14 +25,22 @@ New-Item -ItemType Directory -Force -Path $sourcePlaceholder|Out-Null
 # Pin binary runtime to the COMPLETE original successful v58.4.4 Windows CI build.
 $artifact=Join-Path $repo 'cef-windows-validated-artifact'
 Require (Test-Path -LiteralPath $artifact -PathType Container) 'Original CEF CI native artifact not downloaded'
-$cefDll=Get-ChildItem -LiteralPath $artifact -Recurse -File -Filter 'libcef.dll'|Select-Object -First 1
-Require ($null -ne $cefDll) 'Original CEF CI artifact does not contain CEF stage runtime'
-$sourceRuntimeBinary=Split-Path $cefDll.FullName -Parent
-Require ((Split-Path $sourceRuntimeBinary -Leaf) -eq 'Release') 'CEF artifact not runtime/Release'
-$parentFolder=Split-Path -Path $sourceRuntimeBinary -Parent
-$runtimeFolderName=Split-Path -Path $parentFolder -Leaf
-Write-Host "[CEF STAGE AUDIT] libcef.dll=$($cefDll.FullName), runtimeFolder=$sourceRuntimeBinary, parentFolder=$parentFolder, name=$runtimeFolderName"
-Require ($runtimeFolderName -eq 'runtime') "CEF artifact stage layout unexpected: $runtimeFolderName"
+$candidates=@(Get-ChildItem -LiteralPath $artifact -Recurse -File -Filter 'libcef.dll')
+Require ($candidates.Count -gt 0) 'Original CEF CI artifact lacks libcef.dll'
+$sourceRuntimeBinary=$null
+foreach($candidate in $candidates){
+  $parent=Split-Path $candidate.FullName -Parent
+  $release=Split-Path $parent -Leaf
+  $runtimeParent=Split-Path $parent -Parent
+  $containerName=Split-Path $runtimeParent -Leaf
+  Write-Host "[CEF STAGE FIND] $($candidate.FullName) (release=$release, parent=$containerName)"
+  if($release -eq 'Release' -and $containerName -eq 'runtime'){
+    $sourceRuntimeBinary=$parent;break
+  }
+}
+if(-not $sourceRuntimeBinary){
+  throw 'Validated CEF artifact includes libcef.dll but lacks expected runtime/Release stage; no fabricated bundle'
+}
 $stageRoot=Split-Path (Split-Path $sourceRuntimeBinary -Parent) -Parent
 $sourceNative=Join-Path $stageRoot 'native\Release'
 Require (Test-Path -LiteralPath (Join-Path $sourceNative 'CompanyWebViewCefTextureProbe.dll') -PathType Leaf) 'Validated native CEF Texture probe missing'
