@@ -124,7 +124,9 @@ def main():
                'checkpoint: plugin-unloaded',
                'checkpoint: plugin-e2e-complete'))
     markers = ('checkpoint: request-cancel-verified',) + markers
-    if args.engine == 'webview2' and not args.managed:
+    # The same-URL stale-session replay probe runs in plugin_bridge_test.html.
+    # Managed Python and .NET pages test separate contracts; neither emits it.
+    if args.engine == 'webview2' and not (args.managed or args.managed_dotnet):
         markers += ('checkpoint: security-stale-session-replay-blocked',)
     missing = [m for m in markers if m not in output]
     forbidden = ('checkpoint: security-UNTRUSTED-CALL-EXECUTED' in output or
