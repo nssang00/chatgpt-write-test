@@ -134,6 +134,7 @@ try {
   Need (Test-Path -LiteralPath (Join-Path $runtime 'UnifiedWebView.cs') -PathType Leaf) 'Unified facade copy failed'
   Copy-Item -LiteralPath (Join-Path $root 'DualPlayer\BuildUnifiedDualPlayer.cs') -Destination (Join-Path $project 'Assets\Editor')
   Copy-Item -LiteralPath (Join-Path $root 'DualPlayer\UnifiedDualPlayerEvidence.cs') -Destination (Join-Path $project 'Assets\Scripts')
+  Copy-Item -LiteralPath (Join-Path $root 'DualPlayer\CefCubeTextureProof.cs') -Destination (Join-Path $project 'Assets\Scripts')
   '{"dependencies":{"com.unity.ugui":"1.0.0","com.unity.modules.jsonserialize":"1.0.0"}}' | Set-Content -LiteralPath (Join-Path $project 'Packages\manifest.json') -Encoding UTF8
   'm_EditorVersion: 2022.3.62f3' | Set-Content -LiteralPath (Join-Path $project 'ProjectSettings\ProjectVersion.txt') -Encoding UTF8
   $srcDll=Join-Path $root 'Plugins\x86_64\CompanyWebView2UnifiedPreview.dll'
@@ -175,10 +176,11 @@ try {
   $e=Get-Content -LiteralPath $runtimeJson -Raw -Encoding UTF8 | ConvertFrom-Json
   Need ($e.harness -eq '58.6.0-dual-experimental') "Unexpected Dual runtime harness: $($e.harness)"
   if($e.status -ne 'PASS_AUTO'){
-   throw ("Dual runtime {0}: cefReady={1}, acceleratedFrames={2}, rawImage={3}, overlayReady={4}, received={5}, unicode={6}, ping={7}, joined={8}, cefShutdown={9}; playerError='{10}'" -f
-    $e.status,$e.cefReady,$e.cefAcceleratedFrames,$e.cefRawImageBound,$e.overlayReady,$e.overlayMessageCount,$e.overlayUnicodeRoundtripCount,$e.overlayPingRoundtripCount,$e.overlayJoined,$e.cefShutdown,$e.error)
+   throw ("Dual runtime {0}: cefReady={1}, acceleratedFrames={2}, rawImage={3}, cubeBound={4}, cubeFrames={5}, cubeAngle={6}, cubeVisible={7}, depthRay={8}, overlayReady={9}, received={10}, unicode={11}, ping={12}, joined={13}, cefShutdown={14}; playerError='{15}'" -f
+    $e.status,$e.cefReady,$e.cefAcceleratedFrames,$e.cefRawImageBound,$e.cubeTextureBound,$e.cubeObservedFrameAdvances,$e.cubeRotationDegrees,$e.cubeVisibleFrames,$e.cubeOccluderBeforeCubeRay,$e.overlayReady,$e.overlayMessageCount,$e.overlayUnicodeRoundtripCount,$e.overlayPingRoundtripCount,$e.overlayJoined,$e.cefShutdown,$e.error)
   }
   Need ($e.cefReady -and $e.cefRawImageBound -and $e.cefAcceleratedFrames -gt 0) 'CEF Texture not proven'
+  Need ($e.cubeTextureBound -and $e.cubeTextureBindCount -gt 0 -and $e.cubeObservedFrameAdvances -ge 3 -and $e.cubeRotationDegrees -gt 180 -and $e.cubeVisibleFrames -gt 0 -and $e.cubeOccluderBeforeCubeRay) 'CEF 3D cube mesh/material/animation/depth-geometry not proven'
   Need ($e.overlayReady -and $e.overlayMessageCount -gt 0) 'WebView2 messaging not proven'
   Need ($e.cefShutdown -and $e.overlayJoined -and $p.ExitCode -eq 0) 'Dual shutdown failed'
   Need ($e.overlayUnicodeRoundtripCount -gt 0) 'Unicode JS-to-native-to-C# automation failed'
