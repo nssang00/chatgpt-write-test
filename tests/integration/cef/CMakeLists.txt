@@ -94,6 +94,11 @@ target_include_directories(nativeweb_cef_backend
 
 SET_LIBRARY_TARGET_PROPERTIES(nativeweb_cef_backend)
 
+# Test-only renderer IPC injection; never enable for redistributable CEF.
+target_compile_definitions(nativeweb_cef_backend PRIVATE
+  NATIVEWEB_CEF_ENABLE_E2E_REPLAY_HOOKS=1
+)
+
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
   target_compile_options(nativeweb_cef_backend PRIVATE -frtti -fexceptions)
 elseif(MSVC)

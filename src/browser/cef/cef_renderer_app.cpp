@@ -13,6 +13,11 @@ namespace detail {
 
 namespace {
 
+#ifdef NATIVEWEB_CEF_ENABLE_E2E_REPLAY_HOOKS
+// Test-build only. An old token stays in the CEF renderer, never in page JS.
+std::map<int, std::string> retiredSessionForE2E;
+#endif
+
 bool resolveDottedFunction(
     CefRefPtr<CefV8Context> context,
     const std::string& method,
@@ -208,6 +213,73 @@ public:
             return true;
         }
 
+#ifdef NATIVEWEB_CEF_ENABLE_E2E_REPLAY_HOOKS
+        if (name == "testCaptureRetiredSession" ||
+            name == "testReplayRetiredSession")
+        {
+            retval = CefV8Value::CreateBool(false);
+            CefRefPtr<CefFrame> frame = context->GetFrame();
+            CefRefPtr<CefBrowser> browser = context->GetBrowser();
+            if (!frame || !frame->IsMain() || !browser) return true;
+
+            std::string currentToken;
+            for (std::size_t i = 0; i < app_->documentSessions_.size(); ++i)
+            {
+                const CefRendererApp::DocumentSession& session =
+                    app_->documentSessions_[i];
+                if (session.context && session.context->IsSame(context))
+                {
+                    currentToken = session.token;
+                    break;
+                }
+            }
+            if (currentToken.size() != 48) return true;
+
+            const int browserId = browser->GetIdentifier();
+            if (name == "testCaptureRetiredSession")
+            {
+                retiredSessionForE2E[browserId] = currentToken;
+                retval = CefV8Value::CreateBool(true);
+                return true;
+            }
+            std::map<int, std::string>::const_iterator old =
+                retiredSessionForE2E.find(browserId);
+            if (old == retiredSessionForE2E.end() ||
+                old->second.size() != 48 || old->second == currentToken ||
+                arguments.size() != 3 ||
+                !arguments[0]->IsString() ||
+                !arguments[1]->IsString() ||
+                !arguments[2]->IsString())
+                return true;
+            const std::string kind = arguments[0]->GetStringValue().ToString();
+            const std::string requestId = arguments[1]->GetStringValue().ToString();
+            const std::string method = arguments[2]->GetStringValue().ToString();
+            if (requestId.empty() ||
+                (kind != "request" && kind != "cancel") ||
+                (kind == "request" && method.empty()))
+                return true;
+
+            CefRefPtr<CefProcessMessage> replay =
+                CefProcessMessage::Create(
+                    kind == "cancel" ? "nativeweb.cancel" : "nativeweb.request");
+            CefRefPtr<CefListValue> wire = replay->GetArgumentList();
+            wire->SetString(0, requestId);
+            if (kind == "cancel")
+                wire->SetString(1, old->second);
+            else
+            {
+                wire->SetString(1, method);
+                CefRefPtr<CefListValue> emptyArgs = CefListValue::Create();
+                emptyArgs->SetSize(0);
+                wire->SetList(2, emptyArgs);
+                wire->SetString(3, old->second);
+            }
+            frame->SendProcessMessage(PID_BROWSER, replay);
+            retval = CefV8Value::CreateBool(true);
+            return true;
+        }
+#endif
+
         if (name == "invoke" || name == "invokeRaw" || name == "invokeCancelableRaw")
         {
             if (arguments.empty() || !arguments[0]->IsString())
@@ -390,6 +462,16 @@ void CefRendererApp::OnContextCreated(
         "offRaw",
         offRaw,
         V8_PROPERTY_ATTRIBUTE_READONLY);
+
+#ifdef NATIVEWEB_CEF_ENABLE_E2E_REPLAY_HOOKS
+    // Available only when the CEF E2E integration target is built.
+    native->SetValue("testCaptureRetiredSession",
+        CefV8Value::CreateFunction("testCaptureRetiredSession", handler),
+        V8_PROPERTY_ATTRIBUTE_READONLY);
+    native->SetValue("testReplayRetiredSession",
+        CefV8Value::CreateFunction("testReplayRetiredSession", handler),
+        V8_PROPERTY_ATTRIBUTE_READONLY);
+#endif
 
     global->SetValue(
         "native",

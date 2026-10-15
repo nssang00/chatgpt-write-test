@@ -40,11 +40,8 @@
     if (!condition) throw new Error(message);
   }
   try {
-    // WebView2 integration: record the actual host-issued document token,
-    // reload the EXACT SAME URL, then replay the old document's wire envelopes
-    // from the new document. Native side effects must remain zero.
-    // CEF keeps its token within the private V8 context; this probe does not
-    // purport to simulate a retired CEF renderer IPC.
+    // Both engines reload the exact same URL, then inject retired-token
+    // wire envelopes. CEF never exposes the actual token to page JavaScript.
     const webview2 = window.chrome && window.chrome.webview &&
       typeof window.chrome.webview.postMessage === "function";
     if (webview2) {
@@ -100,6 +97,44 @@
              "Retired document-session request reached native dispatch");
       ensure(await xytron.test.replay.bump() === 1,
              "Current document was blocked after stale IPC replay");
+      await xytron.test.checkpoint("security-stale-session-replay-blocked");
+    } else {
+      // E2E-only CEF V8 hooks send real renderer-to-browser CefProcessMessages
+      // from the newly loaded document, but carrying its predecessor's token.
+      ensure(typeof native !== "undefined" &&
+             typeof native.testCaptureRetiredSession === "function" &&
+             typeof native.testReplayRetiredSession === "function",
+             "CEF retired-session test hook unavailable");
+      const marker = "xytron-e2e-cef-session-reloaded";
+      if (window.name !== marker) {
+        ensure(await xytron.test.replay.count() === 0,
+               "CEF replay fixture changed before capture");
+        ensure(native.testCaptureRetiredSession(),
+               "CEF session token not issued to the renderer");
+        window.name = marker;
+        location.reload();
+        return;
+      }
+      window.name = "";
+      ensure(await xytron.test.replay.count() === 0,
+             "CEF replay fixture changed after navigation");
+      // CEF IDs continue across reloads. Use the actual ID of a live request
+      // to ensure an old session cannot cancel an unrelated current promise.
+      const live = native.invokeCancelableRaw("test.cancel.delay", 350);
+      ensure(await xytron.test.replay.count() === 0,
+             "CEF current document request failed");
+      ensure(native.testReplayRetiredSession("cancel", live.id, ""),
+             "CEF old cancel IPC not emitted");
+      ensure(await live.promise === 350,
+             "CEF old session cancelled the current request");
+      ensure(native.testReplayRetiredSession(
+               "request", "990001", "test.replay.bump"),
+             "CEF old request IPC not emitted");
+      // Valid traffic on the same IPC channel orders subsequent observation.
+      ensure(await xytron.test.replay.count() === 0,
+             "CEF old-session request reached native dispatch");
+      ensure(await xytron.test.replay.bump() === 1,
+             "CEF current document rejected after replay");
       await xytron.test.checkpoint("security-stale-session-replay-blocked");
     }
     // Real browser: deadline and AbortSignal must settle the JS Promise,
