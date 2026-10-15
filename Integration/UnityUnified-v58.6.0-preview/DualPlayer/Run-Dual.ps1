@@ -7,7 +7,7 @@ $stamp=Get-Date -Format 'yyyyMMdd-HHmmss'
 $out=Join-Path $root ('results\dual-'+$stamp)
 # Short LOCAL build directory avoids MAX_PATH under Downloads and long Documentation~ names.
 $work=Join-Path $env:LOCALAPPDATA ('CWV58\dual-'+$stamp)
-$summary=[ordered]@{capturePolicy='Foreground Unity window only; no desktop capture';harness='58.6.0-dual-experimental';status='FAIL';autoChecks='NOT_RUN';stage='PREFLIGHT';problems=@();manualChecks='PENDING'}
+$summary=[ordered]@{capturePolicy='Foreground Unity window only; no desktop capture';harness='58.6.0-dual-experimental';status='FAIL';autoChecks='NOT_RUN';stage='PREFLIGHT';problems=@();manualChecks='PENDING';uvVisualCheck='NOT_RUN'}
 function Need([bool]$ok,[string]$msg){if(-not $ok){throw $msg}}
 function VerifyKit {
  # The unified sources and WebView2 binary ship directly in this one-folder kit.
