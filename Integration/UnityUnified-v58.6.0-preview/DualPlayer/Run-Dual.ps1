@@ -5,6 +5,8 @@ $ErrorActionPreference='Stop'; Set-StrictMode -Version Latest
 $root=[IO.Path]::GetFullPath((Join-Path $BundleRoot '.'))
 $stamp=Get-Date -Format 'yyyyMMdd-HHmmss'
 $out=Join-Path $root ('results\dual-'+$stamp)
+# Short LOCAL build directory avoids MAX_PATH under Downloads and long Documentation~ names.
+$work=Join-Path $env:LOCALAPPDATA ('CWV58\dual-'+$stamp)
 $summary=[ordered]@{capturePolicy='Foreground Unity window only; no desktop capture';harness='58.6.0-dual-experimental';status='FAIL';autoChecks='NOT_RUN';stage='PREFLIGHT';problems=@();manualChecks='PENDING'}
 function Need([bool]$ok,[string]$msg){if(-not $ok){throw $msg}}
 function VerifyKit {
@@ -110,12 +112,35 @@ try {
   Need ($env:OS -eq 'Windows_NT' -and [IntPtr]::Size -eq 8) 'Windows x64 only'
   $unity=FindUnity
   $CefRuntimeDir=ResolveCefRuntime
-  $null=GetCefStageLayout $CefRuntimeDir
-  $null=GetCefPackageFromBundle $CefRuntimeDir
-  New-Item -ItemType Directory -Force -Path $out | Out-Null
-  $source=GetCefPackageFromBundle $CefRuntimeDir
-  Need (Test-Path -LiteralPath (Join-Path $source 'Runtime\WebView.cs') -PathType Leaf) 'Old OneClick package WebView.cs missing'
-  $project=Join-Path $out 'UnityProject'
+  $layout=GetCefStageLayout $CefRuntimeDir
+  $legacySource=GetCefPackageFromBundle $CefRuntimeDir
+  New-Item -ItemType Directory -Force -Path $out,$work | Out-Null
+
+  # User-requested archive structure: oneclick_bundle/Package and Build/cef-native/stage
+  # are populated automatically from the previously validated oneclick_bundle.
+  # The old oneclick_bundle is read-only and never overwritten.
+  $bundledPackage=Join-Path $root 'Package\com.company.webview'
+  $bundledRuntime=Join-Path $bundledPackage 'Runtime'
+  if(-not (Test-Path -LiteralPath (Join-Path $bundledRuntime 'WebView.cs') -PathType Leaf)){
+    New-Item -ItemType Directory -Force -Path $bundledPackage | Out-Null
+    Copy-Item -LiteralPath (Join-Path $legacySource 'Runtime') -Destination $bundledPackage -Recurse -Force
+  }
+  Need (Test-Path -LiteralPath (Join-Path $bundledRuntime 'WebView.cs') -PathType Leaf) 'CEF Runtime managed sources not populated'
+
+  $localStage=Join-Path $root 'Build\cef-native\stage'
+  $localNative=Join-Path $localStage 'native\Release'
+  $localRuntime=Join-Path $localStage 'runtime\Release'
+  if(-not (Test-Path -LiteralPath (Join-Path $localNative 'CompanyWebViewCefTextureProbe.dll') -PathType Leaf) -or
+     -not (Test-Path -LiteralPath (Join-Path $localRuntime 'libcef.dll') -PathType Leaf)){
+    New-Item -ItemType Directory -Force -Path $localNative,$localRuntime | Out-Null
+    StageCef $CefRuntimeDir $localRuntime
+    Copy-Item -LiteralPath (Join-Path $layout.native 'CompanyWebViewCefTextureProbe.dll') -Destination $localNative -Force
+  }
+  $null=GetCefStageLayout $localStage
+  $source=$bundledPackage
+  $CefRuntimeDir=$localStage
+  Write-Host '[DUAL] Local oneclick_bundle Package + Build stage populated and verified'
+  $project=Join-Path $work 'UnityProject'
   foreach($p in @('Assets\Editor','Assets\Scripts','Packages','ProjectSettings')){New-Item -ItemType Directory -Force -Path (Join-Path $project $p) | Out-Null}
   # Create and verify the missing UnifiedExperimental directory BEFORE copying sources.
   # Shared with Windows CI's realistic OneClick Unity Assets assembly fixture.
@@ -134,7 +159,8 @@ try {
   StageCef $CefRuntimeDir $dest
   Copy-Item -LiteralPath $srcDll -Destination $dest -Force
   $summary.stage='UNITY_BUILD'
-  $player=Join-Path $out 'Player\UnifiedDualPreview.exe'
+  $summary.buildWorkspace='LOCALAPPDATA/CWV58 (short path)'
+  $player=Join-Path $work 'Player\UnifiedDualPreview.exe'
   New-Item -ItemType Directory -Force -Path (Split-Path $player -Parent) | Out-Null
   $buildLog=Join-Path $out 'unity-editor-build.log'
   $arg=('-batchmode -nographics -quit -buildTarget Win64 -projectPath "{0}" -executeMethod BuildUnifiedDualPlayer.Build -dualBuildPath "{1}" -logFile "{2}"' -f $project,$player,$buildLog)
@@ -142,7 +168,7 @@ try {
   if(-not $p.WaitForExit(1200000)){Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue;throw 'Unity build timeout'}
   Need ($p.ExitCode -eq 0) "Unity build failed: $($p.ExitCode)"
   Need (Test-Path -LiteralPath $player) 'Player exe not generated'
-  $plugin=Join-Path $out 'Player\UnifiedDualPreview_Data\Plugins\x86_64'
+  $plugin=Join-Path $work 'Player\UnifiedDualPreview_Data\Plugins\x86_64'
   StageCef $CefRuntimeDir $plugin
   Copy-Item -LiteralPath $srcDll -Destination $plugin -Force
   $summary.stage='PLAYER_RUNTIME'
