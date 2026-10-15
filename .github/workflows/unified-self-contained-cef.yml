@@ -1,0 +1,56 @@
+name: ASCII v58.6.0 Self-Contained CEF+WebView2 Dual OneClick
+on:
+  push:
+    branches: [feature/unified-v58-6-0-bundled-cef-stage]
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  assemble-fully-bundled:
+    runs-on: windows-2022
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          ref: ci/oneclick-v58-4-4
+          path: cef-provenance-repo
+      - uses: actions/download-artifact@v4
+        with:
+          run-id: 38311313634
+          repository: nssang00/chatgpt-write-test
+          name: oneclick-v58-4-4-gpu-validation-gate
+          github-token: ${{ github.token }}
+          path: cef-windows-validated-artifact
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Build pinned WebView2 x64 native and ABI contract
+        shell: pwsh
+        run: |
+          nuget install Microsoft.Web.WebView2 -Version 1.0.4258.31 -OutputDirectory "$env:RUNNER_TEMP/wv2sdk" -NonInteractive
+          if($LASTEXITCODE -ne 0){throw 'Pinned WebView2 SDK download failed'}
+          $sdk=Join-Path $env:RUNNER_TEMP 'wv2sdk/Microsoft.Web.WebView2.1.0.4258.31'
+          cmake -S Integration/UnityUnified-v58.6.0-preview/Native -B build-webview2 -G 'Visual Studio 17 2022' -A x64 "-DWEBVIEW2_SDK_ROOT=$sdk"
+          if($LASTEXITCODE -ne 0){throw 'WebView2 CMake failed'}
+          cmake --build build-webview2 --config Release
+          if($LASTEXITCODE -ne 0){throw 'WebView2 C++ build failed'}
+          ctest --test-dir build-webview2 -C Release --output-on-failure
+          if($LASTEXITCODE -ne 0){throw 'WebView2 C++ ABI check failed'}
+      - name: Assemble CEF native stage, Unity sources and ASCII single-unzip OneClick
+        shell: powershell
+        run: |
+          $p='Integration/UnityUnified-v58.6.0-preview/Validation/Build-SelfContainedKit.ps1'
+          $tokens=$null;$errors=$null
+          [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $p).Path,[ref]$tokens,[ref]$errors)|Out-Null
+          if($errors.Count){throw "OneClick assembler parser error: $errors"}
+          & $p -RepoRoot $env:GITHUB_WORKSPACE
+          if($LASTEXITCODE -ne 0){throw "OneClick assembler failed ($LASTEXITCODE)"}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: CompanyWebViewDualOneClick_ASCII_with_oneclick_bundle
+          path: CompanyWebViewDualOneClick/
+          compression-level: 0
+          retention-days: 14
+          if-no-files-found: error
