@@ -10,6 +10,7 @@ public sealed class Player : IDisposable
     public string Name { get; }
     [Export] public int Attack(int damage) { Health -= damage; return Health; }
     [Export] public int Health { get; set; } = 100;
+    [Export] public float Scale(float input) => input * 2;
     public int Field = 17;
     public string Secret() => "private";
     public void Dispose() => Disposed++;
@@ -63,6 +64,9 @@ internal static class Program
         using (var json = JsonDocument.Parse("23"))
             host.Invoke("frame-A", op + "set.Health", handle, json.RootElement);
         Check((int)host.Invoke("frame-A", op + "get.Health", handle)! == 23, "JSON numeric argument");
+        using (var real = JsonDocument.Parse("1.5"))
+            Check((float)host.Invoke("frame-A", op + "method.Scale", handle, real.RootElement)! == 3f,
+                  "JSON float conversion and reflection dispatch");
         Denied(() => host.Invoke("frame-B", op + "get.Health", handle));
         Denied(() => host.Invoke("blocked", op + "get.Health", handle));
         Denied(() => host.Invoke("frame-A", op + "method.Secret", handle));
