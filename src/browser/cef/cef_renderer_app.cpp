@@ -255,8 +255,13 @@ public:
                 exception="cancelRaw requires a request ID";
                 return true;
             }
+            const std::string reason =
+                arguments.size()>1 && arguments[1]->IsString() &&
+                arguments[1]->GetStringValue().ToString()=="request_timeout"
+                    ? "request_timeout" : "request_cancelled";
             retval=CefV8Value::CreateBool(
-                app_->cancelInvoke(arguments[0]->GetStringValue().ToString()));
+                app_->cancelInvoke(
+                    arguments[0]->GetStringValue().ToString(),context,reason));
             return true;
         }
 
@@ -434,9 +439,10 @@ void CefRendererApp::OnContextCreated(
         "return Promise.reject(new TypeError('signal must be AbortSignal'));"
         "if(signal&&signal.aborted)return Promise.reject(new Error('request_cancelled: already aborted'));"
         "const operation=native.invokeCancelableRaw(method,...args);"
-        "const abort=()=>native.cancelRaw(operation.id);"
+        "const abort=()=>native.cancelRaw(operation.id,'request_cancelled');"
         "if(signal)signal.addEventListener('abort',abort,{once:true});"
-        "const timer=timeoutMs===undefined?null:setTimeout(abort,timeoutMs);"
+        "const timer=timeoutMs===undefined?null:setTimeout("
+        "()=>native.cancelRaw(operation.id,'request_timeout'),timeoutMs);"
         "const cleanup=()=>{if(timer!==null)clearTimeout(timer);"
         "if(signal)signal.removeEventListener('abort',abort);};"
         "const result=operation.promise.then(wrap);"
@@ -593,10 +599,14 @@ std::string CefRendererApp::beginInvoke(
     return id;
 }
 
-bool CefRendererApp::cancelInvoke(const std::string& id)
+bool CefRendererApp::cancelInvoke(const std::string& id,
+                                   CefRefPtr<CefV8Context> caller,
+                                   const std::string& reason)
 {
     std::map<std::string,PendingPromise>::iterator found=pending_.find(id);
-    if(found==pending_.end()) return false;
+    if(found==pending_.end() || !caller || !found->second.context ||
+       !found->second.context->IsSame(caller))
+        return false;
     const PendingPromise pending=found->second;
     pending_.erase(found);
     bool queued=false;
@@ -631,7 +641,8 @@ bool CefRendererApp::cancelInvoke(const std::string& id)
         }
     }
     if(pending.promise)
-        pending.promise->RejectPromise("request_cancelled: JavaScript request cancelled");
+        pending.promise->RejectPromise(
+            reason + ": JavaScript request cancelled");
     return true;
 }
 

@@ -26,15 +26,18 @@
     ensure(typeof xytron.invokeWithOptions === "function",
            "Missing cancellable JS bridge API");
     let timedOut = false;
+    let deadlineOutcome = "resolved";
     try {
-      await xytron.invokeWithOptions("test.cancel.delay",{timeoutMs:35},350);
+      deadlineOutcome = String(await xytron.invokeWithOptions(
+        "test.cancel.delay",{timeoutMs:45},1200));
     } catch(e) {
-      timedOut = /request_timeout|request_cancelled/.test(String(e));
+      deadlineOutcome = String(e);
+      timedOut = /request_timeout|request_cancelled/.test(deadlineOutcome);
     }
-    ensure(timedOut,"Timeout did not reject slow request");
+    ensure(timedOut,"Timeout did not reject slow request: " + deadlineOutcome);
     const aborter=new AbortController();
     const abortedCall=xytron.invokeWithOptions(
-      "test.cancel.delay",{signal:aborter.signal},350);
+      "test.cancel.delay",{signal:aborter.signal},1200);
     aborter.abort();
     let aborted=false;
     try { await abortedCall; }

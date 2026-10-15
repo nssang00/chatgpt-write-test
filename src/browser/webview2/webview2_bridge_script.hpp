@@ -54,7 +54,8 @@ static const wchar_t kWebView2BridgeScript[] = LR"NATIVEWEBJS(
 
   const startRequest = (method, args) => {
     if (global !== global.top)
-      return Promise.reject(new Error("permission_denied: not main frame"));
+      return { id:null, promise:Promise.reject(
+        new Error("permission_denied: not main frame")) };
     if (typeof method !== "string") {
       return { id:null, promise:Promise.reject(
         new TypeError("xytron.invoke(method, ...args) requires a method string")
