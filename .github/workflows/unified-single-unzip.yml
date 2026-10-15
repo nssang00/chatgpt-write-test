@@ -151,12 +151,12 @@ jobs:
           Copy-Item 'build-wv2-single/Release/CompanyWebView2UnifiedPreview.dll' "$kit/Plugins/x86_64/CompanyWebView2UnifiedPreview.dll"
           Copy-Item "$r/DualPlayer/README_FIRST_KO.md" "$kit/README_FIRST_KO.md"
           @'
-@echo off
-setlocal
-cd /d "%~dp0oneclick_bundle"
-call "Run-Dual.cmd" %*
-exit /b %ERRORLEVEL%
-'@ | Set-Content -LiteralPath (Join-Path $release 'Run-Dual.cmd') -Encoding ASCII
+          @echo off
+          setlocal
+          cd /d "%~dp0oneclick_bundle"
+          call "Run-Dual.cmd" %*
+          exit /b %ERRORLEVEL%
+          '@ | Set-Content -LiteralPath (Join-Path $release 'Run-Dual.cmd') -Encoding ASCII
           foreach($filename in @('Build/cef-native/stage/native/Release/.placeholder',
              'Build/cef-native/stage/runtime/Release/.placeholder',
              'Package/com.company.webview/.placeholder')){
