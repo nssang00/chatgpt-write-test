@@ -1,0 +1,43 @@
+name: Cito Handoff Package
+
+on:
+  push:
+    branches:
+      - cito-handoff-4217223
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 30
+      - name: Build handoff snapshot
+        shell: bash
+        run: |
+          set -euo pipefail
+          ROOT="cito-handoff-source"
+          rm -rf "$ROOT"
+          mkdir -p "$ROOT/.github/workflows"
+          cp -a cito "$ROOT/"
+          cp .github/workflows/cito-linux-network.yml "$ROOT/.github/workflows/"
+          cp .github/workflows/cito-quic.yml "$ROOT/.github/workflows/"
+          git rev-parse HEAD > "$ROOT/SNAPSHOT_COMMIT.txt"
+          git log -n 30 --date=iso-strict --pretty=format:'%H %ad %s' > "$ROOT/RECENT_COMMITS.txt"
+          cat > "$ROOT/SOURCE_NOTE.md" <<'EOF'
+          # Cito source snapshot
+          Exact Cito handoff snapshot including complete cito source/tests/docs,
+          build definition, and Cito Linux-network/MsQuic workflows.
+          EOF
+          zip -qr cito-handoff-source.zip "$ROOT"
+      - name: Upload handoff source
+        uses: actions/upload-artifact@v4
+        with:
+          name: cito-handoff-source
+          path: cito-handoff-source.zip
+          compression-level: 0
+          retention-days: 7
