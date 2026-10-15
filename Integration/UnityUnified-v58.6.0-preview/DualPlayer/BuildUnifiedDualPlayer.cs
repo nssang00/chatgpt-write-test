@@ -67,10 +67,11 @@ public static class BuildUnifiedDualPlayer
         canvas.renderMode=RenderMode.ScreenSpaceOverlay;
         var left=CreatePanel(canvas,"LEFT - CEF Accelerated Texture",0,0.5f);
         var right=CreatePanel(canvas,"RIGHT - WebView2 Native Overlay",0.5f,1);
-        // CEF accelerated D3D11 surface arrives with top-left texture origin;
-        // RawImage samples bottom-left origin. Flip V on the isolated dual-test panel only.
+        // RawImage is a hidden texture source, not the visible cube surface.
+        // Its uvRect does not affect the source Texture2D sent to MeshRenderer;
+        // the cube Material owns UV orientation (U-flip only).
         // Do not modify the validated v58.4.4 CefTextureSurface implementation.
-        left.GetComponent<RawImage>().uvRect=new Rect(0f,1f,1f,-1f);
+        left.GetComponent<RawImage>().uvRect=new Rect(0f,0f,1f,1f);
         // Keep RawImage active only as CEF external GPU texture OWNER; never draw it.
         // The 3D cube below, not a screen-space RawImage, is the visible left viewport.
         left.GetComponent<RawImage>().enabled=false;
