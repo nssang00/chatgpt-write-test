@@ -81,14 +81,22 @@ public static class BuildUnifiedDualPlayer
         Assign(textureHost,"validatedTextureSurface",cefSurface);
         // An offline data URL avoids external network dependence for texture frame readiness.
         var host=new SerializedObject(textureHost);
+        // Blue TOP / red BOTTOM are visible UV-direction markers on a static cube face.
+        // Orange CSS square moves while the cube is still; GPU pixel readback checks this.
         const string cubeHtml="<!doctype html><html><meta charset='utf-8'>"+
             "<style>html,body{margin:0;height:100%;background:#b8e0ce;overflow:hidden;}"+
-            "h1{font:900 58px Arial;margin:28px 18px;color:#10392e}p{font:34px Arial;margin:24px}"+
-            ".move{width:110px;height:110px;background:#ff6700;margin:38px;"+
-            "animation:slide 1.2s linear infinite alternate;}"+
-            "@keyframes slide{from{transform:translateX(0)}to{transform:translateX(460px)}}"+
-            "</style><body><h1>CEF GPU TEXTURE</h1><p>UNITY 3D CUBE</p>"+
-            "<div class='move'></div><p>CSS animation / D3D11</p></body></html>";
+            ".top{position:absolute;top:0;left:0;right:0;height:108px;"+
+            "background:#284dff;color:white;font:900 46px Arial;padding:12px;}"+
+            ".bottom{position:absolute;bottom:0;left:0;right:0;height:104px;"+
+            "background:#e53b55;color:white;font:900 43px Arial;padding:12px;}"+
+            ".move{position:absolute;top:270px;left:30px;width:116px;height:116px;"+
+            "background:#ff8a00;animation:slide 1.2s linear infinite alternate;}"+
+            "@keyframes slide{from{transform:translateX(0)}to{transform:translateX(530px)}}"+
+            ".mid{position:absolute;top:162px;left:40px;font:36px Arial;color:#10392e}"+
+            "</style><body><div class='top'>BLUE TOP / UV UP</div>"+
+            "<div class='mid'>CEF GPU TEXTURE / UNITY CUBE</div>"+
+            "<div class='move'></div><div class='bottom'>RED BOTTOM / UV DOWN</div>"+
+            "</body></html>";
         host.FindProperty("initialUrl").stringValue="data:text/html;charset=utf-8,"+Uri.EscapeDataString(cubeHtml);
         // Square source page matches the cube face UV aspect ratio.
         host.FindProperty("width").intValue=768;
