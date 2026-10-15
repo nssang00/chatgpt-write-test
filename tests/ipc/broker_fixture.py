@@ -32,6 +32,9 @@ elif mode == 'wrongtype':
     sys.stdin.buffer.readline()
     sys.stdout.write('{"id":1,"ok":true,"result":{}}\n')
     sys.stdout.flush()
+elif mode == 'no_read':
+    # Verify the broker's input write deadline when stdin is never drained.
+    time.sleep(3)
 elif mode == 'stall':
     sys.stdin.buffer.readline()
     time.sleep(3)

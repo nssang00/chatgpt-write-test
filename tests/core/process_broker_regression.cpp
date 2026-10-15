@@ -1,5 +1,6 @@
 #include "core/process_broker.hpp"
 #include "nativeweb/error.hpp"
+#include <chrono>
 #include <iostream>
 #include <string>
 #include <vector>
@@ -47,6 +48,16 @@ void malformed(const std::string& python,const std::string& script,const std::st
     }
     CHECK(!broker.running());
 }
+void blockedWriter(const std::string& python,const std::string& script){
+    const std::chrono::steady_clock::time_point started=std::chrono::steady_clock::now();
+    ProcessBroker broker(argv(python,script,"no_read"),250);
+    VariantList large;large.push_back(std::string(48000,'x'));
+    CHECK(rejected(broker,"echo",large,"worker_unavailable"));
+    CHECK(!broker.running());
+    const long elapsed=static_cast<long>(std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now()-started).count());
+    CHECK(elapsed<2500);
+}
 void typeRoundTrip(const std::string& python,const std::string& script){
     ProcessBroker broker(argv(python,script,"echo"),3000);
     VariantList value;
@@ -90,6 +101,7 @@ int main(int argc,char** argv0){
     const std::string python=argv0[1],script=argv0[2];
     try{
         success(python,script);typeRoundTrip(python,script);invalidArguments(python,script);
+        blockedWriter(python,script);
         malformed(python,script,"badid");malformed(python,script,"duplicate");
         malformed(python,script,"wrongtype");malformed(python,script,"stall");
         malformed(python,script,"exit");

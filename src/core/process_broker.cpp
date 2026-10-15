@@ -85,6 +85,28 @@ std::wstring toWide(const std::string& s) {
         throw Error("worker_launch","Invalid UTF-8 worker command");
     return w;
 }
+// Own the write buffer until the synchronous Windows pipe writer exits, even
+// if its parent call timed out. Anonymous pipes do not support reliable
+// overlapped writes; cancel the blocked thread and terminate the child.
+struct PipeWriteState {
+    HANDLE pipe;
+    std::string frame;
+    DWORD written;
+    BOOL success;
+    PipeWriteState(HANDLE p, const std::string& f)
+        : pipe(p), frame(f), written(0), success(FALSE) {}
+};
+struct PipeWriteJob {
+    std::shared_ptr<PipeWriteState> state;
+    explicit PipeWriteJob(const std::shared_ptr<PipeWriteState>& s) : state(s) {}
+};
+DWORD WINAPI pipeWriteThread(LPVOID argument) {
+    std::unique_ptr<PipeWriteJob> job(static_cast<PipeWriteJob*>(argument));
+    const std::shared_ptr<PipeWriteState> state=job->state;
+    state->success=WriteFile(state->pipe,state->frame.data(),
+        static_cast<DWORD>(state->frame.size()),&state->written,NULL);
+    return 0;
+}
 std::wstring quote(const std::wstring& s){
     std::wstring out=L"\"";
     unsigned backslashes=0;
@@ -212,11 +234,29 @@ std::string ProcessBroker::exchange(const std::string& frame){
     using Clock=std::chrono::steady_clock;
     const Clock::time_point deadline=Clock::now()+std::chrono::milliseconds(timeoutMs_);
 #if defined(_WIN32)
-    // Windows pipe writes here are bounded to 64KiB and children read on a
-    // dedicated stdin stream. A future overlapped-pipe transport is needed
-    // for a hard deadline on writes to an unresponsive child.
-    DWORD written=0;
-    if(!WriteFile(process_->input,frame.data(),static_cast<DWORD>(frame.size()),&written,NULL) || written!=frame.size())workerFailure();
+    // WriteFile on a Windows anonymous pipe can block indefinitely if the
+    // child never drains stdin. Enforce the same request deadline as reads.
+    const std::shared_ptr<PipeWriteState> state(
+        new PipeWriteState(process_->input,frame));
+    PipeWriteJob* job=new PipeWriteJob(state);
+    HANDLE writer=CreateThread(NULL,0,&pipeWriteThread,job,0,NULL);
+    if(!writer){delete job;workerFailure();}
+    const Clock::time_point now=Clock::now();
+    const std::chrono::milliseconds left=
+        std::chrono::duration_cast<std::chrono::milliseconds>(deadline-now);
+    const DWORD limit=left.count()>0 ? static_cast<DWORD>(left.count()) : 0;
+    const DWORD waited=WaitForSingleObject(writer,limit);
+    if(waited!=WAIT_OBJECT_0){
+        // Cancellation may take time; terminating the private worker ensures
+        // its pipe reader disappears. The thread retains the shared buffer.
+        (void)CancelSynchronousIo(writer);
+        if(process_->handle)(void)TerminateProcess(process_->handle,1);
+        (void)WaitForSingleObject(writer,500);
+        CloseHandle(writer);
+        workerFailure();
+    }
+    CloseHandle(writer);
+    if(!state->success || state->written!=frame.size())workerFailure();
     std::string answer;
     for(;;){
         if(Clock::now()>=deadline)workerFailure();
