@@ -90,6 +90,9 @@ public static class BuildUnifiedDualPlayer
             "</style><body><h1>CEF GPU TEXTURE</h1><p>UNITY 3D CUBE</p>"+
             "<div class='move'></div><p>CSS animation / D3D11</p></body></html>";
         host.FindProperty("initialUrl").stringValue="data:text/html;charset=utf-8,"+Uri.EscapeDataString(cubeHtml);
+        // Square source page matches the cube face UV aspect ratio.
+        host.FindProperty("width").intValue=768;
+        host.FindProperty("height").intValue=768;
         host.ApplyModifiedPropertiesWithoutUndo();
         // Direct CEF external GPU Texture2D -> MeshRenderer Material (not HWND).
         var camera=Camera.main;
