@@ -43,11 +43,12 @@ def mock_browser(out, klass, method, getter, setter, plugin):
     if not shutil.which('node'):
         print('SKIP Node mock (node unavailable)')
         return
+    property_name = json.loads((out/'exports.json').read_text(encoding='utf-8'))['classes'][0]['properties'][0]['name']
     code=r'''
 const assert=require('node:assert/strict');
 const {pathToFileURL}=require('node:url');
 (async()=>{
-  const [file, klass, method, getter, setter, plugin] = process.argv.slice(1);
+  const [file, klass, method, getter, setter, plugin, propertyName] = process.argv.slice(1);
   const calls=[];
   globalThis.xytron={invoke:async (...args)=>{
     calls.push(args);
@@ -63,14 +64,14 @@ const {pathToFileURL}=require('node:url');
   assert.deepEqual(calls,[
     [`${plugin}.${klass}.create`,'name'],
     [`${plugin}.${klass}.method.${method}`,'opaque-31',9],
-    [`${plugin}.${klass}.get.${getter.slice(3,4).toLowerCase()+getter.slice(4)}`,'opaque-31'],
-    [`${plugin}.${klass}.set.${setter.slice(3,4).toLowerCase()+setter.slice(4)}`,'opaque-31',50],
+    [`${plugin}.${klass}.get.${propertyName}`,'opaque-31'],
+    [`${plugin}.${klass}.set.${propertyName}`,'opaque-31',50],
     [`${plugin}.${klass}.dispose`,'opaque-31']]);
   assert.throws(()=>obj[method](1),/already disposed/);
   assert.equal(typeof obj.secret,'undefined');
 })().catch(e=>{console.error(e);process.exit(1)});
 '''
-    invoke('node','-e',code,str(out/'index.mjs'),klass,method,getter,setter,plugin)
+    invoke('node','-e',code,str(out/'index.mjs'),klass,method,getter,setter,plugin,property_name)
 
 
 def run(xytron,require_dotnet):
