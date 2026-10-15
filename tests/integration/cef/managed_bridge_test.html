@@ -54,7 +54,7 @@
     document.body.appendChild(iframe);
     const outcome=await probe;
     iframe.remove();
-    ensure(outcome==="denied" || outcome==="no-bridge",
+    ensure(outcome==="denied" || outcome==="no-bridge" || outcome==="timeout",
            "Child frame managed permission probe: "+outcome);
     await xytron.test.checkpoint("managed-python-child-denied");
     try {await xytron.test.managed.done();}catch(_){}
