@@ -21,12 +21,17 @@ $targetPackage=Join-Path $assets 'CompanyWebView'
 if(Test-Path -LiteralPath $targetPackage) {
   throw "Scratch Unity project already has CompanyWebView; refusing ambiguous second copy: $targetPackage"
 }
-New-Item -ItemType Directory -Force -Path $assets | Out-Null
-Copy-Item -LiteralPath $cef -Destination $targetPackage -Recurse -Force
+New-Item -ItemType Directory -Force -Path $targetPackage | Out-Null
 $targetRuntime=Join-Path $targetPackage 'Runtime'
+# Runtime assets only. NEVER copy Documentation~, Samples~, Tests~, or other
+# long-path files into scratch Unity Assets. Native binaries are staged separately.
+Copy-Item -LiteralPath (Join-Path $cef 'Runtime') -Destination $targetPackage -Recurse -Force
 if(-not (Test-Path -LiteralPath (Join-Path $targetRuntime 'WebView.cs') -PathType Leaf)){
-  throw 'CEF Package copy did not preserve Runtime\WebView.cs'
+  throw 'CEF Runtime-only copy did not preserve Runtime\WebView.cs'
 }
+$unexpected=Get-ChildItem -LiteralPath $targetPackage -Directory |
+  Where-Object {$_.Name -notin @('Runtime')}
+if(@($unexpected).Count -gt 0){throw 'Unexpected non-runtime CEF package directories copied into Unity project'}
 # This directory does NOT exist in the frozen CEF baseline: always make it before copying.
 $unified=Join-Path $targetRuntime 'UnifiedExperimental'
 New-Item -ItemType Directory -Force -Path $unified | Out-Null
