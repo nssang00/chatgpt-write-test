@@ -1,0 +1,88 @@
+name: Handoff v58.6.0 source snapshot (NOT Unity Player proof)
+on:
+  push:
+    branches:
+      - feature/unified-unity-v58-6-0-nested-oneclick-longpath-fix
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  handoff:
+    runs-on: windows-2022
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - name: Regression - long Documentation~ path must not be copied to Unity Assets
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $r='Integration/UnityUnified-v58.6.0-preview'
+          $fixture=Join-Path $env:RUNNER_TEMP 'handoff-longpath'
+          $old=Join-Path $fixture 'old-oneclick_bundle'
+          $oldPkg=Join-Path $old 'Package\com.company.webview'
+          $oldRun=Join-Path $oldPkg 'Runtime'
+          $oldDoc=Join-Path $oldPkg 'Documentation~'
+          $stage=Join-Path $old 'Build\cef-native\stage'
+          $native=Join-Path $stage 'native\Release'
+          $runtime=Join-Path $stage 'runtime\Release'
+          $locales=Join-Path $runtime 'locales'
+          New-Item -ItemType Directory -Force -Path $oldRun,$oldDoc,$native,$locales | Out-Null
+          Set-Content -LiteralPath (Join-Path $oldRun 'WebView.cs') -Value '// CEF VALIDATED SOURCE MOCK'
+          Set-Content -LiteralPath (Join-Path $oldDoc 'PHASE1_CEF_INTERACTION_REAL_INPUT_IME_AUDIT.md') -Value ('X' * 1000)
+          New-Item -ItemType File -Force -Path (Join-Path $native 'CompanyWebViewCefTextureProbe.dll') | Out-Null
+          foreach($name in @('libcef.dll','CompanyWebViewCefSubprocess.exe','icudtl.dat','resources.pak','chrome_100_percent.pak')){
+            New-Item -ItemType File -Force -Path (Join-Path $runtime $name) | Out-Null
+          }
+          New-Item -ItemType File -Force -Path (Join-Path $locales 'en-US.pak') | Out-Null
+          $kit=Join-Path $fixture 'new-kit\oneclick_bundle'
+          $runtimeKit=Join-Path $kit 'Runtime'
+          New-Item -ItemType Directory -Force -Path $runtimeKit | Out-Null
+          $sourceFiles=@('UnifiedWebView.cs','CefTextureBackendBridge.cs','WebView2OverlayBackendBridge.cs','UnifiedTextureSceneHost.cs','UnifiedOverlaySceneHost.cs')
+          foreach($name in $sourceFiles){
+            Copy-Item -LiteralPath (Join-Path "$r/Runtime" $name) -Destination (Join-Path $runtimeKit $name)
+          }
+          $importer=(Resolve-Path "$r/DualPlayer/Import-ExistingOneClick.ps1").Path
+          & $importer -LegacyPackagePath $oldPkg -LegacyStagePath $stage -TargetBundleRoot $kit
+          if(Test-Path -LiteralPath (Join-Path $kit 'Package\com.company.webview\Documentation~')){
+            throw 'Regression: huge Documentation~ must not be copied'
+          }
+          $installer=(Resolve-Path "$r/DualPlayer/Install-UnifiedManagedSources.ps1").Path
+          $assets=Join-Path $fixture 'very-long-한글-파일이름\results\dual-20261015-090746\UnityProject\Assets'
+          & $installer -CefPackagePath (Join-Path $kit 'Package\com.company.webview') -UnityAssetsDir $assets -KitRoot $kit
+          $unified=Join-Path $assets 'CompanyWebView\Runtime\UnifiedExperimental'
+          foreach($name in $sourceFiles){
+            if(-not (Test-Path -LiteralPath (Join-Path $unified $name) -PathType Leaf)){
+              throw "Required unified source absent: $name"
+            }
+          }
+          if(Test-Path -LiteralPath (Join-Path $assets 'CompanyWebView\Documentation~')){
+            throw 'Long documentation path was copied to scratch Unity Assets'
+          }
+          Write-Host 'COMPLETED mock import + managed source assembly regression PASS; CEF/Unity runtime NOT EXECUTED'
+      - name: Prepare full exact-commit GitHub handoff source snapshot
+        shell: pwsh
+        run: |
+          $root='handoff-source-snapshot'
+          New-Item -ItemType Directory -Force -Path $root | Out-Null
+          Copy-Item -LiteralPath 'Integration/UnityUnified-v58.6.0-preview' -Destination (Join-Path $root 'Integration') -Recurse
+          Copy-Item -LiteralPath 'Prototypes/WebView2Overlay/OneClick-v58.5.2' -Destination (Join-Path $root 'WebView2-v58.5.2') -Recurse
+          Copy-Item -LiteralPath '.github/workflows/handoff-snapshot-v58-6-0.yml' -Destination (Join-Path $root 'WORKFLOW_SOURCE.yml')
+          @"
+          source_repository=nssang00/chatgpt-write-test
+          branch=$env:GITHUB_REF_NAME
+          commit=$env:GITHUB_SHA
+          provenance=GitHub branch exact commit; no runtime certification
+          "@ | Set-Content -LiteralPath (Join-Path $root 'SOURCE_REVISION.txt') -Encoding UTF8
+          $files=@(Get-ChildItem -LiteralPath $root -Recurse -File | Sort-Object FullName)
+          $entries=@(foreach($f in $files){
+            $relative=$f.FullName.Substring((Get-Item $root).FullName.Length+1).Replace('\','/')
+            "{0}  {1}" -f ((Get-FileHash -LiteralPath $f.FullName -Algorithm SHA256).Hash.ToLowerInvariant()),$relative
+          })
+          $entries | Set-Content -LiteralPath (Join-Path $root 'FILES_SHA256.txt') -Encoding UTF8
+          Write-Host "Exact branch source snapshot $($files.Count) files at commit $env:GITHUB_SHA"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: webview-v58-6-0-handoff-source-exact-head
+          path: handoff-source-snapshot/
+          retention-days: 30
+          if-no-files-found: error
