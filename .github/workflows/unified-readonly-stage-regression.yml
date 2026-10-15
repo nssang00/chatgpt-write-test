@@ -1,0 +1,81 @@
+name: Unity Dual CEF readonly-stage regression (no Player claim)
+on:
+  push:
+    branches:
+      - feature/unified-unity-v58-6-0-readonly-stage-fix
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  offline-regression:
+    runs-on: windows-2022
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - name: Contract and PowerShell 5.1 syntax checks
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $r='Integration/UnityUnified-v58.6.0-preview'
+          foreach($name in @('verify_dual_player.py','verify_cef_bootstrap.py','verify_integration.py','verify_screen_automation_contract.py')){
+            python "$r/Validation/$name"
+            if($LASTEXITCODE -ne 0){throw "Python contract failed: $name"}
+          }
+          foreach($name in @('Run-Dual.ps1','Ensure-CefRuntime.ps1','Install-UnifiedManagedSources.ps1','Screen-Automation.ps1')){
+            $file=(Resolve-Path "$r/DualPlayer/$name").Path
+            $tokens=$null;$errs=$null
+            [System.Management.Automation.Language.Parser]::ParseFile($file,[ref]$tokens,[ref]$errs)|Out-Null
+            if(@($errs).Count -gt 0){throw "PowerShell parser failed: $name"}
+          }
+          $run=Get-Content "$r/DualPlayer/Run-Dual.ps1" -Raw
+          if($run -match '& \\$importer' -or $run -notmatch '\\$source=\\$legacySource'){
+            throw 'Runner must use legacy native stage read-only and must not auto-import into deep kit root'
+          }
+          if($run -notmatch 'StageCef \\$CefRuntimeDir \\$dest'){
+            throw 'Runner no longer stages CEF into short scratch Unity Assets'
+          }
+          $bootstrap=Get-Content "$r/DualPlayer/Ensure-CefRuntime.ps1" -Raw
+          if($bootstrap -match 'Expand-Archive' -or $bootstrap -notmatch 'ZipFileExtensions'){
+            throw 'Pinned source extraction must filter out long documentation paths'
+          }
+      - name: Offline CEF discovery and runtime-only Unity installation fixture
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $r=(Resolve-Path 'Integration/UnityUnified-v58.6.0-preview').Path
+          $test=Join-Path $env:RUNNER_TEMP 'readonly-oneclick-한글'
+          $legacy=Join-Path $test 'oneclick_bundle'
+          $native=Join-Path $legacy 'Build/cef-native/stage/native/Release'
+          $runtime=Join-Path $legacy 'Build/cef-native/stage/runtime/Release'
+          $managed=Join-Path $legacy 'Package/com.company.webview/Runtime'
+          $docs=Join-Path $legacy 'Package/com.company.webview/Documentation~'
+          New-Item -ItemType Directory -Force -Path $native,(Join-Path $runtime 'locales'),$managed,$docs | Out-Null
+          foreach($n in @('CompanyWebViewCefTextureProbe.dll')){
+            New-Item -ItemType File -Force -Path (Join-Path $native $n) | Out-Null
+          }
+          foreach($n in @('libcef.dll','CompanyWebViewCefSubprocess.exe','icudtl.dat','resources.pak','chrome_100_percent.pak','locales/en-US.pak')){
+            New-Item -ItemType File -Force -Path (Join-Path $runtime $n) | Out-Null
+          }
+          Set-Content -LiteralPath (Join-Path $managed 'WebView.cs') -Value '// protected managed fixture'
+          Set-Content -LiteralPath (Join-Path $docs 'PHASE1_CEF_INTERACTION_REAL_INPUT_IME_AUDIT.md') -Value 'protected documentation fixture'
+          $kit=Join-Path $test 'CompanyWebView_Dual_OneClick_v58_6_0/oneclick_bundle'
+          New-Item -ItemType Directory -Force -Path $kit | Out-Null
+          $helper=(Resolve-Path "$r/DualPlayer/Ensure-CefRuntime.ps1").Path
+          $result=@(& $helper -BundleRoot $kit -UnityExe 'not-needed-offline' -NoAutoDownload)
+          $expected=Join-Path $legacy 'Build/cef-native/stage'
+          if($result.Count -ne 1 -or $result[0] -ne [IO.Path]::GetFullPath($expected)){
+            throw 'Existing sibling CEF compiled stage not found'
+          }
+          $assets=Join-Path $env:RUNNER_TEMP 'CWV58/dual-regression/UnityProject/Assets'
+          $install=(Resolve-Path "$r/DualPlayer/Install-UnifiedManagedSources.ps1").Path
+          & $install -CefPackagePath (Split-Path $managed -Parent) -UnityAssetsDir $assets -KitRoot $r
+          if(-not (Test-Path -LiteralPath (Join-Path $assets 'CompanyWebView/Runtime/UnifiedExperimental/UnifiedWebView.cs'))){
+            throw 'Missing unified facade in short scratch Unity Assets'
+          }
+          if(Test-Path -LiteralPath (Join-Path $assets 'CompanyWebView/Documentation~')){
+            throw 'Long documentation was copied to Unity Assets'
+          }
+          if((Get-Content (Join-Path $managed 'WebView.cs') -Raw) -notmatch 'protected managed fixture'){
+            throw 'Validated original CEF managed source was modified'
+          }
+          Write-Host 'Offline fixture PASS: readonly source, CEF discovery, runtime-only Assets. NO UNITY PLAYER EXECUTED.'
