@@ -96,6 +96,17 @@ public:
             return durationMs;
         });
 
+        // Observe whether a stale document-session request reached native
+        // dispatch. Only the real browser replay test uses these bindings.
+        const std::shared_ptr<std::atomic<int> > replayEffects(
+            new std::atomic<int>(0));
+        webview_.bind("test.replay.bump", [replayEffects]() {
+            return replayEffects->fetch_add(1) + 1;
+        });
+        webview_.bind("test.replay.count", [replayEffects]() {
+            return replayEffects->load();
+        });
+
         webview_.bind("test.isWorkerThread", [this]() {
             return
                 browserThreadKnown_.load() &&
