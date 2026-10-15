@@ -38,10 +38,11 @@ function ResolveCefRuntime {
   return $stage
 }
 function GetCefPackageFromBundle([string]$stageDir) {
-  $package=Join-Path $root 'oneclick_bundle\Package\com.company.webview'
-  Need (Test-Path -LiteralPath (Join-Path $package 'Runtime\WebView.cs') -PathType Leaf) 'Bundled CEF Unity runtime sources missing. Kit is incomplete.'
-  Write-Host '[DUAL] Using INCLUDED oneclick_bundle sources (never external)'
-  return $package
+  $importer=Join-Path $root 'DualPlayer\Import-CefUnitySources.ps1'
+  Need (Test-Path -LiteralPath $importer -PathType Leaf) 'Missing automated CEF Unity source importer'
+  $resolved=@(& $importer -KitRoot $root)
+  Need ($resolved.Count -eq 1 -and (Test-Path -LiteralPath (Join-Path $resolved[0] 'Runtime\WebView.cs') -PathType Leaf)) 'CEF unity source import incomplete'
+  return [string]$resolved[0]
 }
 function GetCefStageLayout([string]$from){
  Need (-not [string]::IsNullOrWhiteSpace($from) -and (Test-Path -LiteralPath $from -PathType Container)) 'CEF v58.4.4 native runtime folder not found. Use a previously BUILT CEF stage folder, not the source ZIP.'
@@ -77,7 +78,6 @@ try {
   $CefRuntimeDir=ResolveCefRuntime
   $unity=FindUnity
   $null=GetCefStageLayout $CefRuntimeDir
-  $null=GetCefPackageFromBundle $CefRuntimeDir
   New-Item -ItemType Directory -Force -Path $out | Out-Null
   $source=GetCefPackageFromBundle $CefRuntimeDir
   Need (Test-Path -LiteralPath (Join-Path $source 'Runtime\WebView.cs') -PathType Leaf) 'Old OneClick package WebView.cs missing'
