@@ -1,5 +1,32 @@
 # NativeWeb Session Handoff
 
+## 2026-10-16 NW-014 retired-document IPC replay E2E — VERIFIED
+
+- Code source: `2bbc37c3f61ac43aeff09bdb4268c59a57b3fe62` on
+  `nativeweb/autonomous-integration`, Draft PR #7. Do not merge or publish
+  without owner approval.
+- [Real Browser E2E #38781105368](https://github.com/nssang00/chatgpt-write-test/actions/runs/38781105368):
+  **Linux CEF PASS, Windows CEF PASS, Windows WebView2 PASS**.
+  The remaining six workflows on the same SHA passed as well.
+- The regular plugin E2E page reloads the same exact URL and exercises a
+  previously issued document token after navigation. The CEF integration
+  library exposes test-only V8 hooks, compiled ONLY in
+  `tests/integration/cef/CMakeLists.txt`, to save the retired token privately
+  and send actual CEF renderer-to-browser `nativeweb.cancel` and
+  `nativeweb.request` process messages from the new document. The browser
+  must reject both, prevent a stale cancel of a live request ID, keep a
+  native side-effect counter at zero, and accept the new session's requests.
+- Test runner requires `security-stale-session-replay-blocked` for both
+  CEF and WebView2 plugin pages. Managed Python/.NET pages do not execute
+  this scenario and have separate checkpoints.
+- **Coverage limit:** this proves rejection of *replayed old tokens* sent on
+  real engine IPC after same-URL reload, not the delivery timing of a
+  genuinely in-flight packet from the destroyed old renderer context
+  during navigation, nor every renderer-process-swap/frame-reuse race.
+  NW-014 remains open for complete capability/grant policy and those races.
+- Prior issue: WebView2 .NET checkpoint mis-scoping fixed in `a35b264`,
+  7/7 CI green; core cancellation isolation stress added in `b292f156`.
+
 ## 2026-10-14 definitive U0/U1/U2 app:// verification (source d540df4a)
 
 The **real packaged `app://` resource protocol** is now implemented on
