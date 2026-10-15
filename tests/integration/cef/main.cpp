@@ -366,6 +366,20 @@ public:
             });
     }
 
+    void configureManaged(const std::string& python,const std::string& fixture)
+    {
+        if(python.empty() || fixture.empty())return;
+        managedPython_=python;
+        managedFixture_=fixture;
+        webview_.bind("test.managed.ready",[this](){return managedReady_.load();});
+        webview_.bind("test.managed.done",[this](){
+            success_=true;
+            std::cout<<"checkpoint: managed-python-complete"<<std::endl;
+            webview_.destroy();
+            return true;
+        });
+    }
+
     // Required only in --plugin-path mode. The browser page drives this
     // test through real JavaScript Promise calls, not a fake backend.
     void configurePlugin(const std::string& path)
@@ -427,11 +441,23 @@ public:
                   << source << std::endl;
     }
 
-    void onLoadFinished(
-        const std::string& source) override
+    void onLoadFinished(const std::string& source) override
     {
-        std::cout << "load-finish: "
-                  << source << std::endl;
+        std::cout<<"load-finish: "<<source<<std::endl;
+        if(source!="app://desktop/managed_bridge_test.html" ||
+           managedPython_.empty() || managedReady_.load())return;
+        try {
+            webview_.bindManagedWorker("example_py",{
+                "example_py.Player.create","example_py.Player.method.hit",
+                "example_py.Player.get.health","example_py.Player.set.health",
+                "example_py.Player.dispose"
+            },{managedPython_,managedFixture_,"normal"},5000);
+            managedReady_.store(true);
+        }catch(const std::exception& e){
+            failure_=e.what();
+            std::cerr<<"managed-worker-setup-failed: "<<e.what()<<std::endl;
+            webview_.destroy();
+        }
     }
 
     void onClosed() override
@@ -443,6 +469,10 @@ public:
     }
 
 private:
+    std::string managedPython_;
+    std::string managedFixture_;
+    std::atomic<bool> managedReady_{false};
+
     void beginCppCalls()
     {
         if (cppCallsStarted_)
@@ -667,7 +697,16 @@ int main(int argc, char* argv[])
     IntegrationListener listener(webview);
     webview.setListener(&listener);
     try {
-        listener.configurePlugin(getPluginPath(argc, argv));
+        listener.configurePlugin(getPluginPath(argc,argv));
+        std::string python,fixture;
+        for(int i=1;i<argc;++i){
+            const std::string arg=argv[i];
+            const std::string pfx="--managed-python=";
+            const std::string ffx="--managed-fixture=";
+            if(arg.compare(0,pfx.size(),pfx)==0)python=arg.substr(pfx.size());
+            if(arg.compare(0,ffx.size(),ffx)==0)fixture=arg.substr(ffx.size());
+        }
+        listener.configureManaged(python,fixture);
     } catch (const std::exception& error) {
         std::cerr << "Plugin E2E setup failed: " << error.what() << std::endl;
         return 5;
@@ -694,6 +733,7 @@ int main(int argc, char* argv[])
         struct AssetEntry { const char* name; const char* url; const char* mime; };
         const AssetEntry assets[] = {
             {"plugin_bridge_test.html", "app://desktop/plugin_bridge_test.html", "text/html"},
+            {"managed_bridge_test.html", "app://desktop/managed_bridge_test.html", "text/html"},
             {"plugin_untrusted_child.html", "app://desktop/plugin_untrusted_child.html", "text/html"},
             {"app_resource_script.js", "app://desktop/app_resource_script.js", "application/javascript"},
             {"app_resource_style.css", "app://desktop/app_resource_style.css", "text/css"},

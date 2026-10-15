@@ -266,3 +266,12 @@ add_test(
 )
 set_tests_properties(browser.app_resource_lifecycle PROPERTIES TIMEOUT 150)
 
+
+# Actual JavaScript -> engine bridge -> C++11 ProcessBroker -> Python object host.
+add_test(
+  NAME browser.managed_python
+  COMMAND "${Python3_EXECUTABLE}"
+    "${NATIVEWEB_ROOT}/tools/run_browser_plugin_e2e.py"
+    --engine cef --build-dir "${CMAKE_BINARY_DIR}" --managed
+)
+set_tests_properties(browser.managed_python PROPERTIES TIMEOUT 150)

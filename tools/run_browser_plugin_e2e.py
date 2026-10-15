@@ -16,6 +16,8 @@ def main():
     parser.add_argument('--engine', choices=('cef', 'webview2'), required=True)
     parser.add_argument('--build-dir', type=Path, required=True)
     parser.add_argument('--timeout', type=int, default=120)
+    parser.add_argument('--managed', action='store_true',
+                        help='exercise actual managed Python browser bridge')
     parser.add_argument('--app-resources', action='store_true',
                         help='run real packaged app:// UI test')
     args = parser.parse_args()
@@ -24,7 +26,10 @@ def main():
         parser.error('WebView2 must be tested on Windows')
 
     project = Path(__file__).resolve().parent.parent
-    html = project / 'tests/integration/cef/plugin_bridge_test.html'
+    html = project / 'tests/integration/cef' / (
+        'managed_bridge_test.html' if args.managed else 'plugin_bridge_test.html')
+    if args.managed:
+        args.app_resources = True
     bin_dir = args.build_dir.resolve() / 'bin'
     exe_suffix = '.exe' if os.name == 'nt' else ''
     exe_name = 'nativeweb_' + args.engine + '_bridge_integration' + exe_suffix
@@ -38,14 +43,23 @@ def main():
         ("app_resource_script.js", "app_resource_style.css",
          "app_resource_icon.svg", "app_camera_private.html")
     ] if args.app_resources else []
-    for path in (html, child, executable, plugin, *additional):
+    needed = (html, executable, *additional) if args.managed else (
+        html, child, executable, plugin, *additional)
+    for path in needed:
         if not path.is_file():
             parser.error('Required E2E input missing: ' + str(path))
 
-    entry_url = ('app://desktop/plugin_bridge_test.html'
+    entry_url = ('app://desktop/managed_bridge_test.html' if args.managed
+                 else 'app://desktop/plugin_bridge_test.html'
                  if args.app_resources else html.as_uri())
-    command = [str(executable), '--url=' + entry_url,
-               '--plugin-path=' + str(plugin)]
+    command = [str(executable), '--url=' + entry_url]
+    if args.managed:
+        command.extend([
+            '--managed-python=' + str(Path(sys.executable).resolve()),
+            '--managed-fixture=' + str((project / 'tests/ipc/broker_fixture.py').resolve())
+        ])
+    else:
+        command.append('--plugin-path=' + str(plugin))
     if args.app_resources:
         command.append('--app-assets=' + str(html.parent))
     if args.engine == 'cef':
@@ -83,14 +97,18 @@ def main():
         return 124
 
     print(output, end='')
-    markers = ('checkpoint: security-same-entry-iframe-blocked',
+    markers = (('checkpoint: managed-python-object-lifecycle',
+                'checkpoint: managed-python-child-denied',
+                'checkpoint: managed-python-complete') if args.managed else
+               ('checkpoint: security-same-entry-iframe-blocked',
                'checkpoint: security-untrusted-frame-blocked',
                'checkpoint: plugin-js-verified',
                'checkpoint: plugin-busy-verified',
                'checkpoint: plugin-unloaded',
-               'checkpoint: plugin-e2e-complete')
+               'checkpoint: plugin-e2e-complete'))
     missing = [m for m in markers if m not in output]
-    forbidden = 'checkpoint: security-UNTRUSTED-CALL-EXECUTED' in output
+    forbidden = ('checkpoint: security-UNTRUSTED-CALL-EXECUTED' in output or
+                 'managed-worker-setup-failed:' in output)
     if process.returncode != 0 or missing or forbidden or 'bridge-fail:' in output:
         print('Browser E2E failed: exit={}, missing={}'.format(
               process.returncode, ', '.join(missing)), file=sys.stderr)
