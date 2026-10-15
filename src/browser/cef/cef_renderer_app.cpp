@@ -440,11 +440,18 @@ void CefRendererApp::OnContextReleased(
     CefRefPtr<CefFrame> frame,
     CefRefPtr<CefV8Context> context)
 {
-    documentSessions_.erase(context.get());
+    for (std::vector<DocumentSession>::iterator it=documentSessions_.begin();
+         it!=documentSessions_.end();)
+    {
+        if(it->context && it->context->IsSame(context))
+            it=documentSessions_.erase(it);
+        else ++it;
+    }
     for (std::vector<QueuedDocumentRequest>::iterator it=
              queuedDocumentRequests_.begin(); it!=queuedDocumentRequests_.end();)
     {
-        if(it->context.get()==context.get()) it=queuedDocumentRequests_.erase(it);
+        if(it->context && it->context->IsSame(context))
+            it=queuedDocumentRequests_.erase(it);
         else ++it;
     }
     for (std::map<std::string, PendingPromise>::iterator it =
@@ -509,11 +516,17 @@ std::string CefRendererApp::beginInvoke(
 
     list->SetList(2, args);
 
-    const std::map<CefV8Context*,std::string>::const_iterator session=
-        documentSessions_.find(context.get());
-    if(session!=documentSessions_.end() && !session->second.empty())
+    std::string session;
+    for(std::size_t i=0;i<documentSessions_.size();++i)
+        if(documentSessions_[i].context &&
+           documentSessions_[i].context->IsSame(context))
+        {
+            session=documentSessions_[i].token;
+            break;
+        }
+    if(!session.empty())
     {
-        list->SetString(3,session->second);
+        list->SetString(3,session);
         frame->SendProcessMessage(PID_BROWSER,message);
     }
     else if(queuedDocumentRequests_.size() < 256)
@@ -581,13 +594,30 @@ bool CefRendererApp::OnProcessMessageReceived(
         if (!context || !context->IsValid()) return true;
         const std::string token=args->GetString(0).ToString();
         if(token.size()!=48) return true;
-        documentSessions_[context.get()]=token;
+        bool known=false;
+        for(std::size_t i=0;i<documentSessions_.size();++i)
+            if(documentSessions_[i].context &&
+               documentSessions_[i].context->IsSame(context))
+            {
+                documentSessions_[i].token=token;
+                known=true;
+                break;
+            }
+        if(!known)
+        {
+            DocumentSession session;
+            session.context=context;
+            session.token=token;
+            documentSessions_.push_back(session);
+        }
+        std::cerr<<"cef-document-session-received"<<std::endl;
         for(std::vector<QueuedDocumentRequest>::iterator it=
                 queuedDocumentRequests_.begin();
             it!=queuedDocumentRequests_.end();)
         {
-            if(it->context.get()==context.get())
+            if(it->context && it->context->IsSame(context))
             {
+                std::cerr<<"cef-document-session-flush"<<std::endl;
                 it->message->GetArgumentList()->SetString(3,token);
                 it->frame->SendProcessMessage(PID_BROWSER,it->message);
                 it=queuedDocumentRequests_.erase(it);
@@ -621,10 +651,14 @@ bool CefRendererApp::OnProcessMessageReceived(
             return true;
         }
 
-        const std::map<CefV8Context*,std::string>::const_iterator session=
-            documentSessions_.find(context.get());
-        const std::string currentSession=
-            session!=documentSessions_.end() ? session->second : std::string();
+        std::string currentSession;
+        for(std::size_t i=0;i<documentSessions_.size();++i)
+            if(documentSessions_[i].context &&
+               documentSessions_[i].context->IsSame(context))
+            {
+                currentSession=documentSessions_[i].token;
+                break;
+            }
         CefRefPtr<CefV8Value> receiver;
         CefRefPtr<CefV8Value> function;
 

@@ -78,6 +78,12 @@ private:
         CefRefPtr<CefV8Value> promise;
     };
 
+    struct DocumentSession
+    {
+        CefRefPtr<CefV8Context> context;
+        std::string token;
+    };
+
     struct QueuedDocumentRequest
     {
         CefRefPtr<CefFrame> frame;
@@ -99,7 +105,7 @@ private:
     std::uint64_t nextRequestId_;
     std::uint64_t nextSubscriptionId_;
     std::map<std::string, PendingPromise> pending_;
-    std::map<CefV8Context*,std::string> documentSessions_;
+    std::vector<DocumentSession> documentSessions_;
     std::vector<QueuedDocumentRequest> queuedDocumentRequests_;
     std::map<std::string, EventSubscription> subscriptions_;
 

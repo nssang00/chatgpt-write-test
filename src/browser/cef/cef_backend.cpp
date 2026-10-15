@@ -577,7 +577,8 @@ void CefBackend::onLoadEnd(
                 CefRefPtr<CefProcessMessage> offer =
                     CefProcessMessage::Create("nativeweb.document.session");
                 offer->GetArgumentList()->SetString(0,documentSessionToken_);
-                frame->SendProcessMessage(PID_RENDERER,offer);
+                const bool offered=frame->SendProcessMessage(PID_RENDERER,offer);
+                std::cerr << "cef-document-session-issued: " << offered << std::endl;
             }
         }
         listener_->onLoadFinished(url);

@@ -37,6 +37,8 @@ jobs:
         run: cmake -S tests/integration/cef -B build/cef -DCEF_ROOT="$CEF_ROOT" -DCMAKE_BUILD_TYPE=Release
       - name: Build CEF integration and plugin fixture
         run: cmake --build build/cef --config Release --parallel 4
+      - name: Preflight CEF session handshake
+        run: python tools/run_browser_plugin_e2e.py --engine cef --build-dir build/cef --managed --timeout 25
       - name: Run real browser plugin and packaged app-resource E2E
         run: ctest --test-dir build/cef -R '^browser\.' --output-on-failure
 
@@ -76,6 +78,9 @@ jobs:
       - name: Verify Windows CEF full parallel integration build
         shell: pwsh
         run: cmake --build build/cef --config Release --parallel 4
+      - name: Preflight CEF session handshake
+        shell: pwsh
+        run: python tools/run_browser_plugin_e2e.py --engine cef --build-dir build/cef --managed --timeout 25
       - name: Run real browser plugin E2E
         shell: pwsh
         run: ctest --test-dir build/cef -C Release -R '^browser\.' --output-on-failure
