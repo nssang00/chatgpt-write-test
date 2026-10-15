@@ -33,49 +33,15 @@ function FindUnity {
  return $d
 }
 function ResolveCefRuntime {
- # No prompt: use previous v58.4.4 native stage or build the exact pinned baseline automatically.
- $helper=Join-Path $root 'DualPlayer\Ensure-CefRuntime.ps1'
- Need (Test-Path -LiteralPath $helper -PathType Leaf) 'Missing CEF automation helper'
- $stage=@(& $helper -BundleRoot $root -ExplicitDir $CefRuntimeDir -UnityExe $unity)
- Need ($stage.Count -eq 1 -and -not [string]::IsNullOrWhiteSpace($stage[0])) 'CEF automation could not resolve a complete pinned native stage'
- return [string]$stage[0]
+  $stage=Join-Path $root 'oneclick_bundle\Build\cef-native\stage'
+  Need (Test-Path -LiteralPath $stage -PathType Container) 'Bundled CEF stage is missing. This self-contained kit is incomplete; do not select an external folder.'
+  return $stage
 }
-function GetCefPackageFromBundle([string]$stageDir){
- # Reuse original CEF v58.4.4 source tree READ-ONLY. No copy back into oneclick_bundle.
- $roots=@($root,(Split-Path $root -Parent),
-  (Join-Path $env:USERPROFILE 'Downloads'),(Join-Path $env:USERPROFILE 'Desktop'))
- # Stage normally lives under oneclick_bundle\Build\cef-native\stage
- $up=$stageDir
- for($k=0;$k -lt 6;$k++){
-  if(-not $up){break}
-  $roots=@($up)+$roots
-  $next=Split-Path $up -Parent
-  if($next -eq $up){break}
-  $up=$next
- }
- foreach($r in $roots){
-  if(-not $r -or -not (Test-Path -LiteralPath $r -PathType Container)){continue}
-  foreach($relative in @('Package\com.company.webview',
-    'oneclick_bundle\Package\com.company.webview',
-    'Assemble\UnityProject\Assets\CompanyWebView')){
-   $path=Join-Path $r $relative
-   if(Test-Path -LiteralPath (Join-Path $path 'Runtime\WebView.cs') -PathType Leaf){
-    Write-Host '[DUAL] Reusing existing oneclick_bundle CEF Unity source (read-only)'
-    return $path
-   }
-  }
-  # Bounded search: sibling/Downloads oneclick_bundle only, no full-disk indexing.
-  $dirs=@(Get-ChildItem -LiteralPath $r -Directory -ErrorAction SilentlyContinue |
-     Where-Object {$_.Name -match '(?i)oneclick|cef|webview' } | Select-Object -First 60)
-  foreach($dir in $dirs){
-   $source=Join-Path $dir.FullName 'Package\com.company.webview'
-   if(Test-Path -LiteralPath (Join-Path $source 'Runtime\WebView.cs') -PathType Leaf){
-    Write-Host '[DUAL] Reusing existing oneclick_bundle CEF Unity source (read-only)'
-    return $source
-   }
-  }
- }
- throw 'Existing oneclick_bundle/Package/com.company.webview source folder not found. Keep the original compiled oneclick_bundle next to this kit.'
+function GetCefPackageFromBundle([string]$stageDir) {
+  $package=Join-Path $root 'oneclick_bundle\Package\com.company.webview'
+  Need (Test-Path -LiteralPath (Join-Path $package 'Runtime\WebView.cs') -PathType Leaf) 'Bundled CEF Unity runtime sources missing. Kit is incomplete.'
+  Write-Host '[DUAL] Using INCLUDED oneclick_bundle sources (never external)'
+  return $package
 }
 function GetCefStageLayout([string]$from){
  Need (-not [string]::IsNullOrWhiteSpace($from) -and (Test-Path -LiteralPath $from -PathType Container)) 'CEF v58.4.4 native runtime folder not found. Use a previously BUILT CEF stage folder, not the source ZIP.'
@@ -108,8 +74,8 @@ try {
  if($SelfTest){$summary.status='SELFTEST_PASS';$summary.stage='SELFTEST';$code=0}
  else {
   Need ($env:OS -eq 'Windows_NT' -and [IntPtr]::Size -eq 8) 'Windows x64 only'
-  $unity=FindUnity
   $CefRuntimeDir=ResolveCefRuntime
+  $unity=FindUnity
   $null=GetCefStageLayout $CefRuntimeDir
   $null=GetCefPackageFromBundle $CefRuntimeDir
   New-Item -ItemType Directory -Force -Path $out | Out-Null
