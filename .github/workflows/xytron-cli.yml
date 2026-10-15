@@ -55,3 +55,6 @@ jobs:
 
       - name: Python managed-object host ownership and lifecycle regression
         run: python bindings/python/tests/test_object_host.py
+
+      - name: .NET managed-object host ownership and lifecycle regression
+        run: dotnet run --configuration Release --project bindings/dotnet/HostTests/ObjectHostSmoke.csproj
