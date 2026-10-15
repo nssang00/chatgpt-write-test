@@ -126,7 +126,31 @@ if(-not (Test-Path -LiteralPath (Join-Path $sourceBundle 'config.json') -PathTyp
  Write-Host '[CEF AUTO] Restoring exact v58.4.4 validated OneClick sources'
  $temp=Join-Path $cache 'validated-source-extract'
  New-Item -ItemType Directory -Force -Path $temp | Out-Null
- Expand-Archive -LiteralPath $sourceArchive -DestinationPath $temp -Force
+ # Extract only pinned build inputs. The original archive also contains long
+ # Documentation~ and UnityHarness paths not required for CEF native compilation.
+ # Skipping these avoids repeating the reported Windows MAX_PATH failure.
+ Add-Type -AssemblyName System.IO.Compression.FileSystem
+ $archive=[IO.Compression.ZipFile]::OpenRead($sourceArchive)
+ try {
+  $prefix='oneclick_bundle/Package/com.company.webview/Runtime/'
+  $selected=0
+  foreach($entry in $archive.Entries){
+   $name=$entry.FullName
+   if($name -ne 'oneclick_bundle/config.json' -and
+      $name -ne 'oneclick_bundle/Tools/Build-CefWindowsX64.ps1' -and
+      -not $name.StartsWith($prefix,[StringComparison]::Ordinal)){continue}
+   if(-not $entry.Name){continue}
+   $destination=[IO.Path]::GetFullPath((Join-Path $temp ($name.Replace('/',[IO.Path]::DirectorySeparatorChar))))
+   $safeRoot=[IO.Path]::GetFullPath($temp).TrimEnd('\\')+[IO.Path]::DirectorySeparatorChar
+   if(-not $destination.StartsWith($safeRoot,[StringComparison]::OrdinalIgnoreCase)){
+    throw 'Unsafe CEF source archive path'
+   }
+   New-Item -ItemType Directory -Force -Path (Split-Path -Parent $destination) | Out-Null
+   [IO.Compression.ZipFileExtensions]::ExtractToFile($entry,$destination,$true)
+   $selected++
+  }
+  if($selected -lt 10){throw 'Pinned source extraction incomplete'}
+ }finally{$archive.Dispose()}
  $original=Join-Path $temp 'oneclick_bundle'
  if(-not (Test-Path -LiteralPath (Join-Path $original 'Tools\Build-CefWindowsX64.ps1') -PathType Leaf)){throw 'Unexpected pinned source archive layout'}
  Copy-Item -LiteralPath $original -Destination $sourceBundle -Recurse -Force
