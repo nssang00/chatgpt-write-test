@@ -5,6 +5,7 @@
 #include "core/bridge_runtime.hpp"
 #include "core/native_object_runtime.hpp"
 #include "core/process_broker.hpp"
+#include "core/native_permission_policy.hpp"
 #include "nativeweb/error.hpp"
 #include "plugin/plugin_module.hpp"
 
@@ -96,8 +97,11 @@ private:
 
     struct ManagedWorkerState
     {
-        explicit ManagedWorkerState(const std::shared_ptr<detail::ProcessBroker>& p)
-            : broker(p), accepting(true) {}
+        ManagedWorkerState(const std::string& id,
+            const std::shared_ptr<detail::ProcessBroker>& p)
+            : pluginId(id), broker(p), accepting(true) {}
+        std::string pluginId;
+        detail::NativePermissionPolicy permissions;
         std::shared_ptr<detail::ProcessBroker> broker;
         std::atomic<bool> accepting;
         std::vector<detail::RegistrationToken> registrations;
@@ -392,26 +396,60 @@ public:
             throw Error("invalid_grant","Invalid managed worker grant");
         std::set<std::string> unique;
         for(size_t i=0;i<operations.size();++i){
-            if(!validManagedOperation(plugin,operations[i]) ||
+            if(operations[i].size()>200 || !validManagedOperation(plugin,operations[i]) ||
                !unique.insert(operations[i]).second || runtime_.hasMethod(operations[i]))
                 throw Error("invalid_grant","Invalid or duplicate managed operation");
         }
         std::shared_ptr<detail::ProcessBroker> broker(new detail::ProcessBroker(command,timeoutMs));
-        std::shared_ptr<ManagedWorkerState> state(new ManagedWorkerState(broker));
+        std::shared_ptr<ManagedWorkerState> state(new ManagedWorkerState(plugin,broker));
         for(size_t i=0;i<operations.size();++i){
             const std::string op=operations[i];
+            if (!state->permissions.grantExactMethod(op))
+                throw Error("invalid_grant","Managed permission grant rejected");
             state->registrations.push_back(runtime_.registerBinding(op,
                 detail::Callable(DynamicFunction([state,op](const VariantList& args)->Any{
                     if(!state->accepting.load())
                         throw Error("managed_session_revoked","Managed session revoked");
+                    if(!state->permissions.isMethodGranted(op))
+                        throw Error("permission_denied","Managed operation not granted");
                     const Any value=state->broker->invoke(op,args);
                     if(!state->accepting.load())
                         throw Error("managed_session_revoked","Managed session revoked");
+                    if(!state->permissions.isMethodGranted(op))
+                        throw Error("permission_denied","Managed permission revoked");
                     return value;
                 }))));
             state->names.push_back(op);
         }
         managedWorkers_.push_back(state);
+    }
+
+    bool revokeManagedOperation(const std::string& pluginId,
+                                const std::string& operation)
+    {
+        bool revoked=false;
+        for(size_t i=0;i<managedWorkers_.size();++i)
+            if(managedWorkers_[i]->pluginId==pluginId)
+                revoked=managedWorkers_[i]->permissions.revokeMethod(operation)||revoked;
+        return revoked;
+    }
+
+    bool revokeManagedWorker(const std::string& pluginId)
+    {
+        bool revoked=false;
+        for(size_t i=0;i<managedWorkers_.size();)
+        {
+            const std::shared_ptr<ManagedWorkerState> state=managedWorkers_[i];
+            if(state->pluginId!=pluginId){++i;continue;}
+            revoked=true;
+            state->accepting.store(false);
+            state->permissions.revokeAllMethods();
+            state->registrations.clear();
+            const std::shared_ptr<detail::ProcessBroker> broker=state->broker;
+            managedWorkers_.erase(managedWorkers_.begin()+i);
+            std::thread([broker](){broker->stop();}).detach();
+        }
+        return revoked;
     }
 
     void bind(
@@ -588,6 +626,7 @@ private:
         old.swap(managedWorkers_);
         for(size_t i=0;i<old.size();++i){
             old[i]->accepting.store(false);
+            old[i]->permissions.revokeAllMethods();
             old[i]->registrations.clear();
             const std::shared_ptr<detail::ProcessBroker> broker=old[i]->broker;
             std::thread([broker](){broker->stop();}).detach();
@@ -754,6 +793,17 @@ void WebView::bindManagedWorker(const std::string& plugin,
     const std::vector<std::string>& command,unsigned timeoutMs)
 {
     impl_->bindManagedWorker(plugin,operations,command,timeoutMs);
+}
+
+bool WebView::revokeManagedOperation(const std::string& pluginId,
+                                     const std::string& operation)
+{
+    return impl_->revokeManagedOperation(pluginId,operation);
+}
+
+bool WebView::revokeManagedWorker(const std::string& pluginId)
+{
+    return impl_->revokeManagedWorker(pluginId);
 }
 
 void WebView::bind(

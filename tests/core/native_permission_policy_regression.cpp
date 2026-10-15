@@ -29,6 +29,8 @@ int main()
 
     CHECK(!policy.allows(allowed, "camera.open")); // deny even trusted
     CHECK(policy.grantExactMethod("camera.open"));
+    CHECK(policy.isMethodGranted("camera.open"));
+    CHECK(!policy.isMethodGranted("camera.close"));
     CHECK(!policy.grantExactMethod("camera.open"));
     CHECK(!policy.grantExactMethod("camera.*"));
     CHECK(!policy.grantExactMethod("__native_object.call"));
@@ -63,6 +65,7 @@ int main()
     VerifiedFrameContext next = caller(7, 12);
     CHECK(policy.allows(next, "camera.open"));
     CHECK(policy.revokeMethod("camera.open"));
+    CHECK(!policy.isMethodGranted("camera.open"));
     CHECK(!policy.allows(next, "camera.open"));
 
     NativePermissionPolicy different;

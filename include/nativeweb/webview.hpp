@@ -95,6 +95,12 @@ public:
         const std::vector<std::string>& command,
         unsigned timeoutMs = 5000);
 
+    // Host-only grants. Call from the WebView owner thread, never JS.
+    // Revocation rejects pending result delivery after the worker returns.
+    bool revokeManagedOperation(const std::string& pluginId,
+                                const std::string& operation);
+    bool revokeManagedWorker(const std::string& pluginId);
+
     // Dynamic primitive API. Typed bind below adapts ordinary C++ callables to
     // this canonical Any/VariantList contract.
     void bind(const std::string& method, const DynamicFunction& function);

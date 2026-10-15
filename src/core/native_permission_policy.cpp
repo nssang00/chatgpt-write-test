@@ -67,6 +67,12 @@ bool NativePermissionPolicy::revokeMethod(const std::string& method)
     return grants_.erase(method) != 0;
 }
 
+bool NativePermissionPolicy::isMethodGranted(const std::string& method) const
+{
+    std::lock_guard<std::mutex> lock(mutex_);
+    return grants_.find(method) != grants_.end();
+}
+
 void NativePermissionPolicy::revokeAllMethods()
 {
     std::lock_guard<std::mutex> lock(mutex_);

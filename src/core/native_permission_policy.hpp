@@ -37,6 +37,9 @@ public:
     // Explicit application configuration; never callable by JS request.
     bool grantExactMethod(const std::string& method);
     bool revokeMethod(const std::string& method);
+    // Exact grant alone is NOT browser frame/origin authentication.
+    // Call only after the engine validated the request's source.
+    bool isMethodGranted(const std::string& method) const;
     void revokeAllMethods();
 
     bool allows(const VerifiedFrameContext& caller,
