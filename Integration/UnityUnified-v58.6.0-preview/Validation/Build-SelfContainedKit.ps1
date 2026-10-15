@@ -131,4 +131,7 @@ $hashes=@(foreach($f in $files){
 $hashes|Set-Content -LiteralPath (Join-Path $kit 'SHA256SUMS.txt') -Encoding UTF8
 & powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $kit 'Run-Dual.ps1') -BundleRoot $kit -SelfTest
 Require ($LASTEXITCODE -eq 0) 'ASCII full CEF OneClick self-test failed'
+$ciResultFolder=Join-Path $kit 'results'
+if(Test-Path -LiteralPath $ciResultFolder){Remove-Item -LiteralPath $ciResultFolder -Recurse -Force}
+Require (-not (Test-Path -LiteralPath $ciResultFolder)) 'CI-generated test results must never be shipped as user test results'
 Write-Host "[PACKAGE] Final nested CEF OneClick PASS: $($files.Count) verified files; no Unity Player GPU claim"
