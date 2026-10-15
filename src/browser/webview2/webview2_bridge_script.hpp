@@ -52,13 +52,13 @@ static const wchar_t kWebView2BridgeScript[] = LR"NATIVEWEBJS(
     return output;
   };
 
-  const invokeRaw = (method, ...args) => {
+  const startRequest = (method, args) => {
     if (global !== global.top)
       return Promise.reject(new Error("permission_denied: not main frame"));
     if (typeof method !== "string") {
-      return Promise.reject(
+      return { id:null, promise:Promise.reject(
         new TypeError("xytron.invoke(method, ...args) requires a method string")
-      );
+      ) };
     }
 
     const id = String(nextRequestId++);
@@ -66,9 +66,12 @@ static const wchar_t kWebView2BridgeScript[] = LR"NATIVEWEBJS(
       pending.set(id, { resolve, reject });
     });
 
-    const transmit = () => global.chrome.webview.postMessage(
-      encode({ type: "request", id, method, args, session: documentSession })
-    );
+    const transmit = () => {
+      if (!pending.has(id)) return;
+      global.chrome.webview.postMessage(
+        encode({ type: "request", id, method, args, session: documentSession })
+      );
+    };
     if (documentSession) transmit();
     else if (queuedUntilSession.length < 256) queuedUntilSession.push(transmit);
     else {
@@ -76,6 +79,57 @@ static const wchar_t kWebView2BridgeScript[] = LR"NATIVEWEBJS(
       return Promise.reject(new Error("session_unavailable: pending queue full"));
     }
 
+    return { id, promise };
+  };
+
+  const invokeRaw = (method, ...args) => startRequest(method, args).promise;
+
+  const cancelRaw = (id, code) => {
+    const key=String(id);
+    const item=pending.get(key);
+    if (!item) return false;
+    pending.delete(key);
+    const reason=code === "request_timeout" ? "request_timeout" : "request_cancelled";
+    item.reject(new Error(reason + ": JavaScript request cancelled"));
+    if (documentSession) {
+      global.chrome.webview.postMessage(
+        encode({ type:"cancel", id:key, session:documentSession })
+      );
+    }
+    return true;
+  };
+
+  // timeoutMs is a local JS Promise deadline; an already-running native
+  // method or managed subprocess cannot be forcibly interrupted safely.
+  const invokeWithOptions = (method, options, ...args) => {
+    const opts = options == null ? {} : options;
+    if (typeof opts !== "object")
+      return Promise.reject(new TypeError("options must be an object"));
+    const timeoutMs=opts.timeoutMs;
+    if (timeoutMs !== undefined &&
+        (!Number.isFinite(timeoutMs) || timeoutMs <= 0 ||
+         timeoutMs > 60000 || !Number.isInteger(timeoutMs)))
+      return Promise.reject(new RangeError("timeoutMs must be 1..60000"));
+    const signal=opts.signal;
+    if (signal != null &&
+        (typeof signal.addEventListener !== "function" ||
+         typeof signal.removeEventListener !== "function" ||
+         typeof signal.aborted !== "boolean"))
+      return Promise.reject(new TypeError("signal must be an AbortSignal"));
+    if (signal && signal.aborted)
+      return Promise.reject(new Error("request_cancelled: signal already aborted"));
+    const { id, promise } = startRequest(method, args);
+    if (!id) return promise;
+    const onAbort=() => cancelRaw(id,"request_cancelled");
+    if(signal) signal.addEventListener("abort",onAbort,{once:true});
+    const timer=timeoutMs === undefined ? null :
+        setTimeout(() => cancelRaw(id,"request_timeout"),timeoutMs);
+    const cleanup=() => {
+      if(timer !== null) clearTimeout(timer);
+      if(signal) signal.removeEventListener("abort",onAbort);
+    };
+    promise.then(cleanup,cleanup);
+    if (signal && signal.aborted) onAbort();
     return promise;
   };
 
@@ -251,7 +305,7 @@ static const wchar_t kWebView2BridgeScript[] = LR"NATIVEWEBJS(
 
   const offRaw = (id) => subscriptions.delete(String(id));
 
-  const native = { invokeRaw, onRaw, offRaw };
+  const native = { invokeRaw, invokeWithOptions, onRaw, offRaw };
   native.invoke = invokeRaw;
   native.on = onRaw;
   native.off = offRaw;
@@ -268,6 +322,7 @@ static const wchar_t kWebView2BridgeScript[] = LR"NATIVEWEBJS(
       get(_target, property) {
         if (property === "then") return undefined;
         if (path === "" && property === "invoke") return invokeRaw;
+        if (path === "" && property === "invokeWithOptions") return invokeWithOptions;
         if (path === "" && property === "on") return onRaw;
         if (path === "" && property === "off") return offRaw;
         if (typeof property !== "string") return undefined;

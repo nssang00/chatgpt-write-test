@@ -64,6 +64,8 @@ public:
         const CefString& method,
         const CefV8ValueList& arguments);
 
+    bool cancelInvoke(const std::string& requestId);
+
     std::string subscribeEvent(
         CefRefPtr<CefV8Context> context,
         const CefString& eventName,

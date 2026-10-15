@@ -595,6 +595,24 @@ bool CefBackend::onProcessMessage(
     CefRefPtr<CefListValue> list =
         message->GetArgumentList();
 
+    if (messageName == "nativeweb.cancel")
+    {
+        // Authenticate from the engine frame, live document and session;
+        // a renderer cannot cancel another document's request ID.
+        if (frame && mainFrameReady_ &&
+            frame->IsMain() &&
+            frame->GetIdentifier().ToString()==activeMainFrameIdentifier_ &&
+            trustedEntryDocument(trustedEntryUrl_,
+                                 frame->GetURL().ToString(),true) &&
+            matchesDocumentSessionToken(
+                list->GetString(1).ToString(),documentSessionToken_))
+        {
+            const RequestId id=stringToId(list->GetString(0).ToString());
+            if(listener_) listener_->onBridgeMessage(makeCancelMessage(id));
+        }
+        return true;
+    }
+
     if (messageName == "nativeweb.call.response")
     {
         // Renderer -> native responses are untrusted IPC too. A child

@@ -208,7 +208,7 @@ public:
             return true;
         }
 
-        if (name == "invoke" || name == "invokeRaw")
+        if (name == "invoke" || name == "invokeRaw" || name == "invokeCancelableRaw")
         {
             if (arguments.empty() || !arguments[0]->IsString())
             {
@@ -231,14 +231,32 @@ public:
             for (std::size_t i = 1; i < arguments.size(); ++i)
                 callArguments.push_back(arguments[i]);
 
-            app_->beginInvoke(
-                frame,
-                context,
-                promise,
-                arguments[0]->GetStringValue(),
-                callArguments);
+            const std::string id=app_->beginInvoke(
+                frame,context,promise,
+                arguments[0]->GetStringValue(),callArguments);
+            if(name=="invokeCancelableRaw")
+            {
+                CefRefPtr<CefV8Value> operation=
+                    CefV8Value::CreateObject(nullptr,nullptr);
+                operation->SetValue("id",CefV8Value::CreateString(id),
+                                    V8_PROPERTY_ATTRIBUTE_READONLY);
+                operation->SetValue("promise",promise,
+                                    V8_PROPERTY_ATTRIBUTE_READONLY);
+                retval=operation;
+            }
+            else retval=promise;
+            return true;
+        }
 
-            retval = promise;
+        if (name == "cancelRaw")
+        {
+            if(arguments.size()!=1 || !arguments[0]->IsString())
+            {
+                exception="cancelRaw requires a request ID";
+                return true;
+            }
+            retval=CefV8Value::CreateBool(
+                app_->cancelInvoke(arguments[0]->GetStringValue().ToString()));
             return true;
         }
 
@@ -346,8 +364,14 @@ void CefRendererApp::OnContextCreated(
             handler);
 
     native->SetValue(
-        "invokeRaw",
-        invokeRaw,
+        "invokeRaw",invokeRaw,V8_PROPERTY_ATTRIBUTE_READONLY);
+    native->SetValue(
+        "invokeCancelableRaw",
+        CefV8Value::CreateFunction("invokeCancelableRaw",handler),
+        V8_PROPERTY_ATTRIBUTE_READONLY);
+    native->SetValue(
+        "cancelRaw",
+        CefV8Value::CreateFunction("cancelRaw",handler),
         V8_PROPERTY_ATTRIBUTE_READONLY);
 
     native->SetValue(
@@ -398,6 +422,29 @@ void CefRendererApp::OnContextCreated(
         "const invoke=(method,...args)=>"
         "native.invokeRaw(method,...args).then(wrap);"
         "native.invoke=invoke;"
+        "const invokeWithOptions=(method,options,...args)=>{"
+        "const opts=options==null?{}:options;"
+        "if(typeof opts!=='object')return Promise.reject(new TypeError('options must be an object'));"
+        "const timeoutMs=opts.timeoutMs;"
+        "if(timeoutMs!==undefined&&(!Number.isInteger(timeoutMs)||timeoutMs<1||timeoutMs>60000))"
+        "return Promise.reject(new RangeError('timeoutMs must be 1..60000'));"
+        "const signal=opts.signal;"
+        "if(signal!=null&&(typeof signal.addEventListener!=='function'||"
+        "typeof signal.removeEventListener!=='function'||typeof signal.aborted!=='boolean'))"
+        "return Promise.reject(new TypeError('signal must be AbortSignal'));"
+        "if(signal&&signal.aborted)return Promise.reject(new Error('request_cancelled: already aborted'));"
+        "const operation=native.invokeCancelableRaw(method,...args);"
+        "const abort=()=>native.cancelRaw(operation.id);"
+        "if(signal)signal.addEventListener('abort',abort,{once:true});"
+        "const timer=timeoutMs===undefined?null:setTimeout(abort,timeoutMs);"
+        "const cleanup=()=>{if(timer!==null)clearTimeout(timer);"
+        "if(signal)signal.removeEventListener('abort',abort);};"
+        "const result=operation.promise.then(wrap);"
+        "result.then(cleanup,cleanup);"
+        "if(signal&&signal.aborted)abort();"
+        "return result;"
+        "};"
+        "native.invokeWithOptions=invokeWithOptions;"
         "native.on=(name,callback)=>"
         "native.onRaw(name,(payload)=>callback(wrap(payload)));"
         "native.off=(id)=>native.offRaw(id);"
@@ -405,6 +452,7 @@ void CefRendererApp::OnContextCreated(
         "get(_target,property){"
         "if(property==='then')return undefined;"
         "if(path===''&&property==='invoke')return invoke;"
+        "if(path===''&&property==='invokeWithOptions')return invokeWithOptions;"
         "if(path===''&&property==='on')return native.on;"
         "if(path===''&&property==='off')return native.off;"
         "if(typeof property!=='string')return undefined;"
@@ -543,6 +591,48 @@ std::string CefRendererApp::beginInvoke(
         promise->RejectPromise("session_unavailable: pending queue full");
     }
     return id;
+}
+
+bool CefRendererApp::cancelInvoke(const std::string& id)
+{
+    std::map<std::string,PendingPromise>::iterator found=pending_.find(id);
+    if(found==pending_.end()) return false;
+    const PendingPromise pending=found->second;
+    pending_.erase(found);
+    bool queued=false;
+    for(std::vector<QueuedDocumentRequest>::iterator it=
+            queuedDocumentRequests_.begin();it!=queuedDocumentRequests_.end();)
+    {
+        if(it->message->GetArgumentList()->GetString(0).ToString()==id)
+        {
+            it=queuedDocumentRequests_.erase(it);
+            queued=true;
+        }
+        else ++it;
+    }
+    if(!queued && pending.context && pending.context->IsValid())
+    {
+        std::string token;
+        for(std::size_t i=0;i<documentSessions_.size();++i)
+            if(documentSessions_[i].context &&
+               documentSessions_[i].context->IsSame(pending.context))
+            {
+                token=documentSessions_[i].token;
+                break;
+            }
+        CefRefPtr<CefFrame> frame=pending.context->GetFrame();
+        if(frame && !token.empty())
+        {
+            CefRefPtr<CefProcessMessage> cancel=
+                CefProcessMessage::Create("nativeweb.cancel");
+            cancel->GetArgumentList()->SetString(0,id);
+            cancel->GetArgumentList()->SetString(1,token);
+            frame->SendProcessMessage(PID_BROWSER,cancel);
+        }
+    }
+    if(pending.promise)
+        pending.promise->RejectPromise("request_cancelled: JavaScript request cancelled");
+    return true;
 }
 
 std::string CefRendererApp::subscribeEvent(

@@ -123,6 +123,7 @@ def main():
                'checkpoint: plugin-busy-verified',
                'checkpoint: plugin-unloaded',
                'checkpoint: plugin-e2e-complete'))
+    markers = ('checkpoint: request-cancel-verified',) + markers
     missing = [m for m in markers if m not in output]
     forbidden = ('checkpoint: security-UNTRUSTED-CALL-EXECUTED' in output or
                  'managed-worker-setup-failed:' in output)

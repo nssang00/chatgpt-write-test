@@ -21,6 +21,29 @@
       await new Promise(r=>setTimeout(r,30));
     }
     ensure(ready,"Worker not ready");
+    // Real browser: deadline and AbortSignal must settle the JS Promise,
+    // cancel the native request ID and preserve unrelated subsequent calls.
+    ensure(typeof xytron.invokeWithOptions === "function",
+           "Missing cancellable JS bridge API");
+    let timedOut = false;
+    try {
+      await xytron.invokeWithOptions("test.cancel.delay",{timeoutMs:35},350);
+    } catch(e) {
+      timedOut = /request_timeout|request_cancelled/.test(String(e));
+    }
+    ensure(timedOut,"Timeout did not reject slow request");
+    const aborter=new AbortController();
+    const abortedCall=xytron.invokeWithOptions(
+      "test.cancel.delay",{signal:aborter.signal},350);
+    aborter.abort();
+    let aborted=false;
+    try { await abortedCall; }
+    catch(e){aborted=String(e).includes("request_cancelled");}
+    ensure(aborted,"AbortSignal did not reject request");
+    ensure(await xytron.math.add(2,3)===5,
+           "Cancellation corrupted unrelated request");
+    await xytron.test.checkpoint("request-cancel-verified");
+
     // WebView2 security regression: forged/missing document sessions
     // must never reach the trusted host's test.fail binding.
     if (window.chrome && window.chrome.webview) {

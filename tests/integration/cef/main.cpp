@@ -153,6 +153,11 @@ public:
                     handle.type == "Camera";
             });
 
+        webview_.bind("test.cancel.delay", [](int durationMs) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(durationMs));
+            return durationMs;
+        });
+
         webview_.bind(
             "test.isWorkerThread",
             [this]() {
