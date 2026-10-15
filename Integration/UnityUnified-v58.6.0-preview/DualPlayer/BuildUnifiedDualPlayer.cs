@@ -119,8 +119,12 @@ public static class BuildUnifiedDualPlayer
         if(cubeShader==null)throw new Exception("Unlit/Texture shader missing");
         var cubeMaterial=new Material(cubeShader);
         cubeMaterial.name="CEF external GPU texture material";
-        cubeMaterial.mainTextureScale=new Vector2(1,-1);
-        cubeMaterial.mainTextureOffset=new Vector2(0,1);
+        // Actual 2026-10-16 Windows Player screenshots prove the default Unity
+        // cube front face was rotated 180 degrees with the previous V-flip.
+        // This cube face requires a U-flip ONLY: blue TOP above red BOTTOM,
+        // with correctly oriented text in the front-facing poses.
+        cubeMaterial.mainTextureScale=new Vector2(-1,1);
+        cubeMaterial.mainTextureOffset=new Vector2(1,0);
         if(!AssetDatabase.IsValidFolder("Assets/Materials"))
             AssetDatabase.CreateFolder("Assets","Materials");
         AssetDatabase.CreateAsset(cubeMaterial,"Assets/Materials/CefGpuCube.mat");
