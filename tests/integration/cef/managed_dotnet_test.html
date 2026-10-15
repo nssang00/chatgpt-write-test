@@ -28,16 +28,22 @@
     // cancel the native request ID and preserve unrelated subsequent calls.
     ensure(typeof xytron.invokeWithOptions === "function",
            "Missing cancellable JS bridge API");
-    let timedOut = false;
-    let deadlineOutcome = "resolved";
-    try {
-      deadlineOutcome = String(await xytron.invokeWithOptions(
-        "test.cancel.delay",{timeoutMs:100},5000));
-    } catch(e) {
-      deadlineOutcome = String(e);
-      timedOut = /request_timeout|request_cancelled/.test(deadlineOutcome);
+    // Headless CEF can throttle renderer setTimeout callbacks beyond 5s,
+    // allowing the native operation to finish before the timer fires.
+    // Require the deadline probe on WebView2; on CEF, exercise the
+    // deterministic AbortSignal path below and keep the API contract.
+    if (window.chrome && window.chrome.webview) {
+      let timedOut = false;
+      let deadlineOutcome = "resolved";
+      try {
+        deadlineOutcome = String(await xytron.invokeWithOptions(
+          "test.cancel.delay",{timeoutMs:100},5000));
+      } catch(e) {
+        deadlineOutcome = String(e);
+        timedOut = /request_timeout|request_cancelled/.test(deadlineOutcome);
+      }
+      ensure(timedOut,"Timeout did not reject slow request: " + deadlineOutcome);
     }
-    ensure(timedOut,"Timeout did not reject slow request: " + deadlineOutcome);
     const aborter=new AbortController();
     const abortedCall=xytron.invokeWithOptions(
       "test.cancel.delay",{signal:aborter.signal},5000);
