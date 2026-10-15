@@ -64,3 +64,13 @@ jobs:
 
       - name: Real Python and .NET subprocess IPC plus generated JS wrapper
         run: python tests/ipc/test_host_process.py --dotnet-dll "${{ github.workspace }}/bindings/dotnet/HostProcessDemo/bin/Release/net8.0/HostProcessDemo.dll"
+
+      - name: Compile C++11 IPC ProcessBroker regression
+        run: cmake --build build-cli --config Release --target nativeweb_process_broker_regression
+
+      - name: C++ ProcessBroker to real Python and .NET JSONL workers
+        run: >
+          python tests/ipc/run_native_broker.py
+          --binary "${{ github.workspace }}/build-cli/tests/core/${{ matrix.os == 'windows-latest' && 'Release/nativeweb_process_broker_regression.exe' || 'nativeweb_process_broker_regression' }}"
+          --fixture "${{ github.workspace }}/tests/ipc/broker_fixture.py"
+          --dotnet-dll "${{ github.workspace }}/bindings/dotnet/HostProcessDemo/bin/Release/net8.0/HostProcessDemo.dll"
