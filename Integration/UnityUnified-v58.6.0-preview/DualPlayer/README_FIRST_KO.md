@@ -22,3 +22,20 @@ Left CEF screen-space RawImage rendering is DISABLED; its live external CEF GPU 
 Automated PASS now requires `cubeTextureBound`, `cubeTextureBindCount>0`, `cubeObservedFrameAdvances>=3`, `cubeRotationDegrees>180`, `cubeVisibleFrames>0`, and `cubeOccluderBeforeCubeRay`, alongside previous CEF/WebView2 readiness/message/shutdown gates.
 
 Note: The raycast verifies scene Collider depth order, NOT rendered framebuffer occlusion. Inspect captured screenshots for correct cube UV orientation and sphere occlusion; `cubeVisualDepthAndUvPending=true` remains set. Previous flat-panel PASS_AUTO does not prove this new cube experiment. Validated v58.4.4 and v58.5.2 baselines remain unchanged.
+
+
+### v58.6.0 Fixed-front UV and dynamic GPU pixel proof (next validation)
+
+- Left CEF uses a Unity 3D MeshRenderer, with its screen-space RawImage disabled; right WebView2 is a Windows child HWND.
+- Cube orientation schedule: 0–30% facing camera, 30–72% rotating, then 72–100% facing camera. Foreground-only screenshots at 22%, 53%, 81% should show front, rotating, front.
+- Offline page contains BLUE TOP / UV UP and RED BOTTOM / UV DOWN markers. Review both front-facing screenshots for readable text and correct vertical orientation. Automatic PASS does not claim pixel-level UV approval.
+- During the initial stationary period, Graphics.Blit of the external CEF GPU Texture2D to 96×96 GPU target and ReadPixels must yield at least 3 samples, 2 significant pixel changes, and 16 changed pixels per largest change. These checks distinguish CSS animation from mesh motion.
+- Raycast checks collider depth order only. Screenshot review is needed to confirm visually correct occlusion.
+- The screenshot tool retries briefly but NEVER forces foreground or captures a different process. Missing screenshots mean manual visual verification remains pending.
+
+#### Manual IME, DPI, and z-order checklist
+
+1. Type Korean IME composition `한글 가나다`, mixed `abc123`, and emoji `😀` into the right WebView2 input. Check candidate window placement, caret movement, characters, and focus stability; do not enter private information.
+2. Where supported, repeat at Windows display scales 100%, 125%, 150%. Move and resize the window across available monitors; check the right HWND stays clipped to its panel.
+3. Alt+Tab away and back, minimize/restore, and overlap Unity with another application. Verify that WebView2 does not remain over unrelated foreground windows.
+4. Mark each manual check PASS, FAIL (include reproduction step), or NOT_TESTED. Do not treat automated CI or Player PASS as an IME/DPI/z-order result.
