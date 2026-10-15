@@ -13,3 +13,12 @@
 **검증 범위:** Source/ABI/PowerShell 정적 검사와 실제 Unity Windows Player 동시 실행은 다릅니다. Unity Player 양쪽 Backend 렌더링, 한글/이모지 메시지, STA 종료, 창 캡처, IME 후보창/DPI/z-order는 실기 결과가 나오기 전까지 PASS로 간주하지 않습니다.
 
 검증 후 `oneclick_bundle/results/dual-날짜.zip`를 확인하세요. 해당 결과물은 경로/환경 정보를 검토하고 공유합니다.
+
+
+### 2026-10-16: 3D CEF cube proof (separate experimental Unity scene)
+
+Left CEF screen-space RawImage rendering is DISABLED; its live external CEF GPU Texture2D is bound to an Unlit/Texture material on a rotating Unity Cube MeshRenderer. An offline CSS animated page drives frame updates. A solid orange Sphere placed closer to the Unity Camera tests depth overlap. Right WebView2 remains an independent Windows child HWND Overlay.
+
+Automated PASS now requires `cubeTextureBound`, `cubeTextureBindCount>0`, `cubeObservedFrameAdvances>=3`, `cubeRotationDegrees>180`, `cubeVisibleFrames>0`, and `cubeOccluderBeforeCubeRay`, alongside previous CEF/WebView2 readiness/message/shutdown gates.
+
+Note: The raycast verifies scene Collider depth order, NOT rendered framebuffer occlusion. Inspect captured screenshots for correct cube UV orientation and sphere occlusion; `cubeVisualDepthAndUvPending=true` remains set. Previous flat-panel PASS_AUTO does not prove this new cube experiment. Validated v58.4.4 and v58.5.2 baselines remain unchanged.
