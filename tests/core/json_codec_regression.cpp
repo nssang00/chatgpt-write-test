@@ -111,6 +111,65 @@ void testBinaryRoundTrip()
     CHECK(result[2] == 255);
 }
 
+void testCompactBinaryRoundTrip()
+{
+    const std::string marker="__nativeweb_binary_base64";
+    const nativeweb::Binary sample{0,127,255};
+    const std::string compact=nativeweb::detail::anyToJsonCompactBinary(Any(sample));
+    CHECK(compact == "{\"__nativeweb_binary_base64\":\"AH//\"}");
+    CHECK(nativeweb::detail::anyToJson(Any(sample)) ==
+          "{\"__nativeweb_binary\":[0,127,255]}");
+    const nativeweb::Binary decoded =
+        AnyCast<nativeweb::Binary>(nativeweb::detail::jsonToAny(compact));
+    CHECK(decoded==sample);
+    for (std::size_t length=0;length<=5;length++)
+    {
+        nativeweb::Binary bytes(length);
+        for(std::size_t i=0;i<length;i++) bytes[i]=static_cast<unsigned char>(i*37);
+        const nativeweb::Binary restored=AnyCast<nativeweb::Binary>(
+            nativeweb::detail::jsonToAny(
+                nativeweb::detail::anyToJsonCompactBinary(Any(bytes))));
+        CHECK(bytes==restored);
+    }
+    nativeweb::Binary large(65536);
+    for(std::size_t i=0;i<large.size();++i)
+        large[i]=static_cast<unsigned char>((i*113)%256);
+    VariantDict dictionary;
+    VariantList nested;
+    nested.push_back(Any(large));
+    nested.push_back(Any(nativeweb::Binary()));
+    dictionary["nested"]=nested;
+    const std::string encoded=nativeweb::detail::anyToJsonCompactBinary(Any(dictionary));
+    CHECK(encoded.find(marker)!=std::string::npos);
+    CHECK(encoded.find("__nativeweb_binary\":")==std::string::npos);
+    const VariantDict& parsed=AnyCast<const VariantDict&>(
+        nativeweb::detail::jsonToAny(encoded));
+    const VariantList& values=AnyCast<const VariantList&>(
+        parsed.find("nested")->second);
+    CHECK(AnyCast<nativeweb::Binary>(values[0])==large);
+    CHECK(AnyCast<nativeweb::Binary>(values[1]).empty());
+}
+
+void testInvalidCompactBinary()
+{
+    const char* invalid[]={
+        "{\"__nativeweb_binary_base64\":\"A\"}",
+        "{\"__nativeweb_binary_base64\":\"*AAA\"}",
+        "{\"__nativeweb_binary_base64\":\"AA=A\"}",
+        "{\"__nativeweb_binary_base64\":\"AB==\"}",
+        "{\"__nativeweb_binary_base64\":\"AAA=AAAA\"}",
+        "{\"__nativeweb_binary_base64\":\"AA==\",\"extra\":1}",
+        "{\"__nativeweb_binary_base64\":[1,2]}"
+    };
+    for(std::size_t i=0;i<sizeof(invalid)/sizeof(invalid[0]);++i)
+    {
+        bool rejected=false;
+        try { (void)nativeweb::detail::jsonToAny(invalid[i]); }
+        catch(const std::runtime_error&) { rejected=true; }
+        CHECK(rejected);
+    }
+}
+
 void testObjectHandleRoundTrip()
 {
     const nativeweb::NativeObjectHandle input(
@@ -167,6 +226,8 @@ int main()
     testStructuredRoundTrip();
     testUnicodeAndEscapes();
     testBinaryRoundTrip();
+    testCompactBinaryRoundTrip();
+    testInvalidCompactBinary();
     testObjectHandleRoundTrip();
     testNumbers();
     testInvalidJson();

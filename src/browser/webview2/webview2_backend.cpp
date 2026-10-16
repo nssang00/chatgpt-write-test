@@ -794,7 +794,7 @@ void WebView2Backend::postBridgeMessageOnUi(
 
     const std::wstring json =
         utf8ToWide(
-            anyToJson(message));
+            anyToJsonCompactBinary(message));
 
     checkHresult(
         webview_->PostWebMessageAsJson(

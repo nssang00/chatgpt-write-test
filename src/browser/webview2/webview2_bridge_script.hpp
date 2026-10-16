@@ -22,14 +22,33 @@ static const wchar_t kWebView2BridgeScript[] = LR"NATIVEWEBJS(
     return String(error);
   };
 
+  // Keep 24KiB chunks (multiple of three) so concatenated base64 pieces
+  // never contain intermediate '=' padding. Avoid huge String.fromCharCode
+  // argument lists on large TypedArrays.
+  const bytesToBase64 = (bytes) => {
+    let result = "";
+    const chunkSize = 24576;
+    for (let start=0;start<bytes.length;start+=chunkSize) {
+      const chunk=bytes.subarray(start,start+chunkSize);
+      result+=btoa(String.fromCharCode.apply(null,chunk));
+    }
+    return result;
+  };
+  const base64ToBuffer = (encoded) => {
+    const binary=atob(encoded);
+    const bytes=new Uint8Array(binary.length);
+    for(let i=0;i<binary.length;++i) bytes[i]=binary.charCodeAt(i);
+    return bytes.buffer;
+  };
+
   const encode = (value) => {
     if (value instanceof ArrayBuffer) {
-      return { __nativeweb_binary: Array.from(new Uint8Array(value)) };
+      return { __nativeweb_binary_base64: bytesToBase64(new Uint8Array(value)) };
     }
 
     if (ArrayBuffer.isView(value)) {
       return {
-        __nativeweb_binary: Array.from(
+        __nativeweb_binary_base64: bytesToBase64(
           new Uint8Array(value.buffer, value.byteOffset, value.byteLength)
         )
       };
@@ -172,9 +191,11 @@ LR"NATIVEWEBJS(
   const decode = (value) => {
     if (!value || typeof value !== "object") return value;
 
-    if (
-      Object.prototype.hasOwnProperty.call(value, "__nativeweb_binary")
-    ) {
+    if (Object.prototype.hasOwnProperty.call(value, "__nativeweb_binary_base64")) {
+      return base64ToBuffer(value.__nativeweb_binary_base64);
+    }
+    // Accept legacy numeric array framing until old clients are retired.
+    if (Object.prototype.hasOwnProperty.call(value, "__nativeweb_binary")) {
       return Uint8Array.from(value.__nativeweb_binary).buffer;
     }
 

@@ -32,7 +32,10 @@
    - [x] `Binary`와 `ByteArray` 이름 동일화 (소유형 std::vector<unsigned char>).
    - [x] CEF typed-array 입력 (subarray/DataView offset·중첩 구조 포함) 변환.
      - [ ] 신규 E2E의 3개 엔진 조합 CI 통과 확인.
-   - [ ] WebView2의 현재 JSON byte-number-array 성능 개선: control envelope + raw binary.
+   - [x] WebView2 1차 Binary JSON wire 최적화: byte-number-array 대신
+     base64 marker; 구형 numeric array 수신 호환성 유지, Core 회귀 테스트.
+- [ ] WebView2 control envelope + raw SharedBuffer/zero-copy transport는
+     별도 후속. base64 방식은 복사 기반이며 아직 실제 성능 개선 입증 전.
    - [ ] Python/C# worker IPC의 스칼라/64KiB 제약 해소, framing/limit/backpressure,
      bytes/byte[] 왕복·worker crash·cancel 검증.
 2.5. **P1 브릿지 호출 지연시간 벤치마크**
