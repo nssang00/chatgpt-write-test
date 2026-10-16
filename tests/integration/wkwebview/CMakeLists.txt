@@ -24,3 +24,35 @@ set_target_properties(nativeweb_wkwebview_api_probe PROPERTIES
   OBJCXX_STANDARD 11
   OBJCXX_STANDARD_REQUIRED YES
   OBJCXX_EXTENSIONS NO)
+
+# Real browser integration: Core + Objective-C++ adapter linked into one
+# process. This target uses WKWebView, not mocks or the API-only probe.
+get_filename_component(NATIVEWEB_ROOT "${CMAKE_CURRENT_LIST_DIR}/../../.." ABSOLUTE)
+find_package(Threads REQUIRED)
+include("${NATIVEWEB_ROOT}/cmake/NativeWebCoreSources.cmake")
+add_library(nativeweb_wkcore STATIC ${NATIVEWEB_CORE_SOURCES})
+target_include_directories(nativeweb_wkcore PUBLIC
+    "${NATIVEWEB_ROOT}/include" PRIVATE "${NATIVEWEB_ROOT}/src")
+target_link_libraries(nativeweb_wkcore PUBLIC Threads::Threads ${CMAKE_DL_LIBS})
+target_compile_features(nativeweb_wkcore PUBLIC cxx_std_11)
+
+add_library(nativeweb_wkbackend STATIC
+    "${NATIVEWEB_ROOT}/src/browser/wkwebview/wkwebview_backend.mm")
+target_include_directories(nativeweb_wkbackend PUBLIC
+    "${NATIVEWEB_ROOT}/src" "${NATIVEWEB_ROOT}/include")
+target_compile_options(nativeweb_wkbackend PRIVATE -fobjc-arc)
+target_link_libraries(nativeweb_wkbackend PUBLIC nativeweb_wkcore
+    "${NATIVEWEB_APPKIT_FRAMEWORK}" "${NATIVEWEB_WEBKIT_FRAMEWORK}")
+set_target_properties(nativeweb_wkbackend PROPERTIES
+    CXX_STANDARD 11 OBJCXX_STANDARD 11)
+
+add_executable(nativeweb_wkwebview_real_e2e bridge_e2e.mm)
+target_include_directories(nativeweb_wkwebview_real_e2e PRIVATE
+    "${NATIVEWEB_ROOT}/src" "${NATIVEWEB_ROOT}/include")
+target_compile_options(nativeweb_wkwebview_real_e2e PRIVATE -fobjc-arc)
+target_link_libraries(nativeweb_wkwebview_real_e2e PRIVATE nativeweb_wkbackend)
+set_target_properties(nativeweb_wkwebview_real_e2e PROPERTIES
+    CXX_STANDARD 11 OBJCXX_STANDARD 11)
+enable_testing()
+add_test(NAME browser.wkwebview_bridge COMMAND nativeweb_wkwebview_real_e2e)
+set_tests_properties(browser.wkwebview_bridge PROPERTIES TIMEOUT 35)

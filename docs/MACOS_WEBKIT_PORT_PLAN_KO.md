@@ -35,6 +35,9 @@
   WKScriptMessageHandlerWithReply Objective-C++ 컴파일 프로브 추가.
   컴파일/링크 CI 두 아키텍처 통과 (38834287692).
   이는 완성된 adapter나 실브라우저 E2E가 아님.
+- [x] WKWebView 최소 Objective-C++ BrowserBackend adapter 구현 및
+  Core RPC/event/packed app:// 리소스의 첫 실브라우저 E2E 추가.
+- [ ] 실제 Runner E2E 통과 검증 및 보안 회귀 확장.
 - [ ] macOS 전용 Objective-C++(`.mm`) WebKit adapter 및 Cocoa window/NSView
   생성, 메인 스레드 스케줄링, destroy/navigation 안전성.
 - [ ] `Engine::WkWebView` 실제 factory 등록과 `Engine::Auto` 판정.
