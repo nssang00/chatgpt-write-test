@@ -87,5 +87,4 @@ jobs:
           cmake --build build/wkwebview-api --config Release --parallel 2
 
       - name: Run real WKWebView bridge E2E
-        run: ctest --test-dir build/wkwebview-api -C Release -R '^browser[.]wkwebview_bridge
- --output-on-failure --timeout 35
+        run: ctest --test-dir build/wkwebview-api -C Release -R 'browser[.]wkwebview_bridge' --output-on-failure --timeout 35
