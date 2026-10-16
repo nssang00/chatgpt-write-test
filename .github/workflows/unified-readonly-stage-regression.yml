@@ -60,7 +60,7 @@ jobs:
         shell: powershell
         run: |
           & 'Integration/UnityUnified-v58.6.0-preview/Validation/Test-UnityPlayerCache.ps1'
-          if($LASTEXITCODE -ne 0){throw 'Unity Player cache fixture failed'}
+          if(-not $?){throw 'Unity Player cache fixture failed'}
       - name: Front-face screenshot marker scanner positive and negative fixtures
         shell: powershell
         run: |
