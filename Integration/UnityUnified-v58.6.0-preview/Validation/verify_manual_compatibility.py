@@ -21,6 +21,16 @@ for item in ("[switch]$ManualCompatibility", "if($ManualCompatibility){$NoScreen
              "-manualCompatibility {3}", "manualObserved", "USER_REPORTED_FAIL",
              "PARTIAL_OR_NOT_TESTED"):
     assert item in runner, item
+for item in ("Dpi100Observed", "Dpi125Observed", "Dpi150Observed",
+             "observedDpis.Contains(96)", "observedDpis.Contains(120)",
+             "observedDpis.Contains(144)", "A single 100% session"):
+    assert item in host, item
+for item in ("dpi100Observed", "dpi125Observed", "dpi150Observed"):
+    assert item in telemetry and item in runner, item
+for item in ("dpiUncorroboratedPass", "$uncorroboratedDpiPass",
+             "($e.dpi125Verdict -eq 'PASS' -and -not $e.dpi125Observed)",
+             "($e.dpi150Verdict -eq 'PASS' -and -not $e.dpi150Observed)"):
+    assert item in runner, item
 assert "SetForegroundWindow" not in host
 assert ".value" not in host, "Telemetry must never read WebView2 typed text"
 
