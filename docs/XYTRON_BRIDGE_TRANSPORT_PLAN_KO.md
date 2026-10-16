@@ -35,7 +35,8 @@
    - [x] WebView2 1차 Binary JSON wire 최적화: byte-number-array 대신
      base64 marker; 구형 numeric array 수신 호환성 유지, Core 회귀 테스트.
 - [ ] WebView2 control envelope + raw SharedBuffer/zero-copy transport는
-     별도 후속. base64 방식은 복사 기반이며 아직 실제 성능 개선 입증 전.
+     별도 후속. Base64는 복사 기반이며 실제 WebView2 E2E에서
+     64KiB p50 36.5→9.4ms 예비 개선 확인([실측 기록](BRIDGE_LATENCY_RESULTS_2026-10-16.md)).
    - [ ] Python/C# worker IPC의 스칼라/64KiB 제약 해소, framing/limit/backpressure,
      bytes/byte[] 왕복·worker crash·cancel 검증.
 2.5. **P1 브릿지 호출 지연시간 벤치마크**

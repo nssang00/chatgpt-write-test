@@ -207,6 +207,9 @@ See [macOS/WebKit platform plan](MACOS_WEBKIT_PORT_PLAN_KO.md).
   메타데이터를 Actions artifact로 저장. 엔진 세부 버전 및 nightly는 후속.
 - [ ] 동일 Windows Runner 쌍비교, full baseline 반복 실행 및 엔진 버전
   자동 기록.
+- [x] WebView2 Base64 Binary 프레이밍 예비 실측: 64KiB p50
+  36.5→9.4ms (각 독립 CI 실행; 동일 장비 반복 측정 전).
+  [전/후 측정값](BRIDGE_LATENCY_RESULTS_2026-10-16.md).
 - [ ] Python/C# 실제 worker 비용은 별도 계측, IPC 개선 전후 비교.
 - [ ] 최초 실측 수치와 반복 분산 확인 후 회귀 경고 임계치 결정.
   초기에는 GitHub-hosted Runner의 잡음 때문에 성능 수치만으로

@@ -45,3 +45,34 @@ Native→JS LAT-03 추가, 빈 버퍼 타입 수정 후 회귀, 반복 기준선
 측정 코드:
 [`tests/integration/cef/bridge_benchmark.html`](../tests/integration/cef/bridge_benchmark.html) ·
 [`tools/run_bridge_benchmark.py`](../tools/run_bridge_benchmark.py).
+
+## WebView2 base64 전송 최적화 — 예비 전/후 비교
+
+적용: `src/browser/webview2/webview2_bridge_script.hpp`와
+`src/core/json_codec.cpp` (`anyToJsonCompactBinary`).
+JS→Native 및 Native→JS 메시지의 Binary를 base64 문자열 marker
+`__nativeweb_binary_base64`로 전달한다. 기존 숫자 배열
+`__nativeweb_binary`는 수신 호환성을 유지한다. Core·CEF·managed
+worker의 기존 `anyToJson` 직렬화는 변경하지 않는다.
+
+Windows WebView2, GitHub-hosted Runner, Release 빌드, 64KiB 40표본,
+1KiB 100표본 기준 각 **독립 PR CI 실행**의 p50 / p95 값:
+
+| 시나리오 | 변경 전 (`3c45b72`) | Base64 (`f661d2c`) | p50 감소 |
+| --- | ---: | ---: | ---: |
+| 64KiB Binary RTT | 36.500 / 37.230 ms | 9.400 / 9.710 ms | **74.2%** |
+| 1KiB Binary RTT | 0.800 / 0.900 ms | 0.300 / 0.405 ms | **62.5%** |
+| 작은 `math.add` RTT | 0.200 / 0.305 ms | 0.200 / 0.300 ms | 변화 불분명 |
+
+증거:
+- [변경 전 실제 WebView2 smoke 아티팩트](https://github.com/nssang00/chatgpt-write-test/actions/runs/38846688020)
+- [Base64 변경 후 실제 WebView2 smoke 아티팩트](https://github.com/nssang00/chatgpt-write-test/actions/runs/38851250903)
+
+**해석:** 새 전송 포맷이 64KiB JSON 배열 대비 더 낮은
+왕복시간을 보였고, 기존 WebView2 실제 브라우저 E2E 4개도 통과했다.
+다만 **동일 장비에서 짝지어 반복한 측정이 아니다**. CI Runner 부하와
+실행 간 변동이 포함된 만큼 절대 성능 개선률이나 SLA를 확정하지 않는다.
+
+**후속:** 동일 Windows Runner 쌍비교, encode/decode/IPC 구간별 프로파일,
+64KiB 이상의 1MiB 검증, `ICoreWebView2SharedBuffer` 기반 제로카피
+전송 여부 별도 실험. **Base64는 여전히 복사·문자열 인코딩 비용이 있다.**
