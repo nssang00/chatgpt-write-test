@@ -118,3 +118,20 @@ GitHub-hosted macOS의 JS timer는 1ms로 양자화될 수 있다.
 
 첫 CI 실측 결과 표 및 엔진별 해석:
 [2026-10-16 브릿지 지연시간 예비 결과](BRIDGE_LATENCY_RESULTS_2026-10-16.md).
+
+## 2026-10-16 추가: 동일 Windows Runner 쌍비교
+
+`.github/workflows/windows-bridge-paired.yml`에서 CEF와 WebView2를
+**한 Windows-2022 runner에서 각각 빌드**, 같은 테스트 fixture를
+엔진 순서를 바꿔 3회씩 실행한다(100 warm-up, 300 samples).
+각 원본 표본과 p50/p95/p99, 실행 차수 및 OS/CPU 메타데이터를
+`xytron-windows-cef-webview2-paired-*` artifact에 저장한다.
+`tools/compare_bridge_benchmarks.py`는 동일 SHA 및 Runner 정보 검증,
+라운드별 비율과 중앙값을 기록한다. 숫자에 따른 CI fail 기준은 없다.
+
+- [x] 쌍비교 Actions workflow / 독립 통계 요약 코드 구현.
+- [ ] 실제 3쌍 실행 성공과 결과 확인.
+- [ ] 2개 이상의 독립 Runner에서 반복해 변동성 범위 확인.
+- [ ] WebView2 SharedBuffer는 JSON Base64 대신 Native→JS 메모리
+  공유가 가능한 별도 전송 경로. 먼저 읽기 전용·명시적 release와
+  기존 문서 세션 보호 E2E를 완료하고 API 자동 전환 여부 결정.
