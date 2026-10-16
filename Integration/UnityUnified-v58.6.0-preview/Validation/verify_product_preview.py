@@ -26,7 +26,7 @@ for expr in ('IPostprocessBuildWithReport','BuildTarget.StandaloneWindows64',
     assert expr in build_stage,expr
 for expr in ('Get-FileHash','CopyFile','RequireFile','CefRuntimeDir','CefStageDir',
              'CompanyWebViewCefSubprocess.exe','CompanyWebView2UnifiedPreview.dll',
-             'ProductPackageTemplate','UnifiedWebView.cs',
+             'ProductPackageTemplate','UnifiedWebView.cs','WebViewInputCoordinates.cs',
              '[IO.Directory]::Move($tmp,$output)','Test-Path -LiteralPath $output',
              'UnifiedDualPlayerEvidence.cs','CefCubeTextureProof.cs'):
     assert expr in export,expr
