@@ -28,6 +28,82 @@ namespace Company.WebView.Unified.Experimental
         private const string UnicodeFixture="한글 가나다 ABC123 😀";
         public int UnicodeRoundtripCount { get; private set; }
         public int PingRoundtripCount { get; private set; }
+        public int TrustedCompositionStarts { get; private set; }
+        public int TrustedCompositionEnds { get; private set; }
+        public int TrustedInputBatches { get; private set; }
+        public string ImeCandidateVerdict { get; private set; } = "NOT_TESTED";
+        public string Dpi100Verdict { get; private set; } = "NOT_TESTED";
+        public string Dpi125Verdict { get; private set; } = "NOT_TESTED";
+        public string Dpi150Verdict { get; private set; } = "NOT_TESTED";
+        public string ZOrderVerdict { get; private set; } = "NOT_TESTED";
+        public int DpiMin { get; private set; }
+        public int DpiMax { get; private set; }
+        public int DistinctObservedDpiCount { get { return observedDpis.Count; } }
+        public int BoundsSamples { get; private set; }
+        public int MaxBoundsDeltaPx { get; private set; }
+        public int ChildOutsideClientSamples { get; private set; }
+        public int ForegroundLostCount { get; private set; }
+        public int ForegroundRegainedCount { get; private set; }
+        public int MinimizeTransitions { get; private set; }
+        public int RestoreTransitions { get; private set; }
+        public bool ChildHostSeen { get; private set; }
+        private readonly System.Collections.Generic.HashSet<int> observedDpis =
+            new System.Collections.Generic.HashSet<int>();
+        private float lastCompatSampleTime;
+        private bool foregroundSampled,wasForeground,iconicSampled,wasIconic;
+        // Only event labels / user-declared verdicts leave the browser: NEVER typed content.
+        // isTrusted ensures scripted input events are not counted as keyboard interaction.
+        private const string ManualCompatibilityPage = @"(function(){
+          if(window.__cwvCompatInstalled)return;
+          window.__cwvCompatInstalled=true;
+          document.body.style.cssText='background:#eef3ff;color:#142039;padding:12px;font:14px Segoe UI,Arial';
+          document.body.innerHTML=`
+            <h2 style='margin:0 0 6px'>WebView2 HWND / Windows Compatibility</h2>
+            <p style='margin:4px 0 8px'>Right: real Korean IME; move/resize Unity; Alt+Tab and restore. No typed text is recorded.</p>
+            <textarea id='cwv-ime' aria-label='Manual Korean IME input' rows='3' style='font:20px Segoe UI;width:96%;box-sizing:border-box' placeholder='한글 가나다 abc123 😀'></textarea>
+            <p id='cwv-counters'>Trusted IME start/end: 0 / 0; input: 0</p>
+            <div><b>1. Korean IME candidate popup and caret</b><p><button data-v='ime-pass'>PASS</button> <button data-v='ime-fail'>FAIL</button> <span id='cwv-ime-verdict'>NOT TESTED</span></p></div>
+            <div><b>2. At actual Windows display scale (user-reported)</b>
+            <p style='line-height:2'>100%: <button data-v='dpi100-pass'>PASS</button> <button data-v='dpi100-fail'>FAIL</button> <span id='cwv-dpi100-verdict'>NOT TESTED</span></p>
+            <p style='line-height:2'>125%: <button data-v='dpi125-pass'>PASS</button> <button data-v='dpi125-fail'>FAIL</button> <span id='cwv-dpi125-verdict'>NOT TESTED</span></p>
+            <p style='line-height:2'>150%: <button data-v='dpi150-pass'>PASS</button> <button data-v='dpi150-fail'>FAIL</button> <span id='cwv-dpi150-verdict'>NOT TESTED</span></p></div>
+            <div><b>3. Alt+Tab / minimize / Z-order</b><p><button data-v='zorder-pass'>PASS</button> <button data-v='zorder-fail'>FAIL</button> <span id='cwv-zorder-verdict'>NOT TESTED</span></p></div>
+            <p style='font-size:12px'>Verdicts are your visual observations, not automatic pass. Only test scale values actually configured. Leave the Player open until it exits and writes evidence.</p>`;
+          const send=(kind)=>{chrome.webview.postMessage('compat-v1|'+kind);};
+          const input=document.getElementById('cwv-ime');
+          const counts={start:0,end:0,input:0};
+          const render=()=>{document.getElementById('cwv-counters').textContent='Trusted IME start/end: '+counts.start+' / '+counts.end+'; input: '+counts.input;};
+          let lastInput=0;
+          input.addEventListener('compositionstart',e=>{if(e.isTrusted){counts.start++;send('ime-start');render();}});
+          input.addEventListener('compositionend',e=>{if(e.isTrusted){counts.end++;send('ime-end');render();}});
+          input.addEventListener('input',e=>{if(e.isTrusted){counts.input++;if(Date.now()-lastInput>350){lastInput=Date.now();send('trusted-input');}render();}});
+          document.querySelectorAll('button[data-v]').forEach(b=>b.addEventListener('click',e=>{
+            if(!e.isTrusted)return;
+            const code=b.getAttribute('data-v');send(code);
+            const key=code.startsWith('ime-')?'ime':code.startsWith('zorder-')?'zorder':code.substring(0,6);
+            const target=document.getElementById('cwv-'+key+'-verdict');
+            if(target)target.textContent=code.endsWith('pass')?'PASS':'FAIL';
+          }));
+        })();";
+        private void HandleCompatibilityEvent(string message)
+        {
+            // Strict allowlist, never retain user input values or arbitrary messages.
+            switch(message){
+                case "compat-v1|ime-start": TrustedCompositionStarts++;break;
+                case "compat-v1|ime-end": TrustedCompositionEnds++;break;
+                case "compat-v1|trusted-input": TrustedInputBatches++;break;
+                case "compat-v1|ime-pass": ImeCandidateVerdict="PASS";break;
+                case "compat-v1|ime-fail": ImeCandidateVerdict="FAIL";break;
+                case "compat-v1|dpi100-pass": Dpi100Verdict="PASS";break;
+                case "compat-v1|dpi100-fail": Dpi100Verdict="FAIL";break;
+                case "compat-v1|dpi125-pass": Dpi125Verdict="PASS";break;
+                case "compat-v1|dpi125-fail": Dpi125Verdict="FAIL";break;
+                case "compat-v1|dpi150-pass": Dpi150Verdict="PASS";break;
+                case "compat-v1|dpi150-fail": Dpi150Verdict="FAIL";break;
+                case "compat-v1|zorder-pass": ZOrderVerdict="PASS";break;
+                case "compat-v1|zorder-fail": ZOrderVerdict="FAIL";break;
+            }
+        }
         public bool RequestDualShutdown(){
             if(view==null)return false;
             if(closingForDualTest)return true;
@@ -43,6 +119,58 @@ namespace Company.WebView.Unified.Experimental
 #if UNITY_STANDALONE_WIN && !UNITY_EDITOR
         [StructLayout(LayoutKind.Sequential)]
         private struct RECT { public int left,top,right,bottom; }
+        [StructLayout(LayoutKind.Sequential)]
+        private struct POINT { public int x,y; }
+        [DllImport("user32.dll",CharSet=CharSet.Unicode)]
+        private static extern IntPtr FindWindowEx(IntPtr parent,IntPtr after,string className,string title);
+        [DllImport("user32.dll")] private static extern uint GetDpiForWindow(IntPtr hwnd);
+        [DllImport("user32.dll")] private static extern IntPtr GetForegroundWindow();
+        [DllImport("user32.dll")] [return:MarshalAs(UnmanagedType.Bool)]
+        private static extern bool IsIconic(IntPtr hwnd);
+        [DllImport("user32.dll")] [return:MarshalAs(UnmanagedType.Bool)]
+        private static extern bool ScreenToClient(IntPtr hwnd,ref POINT point);
+        private void SampleCompatibilityWindow()
+        {
+            if(parent==IntPtr.Zero || Time.realtimeSinceStartup-lastCompatSampleTime<0.5f)return;
+            lastCompatSampleTime=Time.realtimeSinceStartup;
+            uint dpi=GetDpiForWindow(parent);
+            if(dpi>=72 && dpi<=768){
+                observedDpis.Add((int)dpi);
+                if(DpiMin==0 || dpi<DpiMin)DpiMin=(int)dpi;
+                if(dpi>DpiMax)DpiMax=(int)dpi;
+            }
+            bool foreground=GetForegroundWindow()==parent;
+            if(foregroundSampled){
+                if(wasForeground && !foreground)ForegroundLostCount++;
+                if(!wasForeground && foreground)ForegroundRegainedCount++;
+            }
+            foregroundSampled=true;wasForeground=foreground;
+            bool iconic=IsIconic(parent);
+            if(iconicSampled){
+                if(!wasIconic && iconic)MinimizeTransitions++;
+                if(wasIconic && !iconic)RestoreTransitions++;
+            }
+            iconicSampled=true;wasIconic=iconic;
+            if(iconic)return;
+            IntPtr host=FindWindowEx(parent,IntPtr.Zero,"CompanyWV2UnityPilotHost",null);
+            if(host==IntPtr.Zero)return;
+            uint pid;
+            if(GetWindowThreadProcessId(host,out pid)==0 || pid!=(uint)Process.GetCurrentProcess().Id)return;
+            ChildHostSeen=true;
+            RECT child,client;
+            if(!GetWindowRect(host,out child) || !GetClientRect(parent,out client))return;
+            POINT upper=new POINT{x=child.left,y=child.top};
+            if(!ScreenToClient(parent,ref upper))return;
+            int width=child.right-child.left,height=child.bottom-child.top;
+            if(width<=0 || height<=0)return;
+            BoundsSamples++;
+            int max=Math.Max(Math.Abs(upper.x-lastBounds.x),Math.Abs(upper.y-lastBounds.y));
+            max=Math.Max(max,Math.Abs(width-lastBounds.width));
+            max=Math.Max(max,Math.Abs(height-lastBounds.height));
+            MaxBoundsDeltaPx=Math.Max(MaxBoundsDeltaPx,max);
+            if(upper.x< -4 || upper.y< -4 || upper.x+width>client.right+4 || upper.y+height>client.bottom+4)
+                ChildOutsideClientSamples++;
+        }
         [DllImport("user32.dll")] private static extern IntPtr GetActiveWindow();
         [DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(IntPtr hwnd,out uint pid);
         [DllImport("user32.dll")] [return:MarshalAs(UnmanagedType.Bool)]
@@ -97,6 +225,7 @@ namespace Company.WebView.Unified.Experimental
                     ReceivedMessageCount++;
                     if(msg==UnicodeFixture)UnicodeRoundtripCount++;
                     if(msg=="dual-unity-bridge-ping")PingRoundtripCount++;
+                    if(msg.StartsWith("compat-v1|",StringComparison.Ordinal))HandleCompatibilityEvent(msg);
                     Debug.Log("WV2 Unified message received (length): "+msg.Length);
                 };
             } catch(Exception e){Debug.LogError("Unified overlay open failed: "+e);}
@@ -108,11 +237,12 @@ namespace Company.WebView.Unified.Experimental
                 view.Pump();
                 if(closingForDualTest)return;
                 if(!view.IsReady)return;
+                SampleCompatibilityWindow();
                 if(!readyLogged){
                     readyLogged=true;
                     Debug.Log("WV2 Unified controller ready");
                     // Visible offline sample page: independent of any external network.
-                    view.ExecuteJavaScript("document.body.innerHTML='<h2>WebView2 Overlay RIGHT</h2><p>Unified Win32 child HWND</p><input placeholder=\"Korean IME\" />';document.body.style.background='#eef3ff';document.body.style.padding='24px';");
+                    view.ExecuteJavaScript(ManualCompatibilityPage);
                 }
                 RECT client;
                 if(GetClientRect(parent,out client)) {
