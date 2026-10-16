@@ -12,6 +12,7 @@
 #include <objidl.h>
 
 #include <memory>
+#include <cstring>
 #include <sstream>
 #include <stdexcept>
 
@@ -800,6 +801,56 @@ void WebView2Backend::postBridgeMessageOnUi(
         webview_->PostWebMessageAsJson(
             json.c_str()),
         "ICoreWebView2::PostWebMessageAsJson");
+}
+
+bool WebView2Backend::postReadOnlySharedBufferProbe(
+    const Binary& bytes, int requestId)
+{
+    requireUiThread();
+    // The sender must independently authorize the triggering JS message via
+    // onVerifiedBridgeMessage. This function then re-checks active document.
+    if (!webview_ || !environment_ || !mainFrameReady_ ||
+        requestId < 0 || bytes.empty() || bytes.size() > 1024u*1024u)
+        return false;
+
+    LPWSTR rawUrl = nullptr;
+    if (FAILED(webview_->get_Source(&rawUrl)) || !rawUrl)
+        return false;
+    const std::string current = wideToUtf8(rawUrl);
+    CoTaskMemFree(rawUrl);
+    if (!trustedEntryDocument(trustedEntryUrl_, current, true))
+        return false;
+
+    Microsoft::WRL::ComPtr<ICoreWebView2Environment12> environment12;
+    Microsoft::WRL::ComPtr<ICoreWebView2_17> view17;
+    if (FAILED(environment_.As(&environment12)) ||
+        FAILED(webview_.As(&view17)))
+        return false;
+
+    Microsoft::WRL::ComPtr<ICoreWebView2SharedBuffer> shared;
+    if (FAILED(environment12->CreateSharedBuffer(
+            static_cast<UINT64>(bytes.size()), &shared)) || !shared)
+        return false;
+
+    BYTE* memory = nullptr;
+    if (FAILED(shared->get_Buffer(&memory)) || !memory)
+    {
+        shared->Close();
+        return false;
+    }
+    std::memcpy(memory, bytes.data(), bytes.size());
+    // Keep control metadata tiny. Never expose document-session tokens via
+    // SharedBuffer additionalData (or any renderer-supplied ID authority).
+    std::ostringstream metadata;
+    metadata << "{\"type\":\"xytron.shared.probe\",\"id\":"
+             << requestId << ",\"size\":" << bytes.size() << "}";
+    const std::wstring data = utf8ToWide(metadata.str());
+    const HRESULT result = view17->PostSharedBufferToScript(
+        shared.Get(), COREWEBVIEW2_SHARED_BUFFER_ACCESS_READ_ONLY,
+        data.c_str());
+    // Native may close after Post; JS must independently releaseBuffer().
+    shared->Close();
+    return SUCCEEDED(result);
 }
 
 void WebView2Backend::notifyLoadStarted(

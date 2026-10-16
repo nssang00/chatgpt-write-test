@@ -209,3 +209,27 @@ add_test(
     --engine webview2 --build-dir "${CMAKE_BINARY_DIR}" --managed-dotnet
 )
 set_tests_properties(browser.managed_dotnet PROPERTIES TIMEOUT 150)
+
+# Actual WebView2 shared memory probe (test-only internal adapter API).
+add_executable(nativeweb_webview2_sharedbuffer_probe
+  sharedbuffer_probe.cpp
+)
+target_include_directories(nativeweb_webview2_sharedbuffer_probe PRIVATE
+  "${NATIVEWEB_ROOT}/include"
+  "${NATIVEWEB_ROOT}/src"
+  "${WEBVIEW2_INCLUDE_DIR}"
+)
+target_compile_features(nativeweb_webview2_sharedbuffer_probe PRIVATE cxx_std_11)
+target_compile_definitions(nativeweb_webview2_sharedbuffer_probe PRIVATE
+  UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX
+)
+target_link_libraries(nativeweb_webview2_sharedbuffer_probe PRIVATE
+  nativeweb_webview2_backend nativeweb_core_for_webview2 user32
+)
+set_target_properties(nativeweb_webview2_sharedbuffer_probe PROPERTIES
+  RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+  RUNTIME_OUTPUT_DIRECTORY_RELEASE "${CMAKE_BINARY_DIR}/bin"
+)
+add_test(NAME browser.webview2_sharedbuffer_probe
+  COMMAND nativeweb_webview2_sharedbuffer_probe)
+set_tests_properties(browser.webview2_sharedbuffer_probe PROPERTIES TIMEOUT 100)

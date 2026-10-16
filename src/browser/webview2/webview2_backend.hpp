@@ -36,6 +36,10 @@ public:
     void reload() override;
     void postBridgeMessage(const Any& message) override;
 
+    // Internal experimental Native -> main-document shared-buffer delivery.
+    // Not a public WebView::Binary transport; used by isolated CI probe.
+    bool postReadOnlySharedBufferProbe(const Binary& bytes, int requestId);
+
 private:
     struct CreateState
     {

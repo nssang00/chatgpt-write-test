@@ -50,6 +50,12 @@ jobs:
           cmake --build build/cef --config Release --parallel 4
           cmake -S tests/integration/webview2 -B build/webview2 "-DWEBVIEW2_ROOT=$env:WEBVIEW2_ROOT"
           cmake --build build/webview2 --config Release --parallel 4
+      - name: Native-to-JS SharedBuffer probe (experimental)
+        shell: pwsh
+        run: |
+          & build/webview2/bin/nativeweb_webview2_sharedbuffer_probe.exe |
+            Tee-Object -FilePath build/sharedbuffer-probe.log
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Three paired rounds, alternating engine order
         shell: pwsh
         timeout-minutes: 20
@@ -78,5 +84,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: xytron-windows-cef-webview2-paired-${{ github.sha }}
-          path: build/bridge-paired/**
+          path: |
+            build/bridge-paired/**
+            build/sharedbuffer-probe.log
           if-no-files-found: warn

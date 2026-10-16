@@ -74,3 +74,19 @@
   요청 헤더·MIME·CORS 정책, 취소 및 백프레셔를 각각 검증.
 - 단방향 postMessage는 송신 성공 확인과 전달 보장을 약속하지 않는다.
 - P0 완료 및 릴리스/merge 여부는 별도 검증·사용자 승인 필요.
+
+## 2026-10-16 SharedBuffer 단독 실험 (Native → JS)
+
+- 내부 WebView2 backend `postReadOnlySharedBufferProbe` API는
+  **실험용 코드**이며, 공개 JS/RPC 바이너리 규약이 바뀌지 않는다.
+- 실제 WebView2 앱 리소스 문서에서 엔진 검증된 메인 프레임 이벤트로
+  요청하고, 읽기 전용 `ICoreWebView2SharedBuffer`를 Native에서 생성,
+  복사한 뒤 `PostSharedBufferToScript`로 전달한다.
+- JS는 `sharedbufferreceived`에서 크기/바이트를 검증하고
+  `releaseBuffer()`를 반드시 호출하며, Native는 Post 이후 `Close()`.
+- [ ] Windows 브라우저 E2E에서 1KiB/64KiB/1MiB 크기별 데이터
+  정확성·반복 수명주기 및 지연시간(단방향 요청+전달) 검증.
+- [ ] 내비게이션 중단, JS 미해제, 프레임·권한, 연속 전송 backpressure
+  검증 전에는 `WebView::postMessage`에 자동 사용 금지.
+- 이 실험은 JS→Native 바이너리 RPC 전송 최적화가 아니고,
+  Native→JS 공유 버퍼의 별도 가능성 확인이다.
