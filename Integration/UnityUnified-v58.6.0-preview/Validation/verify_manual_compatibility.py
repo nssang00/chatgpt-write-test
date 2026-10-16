@@ -27,9 +27,20 @@ for item in ("Dpi100Observed", "Dpi125Observed", "Dpi150Observed",
     assert item in host, item
 for item in ("dpi100Observed", "dpi125Observed", "dpi150Observed"):
     assert item in telemetry and item in runner, item
+for item in ("GetScaleFactorForMonitor", "MonitorFromWindow",
+             "MonitorScale100Observed", "MonitorScale125Observed", "MonitorScale150Observed",
+             "observedMonitorScales.Contains(125)", "observedMonitorScales.Contains(150)",
+             "compositionupdate", "beforeinput", "e.isComposing", "e.inputType",
+             "beforeinput-composing", "input-composing", "keydown-composing"):
+    assert item in host, item
+for item in ("monitorScale100Observed", "monitorScale125Observed", "monitorScale150Observed",
+             "trustedCompositionUpdates", "trustedBeforeInputComposingBatches",
+             "trustedInputComposingBatches", "trustedKeydownComposingBatches"):
+    assert item in telemetry and item in runner, item
 for item in ("dpiUncorroboratedPass", "$uncorroboratedDpiPass",
-             "($e.dpi125Verdict -eq 'PASS' -and -not $e.dpi125Observed)",
-             "($e.dpi150Verdict -eq 'PASS' -and -not $e.dpi150Observed)"):
+             "($e.dpi125Verdict -eq 'PASS' -and -not ($e.dpi125Observed -or $e.monitorScale125Observed))",
+             "($e.dpi150Verdict -eq 'PASS' -and -not ($e.dpi150Observed -or $e.monitorScale150Observed))",
+             "imeComposingSignalObserved", "$imeCompositionSignal"):
     assert item in runner, item
 assert "SetForegroundWindow" not in host
 assert ".value" not in host, "Telemetry must never read WebView2 typed text"
