@@ -52,3 +52,24 @@ namespace UnityEngine
 }
 namespace UnityEngine.UI {public class RawImage : UnityEngine.Object {public object texture;public UnityEngine.Color color;}public class CanvasScaler : UnityEngine.Object {}public class GraphicRaycaster : UnityEngine.Object {}}
 namespace Company.WebView { public class CefTextureSurface : UnityEngine.MonoBehaviour {public ulong AcceleratedFrameCount {get;set;} public ulong SoftwareFrameCount {get;set;} } }
+
+namespace Company.WebView.Unified.Experimental
+{
+    // Compile-only reference to the existing validated 3D cube test component.
+    // Its real implementation stays in DualPlayer/CefCubeTextureProof.cs.
+    public sealed class CefCubeTextureProof : UnityEngine.MonoBehaviour
+    {
+        public bool IsCubeTextureBound { get; set; }
+        public int TextureBindCount { get; set; }
+        public ulong ObservedCefFrameAdvances { get; set; }
+        public float AngularTravelDegrees { get; set; }
+        public int VisibleFrames { get; set; }
+        public bool OccluderBeforeCubeRay { get; set; }
+        public bool FrontPoseInitialObserved { get; set; }
+        public bool FrontPoseRestoredObserved { get; set; }
+        public int SourcePixelSamples { get; set; }
+        public int SourcePixelChangeEvents { get; set; }
+        public int MaxChangedPixels { get; set; }
+        public string PixelReadbackError { get; set; } = "";
+    }
+}
