@@ -22,13 +22,17 @@
 - [x] Darwin에는 `sigtimedwait`가 없어 `process_broker.cpp` SIGPIPE
   cleanup을 `sigwait`로 대체 (신호 pending 검증과 block 유지).
 - [ ] ARM64/Intel 빌드·CTest로 수정 검증 완료.
-- [ ] native C++11 Core SDK 설치 + 외부 CMake 소비자 테스트.
+- [x] macOS 네이티브 Core SDK 설치·재배치 후 별도 소비자 CMake/CTest 단계 추가.
+- [ ] 해당 SDK 소비자 단계 ARM64 / Intel CI 통과 확인.
 - [ ] ARM64/Intel runner를 각각 재현 가능한 artifact로 기록.
 - Intel runner는 GitHub 공지 기준 2027-08까지 제공 예정. 지속
   지원을 제품 약속으로 만들기 전에 대체 빌드 경로를 수립한다.
 
 ## 1. macOS WKWebView 엔진
 
+- [x] AppKit/WebKit 프레임워크와 WKURLSchemeHandler /
+  WKScriptMessageHandlerWithReply Objective-C++ 컴파일 프로브 추가.
+  이는 완성된 adapter나 실브라우저 E2E가 아님.
 - [ ] macOS 전용 Objective-C++(`.mm`) WebKit adapter 및 Cocoa window/NSView
   생성, 메인 스레드 스케줄링, destroy/navigation 안전성.
 - [ ] `Engine::WkWebView` 실제 factory 등록과 `Engine::Auto` 판정.

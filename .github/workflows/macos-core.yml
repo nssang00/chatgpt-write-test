@@ -60,4 +60,29 @@ jobs:
         run: ctest --test-dir build/macos -C Release --output-on-failure --timeout 120
 
       - name: Repeat async cancellation regression
-        run: ctest --test-dir build/macos -C Release -R '^core\.bridge_async$' --repeat until-fail:10 --output-on-failure
+        run: ctest --test-dir build/macos -C Release -R '^core\.bridge_async
+ --repeat until-fail:10 --output-on-failure
+
+      - name: Install standalone Core SDK
+        shell: bash
+        run: |
+          cmake --install build/macos --prefix "$GITHUB_WORKSPACE/sdk-stage"
+          mv "$GITHUB_WORKSPACE/sdk-stage" "$GITHUB_WORKSPACE/sdk-relocated"
+
+      - name: Build independent installed-SDK consumer
+        shell: bash
+        run: |
+          cmake -S examples/sdk_consumer -B build/macos-consumer \
+            -DCMAKE_BUILD_TYPE=Release \
+            "-DCMAKE_PREFIX_PATH=$GITHUB_WORKSPACE/sdk-relocated"
+          cmake --build build/macos-consumer --config Release --parallel 2
+
+      - name: Run relocated SDK consumer
+        run: ctest --test-dir build/macos-consumer -C Release --output-on-failure
+
+      - name: Compile Objective-C++ WKWebView API probe
+        shell: bash
+        run: |
+          cmake -S tests/integration/wkwebview -B build/wkwebview-api \
+            -DCMAKE_BUILD_TYPE=Release
+          cmake --build build/wkwebview-api --config Release --parallel 2
