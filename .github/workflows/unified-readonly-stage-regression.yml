@@ -9,6 +9,7 @@ on:
       - feature/unified-unity-v58-6-0-cube-uv-orientation-fix
       - feature/unified-unity-v58-6-0-manual-ime-dpi-zorder
       - feature/unified-unity-v58-6-0-dpi-evidence-integrity
+      - feature/unified-unity-v58-6-0-ime-monitor-scale-diag
   workflow_dispatch:
 permissions:
   contents: read
