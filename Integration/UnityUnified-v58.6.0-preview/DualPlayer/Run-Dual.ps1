@@ -213,7 +213,7 @@ try {
    $uncorroboratedDpiPass=($e.dpi100Verdict -eq 'PASS' -and -not $e.dpi100Observed) -or
                          ($e.dpi125Verdict -eq 'PASS' -and -not $e.dpi125Observed) -or
                          ($e.dpi150Verdict -eq 'PASS' -and -not $e.dpi150Observed)
-   $summary.manualObserved.dpiUncorroboratedPass=[bool]$uncorroboratedDpiPass
+   $summary.manualObserved['dpiUncorroboratedPass']=[bool]$uncorroboratedDpiPass
    $manualVerdicts=@($e.imeCandidateVerdict,$e.dpi100Verdict,$e.dpi125Verdict,$e.dpi150Verdict,$e.zOrderVerdict)
    if(@($manualVerdicts|Where-Object{$_ -eq 'FAIL'}).Count -gt 0){
     $summary.manualChecks='USER_REPORTED_FAIL';$summary.status='MANUAL_REVIEW_REQUIRED'
