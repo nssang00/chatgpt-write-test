@@ -8,6 +8,7 @@ on:
       - feature/unified-unity-v58-6-0-front-uv-css-pixel-proof
       - feature/unified-unity-v58-6-0-cube-uv-orientation-fix
       - feature/unified-unity-v58-6-0-manual-ime-dpi-zorder
+      - feature/unified-unity-v58-6-0-dpi-evidence-integrity
   workflow_dispatch:
 permissions:
   contents: read
