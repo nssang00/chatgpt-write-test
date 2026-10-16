@@ -82,7 +82,11 @@ WebView2 / CEF / WKWebView의 내부 IPC가 서로 다르므로 구현 계층과
 ## 결과와 완료 기준
 
 - [ ] 동일 workload(함수/반환값·payload·반복·동시성) 공통 fixture 작성.
-- [ ] 기존 3개 엔진 + macOS WKWebView ARM/Intel 실브라우저 벤치마크 실행.
+- [x] 기존 3개 엔진 + macOS WKWebView ARM/Intel 실브라우저 벤치마크 실행 단계 및
+  GitHub Actions raw/summary artifact 업로드 설정 추가.
+- [ ] 실제 5개 Runner 조합 smoke 결과 확인 및 측정값 수집.
+- [ ] LAT-01/02/04/05/06 첫 smoke 실측값 검증; LAT-03 Native→JS는 후속.
+- [ ] warmup 1000 / samples 5000 / 5회 독립 run의 반복 기준선 수집.
 - [ ] LAT-01~LAT-06 기준값(JSON/CSV+Markdown) 및 재현 명령 기록.
 - [ ] Debug/Release 차이, 첫 호출/warm, 동시성 큐잉을 별도 시각화.
 - [ ] WebView2 tagged JSON byte-array의 인코딩/디코딩 오버헤드에
@@ -92,6 +96,11 @@ WebView2 / CEF / WKWebView의 내부 IPC가 서로 다르므로 구현 계층과
 - [ ] Runner 편차 확인 후 동일 환경의 반복 기준선에 따라 **지속적인
   회귀 기준** 정의. 예: 최근 3회 이상 유의미한 p95 악화 시 경고
   및 측정 재확인. 임계치(ms), 허용 변화율은 **실측 뒤 결정**.
+
+현재 스모크 설정(예비): warm-up 20, 샘플 100회, 바이너리 64KiB는 40회.
+이는 초기 CI 오작동 및 지연시간 분포 확인용으로 1,000/5,000의 정식
+기준선과 구분한다. Python runner는 수치를 합격선으로 비교하지 않고,
+브라우저 종료/표본 누락/바이트 불일치만 실패시킨다.
 
 **완료의 의미:** 실제 RTT를 숫자와 재현 환경으로 제시할 수 있고,
 뒤의 Binary IPC / Resource Provider / SharedBuffer 작업이 성능을

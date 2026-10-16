@@ -7,6 +7,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <cstdlib>
 #include <future>
 #include <iostream>
 #include <memory>
@@ -128,6 +129,41 @@ public:
 
         webview_.bind("camera.accept", [](const nativeweb::NativeObjectHandle& handle) {
             return handle.valid() && handle.type == "Camera";
+        });
+
+        // Isolated benchmark fixture: results printed as a single JSON
+        // record; only this opt-in page calls bench.finish/abort.
+        webview_.bind("bench.echo", [](const nativeweb::Binary& bytes) {
+            return bytes;
+        });
+        webview_.onMessage("bench.ping", [this](const Any& payload) {
+            webview_.postMessage("bench.pong", payload);
+        });
+        webview_.bind("bench.config", []() {
+            VariantDict out;
+            const char* w=std::getenv("XYTRON_BENCH_WARMUP");
+            const char* s=std::getenv("XYTRON_BENCH_SAMPLES");
+            out["warmup"]=w ? std::atoi(w) : 20;
+            out["samples"]=s ? std::atoi(s) : 100;
+            return out;
+        });
+        webview_.bind("bench.finish", [this](const std::string& json) {
+            if (json.size()>1000000u || json.empty()) {
+                failure_="Invalid benchmark result payload";
+                success_=false;
+            } else {
+                std::cout << "xytron-benchmark-json:" << json << std::endl;
+                success_=true;
+            }
+            webview_.destroy();
+            return true;
+        });
+        webview_.bind("bench.abort", [this](const std::string& message) {
+            failure_="Benchmark failed: " + message;
+            success_=false;
+            std::cerr << "bridge-fail: " << failure_ << std::endl;
+            webview_.destroy();
+            return false;
         });
 
         webview_.bind("test.cancel.delay", [](int durationMs) {

@@ -56,3 +56,12 @@ set_target_properties(nativeweb_wkwebview_real_e2e PROPERTIES
 enable_testing()
 add_test(NAME browser.wkwebview_bridge COMMAND nativeweb_wkwebview_real_e2e)
 set_tests_properties(browser.wkwebview_bridge PROPERTIES TIMEOUT 35)
+
+# Shares the existing real backend but runs independent benchmark HTML.
+add_executable(nativeweb_wkwebview_benchmark bridge_benchmark.mm)
+target_include_directories(nativeweb_wkwebview_benchmark PRIVATE
+    "${NATIVEWEB_ROOT}/src" "${NATIVEWEB_ROOT}/include")
+target_compile_options(nativeweb_wkwebview_benchmark PRIVATE -fobjc-arc)
+target_link_libraries(nativeweb_wkwebview_benchmark PRIVATE nativeweb_wkbackend)
+set_target_properties(nativeweb_wkwebview_benchmark PROPERTIES
+    CXX_STANDARD 11 OBJCXX_STANDARD 11)

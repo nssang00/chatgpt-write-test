@@ -88,3 +88,14 @@ jobs:
 
       - name: Run real WKWebView bridge E2E
         run: ctest --test-dir build/wkwebview-api -C Release -R 'browser[.]wkwebview_bridge' --output-on-failure --timeout 35
+
+      - name: Measure WKWebView JS-Native RTT (diagnostic only)
+        run: python3 tools/run_bridge_benchmark.py --engine wkwebview --build-dir build/wkwebview-api --output-dir build/bridge-benchmark --warmup 20 --samples 100 --timeout 130
+
+      - name: Upload raw bridge latency samples
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: xytron-bridge-latency-wkwebview-${{ matrix.arch }}
+          path: build/bridge-benchmark/*
+          if-no-files-found: warn
