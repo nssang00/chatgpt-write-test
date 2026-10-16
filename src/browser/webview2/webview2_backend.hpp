@@ -45,6 +45,7 @@ public:
     bool acknowledgeReadOnlySharedBufferProbe(
         int requestId, const std::string& grant);
     std::size_t pendingReadOnlySharedBufferBytesForTest() const;
+    std::size_t cumulativeReadOnlySharedBufferBytesForTest() const;
 
 private:
     struct CreateState
@@ -121,6 +122,9 @@ private:
     // not just the request id (which can be reused after navigation).
     std::map<int, ProbeGrant> sharedProbePending_;
     std::size_t sharedProbePendingBytes_ = 0;
+    // Nonrefundable per-document budget, even if a renderer forges ACKs.
+    std::size_t sharedProbeCumulativeBytes_ = 0;
+    static const std::size_t kSharedProbeMaxDocumentBytes = 32u * 1024u * 1024u;
     // Intentionally small, since JS can omit/falsify release ack.
     static const std::size_t kSharedProbeMaxPendingBytes = 2u * 1024u * 1024u;
     static const std::size_t kSharedProbeMaxPendingRequests = 4u;

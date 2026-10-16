@@ -678,6 +678,7 @@ void WebView2Backend::destroyOnUi()
 
     sharedProbePending_.clear();
     sharedProbePendingBytes_=0;
+    sharedProbeCumulativeBytes_=0;
     const bool wasCreated =
         created_.exchange(false);
 
@@ -816,7 +817,8 @@ bool WebView2Backend::postReadOnlySharedBufferProbe(
         bytes.empty() || bytes.size() > 1024u*1024u ||
         sharedProbePending_.count(requestId) != 0u ||
         sharedProbePending_.size() >= kSharedProbeMaxPendingRequests ||
-        bytes.size() > kSharedProbeMaxPendingBytes-sharedProbePendingBytes_)
+        bytes.size() > kSharedProbeMaxPendingBytes-sharedProbePendingBytes_ ||
+        bytes.size() > kSharedProbeMaxDocumentBytes-sharedProbeCumulativeBytes_)
         return false;
 
     LPWSTR rawUrl = nullptr;
@@ -867,6 +869,7 @@ bool WebView2Backend::postReadOnlySharedBufferProbe(
         pending.nonce=grant;
         sharedProbePending_[requestId]=pending;
         sharedProbePendingBytes_+=bytes.size();
+        sharedProbeCumulativeBytes_+=bytes.size();
     }
     return SUCCEEDED(result);
 }
@@ -893,6 +896,12 @@ std::size_t WebView2Backend::pendingReadOnlySharedBufferBytesForTest() const
     return sharedProbePendingBytes_;
 }
 
+std::size_t WebView2Backend::cumulativeReadOnlySharedBufferBytesForTest() const
+{
+    requireUiThread();
+    return sharedProbeCumulativeBytes_;
+}
+
 void WebView2Backend::notifyLoadStarted(
     const std::wstring& source)
 {
@@ -900,6 +909,7 @@ void WebView2Backend::notifyLoadStarted(
     documentSessionToken_.clear();
     sharedProbePending_.clear();
     sharedProbePendingBytes_=0;
+    sharedProbeCumulativeBytes_=0;
     ++navigation_;
     try { documentSessionToken_=createDocumentSessionToken(); }
     catch (...) { documentSessionToken_.clear(); } // fail closed
