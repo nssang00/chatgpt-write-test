@@ -142,8 +142,8 @@ void testCompactBinaryRoundTrip()
     const std::string encoded=nativeweb::detail::anyToJsonCompactBinary(Any(dictionary));
     CHECK(encoded.find(marker)!=std::string::npos);
     CHECK(encoded.find("__nativeweb_binary\":")==std::string::npos);
-    const VariantDict& parsed=AnyCast<const VariantDict&>(
-        nativeweb::detail::jsonToAny(encoded));
+    const Any decodedObject=nativeweb::detail::jsonToAny(encoded);
+    const VariantDict& parsed=AnyCast<const VariantDict&>(decodedObject);
     const VariantList& values=AnyCast<const VariantList&>(
         parsed.find("nested")->second);
     CHECK(AnyCast<nativeweb::Binary>(values[0])==large);
