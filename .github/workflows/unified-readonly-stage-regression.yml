@@ -11,6 +11,7 @@ on:
       - feature/unified-unity-v58-6-0-dpi-evidence-integrity
       - feature/unified-unity-v58-6-0-ime-monitor-scale-diag
       - feature/unified-unity-v58-6-0-persistent-player-cache
+      - feature/unified-unity-v58-7-0-upm-product-preview
   workflow_dispatch:
 permissions:
   contents: read
@@ -30,6 +31,8 @@ jobs:
           if($LASTEXITCODE -ne 0){throw 'Managed ABI contract failed'}
           dotnet build --configuration Release Integration/UnityUnified-v58.6.0-preview/Validation/UnityHostCompile.csproj
           if($LASTEXITCODE -ne 0){throw 'Unity scene host C# compilation failed'}
+          dotnet build --configuration Release Integration/UnityUnified-v58.6.0-preview/UnityProduct/Validation/ProductPanelCompile.csproj
+          if($LASTEXITCODE -ne 0){throw 'Unity UPM product panel C# compilation failed'}
       - name: Contract and PowerShell 5.1 syntax checks
         shell: powershell
         run: |
@@ -39,6 +42,12 @@ jobs:
             python "$r/Validation/$name"
             if($LASTEXITCODE -ne 0){throw "Python contract failed: $name"}
           }
+          python "$r/UnityProduct/Validation/verify_upm_product.py"
+          if($LASTEXITCODE -ne 0){throw 'Unity UPM product static contract failed'}
+          $src="$r/UnityProduct/Build-UnityProduct.ps1"
+          $t=$null;$errors=$null
+          [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $src).Path,[ref]$t,[ref]$errors)|Out-Null
+          if(@($errors).Count -gt 0){throw 'Unity UPM packager PowerShell parser failed'}
           foreach($name in @('Run-Dual.ps1','Ensure-CefRuntime.ps1','Install-UnifiedManagedSources.ps1','Screen-Automation.ps1','Verify-TextureUvMarkers.ps1','UnityPlayerCache.ps1')){
             $file=(Resolve-Path "$r/DualPlayer/$name").Path
             $tokens=$null;$errs=$null
