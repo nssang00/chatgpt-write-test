@@ -40,6 +40,27 @@ public sealed class UnifiedDualPlayerEvidence : MonoBehaviour
         public bool overlayJoined;
         public bool cefShutdown;
         public bool manualImeDpiZOrderPending=true;
+        public bool manualCompatibilityMode;
+        public int trustedImeCompositionStarts;
+        public int trustedImeCompositionEnds;
+        public int trustedInputBatches;
+        public string imeCandidateVerdict="NOT_TESTED";
+        public string dpi100Verdict="NOT_TESTED";
+        public string dpi125Verdict="NOT_TESTED";
+        public string dpi150Verdict="NOT_TESTED";
+        public string zOrderVerdict="NOT_TESTED";
+        public int dpiMin;
+        public int dpiMax;
+        public int dpiDistinctCount;
+        public int overlayHostBoundsSamples;
+        public int overlayHostMaxBoundsDeltaPx;
+        public int overlayChildOutsideClientSamples;
+        public int unityForegroundLostCount;
+        public int unityForegroundRegainedCount;
+        public int unityMinimizeTransitions;
+        public int unityRestoreTransitions;
+        public bool nativeChildHostSeen;
+
         public string completedUtc;
     }
     private Evidence evidence=new Evidence();
@@ -58,6 +79,7 @@ public sealed class UnifiedDualPlayerEvidence : MonoBehaviour
         for(int i=0;i<argv.Length-1;i++){
             if(argv[i]=="-dualDuration")int.TryParse(argv[i+1],out duration);
             if(argv[i]=="-dualEvidencePath")reportFile=argv[i+1];
+            if(argv[i]=="-manualCompatibility")evidence.manualCompatibilityMode=argv[i+1]=="1";
         }
         duration=Math.Max(30,Math.Min(300,duration));
         if(String.IsNullOrEmpty(reportFile))
@@ -87,6 +109,26 @@ public sealed class UnifiedDualPlayerEvidence : MonoBehaviour
         }
         if(overlayHost!=null) {
             if(overlayHost.IsOverlayReady)evidence.overlayReady=true;
+            evidence.trustedImeCompositionStarts=Math.Max(evidence.trustedImeCompositionStarts,overlayHost.TrustedCompositionStarts);
+            evidence.trustedImeCompositionEnds=Math.Max(evidence.trustedImeCompositionEnds,overlayHost.TrustedCompositionEnds);
+            evidence.trustedInputBatches=Math.Max(evidence.trustedInputBatches,overlayHost.TrustedInputBatches);
+            evidence.imeCandidateVerdict=overlayHost.ImeCandidateVerdict;
+            evidence.dpi100Verdict=overlayHost.Dpi100Verdict;
+            evidence.dpi125Verdict=overlayHost.Dpi125Verdict;
+            evidence.dpi150Verdict=overlayHost.Dpi150Verdict;
+            evidence.zOrderVerdict=overlayHost.ZOrderVerdict;
+            evidence.dpiMin=overlayHost.DpiMin;
+            evidence.dpiMax=overlayHost.DpiMax;
+            evidence.dpiDistinctCount=Math.Max(evidence.dpiDistinctCount,overlayHost.DistinctObservedDpiCount);
+            evidence.overlayHostBoundsSamples=Math.Max(evidence.overlayHostBoundsSamples,overlayHost.BoundsSamples);
+            evidence.overlayHostMaxBoundsDeltaPx=Math.Max(evidence.overlayHostMaxBoundsDeltaPx,overlayHost.MaxBoundsDeltaPx);
+            evidence.overlayChildOutsideClientSamples=Math.Max(evidence.overlayChildOutsideClientSamples,overlayHost.ChildOutsideClientSamples);
+            evidence.unityForegroundLostCount=Math.Max(evidence.unityForegroundLostCount,overlayHost.ForegroundLostCount);
+            evidence.unityForegroundRegainedCount=Math.Max(evidence.unityForegroundRegainedCount,overlayHost.ForegroundRegainedCount);
+            evidence.unityMinimizeTransitions=Math.Max(evidence.unityMinimizeTransitions,overlayHost.MinimizeTransitions);
+            evidence.unityRestoreTransitions=Math.Max(evidence.unityRestoreTransitions,overlayHost.RestoreTransitions);
+            evidence.nativeChildHostSeen |= overlayHost.ChildHostSeen;
+
             evidence.overlayMessageCount=Math.Max(evidence.overlayMessageCount,overlayHost.ReceivedMessageCount);
             evidence.overlayUnicodeRoundtripCount=Math.Max(evidence.overlayUnicodeRoundtripCount,overlayHost.UnicodeRoundtripCount);
             evidence.overlayPingRoundtripCount=Math.Max(evidence.overlayPingRoundtripCount,overlayHost.PingRoundtripCount);
@@ -154,7 +196,8 @@ public sealed class UnifiedDualPlayerEvidence : MonoBehaviour
                 " frontInitial="+evidence.cubeFrontInitialObserved+" frontRestored="+evidence.cubeFrontRestoredObserved+
                 " sourcePixels="+evidence.cubeSourcePixelSamples+" pixelChanges="+evidence.cubeSourcePixelChangeEvents+
                 " maxChanged="+evidence.cubeMaxChangedPixels+" gpuReadbackError="+evidence.cubePixelReadbackError+
-                " joined="+evidence.overlayJoined+" CEF shutdown="+evidence.cefShutdown);
+                " joined="+evidence.overlayJoined+" CEF shutdown="+evidence.cefShutdown+
+                " manualMode="+evidence.manualCompatibilityMode+" trustedCompositions="+evidence.trustedImeCompositionStarts);
         }catch(Exception ex){Debug.LogError("[UNIFIED-DUAL] Evidence write FAILED "+ex);}
         Application.Quit(evidence.status=="PASS_AUTO"?0:3);
     }
