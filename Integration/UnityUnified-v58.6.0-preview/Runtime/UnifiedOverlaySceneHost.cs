@@ -39,6 +39,10 @@ namespace Company.WebView.Unified.Experimental
         public int DpiMin { get; private set; }
         public int DpiMax { get; private set; }
         public int DistinctObservedDpiCount { get { return observedDpis.Count; } }
+        // DPI values are OS-reported for Unity's HWND, not proof of physical monitor scaling.
+        public bool Dpi100Observed { get { return observedDpis.Contains(96); } }
+        public bool Dpi125Observed { get { return observedDpis.Contains(120); } }
+        public bool Dpi150Observed { get { return observedDpis.Contains(144); } }
         public int BoundsSamples { get; private set; }
         public int MaxBoundsDeltaPx { get; private set; }
         public int ChildOutsideClientSamples { get; private set; }
@@ -61,9 +65,9 @@ namespace Company.WebView.Unified.Experimental
             <h2 style='margin:0 0 6px'>WebView2 HWND / Windows Compatibility</h2>
             <p style='margin:4px 0 8px'>Right: real Korean IME; move/resize Unity; Alt+Tab and restore. No typed text is recorded.</p>
             <textarea id='cwv-ime' aria-label='Manual Korean IME input' rows='3' style='font:20px Segoe UI;width:96%;box-sizing:border-box' placeholder='한글 가나다 abc123 😀'></textarea>
-            <p id='cwv-counters'>Trusted IME start/end: 0 / 0; input: 0</p>
+            <p id='cwv-counters'>Trusted IME start/end: 0 / 0; input: 0</p><p>IME composition START and END must increment during actual Hangul input. If they stay zero, the telemetry cannot confirm IME composition even if text appears.</p>
             <div><b>1. Korean IME candidate popup and caret</b><p><button data-v='ime-pass'>PASS</button> <button data-v='ime-fail'>FAIL</button> <span id='cwv-ime-verdict'>NOT TESTED</span></p></div>
-            <div><b>2. At actual Windows display scale (user-reported)</b>
+            <div><b>2. At actual Windows display scale (user-reported)</b><p>Only click PASS for the Windows Settings scale actually tested. A single 100% session does NOT test 125% or 150%. Your Unity window's reported DPI is checked separately after exit.</p>
             <p style='line-height:2'>100%: <button data-v='dpi100-pass'>PASS</button> <button data-v='dpi100-fail'>FAIL</button> <span id='cwv-dpi100-verdict'>NOT TESTED</span></p>
             <p style='line-height:2'>125%: <button data-v='dpi125-pass'>PASS</button> <button data-v='dpi125-fail'>FAIL</button> <span id='cwv-dpi125-verdict'>NOT TESTED</span></p>
             <p style='line-height:2'>150%: <button data-v='dpi150-pass'>PASS</button> <button data-v='dpi150-fail'>FAIL</button> <span id='cwv-dpi150-verdict'>NOT TESTED</span></p></div>
