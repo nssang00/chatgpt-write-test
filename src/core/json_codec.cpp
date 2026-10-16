@@ -30,10 +30,10 @@ void appendEscapedString(
         switch (ch)
         {
         case '"':
-            output << "\\"";
+            output << "\\\"";
             break;
         case '\\':
-            output << "\\\";
+            output << "\\\\";
             break;
         case '\b':
             output << "\\b";
@@ -72,7 +72,6 @@ void appendEscapedString(
 
     output << '"';
 }
-
 
 const char kBase64Alphabet[] =
     "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
