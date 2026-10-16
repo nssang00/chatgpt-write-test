@@ -52,6 +52,9 @@ public sealed class UnifiedDualPlayerEvidence : MonoBehaviour
         public int dpiMin;
         public int dpiMax;
         public int dpiDistinctCount;
+        public bool dpi100Observed;
+        public bool dpi125Observed;
+        public bool dpi150Observed;
         public int overlayHostBoundsSamples;
         public int overlayHostMaxBoundsDeltaPx;
         public int overlayChildOutsideClientSamples;
@@ -120,6 +123,9 @@ public sealed class UnifiedDualPlayerEvidence : MonoBehaviour
             evidence.dpiMin=overlayHost.DpiMin;
             evidence.dpiMax=overlayHost.DpiMax;
             evidence.dpiDistinctCount=Math.Max(evidence.dpiDistinctCount,overlayHost.DistinctObservedDpiCount);
+            evidence.dpi100Observed |= overlayHost.Dpi100Observed;
+            evidence.dpi125Observed |= overlayHost.Dpi125Observed;
+            evidence.dpi150Observed |= overlayHost.Dpi150Observed;
             evidence.overlayHostBoundsSamples=Math.Max(evidence.overlayHostBoundsSamples,overlayHost.BoundsSamples);
             evidence.overlayHostMaxBoundsDeltaPx=Math.Max(evidence.overlayHostMaxBoundsDeltaPx,overlayHost.MaxBoundsDeltaPx);
             evidence.overlayChildOutsideClientSamples=Math.Max(evidence.overlayChildOutsideClientSamples,overlayHost.ChildOutsideClientSamples);
