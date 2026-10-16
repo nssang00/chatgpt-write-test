@@ -676,6 +676,8 @@ void WebView2Backend::destroyOnUi()
     if (closing_.exchange(true))
         return;
 
+    sharedProbePending_.clear();
+    sharedProbePendingBytes_=0;
     const bool wasCreated =
         created_.exchange(false);
 
@@ -810,7 +812,11 @@ bool WebView2Backend::postReadOnlySharedBufferProbe(
     // The sender must independently authorize the triggering JS message via
     // onVerifiedBridgeMessage. This function then re-checks active document.
     if (!webview_ || !environment_ || !mainFrameReady_ ||
-        requestId < 0 || bytes.empty() || bytes.size() > 1024u*1024u)
+        closing_.load() || !created_.load() || requestId < 0 ||
+        bytes.empty() || bytes.size() > 1024u*1024u ||
+        sharedProbePending_.count(requestId) != 0u ||
+        sharedProbePending_.size() >= kSharedProbeMaxPendingRequests ||
+        bytes.size() > kSharedProbeMaxPendingBytes-sharedProbePendingBytes_)
         return false;
 
     LPWSTR rawUrl = nullptr;
@@ -850,7 +856,31 @@ bool WebView2Backend::postReadOnlySharedBufferProbe(
         data.c_str());
     // Native may close after Post; JS must independently releaseBuffer().
     shared->Close();
+    if (SUCCEEDED(result)) {
+        sharedProbePending_[requestId]=bytes.size();
+        sharedProbePendingBytes_+=bytes.size();
+    }
     return SUCCEEDED(result);
+}
+
+bool WebView2Backend::acknowledgeReadOnlySharedBufferProbe(int requestId)
+{
+    requireUiThread();
+    if (!created_.load() || !mainFrameReady_ || closing_.load())
+        return false;
+    const std::map<int,std::size_t>::iterator it =
+        sharedProbePending_.find(requestId);
+    if (it == sharedProbePending_.end())
+        return false;
+    sharedProbePendingBytes_-=it->second;
+    sharedProbePending_.erase(it);
+    return true;
+}
+
+std::size_t WebView2Backend::pendingReadOnlySharedBufferBytesForTest() const
+{
+    requireUiThread();
+    return sharedProbePendingBytes_;
 }
 
 void WebView2Backend::notifyLoadStarted(
@@ -858,6 +888,8 @@ void WebView2Backend::notifyLoadStarted(
 {
     mainFrameReady_=false;
     documentSessionToken_.clear();
+    sharedProbePending_.clear();
+    sharedProbePendingBytes_=0;
     ++navigation_;
     try { documentSessionToken_=createDocumentSessionToken(); }
     catch (...) { documentSessionToken_.clear(); } // fail closed

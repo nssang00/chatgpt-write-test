@@ -32,17 +32,36 @@ const char kHtml[]=R"XYTRON_HTML(<!doctype html><html><head>
     }
   }
   let current=null, nextIndex=0, startedAt=0, releases=0;
+  let quotaSummary=null, quotaReceived=0, quotaRepeated=false;
   const records=[];
+  const maybeRepeatQuota=()=>{
+    if(quotaSummary && quotaReceived===2 && !quotaRepeated) {
+      quotaRepeated=true;
+      xytron.postMessage('probe.quota.repeat');
+    }
+  };
+  xytron.onMessage('probe.quota.summary', summary=>{
+    if(summary.accepted!==2 || summary.denied!==3 ||
+       summary.pending_bytes!==2097152)
+      return fail('Unbounded SharedBuffer quota '+JSON.stringify(summary));
+    quotaSummary=summary;
+    maybeRepeatQuota();
+  });
+  xytron.onMessage('probe.quota.repeat.result',result=>{
+    if(result.accepted!==false||result.pending_bytes!==2097152)
+      return fail('Missing-release quota bypassed');
+    xytron.postMessage('probe.reload');
+  });
   const fail=(error)=>xytron.postMessage('probe.failure',String(error));
-  const checkBytes=(bytes)=>{
-    if(bytes.byteLength!==current.size) throw Error('Buffer length mismatch');
+  const checkBytes=(bytes,size)=>{
+    if(bytes.byteLength!==size) throw Error('Buffer length mismatch');
     for(let i=0;i<bytes.length;++i)
       if(bytes[i]!==((i*37+17)&255))
         throw Error('Buffer byte mismatch '+i);
   };
   const request=()=>{
     if(nextIndex===work.length) {
-      xytron.postMessage('probe.complete',{samples:records,
+      xytron.postMessage('probe.quota.start',{samples:records,
         js_clock:'performance.now',release_count:releases});
       return;
     }
@@ -58,7 +77,7 @@ const char kHtml[]=R"XYTRON_HTML(<!doctype html><html><head>
     // Capture RTT *before* validating the bytes. The same control event and
     // full-content validation are used for both paths, but excluded from RTT.
     const elapsed=performance.now()-startedAt;
-    checkBytes(new Uint8Array(buffer));
+    checkBytes(new Uint8Array(buffer),current.size);
     records.push({transport,size:current.size,elapsed_ms:elapsed});
   };
   xytron.onMessage('probe.base64.payload',value=>{
@@ -72,8 +91,21 @@ const char kHtml[]=R"XYTRON_HTML(<!doctype html><html><head>
     let buffer;
     try {
       const meta=e.additionalData;
-      if(!meta||meta.type!=='xytron.shared.probe' ||
-         !current||current.transport!=='shared'||
+      if(!meta||meta.type!=='xytron.shared.probe')
+        throw Error('Invalid shared buffer metadata');
+      if(meta.id>=200 && meta.id<202) {
+        if(meta.size!==1048576) throw Error('Quota buffer size mismatch');
+        buffer=e.getBuffer();
+        checkBytes(new Uint8Array(buffer),1048576);
+        chrome.webview.releaseBuffer(buffer);
+        buffer=null;
+        // Deliberately omit cooperative ack. The host must cap subsequent
+        // transfers even if renderer releases but fails to acknowledge.
+        quotaReceived++;
+        maybeRepeatQuota();
+        return;
+      }
+      if(!current||current.transport!=='shared'||
          meta.id!==nextIndex-1||meta.size!==current.size)
         throw Error('Invalid shared buffer metadata');
       buffer=e.getBuffer();
@@ -81,6 +113,7 @@ const char kHtml[]=R"XYTRON_HTML(<!doctype html><html><head>
       chrome.webview.releaseBuffer(buffer);
       buffer=null;
       releases++;
+      xytron.postMessage('probe.release',{id:meta.id});
       request();
     } catch(e) {
       if(buffer) { try { chrome.webview.releaseBuffer(buffer); } catch(_) {} }
@@ -95,12 +128,29 @@ class ProbeListener final : public nativeweb::detail::BrowserBackendListener
 {
 public:
     explicit ProbeListener(nativeweb::detail::WebView2Backend* backend)
-        : backend_(backend),done_(false),passed_(false) {}
+        : backend_(backend),done_(false),passed_(false),
+          reloadRequested_(false),navigationChecked_(false) {}
 
     bool done() const { return done_; }
     bool passed() const { return passed_; }
     void onBrowserCreated() override {}
-    void onLoadStarted(const std::string&) override {}
+    void onLoadStarted(const std::string&) override
+    {
+        if (!reloadRequested_) return;
+        // Browser backend must revoke all outstanding grants at navigation
+        // start and deny further SharedBuffer posting until activation.
+        const std::size_t pending =
+            backend_->pendingReadOnlySharedBufferBytesForTest();
+        const nativeweb::Binary bytes(1024,static_cast<unsigned char>(17));
+        const bool rejected =
+            !backend_->postReadOnlySharedBufferProbe(bytes,500);
+        navigationChecked_=pending==0 && rejected;
+        done_=true;
+        passed_=navigationChecked_ && quotaChecked_;
+        std::cout << "xytron-sharedbuffer-lifecycle:"
+                  << (passed_?"PASS":"FAIL")
+                  << " pending_after_navigation=" << pending << std::endl;
+    }
     void onLoadFinished(const std::string&) override {}
     void onBrowserClosed() override {}
     void onBridgeMessage(const Any&) override
@@ -142,6 +192,57 @@ public:
                         nativeweb::detail::makeEventMessage(
                             "probe.base64.payload",Any(bytes)));
                 }
+            } else if(decoded.eventName=="probe.release") {
+                const VariantDict& payload=AnyCast<const VariantDict&>(body);
+                if(!backend_->acknowledgeReadOnlySharedBufferProbe(
+                    AnyCast<int>(payload.at("id"))))
+                    throw std::runtime_error("Invalid SharedBuffer release ack");
+            } else if(decoded.eventName=="probe.quota.start") {
+                const VariantDict& payload=AnyCast<const VariantDict&>(body);
+                const VariantList& samples=AnyCast<const VariantList&>(
+                    payload.at("samples"));
+                if(samples.size()!=106u ||
+                    AnyCast<int>(payload.at("release_count"))!=53 ||
+                    backend_->pendingReadOnlySharedBufferBytesForTest()!=0u)
+                    throw std::runtime_error("Baseline SharedBuffer leaked");
+                std::cout << "xytron-sharedbuffer-probe-json:"
+                          << nativeweb::detail::anyToJson(body) << std::endl;
+                int accepted=0, denied=0;
+                for(int id=200;id<205;++id) {
+                    nativeweb::Binary bytes(1048576);
+                    for(std::size_t i=0;i<bytes.size();++i)
+                        bytes[i]=static_cast<unsigned char>((i*37+17)&255);
+                    if(backend_->postReadOnlySharedBufferProbe(bytes,id))
+                        ++accepted;
+                    else ++denied;
+                }
+                VariantDict result;
+                result["accepted"]=accepted;
+                result["denied"]=denied;
+                result["pending_bytes"]=static_cast<int>(
+                    backend_->pendingReadOnlySharedBufferBytesForTest());
+                quotaChecked_=accepted==2 && denied==3 &&
+                    backend_->pendingReadOnlySharedBufferBytesForTest()==2097152u;
+                backend_->postBridgeMessage(
+                    nativeweb::detail::makeEventMessage("probe.quota.summary",Any(result)));
+            } else if(decoded.eventName=="probe.quota.repeat") {
+                if(!quotaChecked_) throw std::runtime_error("Quota never verified");
+                const nativeweb::Binary bytes(1048576,static_cast<unsigned char>(17));
+                const bool allowed=backend_->postReadOnlySharedBufferProbe(bytes,205);
+                VariantDict result;
+                result["accepted"]=allowed;
+                result["pending_bytes"]=static_cast<int>(
+                    backend_->pendingReadOnlySharedBufferBytesForTest());
+                if(allowed) throw std::runtime_error("Release omission bypassed quota");
+                backend_->postBridgeMessage(
+                    nativeweb::detail::makeEventMessage(
+                        "probe.quota.repeat.result",Any(result)));
+            } else if(decoded.eventName=="probe.reload") {
+                if(!quotaChecked_ ||
+                    backend_->pendingReadOnlySharedBufferBytesForTest()!=2097152u)
+                    throw std::runtime_error("Expected leaked quota before reload");
+                reloadRequested_=true;
+                backend_->reload();
             } else if(decoded.eventName=="probe.complete") {
                 const VariantDict& payload=AnyCast<const VariantDict&>(body);
                 const VariantList& samples=AnyCast<const VariantList&>(
@@ -170,6 +271,7 @@ private:
     }
     nativeweb::detail::WebView2Backend* backend_;
     bool done_,passed_;
+    bool reloadRequested_,navigationChecked_,quotaChecked_=false;
 };
 
 LRESULT CALLBACK windowProc(HWND hwnd,UINT msg,WPARAM wp,LPARAM lp)

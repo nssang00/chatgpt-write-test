@@ -9,6 +9,7 @@
 
 #include <atomic>
 #include <functional>
+#include <map>
 #include <string>
 
 #include <windows.h>
@@ -39,6 +40,10 @@ public:
     // Internal experimental Native -> main-document shared-buffer delivery.
     // Not a public WebView::Binary transport; used by isolated CI probe.
     bool postReadOnlySharedBufferProbe(const Binary& bytes, int requestId);
+    // Cooperative release-ack accounting, only from a verified main-frame
+    // event. This does NOT prove the renderer really released the buffer.
+    bool acknowledgeReadOnlySharedBufferProbe(int requestId);
+    std::size_t pendingReadOnlySharedBufferBytesForTest() const;
 
 private:
     struct CreateState
@@ -106,6 +111,11 @@ private:
     std::uint64_t navigation_ = 0;
     bool mainFrameReady_ = false;
     std::string documentSessionToken_;
+    std::map<int, std::size_t> sharedProbePending_;
+    std::size_t sharedProbePendingBytes_ = 0;
+    // Intentionally small, since JS can omit/falsify release ack.
+    static const std::size_t kSharedProbeMaxPendingBytes = 2u * 1024u * 1024u;
+    static const std::size_t kSharedProbeMaxPendingRequests = 4u;
     std::shared_ptr<const AppResourceBundle> appResources_;
 
     Microsoft::WRL::ComPtr<ICoreWebView2Environment> environment_;
