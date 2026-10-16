@@ -44,7 +44,7 @@ if((Split-Path $webview2 -Leaf) -cne 'CompanyWebView2UnifiedPreview.dll'){
  throw 'Must supply the validated CompanyWebView2UnifiedPreview.dll (not a different pilot DLL)'
 }
 foreach($name in $requiredCef){RequireFile (Join-Path $runtime $name)}
-$unifiedNames=@('UnifiedWebView.cs','CefTextureBackendBridge.cs',
+$unifiedNames=@('UnifiedWebView.cs','WebViewInputCoordinates.cs','CefTextureBackendBridge.cs',
  'WebView2OverlayBackendBridge.cs','UnifiedTextureSceneHost.cs','UnifiedOverlaySceneHost.cs')
 foreach($name in $unifiedNames){RequireFile (Join-Path $integration ('Runtime\'+$name))}
 foreach($rel in @('package.json','Runtime\Company.WebView.Runtime.asmdef',
