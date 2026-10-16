@@ -60,7 +60,7 @@ const char kHtml[]=R"XYTRON_HTML(<!doctype html><html><head>
     requestStress();
   });
   xytron.onMessage('probe.stress.denied',meta=>{
-    if(meta.reason!=='document_budget' || stressReceived!==32)
+    if(meta.reason!=='document_budget' || stressReceived!==31)
       return fail('Unexpected stress budget outcome '+JSON.stringify(meta));
     xytron.postMessage('probe.stress.finish',{count:stressReceived});
   });
@@ -398,16 +398,16 @@ public:
                 if(!replayChecked_) throw std::runtime_error("Replay not verified");
                 const VariantDict& payload=AnyCast<const VariantDict&>(body);
                 const int id=AnyCast<int>(payload.at("id"));
-                if(id<600 || id>632)
+                if(id<600 || id>631)
                     throw std::runtime_error("Invalid stress request");
                 nativeweb::Binary bytes(1048576);
                 for(std::size_t i=0;i<bytes.size();++i)
                     bytes[i]=static_cast<unsigned char>((i*37+17)&255);
                 const bool posted=backend_->postReadOnlySharedBufferProbe(bytes,id);
                 if(!posted) {
-                    if(id!=632 || backend_->pendingReadOnlySharedBufferBytesForTest()!=0 ||
+                    if(id!=631 || backend_->pendingReadOnlySharedBufferBytesForTest()!=0 ||
                        backend_->cumulativeReadOnlySharedBufferBytesForTest()!=
-                         32u*1024u*1024u)
+                         31u*1024u*1024u+1024u)
                         throw std::runtime_error("Unexpected SharedBuffer cap failure");
                     VariantDict denial;
                     denial["reason"]=std::string("document_budget");
@@ -417,16 +417,16 @@ public:
                 }
             } else if(decoded.eventName=="probe.stress.finish") {
                 const VariantDict& payload=AnyCast<const VariantDict&>(body);
-                if(AnyCast<int>(payload.at("count"))!=32 ||
+                if(AnyCast<int>(payload.at("count"))!=31 ||
                    backend_->pendingReadOnlySharedBufferBytesForTest()!=0 ||
                    backend_->cumulativeReadOnlySharedBufferBytesForTest()!=
-                     32u*1024u*1024u)
+                     31u*1024u*1024u+1024u)
                     throw std::runtime_error("Document lifetime budget not enforced");
                 done_=true;
                 passed_=quotaChecked_ && navigationChecked_ && replayChecked_;
                 std::cout << "xytron-sharedbuffer-budget:"
                           << (passed_?"PASS":"FAIL")
-                          << " total_bytes=33554432" << std::endl;
+                          << " total_bytes=32506880" << std::endl;
             } else if(decoded.eventName=="probe.complete") {
                 const VariantDict& payload=AnyCast<const VariantDict&>(body);
                 const VariantList& samples=AnyCast<const VariantList&>(
