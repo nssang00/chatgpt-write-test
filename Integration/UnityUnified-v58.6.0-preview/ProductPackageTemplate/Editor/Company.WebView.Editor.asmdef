@@ -1,0 +1,12 @@
+{
+  "name": "Company.WebView.Editor",
+  "rootNamespace": "Company.WebView.Editor",
+  "references": [
+    "Company.WebView.Runtime",
+    "Unity.ugui"
+  ],
+  "includePlatforms": [
+    "Editor"
+  ],
+  "autoReferenced": true
+}
