@@ -10,6 +10,7 @@ on:
       - feature/unified-unity-v58-6-0-manual-ime-dpi-zorder
       - feature/unified-unity-v58-6-0-dpi-evidence-integrity
       - feature/unified-unity-v58-6-0-ime-monitor-scale-diag
+      - feature/unified-unity-v58-6-0-persistent-player-cache
   workflow_dispatch:
 permissions:
   contents: read
@@ -38,7 +39,7 @@ jobs:
             python "$r/Validation/$name"
             if($LASTEXITCODE -ne 0){throw "Python contract failed: $name"}
           }
-          foreach($name in @('Run-Dual.ps1','Ensure-CefRuntime.ps1','Install-UnifiedManagedSources.ps1','Screen-Automation.ps1','Verify-TextureUvMarkers.ps1')){
+          foreach($name in @('Run-Dual.ps1','Ensure-CefRuntime.ps1','Install-UnifiedManagedSources.ps1','Screen-Automation.ps1','Verify-TextureUvMarkers.ps1','UnityPlayerCache.ps1')){
             $file=(Resolve-Path "$r/DualPlayer/$name").Path
             $tokens=$null;$errs=$null
             [System.Management.Automation.Language.Parser]::ParseFile($file,[ref]$tokens,[ref]$errs)|Out-Null
@@ -55,6 +56,11 @@ jobs:
           if($bootstrap -match 'Expand-Archive' -or $bootstrap -notmatch 'ZipFileExtensions'){
             throw 'Pinned source extraction must filter out long documentation paths'
           }
+      - name: Persistent Unity Player cache HIT/MISS and invalidation fixtures
+        shell: powershell
+        run: |
+          & 'Integration/UnityUnified-v58.6.0-preview/Validation/Test-UnityPlayerCache.ps1'
+          if($LASTEXITCODE -ne 0){throw 'Unity Player cache fixture failed'}
       - name: Front-face screenshot marker scanner positive and negative fixtures
         shell: powershell
         run: |
