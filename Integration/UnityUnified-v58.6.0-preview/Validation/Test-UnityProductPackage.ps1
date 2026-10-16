@@ -39,7 +39,7 @@ try{
  Must ($json.name -eq 'com.company.webview') 'UPM package name'
  Must ($json.version -match 'preview') 'Must remain marked PREVIEW'
  foreach($file in @('Runtime\CefValidated\WebView.cs','Runtime\CefValidated\CefTextureSurface.cs',
-  'Runtime\Unified\UnifiedWebView.cs','Runtime\Unified\UnifiedTextureSceneHost.cs',
+  'Runtime\Unified\UnifiedWebView.cs','Runtime\Unified\WebViewInputCoordinates.cs','Runtime\Unified\UnifiedTextureSceneHost.cs',
   'Runtime\Unified\UnifiedOverlaySceneHost.cs','Runtime\Company.WebView.Runtime.asmdef',
   'Editor\CompanyWebViewPrefabWizard.cs','Editor\CompanyWebViewBuildStage.cs','Editor\Company.WebView.Editor.asmdef',
   'Runtime\Plugins\x86_64\CompanyWebViewCefTextureProbe.dll',
