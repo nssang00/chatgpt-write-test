@@ -25,3 +25,13 @@
 새 `dpi100Observed` / `dpi125Observed` / `dpi150Observed`는 각각 Unity HWND에서 96/120/144 DPI를 실제로 샘플링했는지 기록합니다. 사용자가 PASS를 선택했지만 그 DPI가 관측되지 않으면 `manualObserved.dpiUncorroboratedPass=true`이며 `manualChecks=PARTIAL_OR_NOT_TESTED`로 남습니다. 이 필드는 **PASS 증거의 부족**을 뜻하지, 실제 배율에서 UI가 실패했다는 뜻이 아닙니다. 프로세스의 DPI awareness에 따라 `GetDpiForWindow` 값이 가상화될 수 있으므로 이 값만으로 Windows 디스플레이 설정의 물리 배율을 단정하지 마세요.
 
 각 배율을 실제 Windows 디스플레이 설정에서 별도로 확인하고 검증하세요. 실제로 확인하지 않은 배율은 버튼을 누르지 마세요. 한글 IME는 Windows 작업 표시줄에서 **한국어 Microsoft IME**를 선택한 뒤 실제 키보드로 자모 조합을 수행하고, 화면의 composition start/end 카운터도 확인하세요. 값이 여전히 0이라면 IME가 동작하지 않았거나 DOM 이벤트 계측 경로가 사용 환경에서 포착하지 못한 것입니다. 이를 성공/실패 중 어느 쪽으로도 단정하지 말고 결과 ZIP과 함께 상황을 기록해 주세요.
+
+## 2026-10-16 재검증 결과와 강화된 계측
+
+`dual-20261016-124146.zip`: Unity/CEF/WebView2 자동 검사는 PASS, CEF GPU 프레임 17,982개, CSS 소스 픽셀 변경 48회, HWND 경계 오차 0px(575개 관측), Alt+Tab 포커스 손실/복귀 각 2회, 최소화/복원 각 1회였습니다. 실제 입력 이벤트 16회에도 `compositionstart/end`는 0회였고, Unity HWND DPI는 96 한 종류만 관측됐습니다. 따라서 결과는 `PARTIAL_OR_NOT_TESTED`이며 IME 실패나 여러 DPI 통과를 의미하지 않습니다.
+
+강화된 실험 하네스는 WebView2 DOM의 `compositionupdate`, `beforeinput`에서 `isComposing` 또는 `insertCompositionText`, `input.isComposing`, `keydown.isComposing`을 추가 계측합니다. 이벤트 자체의 유형과 횟수만 전달하며, 키, 입력문자, 후보 목록, 텍스트 필드의 value는 절대 저장하지 않습니다. 어떤 조합 신호도 확인되지 않으면 화면 PASS 선택만으로 자동 IME 완료로 판정하지 않습니다. 여러 신호 중 하나가 관측돼도 실제 한글 후보창 위치·글자 중복·확정 여부는 여전히 사람이 확인해야 합니다.
+
+DPI는 기존 `GetDpiForWindow` 외에 Unity HWND가 위치한 실제 모니터에서 `GetScaleFactorForMonitor`의 100/125/150 배율을 별도 샘플링합니다. 두 API가 서로 다르게 보고할 수 있으며 둘 모두 정책/호환성 영향이 있을 수 있습니다. `manualObserved`에서 `monitorScale...Observed`와 `dpi...Observed`를 구별해서 확인하세요. 100%/125%/150% 모두 PASS 버튼을 누른 것으로 모든 배율을 실제 검증했다고 간주하지 않습니다. 검증하려는 Windows 디스플레이 배율을 시스템에서 실제 설정한 상태로 세션을 실행하고 해당 배율만 PASS를 선택하세요.
+
+결과 ZIP에는 `manualObserved.imeComposingSignalObserved`와 `manualObserved.dpiUncorroboratedPass`가 함께 기록됩니다. 계측만으로 IME/DPI/창 겹침의 제품 인증을 주장하지 않습니다.
