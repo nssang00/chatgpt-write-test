@@ -122,10 +122,22 @@
   [CI 38878657939](https://github.com/nssang00/chatgpt-write-test/actions/runs/38878657939).
   이는 1개 누락 버퍼/1회 새로고침 검증이며 장기 메모리·crash 안전성
   입증으로 해석하지 않음.
-- [ ] 잘못된 ack 위조, 오래된 문서/iframe의 ack, 여러 문서의
-  요청 ID 충돌, 렌더러 비정상 종료 및 장기간 메모리 압력 실험.
+- [x] 새로고침 이후 **동일 requestId=200**을 재사용하되,
+  구 문서 세션 + 새 grant, 현 문서 + 구 grant, 중복 ACK 모두 거부;
+  현재 grant만 정상 ACK. [CI 38910026996](https://github.com/nssang00/chatgpt-write-test/actions/runs/38910026996).
+- [x] SharedBuffer마다 192비트 무작위 grant를 생성하여 ACK의
+  requestId뿐 아니라 해당 실제 할당의 grant도 검사.
+- [x] 협조적 ACK로 돌려받을 수 없는 **문서당 누적 전송 32MiB**
+  제한 구현. 새 문서의 선행 1KiB + 1MiB 반복 31회 허용 후
+  다음 1MiB 차단을 실제 브라우저에서 검증:
+  [CI 38911699700](https://github.com/nssang00/chatgpt-write-test/actions/runs/38911699700).
+- [ ] 실제 renderer process crash/close 처리 및 재진입, 다중
+  WebView 격리, 수십 분 이상 장기 메모리 압력, 악성 ACK의
+  즉시 재사용·비정상 종료 방어 검증.
 
 주의: release-ack은 **협조적 회계 처리**이며, JS 측 `releaseBuffer()`
-실행의 증명이 아니다. 임의의 JS가 ack를 위조하면 회계 제한을
-우회할 수 있으므로, 보안/메모리 완전 격리를 주장하거나 기본
-`xytron` 바이너리 전송으로 자동 승격하지 않는다.
+실행의 증명이 아니다. 현 문서가 유효 grant를 알고 ACK를 위조해도
+**미확인 전송량** 한도는 우회 가능하다. 하지만 같은 문서 내에서
+누적 32MiB 상한은 복원되지 않는다. 여러 문서/브라우저에서
+반복적으로 리로드하는 경우까지 메모리를 완전히 제한하는 것은
+아니다. 기본 `xytron` 바이너리 전송으로 자동 승격하지 않는다.

@@ -219,8 +219,13 @@ See [macOS/WebKit platform plan](MACOS_WEBKIT_PORT_PLAN_KO.md).
 - [x] JS에서 1MiB SharedBuffer 해제와 release-ack을 의도적으로
   누락한 상태에서 추가 전송 제한 및 reload 무효화 E2E 통과:
   [CI 38878657939](https://github.com/nssang00/chatgpt-write-test/actions/runs/38878657939).
-- [ ] 오래된 문서 ACK 위조, renderer crash/close, 장기 메모리 압력,
-  동시에 다수 문서의 quota 경합 검증 전 공개 API 자동 전환 금지.
+- [x] 동일 requestId 재사용 시 이전 문서 토큰/이전 전송 grant
+  ACK 위조 및 중복 ACK 거부 E2E:
+  [CI 38910026996](https://github.com/nssang00/chatgpt-write-test/actions/runs/38910026996).
+- [x] 복원 불가 문서 누적 32MiB cap 및 1MiB×31회 후 차단
+  E2E: [CI 38911699700](https://github.com/nssang00/chatgpt-write-test/actions/runs/38911699700).
+- [ ] renderer crash/close, 다중 WebView quota 격리, 장기 메모리
+  압력 검증 및 제품 모드 정책 결정 전 공개 API 자동 전환 금지.
 - [ ] full baseline 5세션×5,000 표본, encode/decode 단계별 trace,
   Native→JS LAT-03, WebView2 고급 SharedBuffer 수명·보안 테스트.
 - [x] WebView2 Base64 Binary 프레이밍 예비 실측: 64KiB p50
