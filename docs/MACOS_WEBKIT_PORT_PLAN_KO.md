@@ -60,6 +60,18 @@
   테스트는 XCTest/호스트 재현성을 검증해 추가한다.
 - [ ] .app/SDK 패키징 및 배포 테스트. 서명·공증은 추후 명시적 인증서/팀 구성.
 
+### macOS 브릿지 지연시간 기준선
+
+- [ ] ARM64/Intel WKWebView의 `xytron.math.add()` JS→Native→JS RTT
+  실측(p50/p95/p99).
+- [ ] Native→JS `execute()` RTT, `postMessage`+ack,
+  ArrayBuffer/typed-array 크기별 응답 및 큐잉(1/8/32) 실측.
+- [ ] macOS 시스템 WebKit 버전·Runner image·아키텍처를 기록해
+  결과를 Windows/Linux의 절대 엔진 성능 순위로 오용하지 않음.
+- [ ] WebKitGTK가 실제 구현되면 동일 벤치마크 매트릭스에 추가.
+
+참조: [공통 브릿지 지연시간 벤치마크 계획](XYTRON_BRIDGE_LATENCY_BENCHMARK_KO.md).
+
 ## 2. Linux WebKitGTK 선택 엔진
 
 - [ ] WebKitGTK 4.1 + GTK3 pkg-config/headers 지원 탐색 및 최소 페이지 로드.

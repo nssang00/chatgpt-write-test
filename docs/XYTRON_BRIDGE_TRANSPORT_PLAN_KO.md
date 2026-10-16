@@ -35,6 +35,14 @@
    - [ ] WebView2의 현재 JSON byte-number-array 성능 개선: control envelope + raw binary.
    - [ ] Python/C# worker IPC의 스칼라/64KiB 제약 해소, framing/limit/backpressure,
      bytes/byte[] 왕복·worker crash·cancel 검증.
+2.5. **P1 브릿지 호출 지연시간 벤치마크**
+   - [ ] 공통 실브라우저 fixture로 JS→Native RPC와 Native→JS execute RTT.
+   - [ ] postMessage+ack, Binary/ArrayBuffer, cold/warm, 1/8/32 동시성 측정.
+   - [ ] Windows WebView2·CEF / Linux CEF / macOS WKWebView(ARM/Intel)
+     p50·p95·p99·처리량 기준선과 CI 원본 아티팩트 확보.
+   - [ ] Python/C# worker 경로는 실제 IPC가 구현된 후 별도 측정.
+   - [ ] 현 단계는 **계획**이며 실측값·속도 SLA는 아직 없음.
+     상세: [브릿지 지연시간 측정 계획](XYTRON_BRIDGE_LATENCY_BENCHMARK_KO.md).
 3. **P1 Plugin Resource Provider + fetch**
    - [ ] core ResourceRouter / 요청/응답/stream/cancel 타입, 등록 해제.
    - [ ] 고정 `app://` 권한 있는 opaque resource URL 구현.

@@ -24,6 +24,20 @@ those boundaries. A mock or header-only compile does not satisfy an E2E gate.
 | A1-LIFE-01 | Rapid open/close, simultaneous objects, in-flight destroy/unload: no UAF, no permanent busy | Required | Required | Required | PARTIAL: Core regressions |
 | A1-DOC-01 | Follow quickstart in clean CI environment; package licensed and reproducible | Required | Required | Required | NOT IMPLEMENTED |
 
+## Additional performance observation matrix (not a new Scope A1 release gate)
+
+| ID | Measurement | Platforms | Status |
+| --- | --- | --- | --- |
+| PERF-BRIDGE-01 | Real JS → Native → JS tiny RPC RTT; cold/warm p50/p95/p99 | Windows WebView2/CEF; Linux CEF; macOS WKWebView ARM/Intel | **PLANNED — no latency numbers measured** |
+| PERF-BRIDGE-02 | Real Native → JS → Native `execute()` RTT / rejection | Same platform matrix | PLANNED |
+| PERF-BRIDGE-03 | `postMessage` + explicit ack roundtrip (not one-way latency) | Same platform matrix | PLANNED |
+| PERF-BRIDGE-04 | Binary 0B/1KiB/64KiB/1MiB and concurrency 1/8/32; ops/s | Same platform matrix | PLANNED |
+| PERF-BRIDGE-05 | Managed Python/C# worker call overhead after bytes IPC | Appropriate available browser+worker combinations | PLANNED — blocked by managed binary IPC |
+
+[Measurement methodology](XYTRON_BRIDGE_LATENCY_BENCHMARK_KO.md).
+GitHub-hosted runner results are diagnostic initially; set alert/release
+thresholds only after repeated baselines, without weakening security gates.
+
 ## Additional product-core gates — platform, plugins, CLI and wrappers
 
 | ID | Tested user workflow / expected result | Required platform | Status |

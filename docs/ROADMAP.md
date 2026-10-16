@@ -195,6 +195,23 @@ Scope A1 release gate stays Windows/Linux only; this adds a staged platform
 expansion without reclassifying unfinished browser tests as PASS.
 See [macOS/WebKit platform plan](MACOS_WEBKIT_PORT_PLAN_KO.md).
 
+## Phase 4.6 — JS ↔ Native bridge latency baseline (P1)
+
+- [ ] 실제 엔진 5개 Runner 조합(Linux CEF / Win CEF / Win WebView2 /
+  macOS WKWebView ARM64·Intel)에서 공통 tiny-RPC latency 측정.
+- [ ] JS→Native→JS, Native→JS→Native, one-way+ack, Binary RPC:
+  cold/warm, p50/p95/p99, concurrency 1/8/32, ops/s 수집.
+- [ ] 측정 JSON/CSV + 환경/커밋/엔진 버전 기록, 재현 가능한
+  nightly/manual CI 및 PR smoke; 타 플랫폼 숫자를 직접 순위화하지 않음.
+- [ ] Python/C# 실제 worker 비용은 별도 계측, IPC 개선 전후 비교.
+- [ ] 최초 실측 수치와 반복 분산 확인 후 회귀 경고 임계치 결정.
+  초기에는 GitHub-hosted Runner의 잡음 때문에 성능 수치만으로
+  PR을 실패 처리하지 않음.
+
+방법·완료 기준: [브릿지 지연시간 벤치마크 계획](XYTRON_BRIDGE_LATENCY_BENCHMARK_KO.md).
+이는 **P1 관측/최적화 기준선 작업**이며 NW-014 보안 작업과 Scope A1
+출시 기준을 변경하지 않는다. 아직 측정 코드/수치 없음.
+
 ## Phase 5 — Thin host adapters (MFC/WPF/WinForms basic controls in first release)
 
 - [ ] Win32
