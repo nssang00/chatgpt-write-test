@@ -614,6 +614,18 @@ public:
                                const detail::VerifiedFrameContext* ctx)
     {
         const detail::BridgeMessage parsed=detail::parseBridgeMessage(message);
+        if(parsed.type==detail::BridgeMessageType::Event)
+        {
+            // One-way messages are privileged native callbacks too. Require
+            // engine provenance and the exact active top-level navigation.
+            if(!ctx || !ctx->engineVerified || !ctx->mainFrame ||
+               !ctx->trustedContent || !ctx->frameId || !ctx->navigation ||
+               !trustedFrame_.engineVerified ||
+               !trustedFrame_.mainFrame || !trustedFrame_.trustedContent ||
+               ctx->frameId!=trustedFrame_.frameId ||
+               ctx->navigation!=trustedFrame_.navigation)
+                return;
+        }
         if(parsed.type==detail::BridgeMessageType::Request)
         {
             for(std::size_t i=0;i<managedWorkers_.size();++i)

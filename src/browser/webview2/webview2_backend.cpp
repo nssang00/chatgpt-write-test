@@ -476,8 +476,10 @@ HRESULT WebView2Backend::installHandlers()
                         if(parsed.type==BridgeMessageType::Event &&
                            (parsed.eventName.empty() || parsed.eventName.size()>256))
                             return S_OK;
-                        if(parsed.type==BridgeMessageType::Request)
+                        if(parsed.type==BridgeMessageType::Request ||
+                           parsed.type==BridgeMessageType::Event)
                         {
+                            // Independently authenticate one-way messages.
                             VerifiedFrameContext ctx;
                             ctx.frameId=1; // engine top-level event slot
                             ctx.navigation=navigation_;

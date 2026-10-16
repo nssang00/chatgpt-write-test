@@ -173,11 +173,26 @@
     ensure(pong instanceof ArrayBuffer &&
            Array.from(new Uint8Array(pong)).join(",") === "0,127,255",
            "Native postMessage Binary was not an ArrayBuffer");
+    const backing = new Uint8Array([99,0,127,255,99]);
+    const view = backing.subarray(1, 4);
     const checked = await awaitMessage("test.message.binary.ok", () =>
-      xytron.postMessage("test.message.binary",
-        new Uint8Array([0,127,255]).buffer));
+      xytron.postMessage("test.message.binary", view));
     ensure(checked && checked.valid === true,
-           "JS postMessage ArrayBuffer did not reach native as Binary");
+           "Sliced JS Uint8Array did not reach native as Binary");
+    const direct = await xytron.test.binaryEcho(view);
+    ensure(direct instanceof ArrayBuffer &&
+           Array.from(new Uint8Array(direct)).join(",") === "0,127,255",
+           "TypedArray RPC roundtrip failed");
+    const nested = await xytron.test.binaryNested({
+      frame: new DataView(backing.buffer, 1, 3),
+      children: [view]
+    });
+    ensure(nested.frame instanceof ArrayBuffer &&
+           nested.children[0] instanceof ArrayBuffer &&
+           Array.from(new Uint8Array(nested.frame)).join(",") === "0,127,255" &&
+           Array.from(new Uint8Array(nested.children[0])).join(",") === "0,127,255",
+           "Nested DataView/Uint8Array RPC conversion failed");
+    await xytron.test.checkpoint("binary-typed-view-parity-ok");
     await xytron.test.checkpoint("oneway-message-binary-ok");
 
     // Real browser: deadline and AbortSignal must settle the JS Promise,

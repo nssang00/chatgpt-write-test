@@ -94,6 +94,13 @@ public:
             webview_.postMessage("test.message.binary.ok", Any(result));
         });
 
+        webview_.bind("test.binaryEcho", [](const nativeweb::Binary& bytes) {
+            return bytes;
+        });
+        webview_.bind("test.binaryNested", [](const VariantDict& value) {
+            return value;
+        });
+
         webview_.bind("test.binary", []() {
             nativeweb::Binary bytes;
             bytes.push_back(0);

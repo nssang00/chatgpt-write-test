@@ -25,11 +25,13 @@
    - [ ] 브라우저 CI 통과 확인 및 문서/구현 실제 상태 동기화.
    - [x] 단방향 event에 stale session token 재전송 방어 브라우저 테스트 추가.
    - [x] native 메시지 콜백 예외 격리 및 Core regression 추가.
+   - [x] 단방향 메시지도 verified frame/navigation을 Core까지 전달하여 검사.
    - [ ] NW-014: old renderer in-flight IPC/navigation/frame 재사용 경쟁,
      method/event grant 강화. 이벤트에 권한 없는 채널 접근을 허용하지 않을 정책 필요.
 2. **P1 기본 바이너리 계약 완성**
    - [x] `Binary`와 `ByteArray` 이름 동일화 (소유형 std::vector<unsigned char>).
-   - [ ] CEF typed-array 입력 (Uint8Array/DataView 포함) 변환.
+   - [x] CEF typed-array 입력 (subarray/DataView offset·중첩 구조 포함) 변환.
+     - [ ] 신규 E2E의 3개 엔진 조합 CI 통과 확인.
    - [ ] WebView2의 현재 JSON byte-number-array 성능 개선: control envelope + raw binary.
    - [ ] Python/C# worker IPC의 스칼라/64KiB 제약 해소, framing/limit/backpressure,
      bytes/byte[] 왕복·worker crash·cancel 검증.

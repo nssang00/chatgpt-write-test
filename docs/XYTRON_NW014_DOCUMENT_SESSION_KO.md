@@ -5,6 +5,10 @@
 JavaScript ↔ C++ 메시지가 새 문서의 권한으로 처리되지 않도록 한다.
 
 ## 구현
+- JS → Native fire-and-forget event도 엔진 제공 top-frame/navigation
+  프레임 컨텍스트를 Core에 전달한다. Core는 활성 trusted frame과
+  일치하지 않는 event를 무응답 폐기한다. 실제 과거 렌더러 in-flight
+  race 및 리사이클 조건은 여전히 별도 E2E/구현 과제다.
 - 메인 프레임의 네이티브 내비게이션 이벤트에서 이전 토큰을 폐기하고 새 토큰을 발급한다.
 - 토큰은 24바이트(192비트) OS 난수의 48자리 소문자 16진수이다.
   - Windows: `BCryptGenRandom(BCRYPT_USE_SYSTEM_PREFERRED_RNG)`

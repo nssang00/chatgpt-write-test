@@ -667,8 +667,19 @@ bool CefBackend::onProcessMessage(
         if (channel.empty() || channel.size()>256)
             return true;
         if (listener_)
-            listener_->onBridgeMessage(makeEventMessage(
-                channel,cefValueToAny(list->GetValue(1))));
+        {
+            VerifiedFrameContext ctx;
+            ctx.frameId=1; // Authenticated engine main-frame slot.
+            ctx.navigation=navigation_;
+            ctx.engineVerified=mainFrameReady_ &&
+                !activeMainFrameIdentifier_.empty() &&
+                frame->GetIdentifier().ToString()==activeMainFrameIdentifier_;
+            ctx.mainFrame=frame->IsMain();
+            ctx.trustedContent=trustedEntryDocument(
+                trustedEntryUrl_,frame->GetURL().ToString(),ctx.mainFrame);
+            listener_->onVerifiedBridgeMessage(
+                makeEventMessage(channel,cefValueToAny(list->GetValue(1))),ctx);
+        }
         return true;
     }
 
