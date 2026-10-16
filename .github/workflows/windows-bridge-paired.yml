@@ -56,6 +56,11 @@ jobs:
           & build/webview2/bin/nativeweb_webview2_sharedbuffer_probe.exe |
             Tee-Object -FilePath build/sharedbuffer-probe.log
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Summarize same-page SharedBuffer vs Base64 transport
+        shell: pwsh
+        run: |
+          python tools/summarize_sharedbuffer_probe.py --log build/sharedbuffer-probe.log --output-dir build/bridge-paired
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Three paired rounds, alternating engine order
         shell: pwsh
         timeout-minutes: 20

@@ -16,58 +16,78 @@ namespace {
 const char kEntry[]="app://desktop/sharedbuffer_probe.html";
 
 const char kHtml[]=R"XYTRON_HTML(<!doctype html><html><head>
-<meta charset="utf-8"><title>WebView2 SharedBuffer native probe</title>
+<meta charset="utf-8"><title>WebView2 Base64 vs SharedBuffer</title>
 </head><body><script>
 (() => {
   'use strict';
-  const sizes = [
-    ...Array(25).fill(1024), ...Array(20).fill(65536),
-    ...Array(8).fill(1048576)
-  ];
-  let next=0, sentAt=0;
+  // Two paths have the same JS->Native control event and the same byte
+  // pattern. Alternate their order to reduce first/second mover effects.
+  const work=[];
+  for(const [bytes,count] of [[1024,25],[65536,20],[1048576,8]]) {
+    for(let i=0;i<count;++i) {
+      if(i%2) work.push({transport:'shared',size:bytes},
+                       {transport:'base64',size:bytes});
+      else work.push({transport:'base64',size:bytes},
+                     {transport:'shared',size:bytes});
+    }
+  }
+  let current=null, nextIndex=0, startedAt=0, releases=0;
   const records=[];
-  const begin=()=> {
-    if (next === sizes.length) {
+  const fail=(error)=>xytron.postMessage('probe.failure',String(error));
+  const checkBytes=(bytes)=>{
+    if(bytes.byteLength!==current.size) throw Error('Buffer length mismatch');
+    for(let i=0;i<bytes.length;++i)
+      if(bytes[i]!==((i*37+17)&255))
+        throw Error('Buffer byte mismatch '+i);
+  };
+  const request=()=>{
+    if(nextIndex===work.length) {
       xytron.postMessage('probe.complete',{samples:records,
-        js_clock:'performance.now',release_count:records.length});
+        js_clock:'performance.now',release_count:releases});
       return;
     }
-    const size=sizes[next];
-    const id=next++;
-    sentAt=performance.now();
-    xytron.postMessage('probe.request',{id,size});
+    current=work[nextIndex];
+    const id=nextIndex++;
+    startedAt=performance.now();
+    xytron.postMessage(current.transport==='shared' ?
+      'probe.shared.request' : 'probe.base64.request',{id,size:current.size});
   };
+  const received=(transport, buffer)=>{
+    if(!current||current.transport!==transport)
+      throw Error('Unexpected probe path '+transport);
+    // Capture RTT *before* validating the bytes. The same control event and
+    // full-content validation are used for both paths, but excluded from RTT.
+    const elapsed=performance.now()-startedAt;
+    checkBytes(new Uint8Array(buffer));
+    records.push({transport,size:current.size,elapsed_ms:elapsed});
+  };
+  xytron.onMessage('probe.base64.payload',value=>{
+    try {
+      if(!(value instanceof ArrayBuffer)) throw Error('Expected ArrayBuffer');
+      received('base64',value);
+      request();
+    } catch(e) { fail(e); }
+  });
   chrome.webview.addEventListener('sharedbufferreceived',e=>{
     let buffer;
     try {
-      const metadata=e.additionalData;
-      if(!metadata || metadata.type!=='xytron.shared.probe')
-        throw Error('invalid shared metadata');
-      const id=metadata.id, expectedSize=sizes[id];
-      if(id!==records.length || metadata.size!==expectedSize)
-        throw Error('unexpected shared buffer response');
+      const meta=e.additionalData;
+      if(!meta||meta.type!=='xytron.shared.probe' ||
+         !current||current.transport!=='shared'||
+         meta.id!==nextIndex-1||meta.size!==current.size)
+        throw Error('Invalid shared buffer metadata');
       buffer=e.getBuffer();
-      const bytes=new Uint8Array(buffer);
-      if(bytes.byteLength!==expectedSize)
-        throw Error('SharedBuffer size mismatch');
-      // Validate the whole region (not just the first and last byte).
-      for(let i=0;i<bytes.length;++i) {
-        if(bytes[i]!==((i*37+17)&255))
-          throw Error('SharedBuffer content mismatch at '+i);
-      }
-      const elapsed=performance.now()-sentAt;
-      records.push({size:expectedSize,elapsed_ms:elapsed});
+      received('shared',buffer);
       chrome.webview.releaseBuffer(buffer);
       buffer=null;
-      begin();
-    } catch(error) {
-      if(buffer) {
-        try { chrome.webview.releaseBuffer(buffer); } catch(_) {}
-      }
-      xytron.postMessage('probe.failure',String(error));
+      releases++;
+      request();
+    } catch(e) {
+      if(buffer) { try { chrome.webview.releaseBuffer(buffer); } catch(_) {} }
+      fail(e);
     }
   });
-  begin();
+  request();
 })();
 </script></body></html>)XYTRON_HTML";
 
@@ -103,23 +123,30 @@ public:
                 return;
             const VariantDict& envelope=AnyCast<const VariantDict&>(message);
             const Any& body=envelope.at("payload");
-            if(decoded.eventName=="probe.request") {
+            if(decoded.eventName=="probe.shared.request" ||
+               decoded.eventName=="probe.base64.request") {
                 const VariantDict& payload=AnyCast<const VariantDict&>(body);
                 const int requestId=AnyCast<int>(payload.at("id"));
                 const int size=AnyCast<int>(payload.at("size"));
-                if(requestId<0 || requestId>=53 ||
+                if(requestId<0 || requestId>=106 ||
                    (size!=1024 && size!=65536 && size!=1048576))
                     throw std::runtime_error("Invalid shared buffer request");
                 nativeweb::Binary bytes(static_cast<std::size_t>(size));
                 for(std::size_t i=0;i<bytes.size();++i)
                     bytes[i]=static_cast<unsigned char>((i*37+17)&255);
-                if(!backend_->postReadOnlySharedBufferProbe(bytes,requestId))
-                    throw std::runtime_error("WebView2 SharedBuffer API unavailable");
+                if(decoded.eventName=="probe.shared.request") {
+                    if(!backend_->postReadOnlySharedBufferProbe(bytes,requestId))
+                        throw std::runtime_error("WebView2 SharedBuffer API unavailable");
+                } else {
+                    backend_->postBridgeMessage(
+                        nativeweb::detail::makeEventMessage(
+                            "probe.base64.payload",Any(bytes)));
+                }
             } else if(decoded.eventName=="probe.complete") {
                 const VariantDict& payload=AnyCast<const VariantDict&>(body);
                 const VariantList& samples=AnyCast<const VariantList&>(
                     payload.at("samples"));
-                if(samples.size()!=53u ||
+                if(samples.size()!=106u ||
                    AnyCast<int>(payload.at("release_count"))!=53)
                     throw std::runtime_error("Incomplete shared buffer run");
                 std::cout << "xytron-sharedbuffer-probe-json:"

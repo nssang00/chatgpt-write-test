@@ -81,7 +81,8 @@
   **실험용 코드**이며, 공개 JS/RPC 바이너리 규약이 바뀌지 않는다.
 - 실제 WebView2 앱 리소스 문서에서 엔진 검증된 메인 프레임 이벤트로
   요청하고, 읽기 전용 `ICoreWebView2SharedBuffer`를 Native에서 생성,
-  복사한 뒤 `PostSharedBufferToScript`로 전달한다.
+  복사한 뒤 `PostSharedBufferToScript`로 전달한다. 같은 앱 문서와 같은
+  요청·검증 로직으로 기존 Base64 Native→JS 이벤트 전달도 계측한다.
 - JS는 `sharedbufferreceived`에서 크기/바이트를 검증하고
   `releaseBuffer()`를 반드시 호출하며, Native는 Post 이후 `Close()`.
 - [ ] Windows 브라우저 E2E에서 1KiB/64KiB/1MiB 크기별 데이터
@@ -90,3 +91,9 @@
   검증 전에는 `WebView::postMessage`에 자동 사용 금지.
 - 이 실험은 JS→Native 바이너리 RPC 전송 최적화가 아니고,
   Native→JS 공유 버퍼의 별도 가능성 확인이다.
+
+**SharedBuffer 실험의 주의:** Native→JS 전송 실험에는 JS→Native
+제어 요청과 Native 바이트 채우기, UI 스케줄링이 포함된다. 본 측정은
+독립된 tiny RPC/64KiB `bench.echo`와 같은 지표가 아니다. API 지원 여부,
+버퍼 검증·해제·문서 세션 안전성을 확인한 뒤 실제 앱 전송 계약으로
+승격할 수 있다.
