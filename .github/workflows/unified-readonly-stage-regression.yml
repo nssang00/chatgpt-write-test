@@ -11,6 +11,7 @@ on:
       - feature/unified-unity-v58-6-0-dpi-evidence-integrity
       - feature/unified-unity-v58-6-0-ime-monitor-scale-diag
       - feature/unified-unity-v58-6-0-persistent-player-cache
+      - feature/unified-product-p0-upm-automation
   workflow_dispatch:
 permissions:
   contents: read
@@ -35,7 +36,7 @@ jobs:
         run: |
           $ErrorActionPreference='Stop'
           $r='Integration/UnityUnified-v58.6.0-preview'
-          foreach($name in @('verify_dual_player.py','verify_cef_bootstrap.py','verify_integration.py','verify_screen_automation_contract.py','verify_cube_3d.py','verify_front_uv_css.py','verify_manual_compatibility.py')){
+          foreach($name in @('verify_dual_player.py','verify_cef_bootstrap.py','verify_integration.py','verify_screen_automation_contract.py','verify_cube_3d.py','verify_front_uv_css.py','verify_manual_compatibility.py','verify_product_preview.py')){
             python "$r/Validation/$name"
             if($LASTEXITCODE -ne 0){throw "Python contract failed: $name"}
           }
@@ -61,6 +62,12 @@ jobs:
         run: |
           & 'Integration/UnityUnified-v58.6.0-preview/Validation/Test-UnityPlayerCache.ps1'
           if(-not $?){throw 'Unity Player cache fixture failed'}
+      - name: Product UPM preview export and negative-path fixtures (no Unity Player)
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          & 'Integration/UnityUnified-v58.6.0-preview/Validation/Test-UnityProductPackage.ps1'
+          if(-not $?){throw 'Product UPM export fixture failed'}
       - name: Front-face screenshot marker scanner positive and negative fixtures
         shell: powershell
         run: |
