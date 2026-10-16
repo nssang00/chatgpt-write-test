@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using Company.WebView.Unified.Experimental;
@@ -7,9 +8,13 @@ internal sealed class RecordingBackend : IUnifiedBackend
 {
     public bool Opened, Closed, Disposed, FailOpen;
     public int Calls, Pumps, Resizes, JS, Posts;
+    public readonly Queue<string> Incoming=new Queue<string>();
+    public bool AllowMessages,AllowScripts;
     public bool IsReady => Opened && !Disposed;
     public bool IsShutdownComplete => Closed;
-    public WebViewCapabilities Capabilities { get; } = new WebViewCapabilities { Navigation=true, TextureSurface=true };
+    public WebViewCapabilities Capabilities => new WebViewCapabilities {
+        Navigation=true,TextureSurface=true,Messages=AllowMessages,ScriptExecution=AllowScripts
+    };
     public void Open(UnifiedWebViewOptions options) { Opened=true; if (FailOpen) throw new InvalidOperationException("expected failure"); }
     public void LoadUrl(string s) { Calls++; }
     public void Reload() { Calls++; }
@@ -20,7 +25,10 @@ internal sealed class RecordingBackend : IUnifiedBackend
     public void SetBounds(int x,int y,int w,int h) { Resizes++; }
     public void NotifyParentMoved() { }
     public void Pump() { Pumps++; }
-    public bool TryReadMessage(out string message) { message=null;return false; }
+    public bool TryReadMessage(out string message) {
+        if(Incoming.Count==0){message=null;return false;}
+        message=Incoming.Dequeue();return true;
+    }
     public void PostMessage(string data) { Posts++; }
     public void ExecuteJavaScript(string script) { JS++; }
     public void Close() { Closed=true; }
@@ -68,6 +76,28 @@ internal static class ContractTests
         var fail=new RecordingBackend{FailOpen=true};
         Expect<InvalidOperationException>(()=>UnifiedWebView.CreateCore(Opt(PresentationMode.Texture,TargetKind.RawImage),_=>fail));
         Check(fail.Disposed,"failed-open cleanup");
+
+        var eventsBackend=new RecordingBackend { AllowMessages=true, AllowScripts=true };
+        var events=new List<string>();
+        var messaging=UnifiedWebView.CreateCore(Opt(PresentationMode.Overlay,TargetKind.ScreenRect),_=>eventsBackend);
+        messaging.MessageReceived += msg => events.Add(msg);
+        eventsBackend.Incoming.Enqueue("한글 가나다 😀");
+        eventsBackend.Incoming.Enqueue("event-json:{\"id\":1}");
+        messaging.Pump();
+        Check(events.Count==2 && events[0]=="한글 가나다 😀","Unicode/emoji message delivery");
+        Check(events[1].Contains("id"),"JSON-like payload is passed unchanged");
+        messaging.PostMessage("Hello");messaging.ExecuteJavaScript("42");
+        Check(eventsBackend.Posts==1 && eventsBackend.JS==1,"messages/script dispatch to capable backend");
+        Expect<ArgumentNullException>(()=>messaging.PostMessage(null));
+        Expect<ArgumentException>(()=>messaging.ExecuteJavaScript("  "));
+        for(int i=0;i<40;i++)eventsBackend.Incoming.Enqueue("m"+i);
+        messaging.Pump();
+        Check(events.Count==34 && eventsBackend.Incoming.Count==8,"Pump drains bounded 32 messages");
+        messaging.Pump();
+        Check(events.Count==42 && eventsBackend.Incoming.Count==0,"Pending messages drain on next Pump");
+        messaging.Dispose();messaging.Dispose();
+        Check(eventsBackend.Disposed,"Dispose is idempotent");
+        Expect<ObjectDisposedException>(()=>messaging.Pump());
         var op=Opt(PresentationMode.Texture,TargetKind.RawImage);
         op.CefSubprocessPath="compile-only";op.CefCachePath="compile-only";
         using(var cef=UnifiedWebView.Create(op)) { cef.LoadUrl("about:blank");cef.Pump();cef.Resize(640,480);cef.Close(); }
