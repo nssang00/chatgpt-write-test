@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+<PropertyGroup>
+ <TargetFramework>net8.0</TargetFramework>
+ <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+ <DefineConstants>UNITY_STANDALONE_WIN</DefineConstants>
+ <Nullable>disable</Nullable>
+ <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+ <NoWarn>CS0169;CS0414;CS0649</NoWarn>
+</PropertyGroup>
+<ItemGroup>
+ <Compile Include="../Runtime/UnifiedWebViewPanel.cs" />
+ <Compile Include="../ExistingRuntime/UnifiedWebView.cs" />
+ <Compile Include="../ExistingRuntime/CefTextureBackendBridge.cs" />
+ <Compile Include="../ExistingRuntime/WebView2OverlayBackendBridge.cs" />
+ <Compile Include="../../Tests/LegacyCefCompileStub.cs" />
+ <Compile Include="ProductPanelCompileStub.cs" />
+</ItemGroup>
+</Project>
+
