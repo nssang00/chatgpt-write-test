@@ -20,6 +20,21 @@ for required in ['GetCefPackageFromBundle','Get-FileHash','SHA256SUMS.txt',
  'CEF runtime','player-runtime-evidence.json','PENDING_MANUAL',
  'Compress-Archive -LiteralPath $safe']:
  assert required in ps, required
+cache=(dual/'UnityPlayerCache.ps1').read_text(encoding='utf-8')
+for required in ("Get-DualPlayerCacheKey", "Test-DualPlayerCache", "PlayerCache.key",
+                 "SHA256", "CompanyWebViewCefTextureProbe.dll", "libcef.dll",
+                 "UnityProject", "Runtime", "CompanyWebView2UnifiedPreview.dll"):
+    if required == "UnityProject":
+        assert required in ps, required
+    else:
+        assert required in cache, required
+for required in ("$summary.buildCache='HIT'", "$summary.buildCache='MISS'",
+                 "if(Test-DualPlayerCache -Work $work -Key $key)",
+                 "[IO.File]::Open((Join-Path $work 'build.lock')",
+                 "Set-Content -LiteralPath $marker -Value $key",
+                 "LOCALAPPDATA/CWV58/pc"):
+    assert required in ps, required
+assert ps.index("if(Test-DualPlayerCache -Work $work -Key $key)") < ps.index("StageCef $CefRuntimeDir $dest")
 assert 'Run-Dual.ps1' in cmd and 'oneclick_bundle' in guide
 assert 'UnityProject' not in ps.split("$safe=@(")[1].split(")")[0]
 assert '50e8c2' not in ps, 'Do not invent source identity'
