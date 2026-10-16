@@ -51,3 +51,12 @@ The isolated Unity test cube's material was corrected from `scale=(1,-1), offset
 ### 2026-10-16: Separate manual IME/DPI/Z-order evidence mode
 
 Use outer `Run-Manual-Compatibility.cmd` to run a **five-minute** non-screenshot session with real WebView2 keyboard input and user-marked scale/z-order verdicts. The HTML page emits ONLY whitelisted event labels (trusted IME composition start/end, throttled input count, explicit user verdicts); it never reads or sends the typed text. Unity also samples its OWN HWND child bounds, GetDpiForWindow, foreground transitions, minimize/restore counts. See `DualPlayer/MANUAL_COMPATIBILITY_KO.md` for the step-by-step Korean checklist. Results remain `PENDING_MANUAL` or `MANUAL_REVIEW_REQUIRED` rather than certifying any device-scale UI via CI. Run a separate session for each supported display scale; do not mark a scale that was not actually tested.
+
+### 2026-10-16: 반복 다운로드/Unity 프로젝트 재빌드 방지
+
+- 기존 CEF v58.4.4 바이너리 캐시는 `%LOCALAPPDATA%\CompanyWebView\CEF-v58.4.4\Build\cef-native\stage`에 유지되며 이미 있는 경우 재다운로드하지 않습니다. `cef_binary_...tar.bz2`는 최초 빌드 시 또는 CEF stage가 없고 자동 부트스트랩해야 할 때만 요청됩니다.
+- 이번 수정으로 **Unity 프로젝트/Player까지 영구 캐시**합니다. `%LOCALAPPDATA%\CWV58\pc\<24-char-key>\UnityProject`와 `Player\UnifiedDualPreview.exe`를 보존합니다. 이전 버전의 `%LOCALAPPDATA%\CWV58\dual-날짜`와 달리 매 실행 시 새 프로젝트를 만들지 않습니다.
+- 같은 ZIP의 소스·Unity Editor 설치·CEF 관리 C#·네이티브 빌드 식별자가 변하지 않으면 다음 실행부터 `[DUAL CACHE] HIT`로 Unity Import / BuildPlayer / 대용량 CEF 리소스 재복사를 건너뜁니다. 최초 실행이나 입력 변경 시 `[DUAL CACHE] MISS`로 한 번 빌드합니다. `summary.json`의 `buildCache`와 `playerCacheKey`로 확인합니다.
+- 캐시 파일 일부가 없어졌거나 빌드 실패로 완료 마커가 없다면 HIT로 오판하지 않고 다시 빌드합니다. 동일한 캐시 키로 동시에 실행하면 공유 Player 변경을 막기 위해 명확한 오류로 중단합니다.
+- 결과 ZIP은 여전히 테스트별로 새로 생성되며 IME·DPI·Z-order 판정은 이전과 동일하게 실제 실기 검증 대상입니다. Windows Unity 자체 패키지의 최초 설치/Unity Hub 다운로드는 이 캐시의 제어 범위 밖입니다.
+- **기존 성공한 CEF Native v58.4.4 / WebView2 v58.5.2 코드는 수정하지 않습니다.**
