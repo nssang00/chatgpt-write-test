@@ -50,6 +50,7 @@ const char kHtml[]=R"XYTRON_HTML(<!doctype html><html><head>
   }
   let current=null, nextIndex=0, startedAt=0, releases=0;
   let quotaSummary=null, quotaReceived=0, quotaRepeated=false;
+  let intentionallyUnreleased=null;
   const records=[];
   const maybeRepeatQuota=()=>{
     if(quotaSummary && quotaReceived===2 && !quotaRepeated) {
@@ -67,7 +68,9 @@ const char kHtml[]=R"XYTRON_HTML(<!doctype html><html><head>
   xytron.onMessage('probe.quota.repeat.result',result=>{
     if(result.accepted!==false||result.pending_bytes!==2097152)
       return fail('Missing-release quota bypassed');
-    xytron.postMessage('probe.reload');
+    xytron.postMessage('probe.reload',{
+      intentionally_unreleased:intentionallyUnreleased ? 1 : 0
+    });
   });
   const fail=(error)=>xytron.postMessage('probe.failure',String(error));
   const checkBytes=(bytes,size)=>{
@@ -114,10 +117,16 @@ const char kHtml[]=R"XYTRON_HTML(<!doctype html><html><head>
         if(meta.size!==1048576) throw Error('Quota buffer size mismatch');
         buffer=e.getBuffer();
         checkBytes(new Uint8Array(buffer),1048576);
-        chrome.webview.releaseBuffer(buffer);
-        buffer=null;
-        // Deliberately omit cooperative ack. The host must cap subsequent
-        // transfers even if renderer releases but fails to acknowledge.
+        if(meta.id===200) {
+          // Deliberately leak a live JS mapping until reload. A normal
+          // document must not be able to send unbounded SharedBuffers.
+          intentionallyUnreleased=buffer;
+          buffer=null;
+        } else {
+          chrome.webview.releaseBuffer(buffer);
+          buffer=null;
+        }
+        // Deliberately omit cooperative ack in both cases.
         quotaReceived++;
         maybeRepeatQuota();
         return;
@@ -282,6 +291,9 @@ public:
                     nativeweb::detail::makeEventMessage(
                         "probe.quota.repeat.result",Any(result)));
             } else if(decoded.eventName=="probe.reload") {
+                const VariantDict& state=AnyCast<const VariantDict&>(body);
+                if(AnyCast<int>(state.at("intentionally_unreleased"))!=1)
+                    throw std::runtime_error("Renderer did not retain a live SharedBuffer");
                 if(!quotaChecked_ ||
                     backend_->pendingReadOnlySharedBufferBytesForTest()!=2097152u)
                     throw std::runtime_error("Expected leaked quota before reload");

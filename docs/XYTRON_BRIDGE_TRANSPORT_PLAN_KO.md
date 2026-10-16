@@ -100,3 +100,28 @@
 독립된 tiny RPC/64KiB `bench.echo`와 같은 지표가 아니다. API 지원 여부,
 버퍼 검증·해제·문서 세션 안전성을 확인한 뒤 실제 앱 전송 계약으로
 승격할 수 있다.
+
+## 2026-10-16: SharedBuffer quota + document/frame negative CI
+
+- 실험 API에 문서당 미확인 SharedBuffer **2MiB/4건** 상한,
+  requestId 중복 방지 및 검증된 메인 프레임의 명시적 release-ack
+  회계 처리를 추가했다. 문서 내비게이션 시작/브라우저 파괴 시
+  미확인 상태를 지운다.
+- [x] 실제 WebView2에서 1MiB 버퍼 5건 연속 전송 요청 시
+  2건만 허용, 3건 차단 후 추가 전송 거부.
+  [기본 안전성 CI](https://github.com/nssang00/chatgpt-write-test/actions/runs/38877466139).
+- [x] 동일 origin의 iframe에게 **메인 문서의 실제 세션 토큰**을
+  전달해 `chrome.webview.postMessage`로 이벤트를 위조해도
+  메인 프레임의 권한으로 디스패치되지 않는지 검사.
+  [iframe 음성 CI](https://github.com/nssang00/chatgpt-write-test/actions/runs/38877953065).
+- [x] WebView2 reload의 NavigationStarting에서 미확인 전송 0B로
+  reset되고, 재활성화 전 전송을 거부하는지 실브라우저 검사.
+- [ ] 일부러 **JS releaseBuffer()와 release-ack을 둘 다 누락**한
+  상태에서 재탐색/버퍼 재생성/브라우저 종료가 안전한지 추가 검증.
+- [ ] 잘못된 ack 위조, 오래된 문서/iframe의 ack, 여러 문서의
+  요청 ID 충돌, 렌더러 비정상 종료 및 장기간 메모리 압력 실험.
+
+주의: release-ack은 **협조적 회계 처리**이며, JS 측 `releaseBuffer()`
+실행의 증명이 아니다. 임의의 JS가 ack를 위조하면 회계 제한을
+우회할 수 있으므로, 보안/메모리 완전 격리를 주장하거나 기본
+`xytron` 바이너리 전송으로 자동 승격하지 않는다.

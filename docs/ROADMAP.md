@@ -211,6 +211,13 @@ See [macOS/WebKit platform plan](MACOS_WEBKIT_PORT_PLAN_KO.md).
 - [x] WebView2 native→JS SharedBuffer read-only 1KiB·64KiB·1MiB
   테스트와 JS release 동작/기존 Base64 이벤트 쌍비교 smoke:
   [실험 결과](BRIDGE_LATENCY_RESULTS_2026-10-16.md).
+- [x] WebView2 실험용 SharedBuffer 2MiB/4건 in-flight quota,
+  협조적 release-ack과 reload 무효화, 유효 토큰을 가진 same-origin iframe
+  위조 이벤트 차단 확인:
+  [전송량/내비게이션 CI](https://github.com/nssang00/chatgpt-write-test/actions/runs/38877466139) ·
+  [iframe 음성 CI](https://github.com/nssang00/chatgpt-write-test/actions/runs/38877953065).
+- [ ] releaseBuffer 누락·오래된 문서 ACK/렌더러 종료·장기 부하 검증 전
+  공개 API의 SharedBuffer 자동 전환 금지.
 - [ ] full baseline 5세션×5,000 표본, encode/decode 단계별 trace,
   Native→JS LAT-03, WebView2 고급 SharedBuffer 수명·보안 테스트.
 - [x] WebView2 Base64 Binary 프레이밍 예비 실측: 64KiB p50
