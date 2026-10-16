@@ -216,8 +216,11 @@ See [macOS/WebKit platform plan](MACOS_WEBKIT_PORT_PLAN_KO.md).
   위조 이벤트 차단 확인:
   [전송량/내비게이션 CI](https://github.com/nssang00/chatgpt-write-test/actions/runs/38877466139) ·
   [iframe 음성 CI](https://github.com/nssang00/chatgpt-write-test/actions/runs/38877953065).
-- [ ] releaseBuffer 누락·오래된 문서 ACK/렌더러 종료·장기 부하 검증 전
-  공개 API의 SharedBuffer 자동 전환 금지.
+- [x] JS에서 1MiB SharedBuffer 해제와 release-ack을 의도적으로
+  누락한 상태에서 추가 전송 제한 및 reload 무효화 E2E 통과:
+  [CI 38878657939](https://github.com/nssang00/chatgpt-write-test/actions/runs/38878657939).
+- [ ] 오래된 문서 ACK 위조, renderer crash/close, 장기 메모리 압력,
+  동시에 다수 문서의 quota 경합 검증 전 공개 API 자동 전환 금지.
 - [ ] full baseline 5세션×5,000 표본, encode/decode 단계별 trace,
   Native→JS LAT-03, WebView2 고급 SharedBuffer 수명·보안 테스트.
 - [x] WebView2 Base64 Binary 프레이밍 예비 실측: 64KiB p50

@@ -116,8 +116,12 @@
   [iframe 음성 CI](https://github.com/nssang00/chatgpt-write-test/actions/runs/38877953065).
 - [x] WebView2 reload의 NavigationStarting에서 미확인 전송 0B로
   reset되고, 재활성화 전 전송을 거부하는지 실브라우저 검사.
-- [ ] 일부러 **JS releaseBuffer()와 release-ack을 둘 다 누락**한
-  상태에서 재탐색/버퍼 재생성/브라우저 종료가 안전한지 추가 검증.
+- [x] **JS releaseBuffer()와 release-ack을 둘 다 누락**하고
+  1MiB 버퍼 참조를 유지한 채 한도 재전송 거부 및 새로고침 경계
+  무효화 실브라우저 확인:
+  [CI 38878657939](https://github.com/nssang00/chatgpt-write-test/actions/runs/38878657939).
+  이는 1개 누락 버퍼/1회 새로고침 검증이며 장기 메모리·crash 안전성
+  입증으로 해석하지 않음.
 - [ ] 잘못된 ack 위조, 오래된 문서/iframe의 ack, 여러 문서의
   요청 ID 충돌, 렌더러 비정상 종료 및 장기간 메모리 압력 실험.
 
