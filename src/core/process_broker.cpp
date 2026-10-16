@@ -133,7 +133,15 @@ public:
         if(!blocked_)return;
         sigset_t p;
         if(!wasPending_ && sigpending(&p)==0 && sigismember(&p,SIGPIPE)){
+#if defined(__APPLE__)
+            // Darwin does not expose sigtimedwait(). sigpending() above
+            // guarantees SIGPIPE is already queued and blocked on this
+            // thread, so sigwait() immediately drains only the new signal.
+            int received=0;
+            (void)sigwait(&set_,&received);
+#else
             struct timespec t={0,0};(void)sigtimedwait(&set_,NULL,&t);
+#endif
         }
         pthread_sigmask(SIG_SETMASK,&old_,NULL);
     }

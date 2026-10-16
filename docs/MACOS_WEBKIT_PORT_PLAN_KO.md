@@ -19,7 +19,9 @@
 
 - [x] `macos-15` ARM64 / `macos-15-intel` x86_64 CI 매트릭스 추가.
 - [ ] 실제 두 runner의 C++11 Core/Plugin/CLI 빌드 및 CTest 통과 확인.
-- [ ] 실패할 경우 코드/테스트를 Darwin POSIX에 맞게 수정하고 재검증.
+- [x] Darwin에는 `sigtimedwait`가 없어 `process_broker.cpp` SIGPIPE
+  cleanup을 `sigwait`로 대체 (신호 pending 검증과 block 유지).
+- [ ] ARM64/Intel 빌드·CTest로 수정 검증 완료.
 - [ ] native C++11 Core SDK 설치 + 외부 CMake 소비자 테스트.
 - [ ] ARM64/Intel runner를 각각 재현 가능한 artifact로 기록.
 - Intel runner는 GitHub 공지 기준 2027-08까지 제공 예정. 지속
