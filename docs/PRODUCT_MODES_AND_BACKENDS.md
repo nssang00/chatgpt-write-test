@@ -11,6 +11,12 @@ The shared native foundation is C/C++11, with CEF/WebView2 web-renderer
 backends and a secured JS/native bridge. Browser-engine choice is separate
 from app backend-language choice.
 
+**Additive platform roadmap (2026-10-16):** macOS uses system WKWebView as the
+preferred engine (macOS 15 ARM64/Intel Core CI first); Linux CEF stays the
+primary engine with WebKitGTK 4.1/GTK3 as a future opt-in alternative. These
+adapters are not implemented by the existing CEF/WebView2 source code and are
+not new Scope A1 release gates. See [platform port plan](MACOS_WEBKIT_PORT_PLAN_KO.md).
+
 **Standalone mode (Electron-like):** NativeWeb owns the desktop application's
 top-level OS window and lifecycle, app menu bar, **native context menu** and
 the user events for menu commands. Initial shell API includes window

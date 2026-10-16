@@ -47,7 +47,10 @@ enum class Engine
 {
     Auto,
     Cef,
-    WebView2
+    WebView2,
+    // Registered only by the corresponding platform backend.
+    WkWebView,
+    WebKitGtk
 };
 
 enum class Capability : std::uint64_t

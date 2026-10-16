@@ -1,0 +1,63 @@
+name: macOS Core Port
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/macos-core.yml'
+      - 'CMakeLists.txt'
+      - 'cmake/**'
+      - 'include/**'
+      - 'src/**'
+      - 'tests/**'
+      - 'tools/cli/**'
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  core:
+    name: macos-core-${{ matrix.arch }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: arm64
+            runner: macos-15
+          - arch: x86_64
+            runner: macos-15-intel
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Runner and Xcode
+        shell: bash
+        run: |
+          sw_vers
+          uname -m
+          xcodebuild -version
+          cmake --version
+          if [ "$(uname -m)" != "${{ matrix.arch }}" ]; then
+            echo "Unexpected runner CPU: $(uname -m)" >&2
+            exit 1
+          fi
+
+      - name: Configure C++11 Core, CLI and native plugin fixtures
+        shell: bash
+        run: |
+          cmake -S . -B build/macos \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DNATIVEWEB_BUILD_TESTS=ON \
+            -DCMAKE_CXX_STANDARD=11
+
+      - name: Build
+        run: cmake --build build/macos --config Release --parallel 2
+
+      - name: All Core, native plugin and CLI regressions
+        run: ctest --test-dir build/macos -C Release --output-on-failure --timeout 120
+
+      - name: Repeat async cancellation regression
+        run: ctest --test-dir build/macos -C Release -R '^core\.bridge_async$' --repeat until-fail:10 --output-on-failure

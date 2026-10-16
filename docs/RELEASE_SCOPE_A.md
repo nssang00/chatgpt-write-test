@@ -115,6 +115,13 @@ to enforce the first-release boundary.
   **xytron CLI** generated standalone desktop app + native host consumer;
   not necessarily a platform-wide system installer.
 
+## Staged macOS and WebKitGTK expansion (outside Scope A1)
+
+Mac ARM64/x64 Core CI, WKWebView implementation, and Linux WebKitGTK 4.1
+are additive roadmap items (see [port plan](MACOS_WEBKIT_PORT_PLAN_KO.md)).
+They do not change approved Scope A1 release criteria or imply macOS browser
+support is already shipped. WKWebView actual-browser E2E is a separate gate.
+
 ## Release policy
 
 All required gates in `docs/ACCEPTANCE_CRITERIA.md` must be green.

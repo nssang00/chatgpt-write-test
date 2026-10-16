@@ -161,6 +161,33 @@ Linux   / CEF
 
 가 가능한 한 동일 public API contract를 통과한다.
 
+## Phase 4.5 — macOS WKWebView and Linux WebKitGTK (additive, post-Scope-A1)
+
+- [x] Platform engine IDs `Engine::WkWebView` / `Engine::WebKitGtk` reserved.
+- [x] Platform-aware `Engine::Auto` preference: WKWebView first on macOS,
+  CEF first on Linux, WebView2 first on Windows; only linked adapters qualify.
+- [x] macOS 15 ARM64 / Intel native C++11 Core CI workflow added.
+- [ ] macOS Core + plugin regression matrix green on both GitHub runners.
+- [ ] WKWebView (.mm) adapter with Cocoa main-thread dispatch and lifetime.
+- [ ] macOS packaged `app://` URL scheme/Resource Provider and MIME/404 tests.
+- [ ] WKWebView verified main-frame+navigation+document-session bridge:
+  dotted RPC, `postMessage/onMessage`, `Binary` / `ArrayBuffer`.
+- [ ] macOS real WKWebView E2E on Actions (not only header compile or mocks).
+- [ ] macOS standalone/embedded host, .app bundle, Apple signing/notarization
+  with explicit credential configuration. No secret required for CI Core tests.
+- [ ] WebKitGTK 4.1 + GTK3 POC: determine engine-authenticated sender frame
+  provenance BEFORE granting JS -> native IPC. Do not treat session token
+  alone as engine-authenticated origin/frame identity.
+- [ ] Linux WebKitGTK real browser E2E, CEF fallback, dependency diagnostics.
+- [ ] GTK4 / WebKitGTK 6.0 follow-up after GTK3 baseline, not dual GTK linkage.
+- [ ] CPU/memory/startup/performance baselines for existing/added engines.
+
+Supported **now**: Linux CEF / Windows CEF / Windows WebView2. The new engine
+enum values and CI do NOT imply that WKWebView/WebKitGTK adapters are shipped.
+Scope A1 release gate stays Windows/Linux only; this adds a staged platform
+expansion without reclassifying unfinished browser tests as PASS.
+See [macOS/WebKit platform plan](MACOS_WEBKIT_PORT_PLAN_KO.md).
+
 ## Phase 5 — Thin host adapters (MFC/WPF/WinForms basic controls in first release)
 
 - [ ] Win32
