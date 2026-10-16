@@ -31,6 +31,10 @@ namespace Company.WebView.Unified.Experimental
         public int TrustedCompositionStarts { get; private set; }
         public int TrustedCompositionEnds { get; private set; }
         public int TrustedInputBatches { get; private set; }
+        public int TrustedCompositionUpdates { get; private set; }
+        public int TrustedBeforeInputComposingBatches { get; private set; }
+        public int TrustedInputComposingBatches { get; private set; }
+        public int TrustedKeydownComposingBatches { get; private set; }
         public string ImeCandidateVerdict { get; private set; } = "NOT_TESTED";
         public string Dpi100Verdict { get; private set; } = "NOT_TESTED";
         public string Dpi125Verdict { get; private set; } = "NOT_TESTED";
@@ -43,6 +47,17 @@ namespace Company.WebView.Unified.Experimental
         public bool Dpi100Observed { get { return observedDpis.Contains(96); } }
         public bool Dpi125Observed { get { return observedDpis.Contains(120); } }
         public bool Dpi150Observed { get { return observedDpis.Contains(144); } }
+        // The Windows monitor scale is independently reported by shcore.dll.
+        // Unlike GetDpiForWindow this can reveal scaling when the process is DPI-unaware.
+        public int MonitorScaleMin { get; private set; }
+        public int MonitorScaleMax { get; private set; }
+        public int DistinctMonitorScaleCount { get { return observedMonitorScales.Count; } }
+        public bool MonitorScale100Observed { get { return observedMonitorScales.Contains(100); } }
+        public bool MonitorScale125Observed { get { return observedMonitorScales.Contains(125); } }
+        public bool MonitorScale150Observed { get { return observedMonitorScales.Contains(150); } }
+        public int MonitorScaleReadFailures { get; private set; }
+        private readonly System.Collections.Generic.HashSet<int> observedMonitorScales =
+            new System.Collections.Generic.HashSet<int>();
         public int BoundsSamples { get; private set; }
         public int MaxBoundsDeltaPx { get; private set; }
         public int ChildOutsideClientSamples { get; private set; }
@@ -65,7 +80,7 @@ namespace Company.WebView.Unified.Experimental
             <h2 style='margin:0 0 6px'>WebView2 HWND / Windows Compatibility</h2>
             <p style='margin:4px 0 8px'>Right: real Korean IME; move/resize Unity; Alt+Tab and restore. No typed text is recorded.</p>
             <textarea id='cwv-ime' aria-label='Manual Korean IME input' rows='3' style='font:20px Segoe UI;width:96%;box-sizing:border-box' placeholder='한글 가나다 abc123 😀'></textarea>
-            <p id='cwv-counters'>Trusted IME start/end: 0 / 0; input: 0</p><p>IME composition START and END must increment during actual Hangul input. If they stay zero, the telemetry cannot confirm IME composition even if text appears.</p>
+            <p id='cwv-counters'>Trusted IME start/end: 0 / 0; input: 0</p><p id='cwv-ime-alt'>Composition update / beforeinput / input.isComposing / keydown.isComposing: 0 / 0 / 0 / 0</p><p>IME composition START and END must increment during actual Hangul input. If they stay zero, the telemetry cannot confirm IME composition even if text appears.</p>
             <div><b>1. Korean IME candidate popup and caret</b><p><button data-v='ime-pass'>PASS</button> <button data-v='ime-fail'>FAIL</button> <span id='cwv-ime-verdict'>NOT TESTED</span></p></div>
             <div><b>2. At actual Windows display scale (user-reported)</b><p>Only click PASS for the Windows Settings scale actually tested. A single 100% session does NOT test 125% or 150%. Your Unity window's reported DPI is checked separately after exit.</p>
             <p style='line-height:2'>100%: <button data-v='dpi100-pass'>PASS</button> <button data-v='dpi100-fail'>FAIL</button> <span id='cwv-dpi100-verdict'>NOT TESTED</span></p>
@@ -75,12 +90,33 @@ namespace Company.WebView.Unified.Experimental
             <p style='font-size:12px'>Verdicts are your visual observations, not automatic pass. Only test scale values actually configured. Leave the Player open until it exits and writes evidence.</p>`;
           const send=(kind)=>{chrome.webview.postMessage('compat-v1|'+kind);};
           const input=document.getElementById('cwv-ime');
-          const counts={start:0,end:0,input:0};
-          const render=()=>{document.getElementById('cwv-counters').textContent='Trusted IME start/end: '+counts.start+' / '+counts.end+'; input: '+counts.input;};
+          const counts={start:0,end:0,input:0,update:0,before:0,composingInput:0,composingKey:0};
+          const lastEmitted={};
+          const emitThrottled=(kind,ms=450)=>{
+            const now=Date.now();if(now-(lastEmitted[kind]||0)<ms)return;
+            lastEmitted[kind]=now;send(kind);
+          };
+          const render=()=>{
+            document.getElementById('cwv-counters').textContent='Trusted IME start/end: '+counts.start+' / '+counts.end+'; input: '+counts.input;
+            document.getElementById('cwv-ime-alt').textContent='Composition update / beforeinput / input.isComposing / keydown.isComposing: '+counts.update+' / '+counts.before+' / '+counts.composingInput+' / '+counts.composingKey;
+          };
           let lastInput=0;
           input.addEventListener('compositionstart',e=>{if(e.isTrusted){counts.start++;send('ime-start');render();}});
           input.addEventListener('compositionend',e=>{if(e.isTrusted){counts.end++;send('ime-end');render();}});
-          input.addEventListener('input',e=>{if(e.isTrusted){counts.input++;if(Date.now()-lastInput>350){lastInput=Date.now();send('trusted-input');}render();}});
+          // Only flags and event types: never access event.data, key, code or input.value.
+          input.addEventListener('compositionupdate',e=>{if(e.isTrusted){counts.update++;emitThrottled('ime-update');render();}});
+          input.addEventListener('beforeinput',e=>{if(e.isTrusted && (e.isComposing || e.inputType==='insertCompositionText')){
+            counts.before++;emitThrottled('beforeinput-composing');render();
+          }});
+          input.addEventListener('keydown',e=>{if(e.isTrusted && e.isComposing){
+            counts.composingKey++;emitThrottled('keydown-composing');render();
+          }});
+          input.addEventListener('input',e=>{if(e.isTrusted){
+            counts.input++;
+            if(e.isComposing){counts.composingInput++;emitThrottled('input-composing');}
+            if(Date.now()-lastInput>350){lastInput=Date.now();send('trusted-input');}
+            render();
+          }});
           document.querySelectorAll('button[data-v]').forEach(b=>b.addEventListener('click',e=>{
             if(!e.isTrusted)return;
             const code=b.getAttribute('data-v');send(code);
@@ -96,6 +132,10 @@ namespace Company.WebView.Unified.Experimental
                 case "compat-v1|ime-start": TrustedCompositionStarts++;break;
                 case "compat-v1|ime-end": TrustedCompositionEnds++;break;
                 case "compat-v1|trusted-input": TrustedInputBatches++;break;
+                case "compat-v1|ime-update": TrustedCompositionUpdates++;break;
+                case "compat-v1|beforeinput-composing": TrustedBeforeInputComposingBatches++;break;
+                case "compat-v1|input-composing": TrustedInputComposingBatches++;break;
+                case "compat-v1|keydown-composing": TrustedKeydownComposingBatches++;break;
                 case "compat-v1|ime-pass": ImeCandidateVerdict="PASS";break;
                 case "compat-v1|ime-fail": ImeCandidateVerdict="FAIL";break;
                 case "compat-v1|dpi100-pass": Dpi100Verdict="PASS";break;
@@ -128,6 +168,8 @@ namespace Company.WebView.Unified.Experimental
         [DllImport("user32.dll",CharSet=CharSet.Unicode)]
         private static extern IntPtr FindWindowEx(IntPtr parent,IntPtr after,string className,string title);
         [DllImport("user32.dll")] private static extern uint GetDpiForWindow(IntPtr hwnd);
+        [DllImport("user32.dll")] private static extern IntPtr MonitorFromWindow(IntPtr hwnd,uint flags);
+        [DllImport("shcore.dll")] private static extern int GetScaleFactorForMonitor(IntPtr monitor,out int scale);
         [DllImport("user32.dll")] private static extern IntPtr GetForegroundWindow();
         [DllImport("user32.dll")] [return:MarshalAs(UnmanagedType.Bool)]
         private static extern bool IsIconic(IntPtr hwnd);
@@ -137,6 +179,21 @@ namespace Company.WebView.Unified.Experimental
         {
             if(parent==IntPtr.Zero || Time.realtimeSinceStartup-lastCompatSampleTime<0.5f)return;
             lastCompatSampleTime=Time.realtimeSinceStartup;
+            // Query both Unity HWND DPI and independent monitor scale; either API
+            // may provide only a partial view due to Windows DPI-awareness policy.
+            IntPtr monitor=MonitorFromWindow(parent,2u); // MONITOR_DEFAULTTONEAREST
+            if(monitor!=IntPtr.Zero){
+                try{
+                    int scale;
+                    int hr=GetScaleFactorForMonitor(monitor,out scale);
+                    if(hr==0 && scale>=100 && scale<=400){
+                        observedMonitorScales.Add(scale);
+                        if(MonitorScaleMin==0 || scale<MonitorScaleMin)MonitorScaleMin=scale;
+                        if(scale>MonitorScaleMax)MonitorScaleMax=scale;
+                    }else MonitorScaleReadFailures++;
+                }catch(DllNotFoundException){MonitorScaleReadFailures++;}
+                 catch(EntryPointNotFoundException){MonitorScaleReadFailures++;}
+            }
             uint dpi=GetDpiForWindow(parent);
             if(dpi>=72 && dpi<=768){
                 observedDpis.Add((int)dpi);
