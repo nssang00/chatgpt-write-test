@@ -175,7 +175,11 @@ Linux   / CEF
 - [ ] macOS packaged `app://` URL scheme/Resource Provider and MIME/404 tests.
 - [ ] WKWebView verified main-frame+navigation+document-session bridge:
   dotted RPC, `postMessage/onMessage`, `Binary` / `ArrayBuffer`.
-- [ ] macOS real WKWebView E2E on Actions (not only header compile or mocks).
+- [x] macOS first real WKWebView E2E on ARM64+Intel Actions:
+  [38841405596](https://github.com/nssang00/chatgpt-write-test/actions/runs/38841405596),
+  advanced reverse RPC/session negative:
+  [38841804226](https://github.com/nssang00/chatgpt-write-test/actions/runs/38841804226).
+  More frame/navigation, crash/cancellation and packaging parity still pending.
 - [ ] macOS standalone/embedded host, .app bundle, Apple signing/notarization
   with explicit credential configuration. No secret required for CI Core tests.
 - [ ] WebKitGTK 4.1 + GTK3 POC: determine engine-authenticated sender frame

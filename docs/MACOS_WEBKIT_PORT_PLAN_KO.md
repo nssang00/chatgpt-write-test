@@ -37,7 +37,14 @@
   이는 완성된 adapter나 실브라우저 E2E가 아님.
 - [x] WKWebView 최소 Objective-C++ BrowserBackend adapter 구현 및
   Core RPC/event/packed app:// 리소스의 첫 실브라우저 E2E 추가.
-- [ ] 실제 Runner E2E 통과 검증 및 보안 회귀 확장.
+- [x] ARM64/Intel WKWebView 실브라우저 기본 RPC·바이너리·이벤트 E2E
+  통과: [CI 38841405596](https://github.com/nssang00/chatgpt-write-test/actions/runs/38841405596).
+- [x] Native→JS execute(Promise 응답/오류), Uint8Array offset 및
+  위조 세션 거부 실제 브라우저 테스트 통과:
+  [CI 38841804226](https://github.com/nssang00/chatgpt-write-test/actions/runs/38841804226).
+- [x] worker→Cocoa 전송을 메인 스레드로 마샬링하고 pending 작업을
+  navigation generation 및 destroy lifetime으로 무효화하도록 구현.
+- [ ] lifecycle race / iframe / same-URL reload 강화된 음성 E2E.
 - [ ] macOS 전용 Objective-C++(`.mm`) WebKit adapter 및 Cocoa window/NSView
   생성, 메인 스레드 스케줄링, destroy/navigation 안전성.
 - [ ] `Engine::WkWebView` 실제 factory 등록과 `Engine::Auto` 판정.

@@ -6,6 +6,7 @@
 #endif
 
 #include "browser/common/browser_backend.hpp"
+#include <atomic>
 #include <memory>
 
 namespace nativeweb { namespace detail {
@@ -43,6 +44,10 @@ private:
     std::string session_;
     std::uint64_t navigation_;
     bool ready_;
+    // Stable ownership across worker callbacks; only Cocoa's main thread
+    // may touch Impl / WebKit instances. Invalidate scheduled sends on reload.
+    std::shared_ptr<std::atomic<bool> > dispatchActive_;
+    std::atomic<std::uint64_t> documentEpoch_;
 };
 
 void registerWkWebViewBackendFactory();

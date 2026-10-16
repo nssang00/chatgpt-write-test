@@ -124,7 +124,8 @@ struct WkWebViewBackend::Impl
 namespace nativeweb { namespace detail {
 
 WkWebViewBackend::WkWebViewBackend()
-    : impl_(new Impl()), listener_(nullptr), navigation_(0), ready_(false)
+    : impl_(new Impl()), listener_(nullptr), navigation_(0), ready_(false),
+      dispatchActive_(new std::atomic<bool>(false)), documentEpoch_(0)
 {
 }
 
@@ -185,6 +186,7 @@ void WkWebViewBackend::create(const BrowserCreateParams& params)
         window.contentView=view;
         impl_->window=window;
     }
+    dispatchActive_->store(true);
     if (listener_) listener_->onBrowserCreated();
     load(params.source);
 }
@@ -193,6 +195,8 @@ void WkWebViewBackend::destroy()
 {
     requireMainThread();
     if (!impl_->view) return;
+    dispatchActive_->store(false);
+    documentEpoch_.fetch_add(1);
     ready_=false;
     session_.clear();
     impl_->delegate.backend=nullptr;
@@ -232,6 +236,7 @@ void WkWebViewBackend::navigationStarted(const std::string& url)
     ready_=false;
     session_.clear();
     ++navigation_;
+    documentEpoch_.fetch_add(1);
     if (listener_) listener_->onLoadStarted(url);
 }
 
@@ -297,17 +302,19 @@ void WkWebViewBackend::scriptMessage(const std::string& json,
 
 void WkWebViewBackend::postBridgeMessage(const Any& message)
 {
-    // Native RPC callbacks may arrive on arbitrary Core worker threads.
-    // Capture only weak Objective-C handles: never capture backend 'this'.
-    __weak WKWebView* weakView=impl_->view;
-    __weak XytronWKDelegate* weakDelegate=impl_->delegate;
-    if (!weakView || !weakDelegate) return;
+    // May run on a Core worker thread. Never read mutable Objective-C/Cocoa
+    // handles until execution reaches the main queue. The immutable lifetime
+    // token keeps this queued block safe even after the C++ object is freed.
+    const std::shared_ptr<std::atomic<bool> > active=dispatchActive_;
+    const std::uint64_t epoch=documentEpoch_.load();
+    WkWebViewBackend* owner=this;
     const std::string json=anyToJson(message);
     NSString* jsonText=toString(json);
     dispatch_async(dispatch_get_main_queue(), ^{
-        WKWebView* view=weakView;
-        XytronWKDelegate* delegate=weakDelegate;
-        if (!view || !delegate || !delegate.backend) return;
+        if (!active->load() || owner->documentEpoch_.load()!=epoch) return;
+        WKWebView* view=owner->impl_->view;
+        if (!view || !owner->impl_->delegate ||
+            !owner->impl_->delegate.backend) return;
         NSData* data=[jsonText dataUsingEncoding:NSUTF8StringEncoding];
         id payload=[NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
         if (!payload) return;
