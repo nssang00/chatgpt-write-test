@@ -74,7 +74,14 @@ namespace Company.WebView.Unified.Experimental
             var previous = view;
             view = null;
             if (previous != null)
-                try { previous.Dispose();IsPreviewShutdownComplete=true; } catch (Exception ex) { Debug.LogError("CEF cleanup FAILED: " + ex); }
+            {
+                // A scene destroy is not the dual-test orderly shutdown sequence.
+                // Close the browser before the validated CEF Shutdown/Dispose path.
+                try { previous.Close(); }
+                catch (Exception ex) { Debug.LogError("CEF browser Close FAILED: " + ex); }
+                try { previous.Dispose(); IsPreviewShutdownComplete=true; }
+                catch (Exception ex) { Debug.LogError("CEF cleanup FAILED: " + ex); }
+            }
         }
     }
 }
