@@ -1,0 +1,8 @@
+{
+  "name": "Company.WebView.Editor",
+  "rootNamespace": "Company.WebView.Unified.Editor",
+  "references": ["Company.WebView.Runtime"],
+  "includePlatforms": ["Editor"],
+  "autoReferenced": true
+}
+
