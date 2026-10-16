@@ -4,6 +4,8 @@
 
 Supported target in this milestone: Unity 2022.3 Windows x64 standalone D3D11. The Editor can create prefabs but cannot run the Win32 native previews in Play Mode. Other Unity versions, IL2CPP, HDRP/URP, multiple independent WebViews, browser input/IME and packaging behavior are **not yet verified**.
 
+A Windows Player postbuild processor copies the pinned CEF `.pak`/`.dat`/locale sidecars into `<Player>_Data/Plugins/x86_64` because Unity's ordinary plugin import alone may omit them.
+
 The package includes a `Tools > Company WebView > Create Preview Prefabs` Editor command. It generates Texture (CEF RawImage) and Overlay (WebView2 HWND) prefabs in the consuming project's `Assets/CompanyWebViewGenerated/Prefabs` folder. These are **preview component blueprints**, not released interactive controls.
 
 * Texture: attach to a Unity Canvas; the CEF surface RawImage must be assigned. D3D11 texture rendering was demonstrated in the separate native 3D cube test. Mouse/keyboard/IME injection remains incomplete.
