@@ -18,12 +18,13 @@
 ## 0. 첫 단계 — macOS Core CI 및 포터빌리티
 
 - [x] `macos-15` ARM64 / `macos-15-intel` x86_64 CI 매트릭스 추가.
-- [ ] 실제 두 runner의 C++11 Core/Plugin/CLI 빌드 및 CTest 통과 확인.
+- [x] 실제 두 runner의 C++11 Core/Plugin/CLI 빌드 및 CTest 통과.
+  증거: [macOS Core Port CI 38834287692](https://github.com/nssang00/chatgpt-write-test/actions/runs/38834287692).
 - [x] Darwin에는 `sigtimedwait`가 없어 `process_broker.cpp` SIGPIPE
   cleanup을 `sigwait`로 대체 (신호 pending 검증과 block 유지).
-- [ ] ARM64/Intel 빌드·CTest로 수정 검증 완료.
+- [x] ARM64/Intel 빌드·CTest로 수정 검증 완료 (38834287692).
 - [x] macOS 네이티브 Core SDK 설치·재배치 후 별도 소비자 CMake/CTest 단계 추가.
-- [ ] 해당 SDK 소비자 단계 ARM64 / Intel CI 통과 확인.
+- [x] 해당 SDK 소비자 단계 ARM64 / Intel CI 통과 (38834287692).
 - [ ] ARM64/Intel runner를 각각 재현 가능한 artifact로 기록.
 - Intel runner는 GitHub 공지 기준 2027-08까지 제공 예정. 지속
   지원을 제품 약속으로 만들기 전에 대체 빌드 경로를 수립한다.
@@ -32,6 +33,7 @@
 
 - [x] AppKit/WebKit 프레임워크와 WKURLSchemeHandler /
   WKScriptMessageHandlerWithReply Objective-C++ 컴파일 프로브 추가.
+  컴파일/링크 CI 두 아키텍처 통과 (38834287692).
   이는 완성된 adapter나 실브라우저 E2E가 아님.
 - [ ] macOS 전용 Objective-C++(`.mm`) WebKit adapter 및 Cocoa window/NSView
   생성, 메인 스레드 스케줄링, destroy/navigation 안전성.

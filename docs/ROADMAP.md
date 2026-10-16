@@ -167,7 +167,10 @@ Linux   / CEF
 - [x] Platform-aware `Engine::Auto` preference: WKWebView first on macOS,
   CEF first on Linux, WebView2 first on Windows; only linked adapters qualify.
 - [x] macOS 15 ARM64 / Intel native C++11 Core CI workflow added.
-- [ ] macOS Core + plugin regression matrix green on both GitHub runners.
+- [x] macOS Core + plugin regression + installed SDK consumer + Objective-C++
+  WKWebView API compile probe green on both GitHub runners:
+  [38834287692](https://github.com/nssang00/chatgpt-write-test/actions/runs/38834287692).
+  This is NOT WKWebView real-browser E2E.
 - [ ] WKWebView (.mm) adapter with Cocoa main-thread dispatch and lifetime.
 - [ ] macOS packaged `app://` URL scheme/Resource Provider and MIME/404 tests.
 - [ ] WKWebView verified main-frame+navigation+document-session bridge:
