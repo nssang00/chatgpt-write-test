@@ -205,8 +205,14 @@ See [macOS/WebKit platform plan](MACOS_WEBKIT_PORT_PLAN_KO.md).
   cold/warm, p50/p95/p99, concurrency 1/8/32, ops/s 수집.
 - [x] PR CI에서 측정 JSON/CSV/Markdown과 commit·OS·CPU·Runner
   메타데이터를 Actions artifact로 저장. 엔진 세부 버전 및 nightly는 후속.
-- [ ] 동일 Windows Runner 쌍비교, full baseline 반복 실행 및 엔진 버전
-  자동 기록.
+- [x] 동일 Windows Runner에서 CEF↔WebView2 각각 3회 교차 실행 비교:
+  [첫 CI](https://github.com/nssang00/chatgpt-write-test/actions/runs/38863601576),
+  [후속 CI+SharedBuffer](https://github.com/nssang00/chatgpt-write-test/actions/runs/38864908293).
+- [x] WebView2 native→JS SharedBuffer read-only 1KiB·64KiB·1MiB
+  테스트와 JS release 동작/기존 Base64 이벤트 쌍비교 smoke:
+  [실험 결과](BRIDGE_LATENCY_RESULTS_2026-10-16.md).
+- [ ] full baseline 5세션×5,000 표본, encode/decode 단계별 trace,
+  Native→JS LAT-03, WebView2 고급 SharedBuffer 수명·보안 테스트.
 - [x] WebView2 Base64 Binary 프레이밍 예비 실측: 64KiB p50
   36.5→9.4ms (각 독립 CI 실행; 동일 장비 반복 측정 전).
   [전/후 측정값](BRIDGE_LATENCY_RESULTS_2026-10-16.md).
@@ -217,7 +223,7 @@ See [macOS/WebKit platform plan](MACOS_WEBKIT_PORT_PLAN_KO.md).
 
 방법·완료 기준: [브릿지 지연시간 벤치마크 계획](XYTRON_BRIDGE_LATENCY_BENCHMARK_KO.md).
 이는 **P1 관측/최적화 기준선 작업**이며 NW-014 보안 작업과 Scope A1
-출시 기준을 변경하지 않는다. 아직 측정 코드/수치 없음.
+출시 기준을 변경하지 않는다. 첫 실측은 예비 smoke이며 장기 기준선은 미완료.
 
 ## Phase 5 — Thin host adapters (MFC/WPF/WinForms basic controls in first release)
 

@@ -85,8 +85,11 @@
   요청·검증 로직으로 기존 Base64 Native→JS 이벤트 전달도 계측한다.
 - JS는 `sharedbufferreceived`에서 크기/바이트를 검증하고
   `releaseBuffer()`를 반드시 호출하며, Native는 Post 이후 `Close()`.
-- [ ] Windows 브라우저 E2E에서 1KiB/64KiB/1MiB 크기별 데이터
-  정확성·반복 수명주기 및 지연시간(단방향 요청+전달) 검증.
+- [x] Windows WebView2 브라우저에서 1KiB/64KiB/1MiB 크기별
+  Base64·SharedBuffer 번갈아 전송(총 106회), 전체 바이트 확인,
+  SharedBuffer 53회 release 및 latency 수집:
+  [CI 38864908293](https://github.com/nssang00/chatgpt-write-test/actions/runs/38864908293).
+  [상세 수치](BRIDGE_LATENCY_RESULTS_2026-10-16.md).
 - [ ] 내비게이션 중단, JS 미해제, 프레임·권한, 연속 전송 backpressure
   검증 전에는 `WebView::postMessage`에 자동 사용 금지.
 - 이 실험은 JS→Native 바이너리 RPC 전송 최적화가 아니고,

@@ -19,11 +19,11 @@ WebView2 / CEF / WKWebView의 내부 IPC가 서로 다르므로 구현 계층과
 
 | 표기 | OS / 아키텍처 | 엔진 | 측정 상태 |
 | --- | --- | --- | --- |
-| WIN-WV2 | Windows x64 | WebView2 | 미측정 |
-| WIN-CEF | Windows x64 | CEF | 미측정 |
-| LNX-CEF | Linux x64 | CEF | 미측정 |
-| MAC-WK-ARM | macOS ARM64 | WKWebView | 미측정 |
-| MAC-WK-INTEL | macOS x86_64 | WKWebView | 미측정 |
+| WIN-WV2 | Windows x64 | WebView2 | 첫 smoke + Windows paired |
+| WIN-CEF | Windows x64 | CEF | 첫 smoke + Windows paired |
+| LNX-CEF | Linux x64 | CEF | 첫 smoke |
+| MAC-WK-ARM | macOS ARM64 | WKWebView | 첫 smoke |
+| MAC-WK-INTEL | macOS x86_64 | WKWebView | 첫 smoke |
 | LNX-WKGTK | Linux x64 | WebKitGTK 4.1 | 엔진 추가 후 |
 
 먼저 **동일 프로세스 C++ in-process** 호출로 브라우저/브릿지 비용을
@@ -130,8 +130,14 @@ GitHub-hosted macOS의 JS timer는 1ms로 양자화될 수 있다.
 라운드별 비율과 중앙값을 기록한다. 숫자에 따른 CI fail 기준은 없다.
 
 - [x] 쌍비교 Actions workflow / 독립 통계 요약 코드 구현.
-- [ ] 실제 3쌍 실행 성공과 결과 확인.
-- [ ] 2개 이상의 독립 Runner에서 반복해 변동성 범위 확인.
-- [ ] WebView2 SharedBuffer는 JSON Base64 대신 Native→JS 메모리
-  공유가 가능한 별도 전송 경로. 먼저 읽기 전용·명시적 release와
-  기존 문서 세션 보호 E2E를 완료하고 API 자동 전환 여부 결정.
+- [x] 동일 Runner에서 3쌍 첫 실행 완료:
+  [38863601576](https://github.com/nssang00/chatgpt-write-test/actions/runs/38863601576).
+- [x] 독립 재실행 및 동일 페이지 Base64↔SharedBuffer 106개 표본:
+  [38864908293](https://github.com/nssang00/chatgpt-write-test/actions/runs/38864908293).
+  [결과 표](BRIDGE_LATENCY_RESULTS_2026-10-16.md).
+- [x] 2개 이상 독립 Runner의 첫 반복값 수집(진단 목적).
+- [ ] nightly 및 수일 간의 분산/CI 이미지 업데이트 관측.
+- [x] WebView2 SharedBuffer read-only 1KiB/64KiB/1MiB 실제
+  브라우저 프로브, 전체 바이트 검증 및 명시적 release (53회).
+- [ ] 문서 전환·iframe·권한·browser close·release 누락·메모리 압력
+  시나리오를 완료하기 전에는 일반 API 자동 전환 금지.

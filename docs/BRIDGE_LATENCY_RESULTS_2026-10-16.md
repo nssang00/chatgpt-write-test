@@ -76,3 +76,52 @@ Windows WebView2, GitHub-hosted Runner, Release 빌드, 64KiB 40표본,
 **후속:** 동일 Windows Runner 쌍비교, encode/decode/IPC 구간별 프로파일,
 64KiB 이상의 1MiB 검증, `ICoreWebView2SharedBuffer` 기반 제로카피
 전송 여부 별도 실험. **Base64는 여전히 복사·문자열 인코딩 비용이 있다.**
+
+## 같은 Windows Runner의 엔진 비교와 SharedBuffer 실험 (2026-10-16)
+
+### 기존 JS→Native→JS RPC 성능: CEF와 WebView2, 동일 Runner
+
+`windows-2022` Runner 한 대에서 두 엔진을 빌드한 뒤,
+실행 순서를 바꿔 3회씩 반복했다(작은 호출 300표본,
+64KiB는 40표본/실행). 값은 각 실행 p50의 **중앙값**.
+
+| 3회 묶음 | CEF tiny RPC | WebView2 tiny RPC | CEF 64KiB RPC | WebView2 64KiB RPC |
+| --- | ---: | ---: | ---: | ---: |
+| [실행 38863601576](https://github.com/nssang00/chatgpt-write-test/actions/runs/38863601576) | 0.30 ms | 0.20 ms | 0.70 ms | 8.60 ms |
+| [실행 38864908293](https://github.com/nssang00/chatgpt-write-test/actions/runs/38864908293) | 0.20 ms | 0.20 ms | 0.70 ms | 9.40 ms |
+
+→ 같은 Windows VM, 동일 앱 코드/데이터 조건에서도 WebView2의
+64KiB 복사·Base64 왕복 비용이 CEF보다 크다. 다만 이것만으로
+각 엔진의 모든 앱/전송 방식을 일반화하지 않는다.
+
+### **다른 지표**: 같은 WebView2 문서의 Native→JS 전송
+
+`src/browser/webview2/webview2_backend.cpp` 실험용
+`postReadOnlySharedBufferProbe()`에서 Native가 버퍼를 준비해
+읽기 전용 SharedBuffer로 보내는 경로와, `postBridgeMessage()`의
+Base64 바이너리 이벤트 경로를 비교했다. JS→Native 제어 이벤트,
+바이트 패턴, 전체 내용 검증은 공통이며, 타이머 종료는
+**JS 수신 직후**다. 검증 루프 시간은 측정에서 제외했다.
+
+| 크기 | 시나리오별 표본 | Base64 p50 / p95 | SharedBuffer p50 / p95 |
+| --- | ---: | ---: | ---: |
+| 1KiB | 25+25 | 15.50 / 16.06 ms | 15.60 / 17.42 ms |
+| 64KiB | 20+20 | 21.30 / 21.81 ms | 12.15 / 15.41 ms |
+| 1MiB | 8+8 | 112.30 / 120.45 ms | 9.95 / 16.49 ms |
+
+[실측/원본 JSON/매칭 실행 아티팩트](https://github.com/nssang00/chatgpt-write-test/actions/runs/38864908293).
+**모든 바이트 정확성 검증 및 SharedBuffer JS 해제 53회 성공**.
+단발 실행이며 작은 버퍼는 전달 고정비가 지배적이다.
+
+두 표는 서로 다른 계측이다. 첫 번째는 `bench.echo`의 전체
+JS→Native→JS 함수 왕복. 두 번째는 JS 제어 이벤트→Native 버퍼
+할당/채우기→JS 수신까지의 **단일 전송 실험**이다.
+SharedBuffer에도 Native→공유 메모리로의 복사가 1회 존재하므로
+`zero-copy end-to-end`라고 표기하지 않는다. 운영용 API가 아닌
+별도 시험용 내부 백엔드 메서드이며, 실제 배포 자동 전환은 미완료다.
+
+**다음 승인 조건:** 문서 전환·same-origin reload·iframe 권한,
+리소스 해제 누락/스크립트 타임아웃/크래시, backpressure,
+메모리 압력, 사용자 콘텐츠 격리, 큰 메시지 크기 한계 및
+보호 메모리 접근 동작을 실제 Runner에서 확인해야 한다.
+향후 숫자는 엔진/Runner 버전, 독립 반복 세션과 함께 검증한다.
