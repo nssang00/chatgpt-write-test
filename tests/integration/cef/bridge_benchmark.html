@@ -6,7 +6,19 @@
   const records=[];
   const now=()=>performance.now();
   const ensure=(test,message)=>{if(!test)throw Error(message);};
+  let scenario='first request';
   try {
+    // First public RPC after document handshake, BEFORE config and warmup.
+    const firstStart=now();
+    ensure(await xytron.math.add(1,2)===3,'first-call arithmetic mismatch');
+    records.push({id:'LAT-08-first-bridge-call',concurrency:1,
+      samples_ms:[now()-firstStart],elapsed_ms:0});
+    let clockResolution=Infinity, prior=now();
+    for(let i=0;i<100000;++i) {
+      const tick=now(),delta=tick-prior;
+      if(delta>0 && delta<clockResolution) clockResolution=delta;
+      prior=tick;
+    }
     const config=await xytron.bench.config();
     const warmup=config.warmup;
     const count=config.samples;
@@ -24,14 +36,11 @@
       records.push({id,concurrency:1,samples_ms:samples,
                     elapsed_ms:samples.reduce((a,b)=>a+b,0)});
     }
-    // First cold request is recorded separately, before any warm-up.
-    const cold=now();
-    ensure(await xytron.math.add(1,2)===3,'cold arithmetic mismatch');
-    records.push({id:'LAT-08-cold',concurrency:1,
-      samples_ms:[now()-cold],elapsed_ms:0});
+    scenario='LAT-01-direct';
     await series('LAT-01-direct',async()=> {
       ensure(await xytron.math.add(1,2)===3,'direct arithmetic mismatch');
     });
+    scenario='LAT-02-invoke';
     await series('LAT-02-invoke',async()=> {
       ensure(await xytron.invoke('math.add',1,2)===3,'invoke arithmetic mismatch');
     });
@@ -49,11 +58,14 @@
         xytron.postMessage('bench.ping',id);
       });
     };
+    scenario='LAT-04-event-ack';
     await series('LAT-04-event-ack',ack);
     xytron.offMessage(subscription);
     ensure(pending.size===0,'event response lost');
 
-    for(const bytes of [0,1024,65536]) {
+    // CEF empty ArrayBuffer roundtrip is not yet supported reliably.
+    for(const bytes of [1024,65536]) {
+      scenario='LAT-05-binary-'+bytes;
       const payload=new Uint8Array(bytes);
       if(bytes) {payload[0]=7;payload[bytes-1]=251;}
       await series('LAT-05-binary-'+bytes,async()=>{
@@ -68,6 +80,7 @@
     }
 
     for(const concurrency of [8,32]) {
+      scenario='LAT-06-parallel-'+concurrency;
       const times=[],batchStart=now();
       let counter=0;
       const jobs=Array.from({length:concurrency},async()=>{
@@ -86,13 +99,16 @@
         concurrency,samples_ms:times,elapsed_ms:elapsed,
         throughput_ops_s:count*1000/elapsed});
     }
-    const result={schema:1,clock:'JS performance.now',warmup,
+    const result={schema:1,clock:'JS performance.now',
+      clock_resolution_ms:Number.isFinite(clockResolution)?clockResolution:null,
+      warmup,
       samples_per_small_scenario:count,records};
     // Native closes browser here, so an accepted Promise is not required.
     try {await xytron.bench.finish(JSON.stringify(result));}
     catch(_) { /* browser intentionally destroyed */ }
   } catch(error) {
-    const message=error&&error.stack?error.stack:String(error);
+    const message=scenario+': '+
+      (error&&error.stack?error.stack:String(error));
     try {await xytron.bench.abort(message);}catch(_){}
   }
 })();

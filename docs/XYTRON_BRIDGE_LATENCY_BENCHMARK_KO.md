@@ -81,7 +81,10 @@ WebView2 / CEF / WKWebView의 내부 IPC가 서로 다르므로 구현 계층과
 
 ## 결과와 완료 기준
 
-- [ ] 동일 workload(함수/반환값·payload·반복·동시성) 공통 fixture 작성.
+- [x] JS→Native public API 공통 fixture: direct/invoke, postMessage+ack,
+  Binary 1KiB/64KiB, 병렬 8/32 및 첫 브릿지 호출.
+- [ ] CEF 0B ArrayBuffer ↔ Binary는 RefAnyCast 실패 원인 별도 수정,
+  빈 바이너리 타입의 실제 브라우저 E2E 검증 후 성능 측정에 복원.
 - [x] 기존 3개 엔진 + macOS WKWebView ARM/Intel 실브라우저 벤치마크 실행 단계 및
   GitHub Actions raw/summary artifact 업로드 설정 추가.
 - [ ] 실제 5개 Runner 조합 smoke 결과 확인 및 측정값 수집.
@@ -96,6 +99,10 @@ WebView2 / CEF / WKWebView의 내부 IPC가 서로 다르므로 구현 계층과
 - [ ] Runner 편차 확인 후 동일 환경의 반복 기준선에 따라 **지속적인
   회귀 기준** 정의. 예: 최근 3회 이상 유의미한 p95 악화 시 경고
   및 측정 재확인. 임계치(ms), 허용 변화율은 **실측 뒤 결정**.
+
+GitHub-hosted macOS의 JS timer는 1ms로 양자화될 수 있다.
+0.000ms p50은 실제 0 지연이 아니며 성능 우열 판정에 쓰면 안 된다.
+원본 표본, 평균과 처리량, `clock_resolution_ms`를 함께 확인한다.
 
 현재 스모크 설정(예비): warm-up 20, 샘플 100회, 바이너리 64KiB는 40회.
 이는 초기 CI 오작동 및 지연시간 분포 확인용으로 1,000/5,000의 정식

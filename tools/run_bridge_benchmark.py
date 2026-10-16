@@ -114,6 +114,7 @@ def run():
                       p99_ms=percentile(values, .99), mean_ms=statistics.mean(values),
                       min_ms=min(values), max_ms=max(values),
                       stddev_ms=statistics.pstdev(values), elapsed_ms=elapsed,
+                      quantized_zero_fraction=values.count(0)/count,
                       ops_per_second=row.get('throughput_ops_s',
                                              count*1000/elapsed if elapsed else None))
         summary.append(record)
@@ -128,9 +129,17 @@ def run():
         for row in data['records']:
             for i, latency in enumerate(row['samples_ms']):
                 csvwriter.writerow([row['id'], i, latency])
+    resolution = data.get('clock_resolution_ms')
+    if resolution is not None:
+        metadata['js_clock_resolution_ms'] = resolution
     lines = ['# Xytron bridge latency: ' + prefix,
              '',
              'Diagnostic GitHub runner result; not a performance SLA.',
+             ('JS timer minimum observed step: %.4f ms.' % resolution
+              if resolution is not None else 'JS timer resolution unknown.'),
+             'A 0-ms sample is timer quantization, NOT zero transport latency.',
+             'Percentiles below timer resolution must not be treated as precise.',
+             '',
              '',
              'Commit: ' + (metadata['github_sha'] or 'local'),
              '',
