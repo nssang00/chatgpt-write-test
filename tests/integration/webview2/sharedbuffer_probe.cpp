@@ -14,6 +14,23 @@
 
 namespace {
 const char kEntry[]="app://desktop/sharedbuffer_probe.html";
+const char kChildEntry[]="app://desktop/sharedbuffer_child.html";
+const char kChildHtml[]=R"XYTRON_CHILD(<!doctype html><html><body>
+<script>
+window.addEventListener('message',event=>{
+  try {
+    // Parent deliberately supplies a VALID main-document session token.
+    // The backend must reject by the engine-derived sender frame/url.
+    chrome.webview.postMessage({
+      type:'event',event:'probe.child.attack',payload:{id:999},
+      session:String(event.data)
+    });
+    parent.postMessage('probe.child.sent','*');
+  } catch(error) {
+    parent.postMessage('probe.child.fail:'+String(error),'*');
+  }
+});
+</script></body></html>)XYTRON_CHILD";
 
 const char kHtml[]=R"XYTRON_HTML(<!doctype html><html><head>
 <meta charset="utf-8"><title>WebView2 Base64 vs SharedBuffer</title>
@@ -120,7 +137,32 @@ const char kHtml[]=R"XYTRON_HTML(<!doctype html><html><head>
       fail(e);
     }
   });
-  request();
+  let topToken=null, childLoaded=false, childSent=false;
+  const child=document.createElement('iframe');
+  child.src='app://desktop/sharedbuffer_child.html';
+  child.style.display='none';
+  const sendForgedChild=()=>{
+    if(topToken && childLoaded && !childSent) {
+      childSent=true;
+      child.contentWindow.postMessage(topToken,'*');
+    }
+  };
+  chrome.webview.addEventListener('message',event=>{
+    const m=event.data;
+    if(m && m.type==='nativeweb_session' && typeof m.token==='string'){
+      topToken=m.token;
+      sendForgedChild();
+    }
+  });
+  child.onload=()=>{childLoaded=true;sendForgedChild();};
+  window.addEventListener('message',event=>{
+    if(event.source!==child.contentWindow) return;
+    if(event.data==='probe.child.sent') {
+      // Child message must be denied before starting trusted main-frame work.
+      setTimeout(request,75);
+    } else fail('Child iframe could not test sender identity: '+event.data);
+  });
+  document.body.appendChild(child);
 })();
 </script></body></html>)XYTRON_HTML";
 
@@ -173,6 +215,8 @@ public:
                 return;
             const VariantDict& envelope=AnyCast<const VariantDict&>(message);
             const Any& body=envelope.at("payload");
+            if(decoded.eventName=="probe.child.attack")
+                throw std::runtime_error("Forged same-origin iframe reached verified Core");
             if(decoded.eventName=="probe.shared.request" ||
                decoded.eventName=="probe.base64.request") {
                 const VariantDict& payload=AnyCast<const VariantDict&>(body);
@@ -302,6 +346,7 @@ int main()
         std::shared_ptr<nativeweb::AppResourceBundle> assets(
             new nativeweb::AppResourceBundle());
         assets->add(kEntry,"text/html",kHtml);
+        assets->add(kChildEntry,"text/html",kChildHtml);
         nativeweb::detail::BrowserCreateParams params;
         params.parent=reinterpret_cast<nativeweb::NativeWindowHandle>(window);
         params.source=kEntry;
