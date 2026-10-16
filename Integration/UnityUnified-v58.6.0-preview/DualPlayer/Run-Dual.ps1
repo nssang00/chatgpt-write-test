@@ -198,10 +198,17 @@ try {
   if($ManualCompatibility){
    $summary.manualObserved=[ordered]@{
     trustedImeStarts=$e.trustedImeCompositionStarts;trustedImeEnds=$e.trustedImeCompositionEnds;
-    trustedInputBatches=$e.trustedInputBatches;candidateUi=$e.imeCandidateVerdict;
+    trustedInputBatches=$e.trustedInputBatches;
+    compositionUpdates=$e.trustedCompositionUpdates;beforeInputComposing=$e.trustedBeforeInputComposingBatches;
+    inputComposing=$e.trustedInputComposingBatches;keydownComposing=$e.trustedKeydownComposingBatches;
+    candidateUi=$e.imeCandidateVerdict;
     dpi100=$e.dpi100Verdict;dpi125=$e.dpi125Verdict;dpi150=$e.dpi150Verdict;
     zOrder=$e.zOrderVerdict;dpiMin=$e.dpiMin;dpiMax=$e.dpiMax;dpiDistinct=$e.dpiDistinctCount;
     dpi100Observed=$e.dpi100Observed;dpi125Observed=$e.dpi125Observed;dpi150Observed=$e.dpi150Observed;
+    monitorScaleMin=$e.monitorScaleMin;monitorScaleMax=$e.monitorScaleMax;
+    monitorScaleDistinct=$e.monitorScaleDistinctCount;monitorScaleReadFailures=$e.monitorScaleReadFailures;
+    monitorScale100Observed=$e.monitorScale100Observed;monitorScale125Observed=$e.monitorScale125Observed;
+    monitorScale150Observed=$e.monitorScale150Observed;
     hostSeen=$e.nativeChildHostSeen;boundsSamples=$e.overlayHostBoundsSamples;
     maxBoundsDeltaPx=$e.overlayHostMaxBoundsDeltaPx;
     childOutsideClientSamples=$e.overlayChildOutsideClientSamples;
@@ -210,16 +217,19 @@ try {
    }
    # Compare user-reported PASS to independent GetDpiForWindow samples.
    # This is only a corroboration check; process DPI awareness can virtualize OS DPI.
-   $uncorroboratedDpiPass=($e.dpi100Verdict -eq 'PASS' -and -not $e.dpi100Observed) -or
-                         ($e.dpi125Verdict -eq 'PASS' -and -not $e.dpi125Observed) -or
-                         ($e.dpi150Verdict -eq 'PASS' -and -not $e.dpi150Observed)
+   $uncorroboratedDpiPass=($e.dpi100Verdict -eq 'PASS' -and -not ($e.dpi100Observed -or $e.monitorScale100Observed)) -or
+                         ($e.dpi125Verdict -eq 'PASS' -and -not ($e.dpi125Observed -or $e.monitorScale125Observed)) -or
+                         ($e.dpi150Verdict -eq 'PASS' -and -not ($e.dpi150Observed -or $e.monitorScale150Observed))
    $summary.manualObserved['dpiUncorroboratedPass']=[bool]$uncorroboratedDpiPass
+   $imeCompositionSignal=($e.trustedImeCompositionStarts -gt 0 -and $e.trustedImeCompositionEnds -gt 0) -or
+                         ($e.trustedCompositionUpdates -gt 0 -or $e.trustedBeforeInputComposingBatches -gt 0 -or
+                          $e.trustedInputComposingBatches -gt 0 -or $e.trustedKeydownComposingBatches -gt 0)
+   $summary.manualObserved['imeComposingSignalObserved']=[bool]$imeCompositionSignal
    $manualVerdicts=@($e.imeCandidateVerdict,$e.dpi100Verdict,$e.dpi125Verdict,$e.dpi150Verdict,$e.zOrderVerdict)
    if(@($manualVerdicts|Where-Object{$_ -eq 'FAIL'}).Count -gt 0){
     $summary.manualChecks='USER_REPORTED_FAIL';$summary.status='MANUAL_REVIEW_REQUIRED'
    }elseif(@($manualVerdicts|Where-Object{$_ -eq 'NOT_TESTED'}).Count -gt 0 -or
-           $e.trustedImeCompositionStarts -eq 0 -or $e.trustedImeCompositionEnds -eq 0 -or
-           $uncorroboratedDpiPass){
+           -not $imeCompositionSignal -or $uncorroboratedDpiPass){
     $summary.manualChecks='PARTIAL_OR_NOT_TESTED'
    }else{
     # User-reported checks and telemetry are NOT independent IME/DPI/z-order certification.
