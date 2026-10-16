@@ -1,0 +1,20 @@
+{
+  "name": "com.company.webview",
+  "version": "0.1.0-preview.1",
+  "displayName": "Company WebView for Windows (Preview)",
+  "description": "Experimental Windows x64 Unity dual backend WebView (CEF D3D11 Texture / WebView2 HWND Overlay). Requires validated native dependencies. Not production ready.",
+  "unity": "2022.3",
+  "keywords": [
+    "webview",
+    "cef",
+    "webview2",
+    "windows",
+    "unity"
+  ],
+  "author": {
+    "name": "Company"
+  },
+  "dependencies": {
+    "com.unity.ugui": "1.0.0"
+  }
+}
