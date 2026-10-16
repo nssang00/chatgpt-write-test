@@ -115,47 +115,72 @@ try {
   $CefRuntimeDir=ResolveCefRuntime
   $layout=GetCefStageLayout $CefRuntimeDir
   $legacySource=GetCefPackageFromBundle $CefRuntimeDir
-  New-Item -ItemType Directory -Force -Path $out,$work | Out-Null
-
-  # Keep the validated legacy CEF source and compiled stage READ-ONLY. In particular,
-  # do not copy ~300 MB of CEF binaries into the user's possibly deep Downloads path.
-  # Stage only the minimal C# Runtime into the short scratch Unity project, then
-  # stage native binaries directly from the validated stage into Assets and Player.
+  # Persistent Player cache: repeat runs skip Unity import/build and CEF staging.
+  # The cache key includes kit sources, Unity install, and CEF managed/native identity.
+  $cacheHelper=Join-Path $root 'DualPlayer\UnityPlayerCache.ps1'
+  Need (Test-Path -LiteralPath $cacheHelper -PathType Leaf) 'Unity Player cache helper missing'
+  . $cacheHelper
   $source=$legacySource
-  $null=GetCefStageLayout $CefRuntimeDir
-  Write-Host '[DUAL] Reusing validated CEF source + native stage read-only; native files stay in short LOCALAPPDATA workspace'
-  $project=Join-Path $work 'UnityProject'
-  foreach($p in @('Assets\Editor','Assets\Scripts','Packages','ProjectSettings')){New-Item -ItemType Directory -Force -Path (Join-Path $project $p) | Out-Null}
-  # Create and verify the missing UnifiedExperimental directory BEFORE copying sources.
-  # Shared with Windows CI's realistic OneClick Unity Assets assembly fixture.
-  $assembler=Join-Path $root 'DualPlayer\Install-UnifiedManagedSources.ps1'
-  Need (Test-Path -LiteralPath $assembler -PathType Leaf) 'Unified managed-source installer missing from kit'
-  & $assembler -CefPackagePath $source -UnityAssetsDir (Join-Path $project 'Assets') -KitRoot $root
-  $runtime=Join-Path $project 'Assets\CompanyWebView\Runtime\UnifiedExperimental'
-  Need (Test-Path -LiteralPath (Join-Path $runtime 'UnifiedWebView.cs') -PathType Leaf) 'Unified facade copy failed'
-  Copy-Item -LiteralPath (Join-Path $root 'DualPlayer\BuildUnifiedDualPlayer.cs') -Destination (Join-Path $project 'Assets\Editor')
-  Copy-Item -LiteralPath (Join-Path $root 'DualPlayer\UnifiedDualPlayerEvidence.cs') -Destination (Join-Path $project 'Assets\Scripts')
-  Copy-Item -LiteralPath (Join-Path $root 'DualPlayer\CefCubeTextureProof.cs') -Destination (Join-Path $project 'Assets\Scripts')
-  '{"dependencies":{"com.unity.ugui":"1.0.0","com.unity.modules.jsonserialize":"1.0.0"}}' | Set-Content -LiteralPath (Join-Path $project 'Packages\manifest.json') -Encoding UTF8
-  'm_EditorVersion: 2022.3.62f3' | Set-Content -LiteralPath (Join-Path $project 'ProjectSettings\ProjectVersion.txt') -Encoding UTF8
   $srcDll=Join-Path $root 'Plugins\x86_64\CompanyWebView2UnifiedPreview.dll'
-  Need (Test-Path -LiteralPath $srcDll) 'No compiled WebView2 unified DLL'
-  $dest=Join-Path $project 'Assets\Plugins\x86_64'
-  StageCef $CefRuntimeDir $dest
-  Copy-Item -LiteralPath $srcDll -Destination $dest -Force
-  $summary.stage='UNITY_BUILD'
-  $summary.buildWorkspace='LOCALAPPDATA/CWV58 (short path)'
+  Need (Test-Path -LiteralPath $srcDll -PathType Leaf) 'No compiled WebView2 unified DLL'
+  $key=Get-DualPlayerCacheKey -KitManifest (Join-Path $root 'SHA256SUMS.txt') -UnityExe $unity -CefSource $source -CefStage $CefRuntimeDir -NativeDll $layout.native -RuntimeDir $layout.runtime
+  $work=Join-Path $env:LOCALAPPDATA ('CWV58\pc\'+$key)
+  $project=Join-Path $work 'UnityProject'
   $player=Join-Path $work 'Player\UnifiedDualPreview.exe'
-  New-Item -ItemType Directory -Force -Path (Split-Path $player -Parent) | Out-Null
-  $buildLog=Join-Path $out 'unity-editor-build.log'
-  $arg=('-batchmode -nographics -quit -buildTarget Win64 -projectPath "{0}" -executeMethod BuildUnifiedDualPlayer.Build -dualBuildPath "{1}" -logFile "{2}"' -f $project,$player,$buildLog)
-  $p=Start-Process -FilePath $unity -ArgumentList $arg -PassThru
-  if(-not $p.WaitForExit(1200000)){Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue;throw 'Unity build timeout'}
-  Need ($p.ExitCode -eq 0) "Unity build failed: $($p.ExitCode)"
-  Need (Test-Path -LiteralPath $player) 'Player exe not generated'
-  $plugin=Join-Path $work 'Player\UnifiedDualPreview_Data\Plugins\x86_64'
-  StageCef $CefRuntimeDir $plugin
-  Copy-Item -LiteralPath $srcDll -Destination $plugin -Force
+  $summary.buildWorkspace='LOCALAPPDATA/CWV58/pc (persistent short path)'
+  $summary.playerCacheKey=$key
+  $summary.buildCache='UNKNOWN'
+  New-Item -ItemType Directory -Force -Path $out,$work | Out-Null
+  # Exclusive lock prevents concurrent rebuilds corrupting the same Player.
+  $cacheLock=$null
+  try{
+   $cacheLock=[IO.File]::Open((Join-Path $work 'build.lock'),
+     [IO.FileMode]::OpenOrCreate,[IO.FileAccess]::ReadWrite,[IO.FileShare]::None)
+  }catch{throw 'Shared Unity Player cache is in use by another test. Finish that run before retrying.'}
+  try{
+   if(Test-DualPlayerCache -Work $work -Key $key){
+    $summary.buildCache='HIT'
+    Write-Host ('[DUAL CACHE] HIT: reusing Unity Player and CEF files; key='+$key)
+   }else{
+    $summary.buildCache='MISS'
+    Write-Host ('[DUAL CACHE] MISS: building once for key='+$key)
+    $marker=Join-Path $work 'PlayerCache.key'
+    if(Test-Path -LiteralPath $marker){Remove-Item -LiteralPath $marker -Force}
+    # Native validated CEF v58.4.4 stage and source are never changed.
+    foreach($folder in @('Assets\Editor','Assets\Scripts','Packages','ProjectSettings')){
+     New-Item -ItemType Directory -Force -Path (Join-Path $project $folder) | Out-Null
+    }
+    $assembler=Join-Path $root 'DualPlayer\Install-UnifiedManagedSources.ps1'
+    Need (Test-Path -LiteralPath $assembler -PathType Leaf) 'Unified managed-source installer missing from kit'
+    & $assembler -CefPackagePath $source -UnityAssetsDir (Join-Path $project 'Assets') -KitRoot $root
+    $runtime=Join-Path $project 'Assets\CompanyWebView\Runtime\UnifiedExperimental'
+    Need (Test-Path -LiteralPath (Join-Path $runtime 'UnifiedWebView.cs') -PathType Leaf) 'Unified facade copy failed'
+    Copy-Item -LiteralPath (Join-Path $root 'DualPlayer\BuildUnifiedDualPlayer.cs') -Destination (Join-Path $project 'Assets\Editor') -Force
+    Copy-Item -LiteralPath (Join-Path $root 'DualPlayer\UnifiedDualPlayerEvidence.cs') -Destination (Join-Path $project 'Assets\Scripts') -Force
+    Copy-Item -LiteralPath (Join-Path $root 'DualPlayer\CefCubeTextureProof.cs') -Destination (Join-Path $project 'Assets\Scripts') -Force
+    '{"dependencies":{"com.unity.ugui":"1.0.0","com.unity.modules.jsonserialize":"1.0.0"}}' | Set-Content -LiteralPath (Join-Path $project 'Packages\manifest.json') -Encoding UTF8
+    'm_EditorVersion: 2022.3.62f3' | Set-Content -LiteralPath (Join-Path $project 'ProjectSettings\ProjectVersion.txt') -Encoding UTF8
+    $dest=Join-Path $project 'Assets\Plugins\x86_64'
+    StageCef $CefRuntimeDir $dest
+    Copy-Item -LiteralPath $srcDll -Destination $dest -Force
+    $summary.stage='UNITY_BUILD'
+    New-Item -ItemType Directory -Force -Path (Split-Path $player -Parent) | Out-Null
+    $buildLog=Join-Path $out 'unity-editor-build.log'
+    $arg=('-batchmode -nographics -quit -buildTarget Win64 -projectPath "{0}" -executeMethod BuildUnifiedDualPlayer.Build -dualBuildPath "{1}" -logFile "{2}"' -f $project,$player,$buildLog)
+    $p=Start-Process -FilePath $unity -ArgumentList $arg -PassThru
+    if(-not $p.WaitForExit(1200000)){Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue;throw 'Unity build timeout'}
+    Need ($p.ExitCode -eq 0) "Unity build failed: $($p.ExitCode)"
+    Need (Test-Path -LiteralPath $player) 'Player exe not generated'
+    $plugin=Join-Path $work 'Player\UnifiedDualPreview_Data\Plugins\x86_64'
+    StageCef $CefRuntimeDir $plugin
+    Copy-Item -LiteralPath $srcDll -Destination $plugin -Force
+    # Commit only after all required files are present; never cache a failed build.
+    Set-Content -LiteralPath $marker -Value $key -Encoding UTF8
+    Need (Test-DualPlayerCache -Work $work -Key $key) 'Player cache incomplete after build'
+   }
+  }finally{
+   if($null -ne $cacheLock){$cacheLock.Dispose()}
+  }
   $summary.stage='PLAYER_RUNTIME'
   $runtimeJson=Join-Path $out 'player-runtime-evidence.json'
   $log=Join-Path $out 'unity-player.log'
