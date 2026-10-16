@@ -98,6 +98,38 @@ internal static class ContractTests
         messaging.Dispose();messaging.Dispose();
         Check(eventsBackend.Disposed,"Dispose is idempotent");
         Expect<ObjectDisposedException>(()=>messaging.Pump());
+        // Geometry-only pointer mapping: Unity bottom-left UV -> CEF top-left pixels.
+        int px,py;
+        Check(WebViewInputCoordinates.TryFromUV(0f,1f,768,768,1f,1f,0f,0f,out px,out py)
+              && px==0 && py==0,"upper-left UV mapping");
+        Check(WebViewInputCoordinates.TryFromUV(1f,0f,768,768,1f,1f,0f,0f,out px,out py)
+              && px==767 && py==767,"lower-right inclusive bounds");
+        Check(WebViewInputCoordinates.TryFromUV(0.5f,0.5f,768,768,1f,1f,0f,0f,out px,out py)
+              && px==384 && py==384,"UV midpoint");
+        Check(WebViewInputCoordinates.TryFromUV(0.25f,0.75f,800,400,-1f,1f,1f,0f,out px,out py)
+              && px==600 && py==100,"CEF cube U-flip input mapping");
+        Check(WebViewInputCoordinates.TryFromUV(0.25f,0.75f,800,400,1f,-1f,0f,1f,out px,out py)
+              && px==200 && py==300,"V-flip input mapping");
+        Check(!WebViewInputCoordinates.TryFromUV(-0.01f,0.5f,800,400,1f,1f,0f,0f,out px,out py),
+              "outside UV rejects input");
+        Check(!WebViewInputCoordinates.TryFromUV(float.NaN,0.5f,800,400,1f,1f,0f,0f,out px,out py),
+              "NaN UV rejected");
+        Check(!WebViewInputCoordinates.TryFromUV(0.1f,float.PositiveInfinity,800,400,1f,1f,0f,0f,out px,out py),
+              "infinite UV rejected");
+        Check(!WebViewInputCoordinates.TryFromUV(0.2f,0.5f,0,400,1f,1f,0f,0f,out px,out py),
+              "zero width rejected");
+        Check(WebViewInputCoordinates.TryFromLocalRect(50f,25f,100f,50f,
+              1920,1080,1f,1f,0f,0f,out px,out py) && px==960 && py==540,
+              "RawImage local bottom-left rect mapping");
+        Check(!WebViewInputCoordinates.TryFromLocalRect(50f,25f,0f,50f,
+              1920,1080,1f,1f,0f,0f,out px,out py),"invalid rawimage rect");
+        for(int y=0;y<=10;y++)
+          for(int x=0;x<=10;x++){
+            float u=x/10f,v=y/10f;
+            Check(WebViewInputCoordinates.TryFromUV(u,v,100,100,1f,1f,0f,0f,out px,out py),
+                  "UV grid point maps");
+            Check(px>=0 && px<100 && py>=0 && py<100,"grid pixel always in bounds");
+          }
         var op=Opt(PresentationMode.Texture,TargetKind.RawImage);
         op.CefSubprocessPath="compile-only";op.CefCachePath="compile-only";
         using(var cef=UnifiedWebView.Create(op)) { cef.LoadUrl("about:blank");cef.Pump();cef.Resize(640,480);cef.Close(); }
