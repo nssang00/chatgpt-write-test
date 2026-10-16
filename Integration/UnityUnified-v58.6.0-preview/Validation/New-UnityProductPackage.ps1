@@ -48,7 +48,7 @@ $unifiedNames=@('UnifiedWebView.cs','CefTextureBackendBridge.cs',
  'WebView2OverlayBackendBridge.cs','UnifiedTextureSceneHost.cs','UnifiedOverlaySceneHost.cs')
 foreach($name in $unifiedNames){RequireFile (Join-Path $integration ('Runtime\'+$name))}
 foreach($rel in @('package.json','Runtime\Company.WebView.Runtime.asmdef',
- 'Editor\Company.WebView.Editor.asmdef','Editor\CompanyWebViewPrefabWizard.cs','README.md')){
+ 'Editor\Company.WebView.Editor.asmdef','Editor\CompanyWebViewPrefabWizard.cs','Editor\CompanyWebViewBuildStage.cs','README.md')){
  RequireFile (Join-Path $template $rel)
 }
 if(Test-Path -LiteralPath $output){throw "Output exists; refusing to overwrite: $output"}
@@ -59,7 +59,7 @@ $tmp=$output+'.assembling-'+[guid]::NewGuid().ToString('N')
 try{
  New-Item -ItemType Directory -Force -Path $tmp | Out-Null
  foreach($rel in @('package.json','Runtime\Company.WebView.Runtime.asmdef',
-  'Editor\Company.WebView.Editor.asmdef','Editor\CompanyWebViewPrefabWizard.cs','README.md')){
+  'Editor\Company.WebView.Editor.asmdef','Editor\CompanyWebViewPrefabWizard.cs','Editor\CompanyWebViewBuildStage.cs','README.md')){
   CopyFile (Join-Path $template $rel) (Join-Path $tmp $rel)
  }
  $outCef=Join-Path $tmp 'Runtime\CefValidated'
