@@ -103,7 +103,7 @@ namespace Company.WebView.Unified.Experimental
           let lastInput=0;
           input.addEventListener('compositionstart',e=>{if(e.isTrusted){counts.start++;send('ime-start');render();}});
           input.addEventListener('compositionend',e=>{if(e.isTrusted){counts.end++;send('ime-end');render();}});
-          // Only flags and event types: never access event.data, key, code or input.value.
+          // Only event flags and types are inspected. No typed characters or input field content are read.
           input.addEventListener('compositionupdate',e=>{if(e.isTrusted){counts.update++;emitThrottled('ime-update');render();}});
           input.addEventListener('beforeinput',e=>{if(e.isTrusted && (e.isComposing || e.inputType==='insertCompositionText')){
             counts.before++;emitThrottled('beforeinput-composing');render();
