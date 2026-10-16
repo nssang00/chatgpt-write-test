@@ -124,6 +124,8 @@ def main():
                'checkpoint: plugin-unloaded',
                'checkpoint: plugin-e2e-complete'))
     markers = ('checkpoint: request-cancel-verified',) + markers
+    if not (args.managed or args.managed_dotnet):
+        markers += ('checkpoint: oneway-message-binary-ok',)
     # Both browser engines execute the plugin page's retired-token replay.
     # Managed worker pages do not execute that scenario.
     if not (args.managed or args.managed_dotnet):

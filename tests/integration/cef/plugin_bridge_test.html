@@ -137,6 +137,36 @@
              "CEF current document rejected after replay");
       await xytron.test.checkpoint("security-stale-session-replay-blocked");
     }
+    // Both engines expose one-way JS <-> native events, including raw bytes.
+    ensure(typeof xytron.postMessage === "function" &&
+           typeof xytron.onMessage === "function" &&
+           typeof xytron.offMessage === "function",
+           "One-way message API missing");
+    const awaitMessage = (channel, send) => new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        xytron.offMessage(id);
+        reject(new Error("One-way message timeout: " + channel));
+      }, 5000);
+      const id = xytron.onMessage(channel, data => {
+        clearTimeout(timer);
+        xytron.offMessage(id);
+        resolve(data);
+      });
+      try { send(); }
+      catch (error) { clearTimeout(timer); xytron.offMessage(id); reject(error); }
+    });
+    const pong = await awaitMessage("test.message.pong", () =>
+      xytron.postMessage("test.message.ping", {value:42}));
+    ensure(pong instanceof ArrayBuffer &&
+           Array.from(new Uint8Array(pong)).join(",") === "0,127,255",
+           "Native postMessage Binary was not an ArrayBuffer");
+    const checked = await awaitMessage("test.message.binary.ok", () =>
+      xytron.postMessage("test.message.binary",
+        new Uint8Array([0,127,255]).buffer));
+    ensure(checked && checked.valid === true,
+           "JS postMessage ArrayBuffer did not reach native as Binary");
+    await xytron.test.checkpoint("oneway-message-binary-ok");
+
     // Real browser: deadline and AbortSignal must settle the JS Promise,
     // cancel the native request ID and preserve unrelated subsequent calls.
     ensure(typeof xytron.invokeWithOptions === "function",

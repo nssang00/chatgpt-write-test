@@ -552,8 +552,24 @@ public:
         const std::string& event,
         const Any& payload)
     {
+        if (event.empty() || event.size() > 256)
+            throw std::invalid_argument("Message channel must be 1..256 bytes");
         requireBackend()->postBridgeMessage(
             runtime_.eventMessage(event, payload));
+    }
+
+    MessageSubscriptionId onMessage(
+        const std::string& channel,
+        const MessageCallback& callback)
+    {
+        if (channel.empty() || channel.size() > 256 || !callback)
+            throw std::invalid_argument("Invalid message channel or callback");
+        return runtime_.subscribe(channel, callback);
+    }
+
+    bool offMessage(MessageSubscriptionId subscription)
+    {
+        return runtime_.unsubscribe(subscription);
     }
 
     void onBrowserCreated() override
@@ -888,11 +904,30 @@ std::future<Any> WebView::execute(
     return impl_->execute(method, args);
 }
 
+void WebView::postMessage(
+    const std::string& channel,
+    const Any& payload)
+{
+    impl_->emit(channel, payload);
+}
+
+MessageSubscriptionId WebView::onMessage(
+    const std::string& channel,
+    const MessageCallback& callback)
+{
+    return impl_->onMessage(channel, callback);
+}
+
+bool WebView::offMessage(MessageSubscriptionId subscription)
+{
+    return impl_->offMessage(subscription);
+}
+
 void WebView::emit(
     const std::string& event,
     const Any& payload)
 {
-    impl_->emit(event, payload);
+    postMessage(event, payload);
 }
 
 void WebView::beginExecute(

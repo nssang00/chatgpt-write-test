@@ -473,6 +473,9 @@ HRESULT WebView2Backend::installHandlers()
                         if (!mainFrameReady_ ||
                             !matchesDocumentSessionToken(token,documentSessionToken_))
                             return S_OK; // stale same-URL document or missing token
+                        if(parsed.type==BridgeMessageType::Event &&
+                           (parsed.eventName.empty() || parsed.eventName.size()>256))
+                            return S_OK;
                         if(parsed.type==BridgeMessageType::Request)
                         {
                             VerifiedFrameContext ctx;

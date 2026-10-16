@@ -16,6 +16,8 @@ typedef void* NativeWindowHandle;
 // Canonical public byte container. Browser backends decide internally whether
 // to use ordinary IPC, engine-native binary transport, or shared memory.
 typedef std::vector<unsigned char> Binary;
+// Convenience spelling for ordinary owned byte arrays; identical to Binary.
+typedef Binary ByteArray;
 
 struct NativeObjectHandle
 {

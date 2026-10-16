@@ -13,6 +13,7 @@ C++ namespace와 repository 내부 이름은 당장 대규모 rename하지 않�
 ```js
 const user = await xytron.getUser(42);
 const sum = await xytron.apple.add(10, 20);
+const otherSum = await xytron.math.add(10, 20);
 const camera = await xytron.camera.open("CAM-01");
 ```
 
@@ -51,6 +52,37 @@ await xytron.invoke("camera.open");
 > `xytron.invoke("foo")` is the primitive API.
 
 Getting Started에서는 direct API를 먼저 보여준다.
+
+### Bidirectional one-way messages (first baseline, 2026-10-16)
+
+Direct `xytron.math.add()` is preferred over `xytron.invoke("math.add")`.
+The latter remains available for dynamic names and compatibility.
+
+```js
+xytron.postMessage("ui.ready", { width: 1280 });        // JS -> Native, void
+const id = xytron.onMessage("camera.frame", buffer => {
+  // `buffer` is ArrayBuffer for nativeweb::Binary.
+});
+xytron.offMessage(id);
+```
+
+```cpp
+nativeweb::MessageSubscriptionId id = webview.onMessage(
+    "ui.ready", [](const Any& value) { /* dispatch thread */ });
+webview.postMessage("camera.frame", nativeweb::Binary());
+webview.offMessage(id);
+```
+
+- No acknowledgement or delivery guarantee; use RPC if the caller needs a result.
+- Browser's engine-verified main-frame origin and active document token
+  protect JS -> Native messages; subscriptions disappear with their context.
+- Both browser adapters use the shared Core Event envelope, channel and payload.
+- Callbacks run on browser dispatch thread and MUST NOT perform blocking I/O.
+- Existing `xytron.on/off`, `WebView::emit` remain supported aliases.
+- 1..256-byte channel names; message size limits and module-level event
+  permissions require a separate hardening pass before untrusted plugins.
+- `nativeweb::ByteArray` is a synonym for owned `nativeweb::Binary` bytes,
+  NOT `std::vector<std::string>`.
 
 ## 2. Native object binding
 

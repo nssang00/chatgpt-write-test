@@ -21,6 +21,16 @@
 
 이 문서는 우선순위 문서다. 날짜 약속이 아니라 dependency와 개발 순서를 나타낸다.
 
+### 2026-10-16 revised bridge + resource extension plan
+
+Product-facing JS uses `xytron.math.add()`. `xytron.invoke()` is the
+compatibility primitive. Core owns transport, permissions and browser lifetime;
+C++/Python/C# modules share the same public contract. Read
+[bridge transport plan](XYTRON_BRIDGE_TRANSPORT_PLAN_KO.md) before extending
+binary framing, custom schemes or plugins. Existing NW-014 P0 document-session
+security work is NOT complete merely because event routing exists.
+
+
 ## Phase 0 — Repository foundation
 
 상태: **complete**

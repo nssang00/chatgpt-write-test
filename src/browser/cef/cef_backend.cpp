@@ -652,6 +652,26 @@ bool CefBackend::onProcessMessage(
         return true;
     }
 
+    if (messageName == "nativeweb.client.event")
+    {
+        // The same engine-supplied main-frame and document-session checks
+        // apply to one-way messages, including same-URL reloads.
+        if (!frame || !frame->IsMain() || !mainFrameReady_ ||
+            frame->GetIdentifier().ToString()!=activeMainFrameIdentifier_ ||
+            !trustedEntryDocument(trustedEntryUrl_,
+                                  frame->GetURL().ToString(),true) ||
+            !matchesDocumentSessionToken(
+                list->GetString(3).ToString(),documentSessionToken_))
+            return true;
+        const std::string channel = list->GetString(0).ToString();
+        if (channel.empty() || channel.size()>256)
+            return true;
+        if (listener_)
+            listener_->onBridgeMessage(makeEventMessage(
+                channel,cefValueToAny(list->GetValue(1))));
+        return true;
+    }
+
     if (messageName != "nativeweb.request")
         return false;
 

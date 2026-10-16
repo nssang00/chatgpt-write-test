@@ -108,6 +108,33 @@ public:
                 return true;
             });
 
+        webview_.onMessage("test.message.ping", [this](const Any& data) {
+            bool valid = false;
+            if (data.type() == typeid(VariantDict)) {
+                const VariantDict fields = AnyCast<VariantDict>(data);
+                const VariantDict::const_iterator value = fields.find("value");
+                valid = value != fields.end() && value->second.type() == typeid(int) &&
+                        AnyCast<int>(value->second) == 42;
+            }
+            nativeweb::Binary response;
+            if (valid) {
+                response.push_back(0);
+                response.push_back(127);
+                response.push_back(255);
+            }
+            webview_.postMessage("test.message.pong", Any(response));
+        });
+        webview_.onMessage("test.message.binary", [this](const Any& data) {
+            const bool valid = data.type() == typeid(nativeweb::Binary) &&
+                AnyCast<const nativeweb::Binary&>(data).size() == 3 &&
+                AnyCast<const nativeweb::Binary&>(data)[0] == 0 &&
+                AnyCast<const nativeweb::Binary&>(data)[1] == 127 &&
+                AnyCast<const nativeweb::Binary&>(data)[2] == 255;
+            VariantDict result;
+            result["valid"] = valid;
+            webview_.postMessage("test.message.binary.ok", Any(result));
+        });
+
         webview_.bind(
             "test.binary",
             []() {

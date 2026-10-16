@@ -8,6 +8,8 @@
 #include "nativeweb/detail/pending_result.hpp"
 #include "nativeweb/types.hpp"
 
+#include <cstdint>
+#include <functional>
 #include <future>
 #include <memory>
 #include <string>
@@ -41,6 +43,9 @@ public:
     {
     }
 };
+
+typedef std::uint64_t MessageSubscriptionId;
+typedef std::function<void(const Any&)> MessageCallback;
 
 class WebView
 {
@@ -109,6 +114,17 @@ public:
         const std::string& method,
         const VariantList& args = VariantList());
 
+    // Fire-and-forget messages. Delivery is not acknowledged; callbacks run
+    // on the browser dispatch thread and must not block it.
+    void postMessage(
+        const std::string& channel,
+        const Any& payload = Any());
+    MessageSubscriptionId onMessage(
+        const std::string& channel,
+        const MessageCallback& callback);
+    bool offMessage(MessageSubscriptionId subscription);
+
+    // Legacy Native -> JS event spelling; equivalent to postMessage().
     void emit(
         const std::string& event,
         const Any& payload = Any());

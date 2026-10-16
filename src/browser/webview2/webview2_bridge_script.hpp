@@ -294,6 +294,19 @@ LR"NATIVEWEBJS(
     }
   });
 
+  const postMessage = (channel, payload = null) => {
+    if (global !== global.top)
+      throw new Error("permission_denied: not main frame");
+    if (typeof channel !== "string" || !channel || channel.length > 256)
+      throw new TypeError("Message channel must be 1..256 characters");
+    const transmit = () => global.chrome.webview.postMessage(encode({
+      type: "event", event: channel, payload, session: documentSession
+    }));
+    if (documentSession) transmit();
+    else if (queuedUntilSession.length < 256) queuedUntilSession.push(transmit);
+    else throw new Error("session_unavailable: pending queue full");
+  };
+
   const onRaw = (eventName, callback) => {
     if (typeof eventName !== "string" || typeof callback !== "function") {
       throw new TypeError(
@@ -312,6 +325,9 @@ LR"NATIVEWEBJS(
   native.invoke = invokeRaw;
   native.on = onRaw;
   native.off = offRaw;
+  native.postMessage = postMessage;
+  native.onMessage = onRaw;
+  native.offMessage = offRaw;
 
   Object.defineProperty(global, "native", {
     value: native,
@@ -327,6 +343,9 @@ LR"NATIVEWEBJS(
         if (path === "" && property === "invoke") return invokeRaw;
         if (path === "" && property === "invokeWithOptions") return invokeWithOptions;
         if (path === "" && property === "on") return onRaw;
+        if (path === "" && property === "postMessage") return postMessage;
+        if (path === "" && property === "onMessage") return onRaw;
+        if (path === "" && property === "offMessage") return offRaw;
         if (path === "" && property === "off") return offRaw;
         if (typeof property !== "string") return undefined;
 

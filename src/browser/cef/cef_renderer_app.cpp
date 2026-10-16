@@ -339,6 +339,60 @@ public:
             return true;
         }
 
+        if (name == "postMessageRaw")
+        {
+            if (arguments.empty() || arguments.size() > 2 ||
+                !arguments[0]->IsString())
+            {
+                exception = "postMessage(channel, payload) requires a channel string";
+                return true;
+            }
+            const std::string channel = arguments[0]->GetStringValue().ToString();
+            if (channel.empty() || channel.size() > 256)
+            {
+                exception = "Message channel must be 1..256 bytes";
+                return true;
+            }
+            CefRefPtr<CefFrame> frame = context->GetFrame();
+            if (!frame || !frame->IsMain())
+            {
+                exception = "permission_denied: not main frame";
+                return true;
+            }
+            CefRefPtr<CefProcessMessage> wire =
+                CefProcessMessage::Create("nativeweb.client.event");
+            CefRefPtr<CefListValue> slots = wire->GetArgumentList();
+            slots->SetString(0, channel);
+            if (arguments.size() == 2)
+                slots->SetValue(1, v8ToCefValue(arguments[1]));
+            else
+                slots->SetNull(1);
+            std::string session;
+            for (std::size_t i=0; i<app_->documentSessions_.size(); ++i)
+                if (app_->documentSessions_[i].context &&
+                    app_->documentSessions_[i].context->IsSame(context))
+                {
+                    session=app_->documentSessions_[i].token;
+                    break;
+                }
+            if (!session.empty())
+            {
+                slots->SetString(3, session);
+                frame->SendProcessMessage(PID_BROWSER, wire);
+            }
+            else if (app_->queuedDocumentRequests_.size() < 256)
+            {
+                CefRendererApp::QueuedDocumentRequest queued;
+                queued.frame=frame;
+                queued.context=context;
+                queued.message=wire;
+                app_->queuedDocumentRequests_.push_back(queued);
+            }
+            else
+                exception = "session_unavailable: pending queue full";
+            return true;
+        }
+
         if (name == "on" || name == "onRaw")
         {
             if (arguments.size() != 2 ||
@@ -454,6 +508,11 @@ void CefRendererApp::OnContextCreated(
         V8_PROPERTY_ATTRIBUTE_READONLY);
 
     native->SetValue(
+        "postMessageRaw",
+        CefV8Value::CreateFunction("postMessageRaw",handler),
+        V8_PROPERTY_ATTRIBUTE_READONLY);
+
+    native->SetValue(
         "onRaw",
         onRaw,
         V8_PROPERTY_ATTRIBUTE_READONLY);
@@ -538,12 +597,18 @@ void CefRendererApp::OnContextCreated(
         "native.on=(name,callback)=>"
         "native.onRaw(name,(payload)=>callback(wrap(payload)));"
         "native.off=(id)=>native.offRaw(id);"
+        "native.postMessage=(channel,payload=null)=>native.postMessageRaw(channel,payload);"
+        "native.onMessage=native.on;"
+        "native.offMessage=native.off;"
         "const namespace=(path)=>new Proxy(function(){},{"
         "get(_target,property){"
         "if(property==='then')return undefined;"
         "if(path===''&&property==='invoke')return invoke;"
         "if(path===''&&property==='invokeWithOptions')return invokeWithOptions;"
         "if(path===''&&property==='on')return native.on;"
+        "if(path===''&&property==='postMessage')return native.postMessage;"
+        "if(path===''&&property==='onMessage')return native.onMessage;"
+        "if(path===''&&property==='offMessage')return native.offMessage;"
         "if(path===''&&property==='off')return native.off;"
         "if(typeof property!=='string')return undefined;"
         "const next=path?path+'.'+property:property;"
