@@ -847,9 +847,14 @@ bool WebView2Backend::postReadOnlySharedBufferProbe(
     std::memcpy(memory, bytes.data(), bytes.size());
     // Keep control metadata tiny. Never expose document-session tokens via
     // SharedBuffer additionalData (or any renderer-supplied ID authority).
+    std::string grant;
+    try { grant = createDocumentSessionToken(); }
+    catch (...) { shared->Close(); return false; } // fail closed
+
     std::ostringstream metadata;
     metadata << "{\"type\":\"xytron.shared.probe\",\"id\":"
-             << requestId << ",\"size\":" << bytes.size() << "}";
+             << requestId << ",\"size\":" << bytes.size()
+             << ",\"grant\":\"" << grant << "\"}";
     const std::wstring data = utf8ToWide(metadata.str());
     const HRESULT result = view17->PostSharedBufferToScript(
         shared.Get(), COREWEBVIEW2_SHARED_BUFFER_ACCESS_READ_ONLY,
@@ -857,22 +862,27 @@ bool WebView2Backend::postReadOnlySharedBufferProbe(
     // Native may close after Post; JS must independently releaseBuffer().
     shared->Close();
     if (SUCCEEDED(result)) {
-        sharedProbePending_[requestId]=bytes.size();
+        ProbeGrant pending;
+        pending.bytes=bytes.size();
+        pending.nonce=grant;
+        sharedProbePending_[requestId]=pending;
         sharedProbePendingBytes_+=bytes.size();
     }
     return SUCCEEDED(result);
 }
 
-bool WebView2Backend::acknowledgeReadOnlySharedBufferProbe(int requestId)
+bool WebView2Backend::acknowledgeReadOnlySharedBufferProbe(
+    int requestId, const std::string& grant)
 {
     requireUiThread();
     if (!created_.load() || !mainFrameReady_ || closing_.load())
         return false;
-    const std::map<int,std::size_t>::iterator it =
+    const std::map<int,ProbeGrant>::iterator it =
         sharedProbePending_.find(requestId);
-    if (it == sharedProbePending_.end())
+    if (it == sharedProbePending_.end() ||
+        !matchesDocumentSessionToken(grant,it->second.nonce))
         return false;
-    sharedProbePendingBytes_-=it->second;
+    sharedProbePendingBytes_-=it->second.bytes;
     sharedProbePending_.erase(it);
     return true;
 }

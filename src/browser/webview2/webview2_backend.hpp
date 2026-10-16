@@ -42,7 +42,8 @@ public:
     bool postReadOnlySharedBufferProbe(const Binary& bytes, int requestId);
     // Cooperative release-ack accounting, only from a verified main-frame
     // event. This does NOT prove the renderer really released the buffer.
-    bool acknowledgeReadOnlySharedBufferProbe(int requestId);
+    bool acknowledgeReadOnlySharedBufferProbe(
+        int requestId, const std::string& grant);
     std::size_t pendingReadOnlySharedBufferBytesForTest() const;
 
 private:
@@ -111,7 +112,14 @@ private:
     std::uint64_t navigation_ = 0;
     bool mainFrameReady_ = false;
     std::string documentSessionToken_;
-    std::map<int, std::size_t> sharedProbePending_;
+    struct ProbeGrant
+    {
+        std::size_t bytes;
+        std::string nonce;
+    };
+    // A unique per-transfer grant binds ACKs to this specific allocation,
+    // not just the request id (which can be reused after navigation).
+    std::map<int, ProbeGrant> sharedProbePending_;
     std::size_t sharedProbePendingBytes_ = 0;
     // Intentionally small, since JS can omit/falsify release ack.
     static const std::size_t kSharedProbeMaxPendingBytes = 2u * 1024u * 1024u;

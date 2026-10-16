@@ -51,6 +51,8 @@ const char kHtml[]=R"XYTRON_HTML(<!doctype html><html><head>
   let current=null, nextIndex=0, startedAt=0, releases=0;
   let quotaSummary=null, quotaReceived=0, quotaRepeated=false;
   let intentionallyUnreleased=null;
+  let oldSharedGrant=null, replayMode=false;
+  let oldSession=null;
   const records=[];
   const maybeRepeatQuota=()=>{
     if(quotaSummary && quotaReceived===2 && !quotaRepeated) {
@@ -69,10 +71,18 @@ const char kHtml[]=R"XYTRON_HTML(<!doctype html><html><head>
     if(result.accepted!==false||result.pending_bytes!==2097152)
       return fail('Missing-release quota bypassed');
     xytron.postMessage('probe.reload',{
-      intentionally_unreleased:intentionallyUnreleased ? 1 : 0
+      intentionally_unreleased:intentionallyUnreleased ? 1 : 0,
+      old_grant:oldSharedGrant,
+      old_session:topToken
     });
   });
   const fail=(error)=>xytron.postMessage('probe.failure',String(error));
+  xytron.onMessage('probe.replay.credentials',payload=>{
+    replayMode=true;
+    oldSession=payload.old_session;
+    oldSharedGrant=payload.old_grant;
+    xytron.postMessage('probe.replay.start');
+  });
   const checkBytes=(bytes,size)=>{
     if(bytes.byteLength!==size) throw Error('Buffer length mismatch');
     for(let i=0;i<bytes.length;++i)
@@ -113,6 +123,26 @@ const char kHtml[]=R"XYTRON_HTML(<!doctype html><html><head>
       const meta=e.additionalData;
       if(!meta||meta.type!=='xytron.shared.probe')
         throw Error('Invalid shared buffer metadata');
+      if(replayMode && meta.id===200) {
+        if(meta.size!==1024 || typeof meta.grant!=='string')
+          throw Error('Invalid new document grant');
+        buffer=e.getBuffer();
+        checkBytes(new Uint8Array(buffer),1024);
+        chrome.webview.releaseBuffer(buffer);
+        buffer=null;
+        // Inject an OLD document-session token with the NEW transfer grant;
+        // the engine/backend must reject before this reaches Core.
+        chrome.webview.postMessage({
+          type:'event',event:'probe.release',
+          payload:{id:200,grant:meta.grant},session:oldSession
+        });
+        // Even a valid current session cannot release a NEW allocation
+        // using a grant recorded in the previous document.
+        xytron.postMessage('probe.replay.check',{
+          id:200,old_grant:oldSharedGrant,new_grant:meta.grant
+        });
+        return;
+      }
       if(meta.id>=200 && meta.id<202) {
         if(meta.size!==1048576) throw Error('Quota buffer size mismatch');
         buffer=e.getBuffer();
@@ -121,6 +151,7 @@ const char kHtml[]=R"XYTRON_HTML(<!doctype html><html><head>
           // Deliberately leak a live JS mapping until reload. A normal
           // document must not be able to send unbounded SharedBuffers.
           intentionallyUnreleased=buffer;
+          oldSharedGrant=meta.grant;
           buffer=null;
         } else {
           chrome.webview.releaseBuffer(buffer);
@@ -139,7 +170,7 @@ const char kHtml[]=R"XYTRON_HTML(<!doctype html><html><head>
       chrome.webview.releaseBuffer(buffer);
       buffer=null;
       releases++;
-      xytron.postMessage('probe.release',{id:meta.id});
+      xytron.postMessage('probe.release',{id:meta.id,grant:meta.grant});
       request();
     } catch(e) {
       if(buffer) { try { chrome.webview.releaseBuffer(buffer); } catch(_) {} }
@@ -168,7 +199,7 @@ const char kHtml[]=R"XYTRON_HTML(<!doctype html><html><head>
     if(event.source!==child.contentWindow) return;
     if(event.data==='probe.child.sent') {
       // Child message must be denied before starting trusted main-frame work.
-      setTimeout(request,75);
+      setTimeout(()=>{ if(!replayMode) request(); },150);
     } else fail('Child iframe could not test sender identity: '+event.data);
   });
   document.body.appendChild(child);
@@ -196,13 +227,19 @@ public:
         const bool rejected =
             !backend_->postReadOnlySharedBufferProbe(bytes,500);
         navigationChecked_=pending==0 && rejected;
-        done_=true;
-        passed_=navigationChecked_ && quotaChecked_;
-        std::cout << "xytron-sharedbuffer-lifecycle:"
-                  << (passed_?"PASS":"FAIL")
-                  << " pending_after_navigation=" << pending << std::endl;
+        if(!navigationChecked_) fail("Quota survived navigation start");
+        else std::cout << "xytron-sharedbuffer-navigation:PASS"
+                       << " pending_after_navigation=" << pending << std::endl;
     }
-    void onLoadFinished(const std::string&) override {}
+    void onLoadFinished(const std::string&) override
+    {
+        if(!reloadRequested_ || !navigationChecked_) return;
+        VariantDict values;
+        values["old_grant"]=oldGrant_;
+        values["old_session"]=oldSession_;
+        backend_->postBridgeMessage(nativeweb::detail::makeEventMessage(
+            "probe.replay.credentials",Any(values)));
+    }
     void onBrowserClosed() override {}
     void onBridgeMessage(const Any&) override
     {
@@ -248,7 +285,8 @@ public:
             } else if(decoded.eventName=="probe.release") {
                 const VariantDict& payload=AnyCast<const VariantDict&>(body);
                 if(!backend_->acknowledgeReadOnlySharedBufferProbe(
-                    AnyCast<int>(payload.at("id"))))
+                    AnyCast<int>(payload.at("id")),
+                    AnyCast<std::string>(payload.at("grant"))))
                     throw std::runtime_error("Invalid SharedBuffer release ack");
             } else if(decoded.eventName=="probe.quota.start") {
                 const VariantDict& payload=AnyCast<const VariantDict&>(body);
@@ -294,11 +332,45 @@ public:
                 const VariantDict& state=AnyCast<const VariantDict&>(body);
                 if(AnyCast<int>(state.at("intentionally_unreleased"))!=1)
                     throw std::runtime_error("Renderer did not retain a live SharedBuffer");
+                oldGrant_=AnyCast<std::string>(state.at("old_grant"));
+                oldSession_=AnyCast<std::string>(state.at("old_session"));
+                if(oldGrant_.size()!=48 || oldSession_.size()!=48)
+                    throw std::runtime_error("Old document credentials unavailable");
                 if(!quotaChecked_ ||
                     backend_->pendingReadOnlySharedBufferBytesForTest()!=2097152u)
                     throw std::runtime_error("Expected leaked quota before reload");
                 reloadRequested_=true;
                 backend_->reload();
+            } else if(decoded.eventName=="probe.replay.start") {
+                if(!reloadRequested_ || !navigationChecked_ ||
+                   backend_->pendingReadOnlySharedBufferBytesForTest()!=0u)
+                    throw std::runtime_error("Replay started without clean new document");
+                nativeweb::Binary bytes(1024);
+                for(std::size_t i=0;i<bytes.size();++i)
+                    bytes[i]=static_cast<unsigned char>((i*37+17)&255);
+                if(!backend_->postReadOnlySharedBufferProbe(bytes,200))
+                    throw std::runtime_error("Could not reuse request id in new document");
+            } else if(decoded.eventName=="probe.replay.check") {
+                const VariantDict& payload=AnyCast<const VariantDict&>(body);
+                const int id=AnyCast<int>(payload.at("id"));
+                const std::string stale=AnyCast<std::string>(payload.at("old_grant"));
+                const std::string fresh=AnyCast<std::string>(payload.at("new_grant"));
+                if(id!=200 || stale!=oldGrant_ || stale==fresh ||
+                   backend_->pendingReadOnlySharedBufferBytesForTest()!=1024u)
+                    throw std::runtime_error("Old session token/reused ID escaped isolation");
+                if(backend_->acknowledgeReadOnlySharedBufferProbe(id,stale) ||
+                   backend_->pendingReadOnlySharedBufferBytesForTest()!=1024u)
+                    throw std::runtime_error("Old allocation grant released NEW allocation");
+                if(!backend_->acknowledgeReadOnlySharedBufferProbe(id,fresh) ||
+                   backend_->pendingReadOnlySharedBufferBytesForTest()!=0u)
+                    throw std::runtime_error("Current allocation grant did not release");
+                if(backend_->acknowledgeReadOnlySharedBufferProbe(id,fresh))
+                    throw std::runtime_error("Duplicate release ACK accepted");
+                done_=true;
+                passed_=quotaChecked_ && navigationChecked_;
+                std::cout << "xytron-sharedbuffer-replay:"
+                          << (passed_?"PASS":"FAIL")
+                          << " stale_session_and_grant_rejected=1" << std::endl;
             } else if(decoded.eventName=="probe.complete") {
                 const VariantDict& payload=AnyCast<const VariantDict&>(body);
                 const VariantList& samples=AnyCast<const VariantList&>(
@@ -328,6 +400,7 @@ private:
     nativeweb::detail::WebView2Backend* backend_;
     bool done_,passed_;
     bool reloadRequested_,navigationChecked_,quotaChecked_=false;
+    std::string oldGrant_,oldSession_;
 };
 
 LRESULT CALLBACK windowProc(HWND hwnd,UINT msg,WPARAM wp,LPARAM lp)
