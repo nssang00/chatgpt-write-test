@@ -6,6 +6,7 @@ manifest=json.loads((template/'package.json').read_text(encoding='utf-8'))
 runtime=json.loads((template/'Runtime/Company.WebView.Runtime.asmdef').read_text(encoding='utf-8'))
 editor=json.loads((template/'Editor/Company.WebView.Editor.asmdef').read_text(encoding='utf-8'))
 wizard=(template/'Editor/CompanyWebViewPrefabWizard.cs').read_text(encoding='utf-8')
+build_stage=(template/'Editor/CompanyWebViewBuildStage.cs').read_text(encoding='utf-8')
 export=(root/'Validation/New-UnityProductPackage.ps1').read_text(encoding='utf-8')
 host=(root/'Runtime/UnifiedTextureSceneHost.cs').read_text(encoding='utf-8')
 plan=(root/'PRODUCT_ROADMAP_TEST_MATRIX_KO.md').read_text(encoding='utf-8')
@@ -19,6 +20,10 @@ for expr in ('Create Preview Prefabs','PrefabUtility.SaveAsPrefabAsset','Company
              'CompanyWebViewOverlay.prefab','CefTextureSurface','UnifiedTextureSceneHost',
              'UnifiedOverlaySceneHost','SetRef(cef, "target", image)', '"enablePreview", true'):
     assert expr in wizard,expr
+for expr in ('IPostprocessBuildWithReport','BuildTarget.StandaloneWindows64',
+             'CompanyWebViewCefSubprocess.exe','chrome_100_percent.pak',
+             'locales/en-US.pak','BuildFailedException','File.Copy('):
+    assert expr in build_stage,expr
 for expr in ('Get-FileHash','CopyFile','RequireFile','CefRuntimeDir','CefStageDir',
              'CompanyWebViewCefSubprocess.exe','CompanyWebView2UnifiedPreview.dll',
              'ProductPackageTemplate','UnifiedWebView.cs',
