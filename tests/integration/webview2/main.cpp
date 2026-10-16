@@ -62,7 +62,12 @@ public:
             return true;
         });
 
-        webview_.onMessage("test.message.ping", [this](const Any& data) {
+        const std::shared_ptr<std::atomic<int> > messageCount(new std::atomic<int>(0));
+        webview_.bind("test.message.count", [messageCount]() {
+            return messageCount->load();
+        });
+        webview_.onMessage("test.message.ping", [this,messageCount](const Any& data) {
+            messageCount->fetch_add(1);
             bool valid = false;
             if (data.type() == typeid(VariantDict)) {
                 const VariantDict fields = AnyCast<VariantDict>(data);

@@ -91,10 +91,16 @@
       window.chrome.webview.postMessage({
         type: "cancel", id: "990001", session: retiredSession
       });
+      window.chrome.webview.postMessage({
+        type: "event", event: "test.message.ping",
+        payload: {value:42}, session: retiredSession
+      });
       // The legitimate call is sent over the same WebView2 channel after
       // the malicious messages, so the observation follows their dispatch.
       ensure(await xytron.test.replay.count() === 0,
              "Retired document-session request reached native dispatch");
+      ensure(await xytron.test.message.count() === 0,
+             "Retired document-session event reached native callback");
       ensure(await xytron.test.replay.bump() === 1,
              "Current document was blocked after stale IPC replay");
       await xytron.test.checkpoint("security-stale-session-replay-blocked");
@@ -130,9 +136,14 @@
       ensure(native.testReplayRetiredSession(
                "request", "990001", "test.replay.bump"),
              "CEF old request IPC not emitted");
+      ensure(native.testReplayRetiredSession(
+               "event", "0", "test.message.ping"),
+             "CEF old event IPC not emitted");
       // Valid traffic on the same IPC channel orders subsequent observation.
       ensure(await xytron.test.replay.count() === 0,
              "CEF old-session request reached native dispatch");
+      ensure(await xytron.test.message.count() === 0,
+             "CEF old-session event reached native callback");
       ensure(await xytron.test.replay.bump() === 1,
              "CEF current document rejected after replay");
       await xytron.test.checkpoint("security-stale-session-replay-blocked");
@@ -157,6 +168,8 @@
     });
     const pong = await awaitMessage("test.message.pong", () =>
       xytron.postMessage("test.message.ping", {value:42}));
+    ensure(await xytron.test.message.count() === 1,
+           "Only the current session should have emitted one ping");
     ensure(pong instanceof ArrayBuffer &&
            Array.from(new Uint8Array(pong)).join(",") === "0,127,255",
            "Native postMessage Binary was not an ArrayBuffer");

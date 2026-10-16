@@ -255,17 +255,24 @@ public:
             const std::string requestId = arguments[1]->GetStringValue().ToString();
             const std::string method = arguments[2]->GetStringValue().ToString();
             if (requestId.empty() ||
-                (kind != "request" && kind != "cancel") ||
-                (kind == "request" && method.empty()))
+                (kind != "request" && kind != "cancel" && kind != "event") ||
+                (kind != "cancel" && method.empty()))
                 return true;
 
             CefRefPtr<CefProcessMessage> replay =
                 CefProcessMessage::Create(
-                    kind == "cancel" ? "nativeweb.cancel" : "nativeweb.request");
+                    kind == "cancel" ? "nativeweb.cancel" :
+                    kind == "event" ? "nativeweb.client.event" : "nativeweb.request");
             CefRefPtr<CefListValue> wire = replay->GetArgumentList();
             wire->SetString(0, requestId);
             if (kind == "cancel")
                 wire->SetString(1, old->second);
+            else if (kind == "event")
+            {
+                wire->SetString(0, method);
+                wire->SetNull(1);
+                wire->SetString(3, old->second);
+            }
             else
             {
                 wire->SetString(1, method);

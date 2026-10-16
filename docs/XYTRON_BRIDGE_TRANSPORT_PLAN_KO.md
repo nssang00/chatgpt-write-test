@@ -23,6 +23,8 @@
    - [x] C++ Core EventDispatcher 재사용; JS ↔ Native postMessage/onMessage 연결.
    - [x] CEF/ WebView2 진짜 브라우저 E2E에 메시지/ArrayBuffer 검증 추가.
    - [ ] 브라우저 CI 통과 확인 및 문서/구현 실제 상태 동기화.
+   - [x] 단방향 event에 stale session token 재전송 방어 브라우저 테스트 추가.
+   - [x] native 메시지 콜백 예외 격리 및 Core regression 추가.
    - [ ] NW-014: old renderer in-flight IPC/navigation/frame 재사용 경쟁,
      method/event grant 강화. 이벤트에 권한 없는 채널 접근을 허용하지 않을 정책 필요.
 2. **P1 기본 바이너리 계약 완성**
