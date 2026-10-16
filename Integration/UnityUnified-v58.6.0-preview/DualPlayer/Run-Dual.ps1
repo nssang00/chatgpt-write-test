@@ -1,13 +1,13 @@
 #requires -Version 5.1
 param([string]$BundleRoot=$PSScriptRoot,[string]$CefRuntimeDir='',[string]$UnityExe='',
- [ValidateRange(30,300)][int]$AutoSeconds=120,[switch]$SelfTest,[switch]$NoScreenshots,[switch]$TestMissingRuntime)
+ [ValidateRange(30,300)][int]$AutoSeconds=120,[switch]$SelfTest,[switch]$NoScreenshots,[switch]$TestMissingRuntime,[switch]$ManualCompatibility)
 $ErrorActionPreference='Stop'; Set-StrictMode -Version Latest
 $root=[IO.Path]::GetFullPath((Join-Path $BundleRoot '.'))
 $stamp=Get-Date -Format 'yyyyMMdd-HHmmss'
 $out=Join-Path $root ('results\dual-'+$stamp)
 # Short LOCAL build directory avoids MAX_PATH under Downloads and long Documentation~ names.
 $work=Join-Path $env:LOCALAPPDATA ('CWV58\dual-'+$stamp)
-$summary=[ordered]@{capturePolicy='Foreground Unity window only; no desktop capture';harness='58.6.0-dual-experimental';status='FAIL';autoChecks='NOT_RUN';stage='PREFLIGHT';problems=@();manualChecks='PENDING';uvVisualCheck='NOT_RUN'}
+$summary=[ordered]@{capturePolicy='Foreground Unity window only; no desktop capture';harness='58.6.0-dual-experimental';status='FAIL';autoChecks='NOT_RUN';stage='PREFLIGHT';problems=@();manualChecks='PENDING';uvVisualCheck='NOT_RUN';manualCompatibilityMode=[bool]$ManualCompatibility}
 function Need([bool]$ok,[string]$msg){if(-not $ok){throw $msg}}
 function VerifyKit {
  # The unified sources and WebView2 binary ship directly in this one-folder kit.
@@ -103,6 +103,7 @@ function StageCef([string]$from,[string]$to) {
   Need (Test-Path -LiteralPath (Join-Path $to $name) -PathType Leaf) "CEF runtime resource missing: $name"
  }
 }
+if($ManualCompatibility){$NoScreenshots=$true}
 $code=2
 try {
  if($TestMissingRuntime){throw 'TEST_ONLY: simulated missing CEF runtime; intentionally no Unity execution'}
@@ -159,7 +160,7 @@ try {
   $runtimeJson=Join-Path $out 'player-runtime-evidence.json'
   $log=Join-Path $out 'unity-player.log'
   Write-Host "[DUAL] Open both views (CEF Texture LEFT, WebView2 RIGHT) for $AutoSeconds seconds"
-  $arg=('-screen-fullscreen 0 -screen-width 1400 -screen-height 850 -dualDuration {0} -dualEvidencePath "{1}" -logFile "{2}"' -f $AutoSeconds,$runtimeJson,$log)
+  $arg=('-screen-fullscreen 0 -screen-width 1400 -screen-height 850 -dualDuration {0} -dualEvidencePath "{1}" -logFile "{2}" -manualCompatibility {3}' -f $AutoSeconds,$runtimeJson,$log,([int][bool]$ManualCompatibility))
   $p=Start-Process -FilePath $player -ArgumentList $arg -WorkingDirectory (Split-Path $player -Parent) -PassThru
   if(-not $NoScreenshots){
    . (Join-Path $root 'DualPlayer\Screen-Automation.ps1')
@@ -194,6 +195,29 @@ try {
    Need ($uv.status -ne 'FAIL') 'CEF texture orientation FAIL: BLUE TOP appears below RED BOTTOM in the front-facing screenshots'
   }else{$summary.uvVisualCheck='SKIPPED_NO_SCREENSHOTS'}
   $summary.status='PENDING_MANUAL';$summary.autoChecks='PASS';$summary.stage='COMPLETE_AUTO';$code=0
+  if($ManualCompatibility){
+   $summary.manualObserved=[ordered]@{
+    trustedImeStarts=$e.trustedImeCompositionStarts;trustedImeEnds=$e.trustedImeCompositionEnds;
+    trustedInputBatches=$e.trustedInputBatches;candidateUi=$e.imeCandidateVerdict;
+    dpi100=$e.dpi100Verdict;dpi125=$e.dpi125Verdict;dpi150=$e.dpi150Verdict;
+    zOrder=$e.zOrderVerdict;dpiMin=$e.dpiMin;dpiMax=$e.dpiMax;dpiDistinct=$e.dpiDistinctCount;
+    hostSeen=$e.nativeChildHostSeen;boundsSamples=$e.overlayHostBoundsSamples;
+    maxBoundsDeltaPx=$e.overlayHostMaxBoundsDeltaPx;
+    childOutsideClientSamples=$e.overlayChildOutsideClientSamples;
+    focusLost=$e.unityForegroundLostCount;focusRegained=$e.unityForegroundRegainedCount;
+    minimized=$e.unityMinimizeTransitions;restored=$e.unityRestoreTransitions
+   }
+   $manualVerdicts=@($e.imeCandidateVerdict,$e.dpi100Verdict,$e.dpi125Verdict,$e.dpi150Verdict,$e.zOrderVerdict)
+   if(@($manualVerdicts|Where-Object{$_ -eq 'FAIL'}).Count -gt 0){
+    $summary.manualChecks='USER_REPORTED_FAIL';$summary.status='MANUAL_REVIEW_REQUIRED'
+   }elseif(@($manualVerdicts|Where-Object{$_ -eq 'NOT_TESTED'}).Count -gt 0 -or
+           $e.trustedImeCompositionStarts -eq 0 -or $e.trustedImeCompositionEnds -eq 0){
+    $summary.manualChecks='PARTIAL_OR_NOT_TESTED'
+   }else{
+    # User-reported checks and telemetry are NOT independent IME/DPI/z-order certification.
+    $summary.manualChecks='USER_REPORTED_PASS_REQUIRES_REVIEW'
+   }
+  }
  }
 } catch {
  $summary.problems+= $_.Exception.Message
