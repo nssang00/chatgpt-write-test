@@ -197,12 +197,16 @@ See [macOS/WebKit platform plan](MACOS_WEBKIT_PORT_PLAN_KO.md).
 
 ## Phase 4.6 — JS ↔ Native bridge latency baseline (P1)
 
-- [ ] 실제 엔진 5개 Runner 조합(Linux CEF / Win CEF / Win WebView2 /
-  macOS WKWebView ARM64·Intel)에서 공통 tiny-RPC latency 측정.
+- [x] 5개 실제 브라우저 조합의 tiny-RPC latency CI smoke 완료:
+  [브라우저 CI](https://github.com/nssang00/chatgpt-write-test/actions/runs/38846688020) ·
+  [macOS CI](https://github.com/nssang00/chatgpt-write-test/actions/runs/38846688063).
+  [첫 결과](BRIDGE_LATENCY_RESULTS_2026-10-16.md).
 - [ ] JS→Native→JS, Native→JS→Native, one-way+ack, Binary RPC:
   cold/warm, p50/p95/p99, concurrency 1/8/32, ops/s 수집.
-- [ ] 측정 JSON/CSV + 환경/커밋/엔진 버전 기록, 재현 가능한
-  nightly/manual CI 및 PR smoke; 타 플랫폼 숫자를 직접 순위화하지 않음.
+- [x] PR CI에서 측정 JSON/CSV/Markdown과 commit·OS·CPU·Runner
+  메타데이터를 Actions artifact로 저장. 엔진 세부 버전 및 nightly는 후속.
+- [ ] 동일 Windows Runner 쌍비교, full baseline 반복 실행 및 엔진 버전
+  자동 기록.
 - [ ] Python/C# 실제 worker 비용은 별도 계측, IPC 개선 전후 비교.
 - [ ] 최초 실측 수치와 반복 분산 확인 후 회귀 경고 임계치 결정.
   초기에는 GitHub-hosted Runner의 잡음 때문에 성능 수치만으로

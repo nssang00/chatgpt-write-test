@@ -1,6 +1,6 @@
 # Xytron JS ↔ Native 브릿지 지연시간 벤치마크 계획
 
-상태: **계획 / 아직 미측정**. 작성: 2026-10-16.
+상태: **5개 실브라우저 CI 조합에서 첫 smoke 측정 완료**. 작성: 2026-10-16.
 [기존 브릿지·리소스 계획](XYTRON_BRIDGE_TRANSPORT_PLAN_KO.md) 및
 [전체 로드맵](ROADMAP.md)의 **P1 성능 관측·회귀 기반 작업**.
 속도 목표 또는 실제 지연시간을 검증 없이 추정하지 않는다.
@@ -87,10 +87,13 @@ WebView2 / CEF / WKWebView의 내부 IPC가 서로 다르므로 구현 계층과
   빈 바이너리 타입의 실제 브라우저 E2E 검증 후 성능 측정에 복원.
 - [x] 기존 3개 엔진 + macOS WKWebView ARM/Intel 실브라우저 벤치마크 실행 단계 및
   GitHub Actions raw/summary artifact 업로드 설정 추가.
-- [ ] 실제 5개 Runner 조합 smoke 결과 확인 및 측정값 수집.
-- [ ] LAT-01/02/04/05/06 첫 smoke 실측값 검증; LAT-03 Native→JS는 후속.
+- [x] 5개 Runner 조합의 첫 실측과 JSON/CSV/Markdown artifact 검증 완료.
+  [CEF/WebView2 CI](https://github.com/nssang00/chatgpt-write-test/actions/runs/38846688020) ·
+  [WKWebView CI](https://github.com/nssang00/chatgpt-write-test/actions/runs/38846688063).
+- [x] LAT-01/02/04/05/06 첫 smoke 실측값 검증; LAT-03 Native→JS는 후속.
 - [ ] warmup 1000 / samples 5000 / 5회 독립 run의 반복 기준선 수집.
-- [ ] LAT-01~LAT-06 기준값(JSON/CSV+Markdown) 및 재현 명령 기록.
+- [x] LAT-01/02/04/05/06 예비 기준값 JSON/CSV/Markdown과 재현 명령 기록.
+  정식 대규모 기준선 및 LAT-03은 미완료.
 - [ ] Debug/Release 차이, 첫 호출/warm, 동시성 큐잉을 별도 시각화.
 - [ ] WebView2 tagged JSON byte-array의 인코딩/디코딩 오버헤드에
   대한 추적 항목, 개선 전/후 비교값 확보.
@@ -112,3 +115,6 @@ GitHub-hosted macOS의 JS timer는 1ms로 양자화될 수 있다.
 **완료의 의미:** 실제 RTT를 숫자와 재현 환경으로 제시할 수 있고,
 뒤의 Binary IPC / Resource Provider / SharedBuffer 작업이 성능을
 개선했는지 확인할 수 있다. 아직 어떤 수치도 측정 완료로 표기하지 않는다.
+
+첫 CI 실측 결과 표 및 엔진별 해석:
+[2026-10-16 브릿지 지연시간 예비 결과](BRIDGE_LATENCY_RESULTS_2026-10-16.md).
