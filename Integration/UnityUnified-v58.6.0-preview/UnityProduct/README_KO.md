@@ -27,3 +27,7 @@
 - CEF runtime을 상용 빌드에 포함하려면 적절한 오픈소스 고지와 CEF 재배포 조건을 별도로 검토.
 - 이 UPM 제품 코드의 정적·컴파일 회귀 통과는 네이티브 Unity Player의 새 프리팹 실기 PASS가 아님.
 
+
+## 2026-10-18 Windows PowerShell 5.1 startup fix
+
+Default arguments are resolved in the script body, after `param()` binding. This corrects `Join-Path : 'Path' 매개 변수가 빈 문자열` when invoking `Build-UnityProduct.cmd`. No CEF or Unity runtime is downloaded by this script. Missing local stage files now produce explicit required-file errors.
