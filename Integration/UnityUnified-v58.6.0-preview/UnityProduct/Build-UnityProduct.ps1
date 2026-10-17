@@ -3,11 +3,32 @@
    the validated CEF stage and its C# sources. #>
 [CmdletBinding()]
 param(
- [string]$CefArchive=(Join-Path $PSScriptRoot 'CefOneClick-v58.4.4-source.zip'),
- [string]$CefStage=(Join-Path $env:LOCALAPPDATA 'CompanyWebView\CEF-v58.4.4\Build\cef-native\stage'),
- [string]$WebView2Dll=(Join-Path $PSScriptRoot 'CompanyWebView2UnifiedPreview.dll'),
- [string]$OutputRoot=(Join-Path $PSScriptRoot 'Dist')
+ [string]$CefArchive,
+ [string]$CefStage,
+ [string]$WebView2Dll,
+ [string]$OutputRoot
 )
+# Resolve defaults after parameter binding, not within param().
+$kitDir=$PSScriptRoot
+if([string]::IsNullOrWhiteSpace($kitDir)) {
+ $kitDir=Split-Path -Path $MyInvocation.MyCommand.Path -Parent
+}
+if([string]::IsNullOrWhiteSpace($kitDir)) { throw 'Cannot locate Build-UnityProduct.ps1 directory' }
+if([string]::IsNullOrWhiteSpace($CefArchive)) {
+ $CefArchive=Join-Path $kitDir 'CefOneClick-v58.4.4-source.zip'
+}
+if([string]::IsNullOrWhiteSpace($WebView2Dll)) {
+ $WebView2Dll=Join-Path $kitDir 'CompanyWebView2UnifiedPreview.dll'
+}
+if([string]::IsNullOrWhiteSpace($OutputRoot)) {
+ $OutputRoot=Join-Path $kitDir 'Dist'
+}
+if([string]::IsNullOrWhiteSpace($CefStage)) {
+ if([string]::IsNullOrWhiteSpace($env:LOCALAPPDATA)) {
+  throw 'LOCALAPPDATA is unset; provide -CefStage with your existing CEF stage path'
+ }
+ $CefStage=Join-Path $env:LOCALAPPDATA 'CompanyWebView\CEF-v58.4.4\Build\cef-native\stage'
+}
 $ErrorActionPreference='Stop'
 Set-StrictMode -Version Latest
 Add-Type -AssemblyName System.IO.Compression
@@ -56,11 +77,11 @@ RequireFile $expectedManaged
 $managedBefore=(Get-FileHash -LiteralPath $expectedManaged -Algorithm SHA256).Hash
 $unified=Join-Path $package 'Runtime\UnifiedExperimental'
 foreach($name in @('UnifiedWebView.cs','CefTextureBackendBridge.cs','WebView2OverlayBackendBridge.cs')){
-  CopySource (Join-Path $PSScriptRoot ('ExistingRuntime\'+$name)) (Join-Path $unified $name)
+  CopySource (Join-Path $kitDir ('ExistingRuntime\'+$name)) (Join-Path $unified $name)
 }
-CopySource (Join-Path $PSScriptRoot 'Runtime\UnifiedWebViewPanel.cs') (Join-Path $unified 'UnifiedWebViewPanel.cs')
+CopySource (Join-Path $kitDir 'Runtime\UnifiedWebViewPanel.cs') (Join-Path $unified 'UnifiedWebViewPanel.cs')
 foreach($name in @('UnifiedWebViewSetupMenu.cs','UnifiedWebViewBuildCopy.cs','Company.WebView.Editor.asmdef')){
-  CopySource (Join-Path $PSScriptRoot ('Editor\'+$name)) (Join-Path $package ('Editor\'+$name))
+  CopySource (Join-Path $kitDir ('Editor\'+$name)) (Join-Path $package ('Editor\'+$name))
 }
 CopySource $WebView2Dll (Join-Path $package 'Runtime\Plugins\x86_64\CompanyWebView2UnifiedPreview.dll')
 CopySource $plugin (Join-Path $package 'Runtime\Plugins\x86_64\CompanyWebViewCefTextureProbe.dll')
@@ -76,7 +97,7 @@ $meta=[ordered]@{
  dependencies=@{'com.unity.ugui'='1.0.0'}
 }
 $meta | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $package 'package.json') -Encoding UTF8
-CopySource (Join-Path $PSScriptRoot 'README_KO.md') (Join-Path $package 'README_KO.md')
+CopySource (Join-Path $kitDir 'README_KO.md') (Join-Path $package 'README_KO.md')
 if((Get-FileHash -LiteralPath $expectedManaged -Algorithm SHA256).Hash -ne $managedBefore){throw 'Validated CEF C# WebView changed unexpectedly'}
 Write-Host ('UPM PRODUCT PREVIEW READY: '+$package)
 Write-Host 'Windows x64 Standalone only. Verify prefab from Tools > Company WebView > Create Texture + Overlay Prefabs.'
