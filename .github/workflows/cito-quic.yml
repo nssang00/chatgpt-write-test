@@ -101,6 +101,11 @@ jobs:
             -CA quic-ca.pem -CAkey quic-ca-key.pem -CAcreateserial \
             -out quic-cert.pem -days 1 -extfile quic-server.ext
           openssl verify -CAfile quic-ca.pem -verify_ip 10.202.0.12 quic-cert.pem
+          openssl req -x509 -newkey rsa:2048 -nodes -days 1 \
+            -keyout quic-untrusted-ca-key.pem -out quic-untrusted-ca.pem \
+            -subj "/CN=Cito Untrusted Test Root" \
+            -addext "basicConstraints=critical,CA:TRUE" \
+            -addext "keyUsage=critical,keyCertSign,cRLSign"
           if openssl verify -CAfile quic-ca.pem -verify_ip 10.202.0.99 quic-cert.pem; then
             echo "Expected certificate name mismatch was not rejected"
             exit 1
@@ -168,6 +173,24 @@ jobs:
           test "$server_status" -eq 0
           grep -q "quic_client stream=1 datagram=1" quic-client.log
           grep -q "quic_server stream=1 datagram=1" quic-server.log
+
+          # Negative test: a different CA must not authenticate the same server.
+          # Run a second server using the same certificate after the positive test.
+          sudo ip netns exec cito-quic-s "$BIN" server 4440 \
+            "$GITHUB_WORKSPACE/quic-cert.pem" "$GITHUB_WORKSPACE/quic-key.pem" \
+            >quic-untrusted-server.log 2>&1 &
+          REJECT_SERVER_PID=$!
+          sleep 0.4
+          reject_status=0
+          timeout 9s sudo ip netns exec cito-quic-c "$BIN" client 10.202.0.12 4440 \
+            "$GITHUB_WORKSPACE/quic-untrusted-ca.pem" \
+            >quic-untrusted-client.log 2>&1 || reject_status=$?
+          kill "$REJECT_SERVER_PID" 2>/dev/null || true
+          wait "$REJECT_SERVER_PID" || true
+          echo "=== untrusted CA client ==="
+          cat quic-untrusted-client.log
+          test "$reject_status" -ne 0
+          test "$reject_status" -ne 124
 
           RQBIN="$GITHUB_WORKSPACE/build-quic/cito_quic_request_node"
 
