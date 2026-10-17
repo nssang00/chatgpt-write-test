@@ -25,6 +25,36 @@ Workflow: `.github/workflows/cito-quic.yml` on
   AddressSanitizer/UndefinedBehaviorSanitizer. The existing smoke disables
   LeakSanitizer (`detect_leaks=0`): its pass is *not* a no-leaks guarantee.
 
+## v24 verified mTLS extension
+
+GitHub Actions run:
+https://github.com/nssang00/chatgpt-write-test/actions/runs/39034786797
+
+- Native QUIC server requires a CA-validated client X.509 certificate.
+  Authorized client passes; absent certificate is rejected at the **TLS**
+  layer before Cito's admission hooks.
+- `RequestMsQuicServerAdmission::AuthorizeIdentity` is an optional
+  owner-loop gate for a **bounded (16 KiB) DER copy** of the peer leaf
+  certificate, provided by MsQuic's `PEER_CERTIFICATE_RECEIVED` callback
+  with `USE_PORTABLE_CERTIFICATES`.
+- The native identity test uses exact DER allowlisting: **two different
+  leaf certificates signed by the same CA** are treated differently.
+  The configured leaf is allowed; the other is rejected at the Cito
+  authorization gate. An allowed CA is NOT equivalent to an allowed node.
+- Legacy GitHub `MsQuicRequestSessionOptions` now supports
+  `client_certificate_file`, `client_private_key_file`,
+  `trusted_client_ca_file`, and `require_client_certificate`. The
+  full public `Context::request()` demo passes with mTLS and cannot
+  execute the server handler if the client supplies no certificate.
+- Existing server-certificate verification and ASan/UBSan smoke steps
+  remained green.
+- **Scope:** The exact DER allowlist is a small acceptance-test policy,
+  not a complete credential lifecycle. The public legacy Context driver
+  enforces client CA verification but has **not** yet been refactored to
+  pass the certificate identity to a Cito DestinationId/topic ACL.
+  The latest cumulative local v23 core has not been fully moved to
+  this GitHub branch.
+
 ## Security posture and caveats
 
 - A verified **server** certificate does not authenticate the **client**.
