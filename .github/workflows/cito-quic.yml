@@ -91,6 +91,11 @@ jobs:
           EOF
           c++ -std=c++20 -Wall -Wextra -Werror -fsyntax-only \
             -Icito/include -I/usr/local/include /tmp/cito-native-listener-check.cpp
+          c++ -std=c++20 -Wall -Wextra -Werror \
+            -Icito/include -I/usr/local/include \
+            cito/tests/net/quic_v23_native_admission_smoke.cpp \
+            -L/usr/local/lib -Wl,-rpath,/usr/local/lib -lmsquic -pthread \
+            -o /tmp/cito-v23-native-admission-smoke
 
       - name: Configure and build QUIC smoke
         run: |
@@ -189,6 +194,27 @@ jobs:
           test "$server_status" -eq 0
           grep -q "quic_client stream=1 datagram=1" quic-client.log
           grep -q "quic_server stream=1 datagram=1" quic-server.log
+
+          # Real native listener+admission lifecycle with the existing QUIC client.
+          sudo ip netns exec cito-quic-s \
+            /tmp/cito-v23-native-admission-smoke 4442 \
+            "$GITHUB_WORKSPACE/quic-cert.pem" "$GITHUB_WORKSPACE/quic-key.pem" \
+            >quic-v23-admission-server.log 2>&1 &
+          ADMISSION_PID=$!
+          sleep 0.4
+          admission_client_status=0
+          timeout 9s sudo ip netns exec cito-quic-c "$BIN" client 10.202.0.12 4442 \
+            "$GITHUB_WORKSPACE/quic-ca.pem" \
+            >quic-v23-admission-client.log 2>&1 || admission_client_status=$?
+          admission_server_status=0
+          wait "$ADMISSION_PID" || admission_server_status=$?
+          echo "=== v23 native admission client ==="
+          cat quic-v23-admission-client.log
+          echo "=== v23 native admission server ==="
+          cat quic-v23-admission-server.log
+          test "$admission_client_status" -eq 0
+          test "$admission_server_status" -eq 0
+          grep -q "cito_v23_native_admission authorized=1 closed=1 drained=1" quic-v23-admission-server.log
 
           # Negative test: a different CA must not authenticate the same server.
           # Run a second server using the same certificate after the positive test.
