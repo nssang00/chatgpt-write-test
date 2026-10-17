@@ -49,6 +49,9 @@ public:
     // Internal process-failure probe: recovery is host initiated (Reload
     // for renderer failure; destroy/recreate for browser process failure).
     bool requestRendererCrashForTest();
+    // Internal-only configuration for destructive browser-process tests.
+    // Must be set before create; never used by public WebView options.
+    void setIsolatedUserDataFolderForTest(const std::wstring& path);
     unsigned int rendererFailuresForTest() const;
     DWORD browserProcessIdForTest() const;
     // Environment-wide snapshot includes renderer/GPU/utility processes
@@ -132,6 +135,7 @@ private:
     std::atomic<bool> closing_;
     std::string source_;
     std::string trustedEntryUrl_;
+    std::wstring isolatedUserDataFolderForTest_;
     std::uint64_t navigation_ = 0;
     bool mainFrameReady_ = false;
     unsigned int rendererFailures_ = 0;

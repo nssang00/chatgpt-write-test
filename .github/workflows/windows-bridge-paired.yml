@@ -69,6 +69,13 @@ jobs:
           & build/webview2/bin/nativeweb_webview2_process_failure_probe.exe |
             Tee-Object -FilePath build/renderer-failure-probe.log
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Browser process hard crash and fresh-profile controller recovery
+        shell: pwsh
+        timeout-minutes: 3
+        run: |
+          & build/webview2/bin/nativeweb_webview2_browser_process_crash_probe.exe |
+            Tee-Object -FilePath build/browser-process-crash-probe.log
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Two-WebView SharedBuffer quota isolation E2E
         shell: pwsh
         timeout-minutes: 3
@@ -130,6 +137,7 @@ jobs:
             build/bridge-paired/**
             build/sharedbuffer-probe.log
             build/renderer-failure-probe.log
+            build/browser-process-crash-probe.log
             build/sharedbuffer-multi-probe.log
             build/sharedbuffer-soak-probe.log
             build/sharedbuffer-soak-extended.log

@@ -129,6 +129,15 @@ void WebView2Backend::requireUiThread() const
     }
 }
 
+void WebView2Backend::setIsolatedUserDataFolderForTest(
+    const std::wstring& folder)
+{
+    requireUiThread();
+    if(created_.load() || folder.empty())
+        throw Error("invalid_test_profile","Isolated test folder must be set before create");
+    isolatedUserDataFolderForTest_=folder;
+}
+
 void WebView2Backend::create(
     const BrowserCreateParams& params)
 {
@@ -207,7 +216,8 @@ void WebView2Backend::create(
     const HRESULT createResult =
         CreateCoreWebView2EnvironmentWithOptions(
             0,
-            0,
+            isolatedUserDataFolderForTest_.empty() ? 0 :
+                isolatedUserDataFolderForTest_.c_str(),
             environmentOptions.Get(),
             Microsoft::WRL::Callback<
                 ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler>(
