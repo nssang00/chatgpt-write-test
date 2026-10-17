@@ -139,15 +139,7 @@ int main(int argc,char* argv[])
         hostStart=hostPeak=workingSetBytes(GetCurrentProcessId());
         const DWORD browserPid=backend.browserProcessIdForTest();
         browserStart=browserPeak=workingSetBytes(browserPid);
-        nativeweb::detail::WebView2Backend::ProcessMemorySnapshot first;
-        if(!backend.processGroupMemoryForTest(&first) ||
-           first.rendererCount==0)
-            throw std::runtime_error("WebView2 process group snapshot unavailable");
-        groupPrivateStart=groupPrivatePeak=first.totalPrivateBytes;
-        rendererPrivatePeak=first.rendererPrivateBytes;
-        processPeak=first.processCount;
-        rendererCountPeak=first.rendererCount;
-        ++samples;
+        bool initialMemorySampleTaken=false;
         nativeweb::Binary bytes(1048576);
         for(std::size_t i=0;i<bytes.size();++i)
             bytes[i]=static_cast<unsigned char>((i*37+17)&255);
@@ -160,8 +152,23 @@ int main(int argc,char* argv[])
                 TranslateMessage(&msg);
                 DispatchMessageW(&msg);
             }
-            if(listener.readyCount>complete && listener.ackCount==complete*32+sent &&
-               sent<32) {
+            if(!initialMemorySampleTaken && listener.readyCount>0) {
+                // Wait for real app-document activation before asking for
+                // renderer processes; Navigate() returns before JS executes.
+                nativeweb::detail::WebView2Backend::ProcessMemorySnapshot first;
+                if(!backend.processGroupMemoryForTest(&first) ||
+                   first.rendererCount==0)
+                    throw std::runtime_error("WebView2 group renderer snapshot unavailable");
+                groupPrivateStart=groupPrivatePeak=first.totalPrivateBytes;
+                rendererPrivatePeak=first.rendererPrivateBytes;
+                processPeak=first.processCount;
+                rendererCountPeak=first.rendererCount;
+                ++samples;
+                initialMemorySampleTaken=true;
+            }
+            if(initialMemorySampleTaken &&
+               listener.readyCount>complete &&
+               listener.ackCount==complete*32+sent && sent<32) {
                 if(!backend.postReadOnlySharedBufferProbe(bytes,sent))
                     throw std::runtime_error("SharedBuffer failed inside document budget");
                 ++sent;
