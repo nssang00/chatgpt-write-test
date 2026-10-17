@@ -114,7 +114,7 @@ jobs:
           openssl req -newkey rsa:2048 -nodes \
             -keyout quic-key.pem -out quic-request.csr -subj "/CN=10.202.0.12"
           cat > quic-server.ext <<'EOF'
-          subjectAltName=IP:10.202.0.12
+          subjectAltName=IP:10.202.0.12,IP:10.203.0.12
           basicConstraints=critical,CA:FALSE
           keyUsage=critical,digitalSignature,keyEncipherment
           extendedKeyUsage=serverAuth
@@ -123,6 +123,7 @@ jobs:
             -CA quic-ca.pem -CAkey quic-ca-key.pem -CAcreateserial \
             -out quic-cert.pem -days 1 -extfile quic-server.ext
           openssl verify -CAfile quic-ca.pem -verify_ip 10.202.0.12 quic-cert.pem
+          openssl verify -CAfile quic-ca.pem -verify_ip 10.203.0.12 quic-cert.pem
           openssl req -x509 -newkey rsa:2048 -nodes -days 1 \
             -keyout quic-untrusted-ca-key.pem -out quic-untrusted-ca.pem \
             -subj "/CN=Cito Untrusted Test Root" \
@@ -316,6 +317,7 @@ jobs:
 
           public_client_status=0
           sudo ip netns exec cito-quic-c "$PUBBIN" client 47320 \
+            "$GITHUB_WORKSPACE/quic-ca.pem" \
             >quic-public-client.log 2>&1 || public_client_status=$?
 
           public_server_status=0
@@ -392,6 +394,7 @@ jobs:
 
           client_status=0
           sudo ip netns exec cito-quic-san-c env $SAN_ENV "$BIN" client 47330 \
+            "$GITHUB_WORKSPACE/quic-ca.pem" \
             >quic-public-san-client.log 2>&1 || client_status=$?
 
           server_status=0
