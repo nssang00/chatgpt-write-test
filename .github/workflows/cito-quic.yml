@@ -2,7 +2,7 @@ name: Cito QUIC
 
 on:
   push:
-    branches: [cito-dev, cito-native-v23-validation, cito-v23-native-headers]
+    branches: [cito-dev, cito-native-v23-validation, cito-v23-native-headers, cito-v24-mtls-native]
     paths:
       - "cito/CMakeLists.txt"
       - "cito/include/cito/data_packet.hpp"
@@ -124,6 +124,19 @@ jobs:
             -out quic-cert.pem -days 1 -extfile quic-server.ext
           openssl verify -CAfile quic-ca.pem -verify_ip 10.202.0.12 quic-cert.pem
           openssl verify -CAfile quic-ca.pem -verify_ip 10.203.0.12 quic-cert.pem
+          # Client certificate: only signed clients may pass server mTLS.
+          openssl req -newkey rsa:2048 -nodes \
+            -keyout quic-client-key.pem -out quic-client.csr \
+            -subj "/CN=cito-authorized-client"
+          cat > quic-client.ext <<'EOF'
+          basicConstraints=critical,CA:FALSE
+          keyUsage=critical,digitalSignature
+          extendedKeyUsage=clientAuth
+          EOF
+          openssl x509 -req -in quic-client.csr \
+            -CA quic-ca.pem -CAkey quic-ca-key.pem -CAcreateserial \
+            -out quic-client-cert.pem -days 1 -extfile quic-client.ext
+          openssl verify -CAfile quic-ca.pem -purpose sslclient quic-client-cert.pem
           openssl req -x509 -newkey rsa:2048 -nodes -days 1 \
             -keyout quic-untrusted-ca-key.pem -out quic-untrusted-ca.pem \
             -subj "/CN=Cito Untrusted Test Root" \
@@ -258,6 +271,62 @@ jobs:
           cat quic-v23-deny-server.log
           test "$deny_server_status" -eq 0
           grep -q "cito_v23_native_admission seen=1 denied=1 authorized=0 closed=0 drained=1" quic-v23-deny-server.log
+
+          # Positive mTLS: server validates a CA-signed client certificate
+          # before triggering the application-level admission callback.
+          sudo ip netns exec cito-quic-s /tmp/cito-v23-native-admission-smoke \
+            4444 "$GITHUB_WORKSPACE/quic-cert.pem" \
+            "$GITHUB_WORKSPACE/quic-key.pem" mtls "$GITHUB_WORKSPACE/quic-ca.pem" \
+            >quic-mtls-server.log 2>&1 &
+          MTLS_PID=$!
+          for attempt in $(seq 1 100); do
+            if grep -q 'admission_listener_ready' quic-mtls-server.log; then break; fi
+            if ! kill -0 "$MTLS_PID" 2>/dev/null; then break; fi
+            sleep 0.05
+          done
+          cat quic-mtls-server.log
+          grep -q 'admission_listener_ready' quic-mtls-server.log
+          mtls_client_status=0
+          timeout 9s sudo ip netns exec cito-quic-c "$BIN" \
+            client 10.202.0.12 4444 "$GITHUB_WORKSPACE/quic-ca.pem" \
+            "$GITHUB_WORKSPACE/quic-client-cert.pem" \
+            "$GITHUB_WORKSPACE/quic-client-key.pem" \
+            >quic-mtls-client.log 2>&1 || mtls_client_status=$?
+          mtls_server_status=0
+          wait "$MTLS_PID" || mtls_server_status=$?
+          echo "=== valid client certificate ==="
+          cat quic-mtls-client.log
+          cat quic-mtls-server.log
+          test "$mtls_client_status" -eq 0
+          test "$mtls_server_status" -eq 0
+          grep -q 'cito_v23_native_admission seen=1 denied=0 authorized=1 closed=1 drained=1 mtls=1 no_client=0' quic-mtls-server.log
+
+          # Negative mTLS: a client without any certificate must be rejected
+          # by TLS. The owner-loop Authorize/OnAuthorized hooks never run.
+          sudo ip netns exec cito-quic-s /tmp/cito-v23-native-admission-smoke \
+            4445 "$GITHUB_WORKSPACE/quic-cert.pem" \
+            "$GITHUB_WORKSPACE/quic-key.pem" mtls-reject "$GITHUB_WORKSPACE/quic-ca.pem" \
+            >quic-mtls-no-cert-server.log 2>&1 &
+          NO_CERT_PID=$!
+          for attempt in $(seq 1 100); do
+            if grep -q 'admission_listener_ready' quic-mtls-no-cert-server.log; then break; fi
+            if ! kill -0 "$NO_CERT_PID" 2>/dev/null; then break; fi
+            sleep 0.05
+          done
+          grep -q 'admission_listener_ready' quic-mtls-no-cert-server.log
+          no_cert_client_status=0
+          timeout 9s sudo ip netns exec cito-quic-c "$BIN" \
+            client 10.202.0.12 4445 "$GITHUB_WORKSPACE/quic-ca.pem" \
+            >quic-mtls-no-cert-client.log 2>&1 || no_cert_client_status=$?
+          no_cert_server_status=0
+          wait "$NO_CERT_PID" || no_cert_server_status=$?
+          echo "=== client missing certificate ==="
+          cat quic-mtls-no-cert-client.log
+          cat quic-mtls-no-cert-server.log
+          test "$no_cert_client_status" -ne 0
+          test "$no_cert_client_status" -ne 124
+          test "$no_cert_server_status" -eq 0
+          grep -q 'cito_v23_native_admission seen=0 denied=0 authorized=0 closed=0 drained=1 mtls=1 no_client=1' quic-mtls-no-cert-server.log
 
           # Negative test: a different CA must not authenticate the same server.
           # Run a second server using the same certificate after the positive test.
