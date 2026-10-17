@@ -137,6 +137,20 @@ jobs:
             -CA quic-ca.pem -CAkey quic-ca-key.pem -CAcreateserial \
             -out quic-client-cert.pem -days 1 -extfile quic-client.ext
           openssl verify -CAfile quic-ca.pem -purpose sslclient quic-client-cert.pem
+          openssl x509 -in quic-client-cert.pem -outform DER -out quic-client.der
+          # Same trusted CA but different leaf identity: TLS should succeed,
+          # Cito node authorization must reject this certificate.
+          openssl req -newkey rsa:2048 -nodes \
+            -keyout quic-other-client-key.pem -out quic-other-client.csr \
+            -subj "/CN=cito-unlisted-client"
+          openssl x509 -req -in quic-other-client.csr \
+            -CA quic-ca.pem -CAkey quic-ca-key.pem -CAcreateserial \
+            -out quic-other-client-cert.pem -days 1 -extfile quic-client.ext
+          openssl verify -CAfile quic-ca.pem -purpose sslclient quic-other-client-cert.pem
+          if cmp -s quic-client.der <(openssl x509 -in quic-other-client-cert.pem -outform DER); then
+            echo "Distinct identity certificates unexpectedly identical"
+            exit 1
+          fi
           openssl req -x509 -newkey rsa:2048 -nodes -days 1 \
             -keyout quic-untrusted-ca-key.pem -out quic-untrusted-ca.pem \
             -subj "/CN=Cito Untrusted Test Root" \
@@ -327,6 +341,66 @@ jobs:
           test "$no_cert_client_status" -ne 124
           test "$no_cert_server_status" -eq 0
           grep -q 'cito_v23_native_admission seen=0 denied=0 authorized=0 closed=0 drained=1 mtls=1 no_client=1' quic-mtls-no-cert-server.log
+
+          # Certificate-to-node binding, with the certificate already
+          # validated by MsQuic. These are application identity checks.
+          sudo ip netns exec cito-quic-s /tmp/cito-v23-native-admission-smoke \
+            4447 "$GITHUB_WORKSPACE/quic-cert.pem" \
+            "$GITHUB_WORKSPACE/quic-key.pem" mtls-id \
+            "$GITHUB_WORKSPACE/quic-ca.pem" "$GITHUB_WORKSPACE/quic-client.der" \
+            >quic-identity-allowed-server.log 2>&1 &
+          ID_OK_PID=$!
+          for attempt in $(seq 1 100); do
+            if grep -q 'admission_listener_ready' quic-identity-allowed-server.log; then break; fi
+            if ! kill -0 "$ID_OK_PID" 2>/dev/null; then break; fi
+            sleep 0.05
+          done
+          cat quic-identity-allowed-server.log
+          grep -q 'admission_listener_ready' quic-identity-allowed-server.log
+          identity_allowed_client_status=0
+          timeout 9s sudo ip netns exec cito-quic-c "$BIN" client 10.202.0.12 4447 \
+            "$GITHUB_WORKSPACE/quic-ca.pem" \
+            "$GITHUB_WORKSPACE/quic-client-cert.pem" \
+            "$GITHUB_WORKSPACE/quic-client-key.pem" \
+            >quic-identity-allowed-client.log 2>&1 || identity_allowed_client_status=$?
+          identity_allowed_server_status=0
+          wait "$ID_OK_PID" || identity_allowed_server_status=$?
+          echo "=== allowed client certificate identity ==="
+          cat quic-identity-allowed-client.log
+          cat quic-identity-allowed-server.log
+          test "$identity_allowed_client_status" -eq 0
+          test "$identity_allowed_server_status" -eq 0
+          grep -q 'cito_v23_native_admission seen=1 denied=0 authorized=1 closed=1 drained=1 mtls=1 no_client=0 identity=1' quic-identity-allowed-server.log
+
+          # A different leaf certificate from the same CA must pass TLS
+          # chain verification but fail the application identity allowlist.
+          sudo ip netns exec cito-quic-s /tmp/cito-v23-native-admission-smoke \
+            4448 "$GITHUB_WORKSPACE/quic-cert.pem" \
+            "$GITHUB_WORKSPACE/quic-key.pem" mtls-id-reject \
+            "$GITHUB_WORKSPACE/quic-ca.pem" "$GITHUB_WORKSPACE/quic-client.der" \
+            >quic-identity-rejected-server.log 2>&1 &
+          ID_DENY_PID=$!
+          for attempt in $(seq 1 100); do
+            if grep -q 'admission_listener_ready' quic-identity-rejected-server.log; then break; fi
+            if ! kill -0 "$ID_DENY_PID" 2>/dev/null; then break; fi
+            sleep 0.05
+          done
+          cat quic-identity-rejected-server.log
+          grep -q 'admission_listener_ready' quic-identity-rejected-server.log
+          identity_denied_client_status=0
+          timeout 9s sudo ip netns exec cito-quic-c "$BIN" client 10.202.0.12 4448 \
+            "$GITHUB_WORKSPACE/quic-ca.pem" \
+            "$GITHUB_WORKSPACE/quic-other-client-cert.pem" \
+            "$GITHUB_WORKSPACE/quic-other-client-key.pem" \
+            >quic-identity-rejected-client.log 2>&1 || identity_denied_client_status=$?
+          identity_denied_server_status=0
+          wait "$ID_DENY_PID" || identity_denied_server_status=$?
+          echo "=== same-CA unlisted client identity (client exit $identity_denied_client_status) ==="
+          cat quic-identity-rejected-client.log
+          cat quic-identity-rejected-server.log
+          test "$identity_denied_client_status" -ne 124
+          test "$identity_denied_server_status" -eq 0
+          grep -q 'cito_v23_native_admission seen=0 denied=0 authorized=0 closed=0 drained=1 mtls=1 no_client=1 identity=1' quic-identity-rejected-server.log
 
           # Negative test: a different CA must not authenticate the same server.
           # Run a second server using the same certificate after the positive test.
