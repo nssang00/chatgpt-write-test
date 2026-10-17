@@ -56,6 +56,13 @@ jobs:
           & build/webview2/bin/nativeweb_webview2_sharedbuffer_probe.exe |
             Tee-Object -FilePath build/sharedbuffer-probe.log
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Renderer crash and recovery E2E (experimental)
+        shell: pwsh
+        timeout-minutes: 3
+        run: |
+          & build/webview2/bin/nativeweb_webview2_process_failure_probe.exe |
+            Tee-Object -FilePath build/renderer-failure-probe.log
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Summarize same-page SharedBuffer vs Base64 transport
         shell: pwsh
         run: |
@@ -92,4 +99,5 @@ jobs:
           path: |
             build/bridge-paired/**
             build/sharedbuffer-probe.log
+            build/renderer-failure-probe.log
           if-no-files-found: warn

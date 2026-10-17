@@ -46,6 +46,11 @@ public:
         int requestId, const std::string& grant);
     std::size_t pendingReadOnlySharedBufferBytesForTest() const;
     std::size_t cumulativeReadOnlySharedBufferBytesForTest() const;
+    // Internal process-failure probe: recovery is host initiated (Reload
+    // for renderer failure; destroy/recreate for browser process failure).
+    bool requestRendererCrashForTest();
+    unsigned int rendererFailuresForTest() const;
+    unsigned int browserProcessFailuresForTest() const;
 
 private:
     struct CreateState
@@ -112,6 +117,8 @@ private:
     std::string trustedEntryUrl_;
     std::uint64_t navigation_ = 0;
     bool mainFrameReady_ = false;
+    unsigned int rendererFailures_ = 0;
+    unsigned int browserProcessFailures_ = 0;
     std::string documentSessionToken_;
     struct ProbeGrant
     {
@@ -138,10 +145,12 @@ private:
     EventRegistrationToken webMessageToken_;
     EventRegistrationToken navigationStartingToken_;
     EventRegistrationToken navigationCompletedToken_;
+    EventRegistrationToken processFailedToken_;
     bool webResourceRequestedRegistered_;
     bool webMessageRegistered_;
     bool navigationStartingRegistered_;
     bool navigationCompletedRegistered_;
+    bool processFailedRegistered_;
 };
 
 bool isWebView2RuntimeAvailable();

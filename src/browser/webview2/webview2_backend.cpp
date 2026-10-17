@@ -62,12 +62,14 @@ WebView2Backend::WebView2Backend()
       webResourceRequestedRegistered_(false),
       webMessageRegistered_(false),
       navigationStartingRegistered_(false),
-      navigationCompletedRegistered_(false)
+      navigationCompletedRegistered_(false),
+      processFailedRegistered_(false)
 {
     webResourceRequestedToken_.value=0;
     webMessageToken_.value = 0;
     navigationStartingToken_.value = 0;
     navigationCompletedToken_.value = 0;
+    processFailedToken_.value=0;
 }
 
 WebView2Backend::~WebView2Backend()
@@ -557,6 +559,35 @@ HRESULT WebView2Backend::installHandlers()
         return result;
 
     navigationCompletedRegistered_ = true;
+
+    result = webview_->add_ProcessFailed(
+        Microsoft::WRL::Callback<ICoreWebView2ProcessFailedEventHandler>(
+            [this](ICoreWebView2*,
+                   ICoreWebView2ProcessFailedEventArgs* args)->HRESULT
+            {
+                if(!args) return S_OK;
+                COREWEBVIEW2_PROCESS_FAILED_KIND kind;
+                if(FAILED(args->get_ProcessFailedKind(&kind))) return S_OK;
+                if(kind!=COREWEBVIEW2_PROCESS_FAILED_KIND_RENDER_PROCESS_EXITED &&
+                   kind!=COREWEBVIEW2_PROCESS_FAILED_KIND_BROWSER_PROCESS_EXITED)
+                    return S_OK;
+                // Revoke all renderer grants BEFORE any host recovery.
+                mainFrameReady_=false;
+                documentSessionToken_.clear();
+                sharedProbePending_.clear();
+                sharedProbePendingBytes_=0;
+                sharedProbeCumulativeBytes_=0;
+                ++navigation_;
+                if(kind==COREWEBVIEW2_PROCESS_FAILED_KIND_RENDER_PROCESS_EXITED)
+                    ++rendererFailures_;
+                else
+                    ++browserProcessFailures_;
+                // Do not reenter WebView2 create/reload from this event.
+                // The host must choose explicit renderer reload or recreate.
+                return S_OK;
+            }).Get(),&processFailedToken_);
+    if(FAILED(result)) return result;
+    processFailedRegistered_=true;
     return S_OK;
 }
 
@@ -708,6 +739,11 @@ void WebView2Backend::destroyOnUi()
             webview_->remove_NavigationCompleted(
                 navigationCompletedToken_);
             navigationCompletedRegistered_ = false;
+        }
+        if (processFailedRegistered_)
+        {
+            webview_->remove_ProcessFailed(processFailedToken_);
+            processFailedRegistered_=false;
         }
     }
 
@@ -900,6 +936,32 @@ std::size_t WebView2Backend::cumulativeReadOnlySharedBufferBytesForTest() const
 {
     requireUiThread();
     return sharedProbeCumulativeBytes_;
+}
+
+bool WebView2Backend::requestRendererCrashForTest()
+{
+    requireUiThread();
+    if(!webview_ || !created_.load() || closing_.load() || !mainFrameReady_)
+        return false;
+    // Test-only DevTools command: a successful HRESULT means the command was
+    // submitted, not that a ProcessFailed callback was observed.
+    return SUCCEEDED(webview_->CallDevToolsProtocolMethod(
+        L"Page.crash", L"{}",
+        Microsoft::WRL::Callback<
+            ICoreWebView2CallDevToolsProtocolMethodCompletedHandler>(
+                [](HRESULT, LPCWSTR)->HRESULT { return S_OK; }).Get()));
+}
+
+unsigned int WebView2Backend::rendererFailuresForTest() const
+{
+    requireUiThread();
+    return rendererFailures_;
+}
+
+unsigned int WebView2Backend::browserProcessFailuresForTest() const
+{
+    requireUiThread();
+    return browserProcessFailures_;
 }
 
 void WebView2Backend::notifyLoadStarted(
