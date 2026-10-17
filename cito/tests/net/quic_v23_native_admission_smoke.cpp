@@ -39,7 +39,9 @@ int main(int argc, char** argv) {
         return 12;
     }
 
-    QUIC_CERTIFICATE_FILE file{argv[2], argv[3]};
+    QUIC_CERTIFICATE_FILE file{};
+    file.CertificateFile = argv[2];
+    file.PrivateKeyFile = argv[3];
     QUIC_CREDENTIAL_CONFIG credentials{};
     credentials.Type = QUIC_CREDENTIAL_TYPE_CERTIFICATE_FILE;
     credentials.CertificateFile = &file;
