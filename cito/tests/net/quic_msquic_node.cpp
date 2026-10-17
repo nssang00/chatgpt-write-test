@@ -155,6 +155,9 @@ QUIC_STATUS QUIC_API ClientConnectionCallback(HQUIC Connection, void* context, Q
             }
             break;
         case QUIC_CONNECTION_EVENT_SHUTDOWN_INITIATED_BY_TRANSPORT:
+            std::cerr << "quic_client_transport_shutdown status="
+                      << static_cast<long long>(event->SHUTDOWN_INITIATED_BY_TRANSPORT.Status)
+                      << "\n";
             fail(state);
             break;
         case QUIC_CONNECTION_EVENT_SHUTDOWN_COMPLETE:
@@ -189,9 +192,11 @@ bool open_configuration(bool server, const char* cert = nullptr, const char* key
         credentials.CertificateFile = &files;
         credentials.Flags = QUIC_CREDENTIAL_FLAG_NONE;
     } else {
+        if (!cert || !*cert) return false;
         credentials.Type = QUIC_CREDENTIAL_TYPE_NONE;
         credentials.Flags = static_cast<QUIC_CREDENTIAL_FLAGS>(
-            QUIC_CREDENTIAL_FLAG_CLIENT | QUIC_CREDENTIAL_FLAG_NO_CERTIFICATE_VALIDATION);
+            QUIC_CREDENTIAL_FLAG_CLIENT | QUIC_CREDENTIAL_FLAG_SET_CA_CERTIFICATE_FILE);
+        credentials.CaCertificateFile = cert;
     }
     return QUIC_SUCCEEDED(Api->ConfigurationLoadCredential(Configuration, &credentials));
 }
@@ -219,8 +224,8 @@ int run_server(std::uint16_t port, const char* cert, const char* key) {
     std::_Exit(0);
 }
 
-int run_client(const char* host, std::uint16_t port) {
-    if (!open_api() || !open_configuration(false)) return 20;
+int run_client(const char* host, std::uint16_t port, const char* ca) {
+    if (!open_api() || !open_configuration(false, ca)) return 20;
     State state;
     HQUIC connection = nullptr;
     if (QUIC_FAILED(Api->ConnectionOpen(Registration, ClientConnectionCallback, &state, &connection))) return 21;
@@ -257,8 +262,8 @@ int main(int argc, char** argv) {
         return run_server(static_cast<std::uint16_t>(std::stoul(argv[2])), argv[3], argv[4]);
     }
     if (argc >= 2 && std::strcmp(argv[1], "client") == 0) {
-        if (argc != 4) return 2;
-        return run_client(argv[2], static_cast<std::uint16_t>(std::stoul(argv[3])));
+        if (argc != 5) return 2;
+        return run_client(argv[2], static_cast<std::uint16_t>(std::stoul(argv[3])), argv[4]);
     }
     return 2;
 }
