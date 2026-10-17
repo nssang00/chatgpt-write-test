@@ -155,6 +155,9 @@ QUIC_STATUS QUIC_API ClientConnectionCallback(HQUIC Connection, void* context, Q
             }
             break;
         case QUIC_CONNECTION_EVENT_SHUTDOWN_INITIATED_BY_TRANSPORT:
+            std::cerr << "quic_client_transport_shutdown status="
+                      << static_cast<long long>(event->SHUTDOWN_INITIATED_BY_TRANSPORT.Status)
+                      << "\n";
             fail(state);
             break;
         case QUIC_CONNECTION_EVENT_SHUTDOWN_COMPLETE:
