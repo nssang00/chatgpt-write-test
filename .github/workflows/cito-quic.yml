@@ -502,6 +502,59 @@ jobs:
           fi
           test "$public_rejected_server_status" -ne 0
 
+          # The *public* Cito Context::request API with mutual TLS.
+          sudo ip netns exec cito-quic-s "$PUBBIN" server 4451 47510 \
+            10.202.0.11 47421 \
+            "$GITHUB_WORKSPACE/quic-cert.pem" "$GITHUB_WORKSPACE/quic-key.pem" \
+            "$GITHUB_WORKSPACE/quic-ca.pem" \
+            >quic-public-mtls-server.log 2>&1 &
+          PUBLIC_MTLS_PID=$!
+          sleep 0.3
+          public_mtls_client_status=0
+          timeout 14s sudo ip netns exec cito-quic-c "$PUBBIN" client 47421 \
+            "$GITHUB_WORKSPACE/quic-ca.pem" \
+            "$GITHUB_WORKSPACE/quic-client-cert.pem" \
+            "$GITHUB_WORKSPACE/quic-client-key.pem" \
+            >quic-public-mtls-client.log 2>&1 || public_mtls_client_status=$?
+          public_mtls_server_status=0
+          wait "$PUBLIC_MTLS_PID" || public_mtls_server_status=$?
+          echo "=== public Context RPC with mutual TLS ==="
+          cat quic-public-mtls-client.log
+          cat quic-public-mtls-server.log
+          test "$public_mtls_client_status" -eq 0
+          test "$public_mtls_server_status" -eq 0
+          grep -q 'quic_public_request_client result=42' quic-public-mtls-client.log
+          grep -q 'quic_public_request_server handler=1 reply=1' quic-public-mtls-server.log
+
+          # No client certificate: server TLS must reject the public API call.
+          sudo ip netns exec cito-quic-s "$PUBBIN" server 4452 47520 \
+            10.202.0.11 47422 \
+            "$GITHUB_WORKSPACE/quic-cert.pem" "$GITHUB_WORKSPACE/quic-key.pem" \
+            "$GITHUB_WORKSPACE/quic-ca.pem" \
+            >quic-public-no-cert-server.log 2>&1 &
+          PUBLIC_NO_CERT_PID=$!
+          sleep 0.3
+          public_no_cert_client_status=0
+          timeout 14s sudo ip netns exec cito-quic-c "$PUBBIN" client 47422 \
+            "$GITHUB_WORKSPACE/quic-ca.pem" \
+            >quic-public-no-cert-client.log 2>&1 || public_no_cert_client_status=$?
+          public_no_cert_server_status=0
+          wait "$PUBLIC_NO_CERT_PID" || public_no_cert_server_status=$?
+          echo "=== public Context RPC without required mTLS certificate ==="
+          cat quic-public-no-cert-client.log
+          cat quic-public-no-cert-server.log
+          test "$public_no_cert_client_status" -ne 0
+          test "$public_no_cert_client_status" -ne 124
+          test "$public_no_cert_server_status" -ne 0
+          if grep -q 'quic_public_request_client result=42' quic-public-no-cert-client.log; then
+            echo 'Unauthenticated public RPC unexpectedly succeeded'
+            exit 1
+          fi
+          if grep -q 'quic_public_request_server handler=1 reply=1' quic-public-no-cert-server.log; then
+            echo 'Unauthenticated RPC unexpectedly executed the remote handler'
+            exit 1
+          fi
+
 
 
       - name: Configure sanitized public Request/Reply smoke
