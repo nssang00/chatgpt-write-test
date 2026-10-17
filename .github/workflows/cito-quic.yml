@@ -333,6 +333,33 @@ jobs:
           grep -q "quic_public_request_client result=42 lazy=1 deadline=1 discovery=udp run=context" quic-public-client.log
           grep -q "quic_public_request_server handler=1 reply=1 discovery=udp run=context" quic-public-server.log
 
+          # Public Context request must never complete successfully when the
+          # server is signed by an untrusted CA. This is a full API failure
+          # test, distinct from the basic handshake rejection assertion.
+          sudo ip netns exec cito-quic-s "$PUBBIN" server 4439 47390 \
+            10.202.0.11 47321 \
+            "$GITHUB_WORKSPACE/quic-cert.pem" "$GITHUB_WORKSPACE/quic-key.pem" \
+            >quic-public-rejected-server.log 2>&1 &
+          PUBLIC_REJECT_PID=$!
+          sleep 0.3
+          public_rejected_client_status=0
+          timeout 12s sudo ip netns exec cito-quic-c "$PUBBIN" client 47321 \
+            "$GITHUB_WORKSPACE/quic-untrusted-ca.pem" \
+            >quic-public-rejected-client.log 2>&1 || public_rejected_client_status=$?
+          public_rejected_server_status=0
+          wait "$PUBLIC_REJECT_PID" || public_rejected_server_status=$?
+          echo "=== public RPC with untrusted CA: client status $public_rejected_client_status ==="
+          cat quic-public-rejected-client.log
+          cat quic-public-rejected-server.log
+          test "$public_rejected_client_status" -ne 0
+          test "$public_rejected_client_status" -ne 124
+          if grep -q "quic_public_request_client result=42" quic-public-rejected-client.log; then
+            echo "Unauthorized public RPC unexpectedly succeeded"
+            exit 1
+          fi
+          test "$public_rejected_server_status" -ne 0
+
+
 
       - name: Configure sanitized public Request/Reply smoke
         run: |
