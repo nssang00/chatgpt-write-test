@@ -2,7 +2,7 @@ name: Cito QUIC
 
 on:
   push:
-    branches: [cito-dev]
+    branches: [cito-dev, cito-native-v23-validation]
     paths:
       - "cito/CMakeLists.txt"
       - "cito/include/cito/data_packet.hpp"
@@ -81,10 +81,30 @@ jobs:
           cmake -S cito -B build-quic -G Ninja -DCMAKE_BUILD_TYPE=Debug -DCITO_ENABLE_MSQUIC=ON
           cmake --build build-quic --target cito_quic_msquic_node cito_quic_request_node cito_quic_public_request_node -j2
 
-      - name: Generate test certificate
+      - name: Generate private test CA and IP-SAN server certificate
+        shell: bash
         run: |
+          set -euo pipefail
           openssl req -x509 -newkey rsa:2048 -nodes -days 1 \
-            -keyout quic-key.pem -out quic-cert.pem -subj "/CN=10.202.0.12"
+            -keyout quic-ca-key.pem -out quic-ca.pem -subj "/CN=Cito Test Root" \
+            -addext "basicConstraints=critical,CA:TRUE" \
+            -addext "keyUsage=critical,keyCertSign,cRLSign"
+          openssl req -newkey rsa:2048 -nodes \
+            -keyout quic-key.pem -out quic-request.csr -subj "/CN=10.202.0.12"
+          cat > quic-server.ext <<'EOF'
+          subjectAltName=IP:10.202.0.12
+          basicConstraints=critical,CA:FALSE
+          keyUsage=critical,digitalSignature,keyEncipherment
+          extendedKeyUsage=serverAuth
+          EOF
+          openssl x509 -req -in quic-request.csr \
+            -CA quic-ca.pem -CAkey quic-ca-key.pem -CAcreateserial \
+            -out quic-cert.pem -days 1 -extfile quic-server.ext
+          openssl verify -CAfile quic-ca.pem -verify_ip 10.202.0.12 quic-cert.pem
+          if openssl verify -CAfile quic-ca.pem -verify_ip 10.202.0.99 quic-cert.pem; then
+            echo "Expected certificate name mismatch was not rejected"
+            exit 1
+          fi
 
       - name: Two-node QUIC stream and datagram smoke
         shell: bash
@@ -133,6 +153,7 @@ jobs:
 
           client_status=0
           sudo ip netns exec cito-quic-c "$BIN" client 10.202.0.12 4433 \
+            "$GITHUB_WORKSPACE/quic-ca.pem" \
             >quic-client.log 2>&1 || client_status=$?
 
           server_status=0
@@ -159,6 +180,7 @@ jobs:
 
           request_client_status=0
           sudo ip netns exec cito-quic-c "$RQBIN" client 10.202.0.12 4434 \
+            "$GITHUB_WORKSPACE/quic-ca.pem" \
             >quic-request-client.log 2>&1 || request_client_status=$?
 
           request_server_status=0
