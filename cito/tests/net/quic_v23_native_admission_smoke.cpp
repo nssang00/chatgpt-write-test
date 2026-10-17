@@ -17,11 +17,11 @@ int main(int argc, char** argv) {
     if (number == 0 || number > 65535) return 2;
 
     const QUIC_API_TABLE* api = nullptr;
-    if (QUIC_FAILED(MsQuicOpen2(&api)) || !api) return 10;
+    if (QUIC_FAILED(MsQuicOpen2(&api)) || !api) { std::cerr << "admission_open_api_failed\n"; return 10; }
     HQUIC registration = nullptr;
     const QUIC_REGISTRATION_CONFIG reg_config{"cito-v23-admission-smoke",
                                                QUIC_EXECUTION_PROFILE_LOW_LATENCY};
-    if (QUIC_FAILED(api->RegistrationOpen(&reg_config, &registration))) return 11;
+    if (QUIC_FAILED(api->RegistrationOpen(&reg_config, &registration))) { std::cerr << "admission_registration_failed\n"; return 11; }
 
     constexpr std::uint8_t alpn_bytes[] = {'c','i','t','o','/','1'};
     QUIC_BUFFER alpn{sizeof(alpn_bytes), const_cast<std::uint8_t*>(alpn_bytes)};
@@ -35,6 +35,7 @@ int main(int argc, char** argv) {
     settings.IsSet.IdleTimeoutMs = TRUE;
     if (QUIC_FAILED(api->ConfigurationOpen(registration, &alpn, 1, &settings,
                                              sizeof(settings), nullptr, &configuration))) {
+        std::cerr << "admission_config_open_failed\n";
         return 12;
     }
 
@@ -43,6 +44,7 @@ int main(int argc, char** argv) {
     credentials.Type = QUIC_CREDENTIAL_TYPE_CERTIFICATE_FILE;
     credentials.CertificateFile = &file;
     if (QUIC_FAILED(api->ConfigurationLoadCredential(configuration, &credentials))) {
+        std::cerr << "admission_tls_load_failed\n";
         return 13;
     }
 
@@ -68,7 +70,8 @@ int main(int argc, char** argv) {
         QUIC_ADDR address{};
         QuicAddrSetFamily(&address, QUIC_ADDRESS_FAMILY_UNSPEC);
         QuicAddrSetPort(&address, static_cast<std::uint16_t>(number));
-        if (!listener.start(alpn_bytes, &address)) return 14;
+        if (!listener.start(alpn_bytes, &address)) { std::cerr << "admission_listener_start_failed\n"; return 14; }
+        std::cout << "admission_listener_ready" << std::endl;
 
         const auto deadline = std::chrono::steady_clock::now() + 8s;
         while (std::chrono::steady_clock::now() < deadline &&
