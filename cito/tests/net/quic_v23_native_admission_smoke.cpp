@@ -13,9 +13,12 @@
 using namespace std::chrono_literals;
 
 int main(int argc, char** argv) {
-    if (argc != 4 && argc != 5) return 2;
-    const bool deny = argc == 5 && std::string_view(argv[4]) == "deny";
-    if (argc == 5 && !deny) return 2;
+    if (argc != 4 && argc != 5 && argc != 6) return 2;
+    const auto mode = argc >= 5 ? std::string_view(argv[4]) : std::string_view{};
+    const bool deny = mode == "deny";
+    const bool mtls = mode == "mtls" || mode == "mtls-reject";
+    const bool expect_no_client = mode == "mtls-reject";
+    if ((argc == 5 && !deny) || (argc == 6 && !mtls)) return 2;
     const unsigned long number = std::strtoul(argv[1], nullptr, 10);
     if (number == 0 || number > 65535) return 2;
 
@@ -48,6 +51,12 @@ int main(int argc, char** argv) {
     QUIC_CREDENTIAL_CONFIG credentials{};
     credentials.Type = QUIC_CREDENTIAL_TYPE_CERTIFICATE_FILE;
     credentials.CertificateFile = &file;
+    if (mtls) {
+        credentials.Flags = static_cast<QUIC_CREDENTIAL_FLAGS>(
+            QUIC_CREDENTIAL_FLAG_REQUIRE_CLIENT_AUTHENTICATION |
+            QUIC_CREDENTIAL_FLAG_SET_CA_CERTIFICATE_FILE);
+        credentials.CaCertificateFile = argv[5];
+    }
     if (QUIC_FAILED(api->ConfigurationLoadCredential(configuration, &credentials))) {
         std::cerr << "admission_tls_load_failed\n";
         return 13;
@@ -82,9 +91,11 @@ int main(int argc, char** argv) {
         if (!listener.start(alpn_bytes, &address)) { std::cerr << "admission_listener_start_failed\n"; return 14; }
         std::cout << "admission_listener_ready" << std::endl;
 
-        const auto deadline = std::chrono::steady_clock::now() + 8s;
+        const auto deadline = std::chrono::steady_clock::now() +
+                              (expect_no_client ? 3s : 8s);
         while (std::chrono::steady_clock::now() < deadline &&
-               !(deny ? (seen.load(std::memory_order_relaxed) == 1 && admission.empty())
+               !(expect_no_client ? false :
+                 deny ? (seen.load(std::memory_order_relaxed) == 1 && admission.empty())
                       : authorized.load(std::memory_order_relaxed) == 1)) {
             admission.poll();
             std::this_thread::sleep_for(2ms);
@@ -98,14 +109,17 @@ int main(int argc, char** argv) {
             admission.poll();
             std::this_thread::sleep_for(2ms);
         }
-        ok = admission.empty() && seen.load() == 1 &&
-             authorized.load() == (deny ? 0U : 1U) &&
-             closed.load() == (deny ? 0U : 1U);
+        ok = admission.empty() &&
+             seen.load() == (expect_no_client ? 0U : 1U) &&
+             authorized.load() == ((deny || expect_no_client) ? 0U : 1U) &&
+             closed.load() == ((deny || expect_no_client) ? 0U : 1U);
         std::cout << "cito_v23_native_admission seen=" << seen.load()
                   << " denied=" << deny
                   << " authorized=" << authorized.load()
                   << " closed=" << closed.load()
-                  << " drained=" << admission.empty() << std::endl;
+                  << " drained=" << admission.empty()
+                  << " mtls=" << mtls << " no_client=" << expect_no_client
+                  << std::endl;
         // Do not return while accepted callbacks are still alive.
         if (!admission.empty()) std::terminate();
     }
