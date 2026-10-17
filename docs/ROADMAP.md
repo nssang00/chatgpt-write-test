@@ -224,8 +224,19 @@ See [macOS/WebKit platform plan](MACOS_WEBKIT_PORT_PLAN_KO.md).
   [CI 38910026996](https://github.com/nssang00/chatgpt-write-test/actions/runs/38910026996).
 - [x] 복원 불가 문서 누적 32MiB cap 및 1MiB×31회 후 차단
   E2E: [CI 38911699700](https://github.com/nssang00/chatgpt-write-test/actions/runs/38911699700).
-- [ ] renderer crash/close, 다중 WebView quota 격리, 장기 메모리
-  압력 검증 및 제품 모드 정책 결정 전 공개 API 자동 전환 금지.
+- [x] 실제 WebView2 renderer `Page.crash` 후 `ProcessFailed`
+  세션/grant 무효화와 `Reload()` 복구 E2E:
+  [CI 39011968543](https://github.com/nssang00/chatgpt-write-test/actions/runs/39011968543).
+- [x] 두 WebView가 동일 requestId를 사용해도 grant/quota가 격리되고
+  한쪽 reload가 다른 쪽 pending 전송에 영향 없음을 확인:
+  [CI 39012118661](https://github.com/nssang00/chatgpt-write-test/actions/runs/39012118661).
+- [x] 문서당 32MiB × 4회 reload = 128MiB 누적 전송·release
+  스모크와 host/browser main process 작업 집합 기록:
+  [CI 39012660459](https://github.com/nssang00/chatgpt-write-test/actions/runs/39012660459).
+  수동 `soak_cycles` 4~500회 확대 가능(장기 실행은 미검증).
+- [ ] WebView2 **브라우저 프로세스** 종료/재생성, 실제 장시간 soak
+  및 전체 renderer 프로세스 그룹 메모리, 악성 ACK/다중 창 장기 압력
+  검증과 제품 모드 정책 결정 전 공개 API 자동 전환 금지.
 - [ ] full baseline 5세션×5,000 표본, encode/decode 단계별 trace,
   Native→JS LAT-03, WebView2 고급 SharedBuffer 수명·보안 테스트.
 - [x] WebView2 Base64 Binary 프레이밍 예비 실측: 64KiB p50

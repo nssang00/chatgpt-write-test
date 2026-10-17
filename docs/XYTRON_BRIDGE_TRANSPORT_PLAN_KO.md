@@ -131,9 +131,30 @@
   제한 구현. 새 문서의 선행 1KiB + 1MiB 반복 31회 허용 후
   다음 1MiB 차단을 실제 브라우저에서 검증:
   [CI 38911699700](https://github.com/nssang00/chatgpt-write-test/actions/runs/38911699700).
-- [ ] 실제 renderer process crash/close 처리 및 재진입, 다중
-  WebView 격리, 수십 분 이상 장기 메모리 압력, 악성 ACK의
-  즉시 재사용·비정상 종료 방어 검증.
+- [x] WebView2 `ProcessFailed`에서 main renderer/browser 종료 감지 후
+  메인 문서 토큰, 미확인 SharedBuffer 및 누적 quota 즉시 무효화;
+  renderer 종료는 **명시적 host `Reload()`**로 복구.
+  실제 DevTools `Page.crash`로 renderer 종료, 1MiB grant 폐기,
+  새 문서에서 새 grant/1KiB 전송 확인:
+  [CI 39011968543](https://github.com/nssang00/chatgpt-write-test/actions/runs/39011968543).
+  *BrowserProcessExited*의 실제 브라우저 프로세스 재생성은 미검증.
+- [x] 동일 Win32 호스트의 실제 WebView2 **두 인스턴스**:
+  A의 quota 2MiB 소진 후 B에서 1MiB 성공, 상호 grant ACK 거부,
+  A reload 후 B의 pending quota 보존과 독립 해제 확인:
+  [CI 39012118661](https://github.com/nssang00/chatgpt-write-test/actions/runs/39012118661).
+- [x] 동일 WebView2에서 1MiB × 32회/문서를 4개 문서에 걸쳐
+  반복 전송·release+ACK·reload, 총 **128MiB 논리적 전송량** E2E
+  스모크 통과: [CI 39012660459](https://github.com/nssang00/chatgpt-write-test/actions/runs/39012660459).
+  호스트 작업 집합 약 12.8MB→최대 14.8MB, WebView2 브라우저
+  메인 프로세스 약 86.8MB→최대 89.9MB(렌더러/유틸리티 제외).
+- [x] 수동 `Windows Bridge Paired Benchmark` workflow의
+  `soak_cycles` 입력값(4~500)으로 확장 테스트를 재현할 수 있도록 준비.
+- [ ] 최소 수십 분/수백 회의 확장 soak를 **실제 실행**, 렌더러·유틸리티
+  프로세스 포함 전체 WebView2 프로세스 그룹 Private Bytes/RSS 관측,
+  메모리 증가 추세/크래시 여부 확인. 현재 4회 스모크만 실측.
+- [ ] 실제 browser process 강제 종료 후 host가 WebView2를 재생성하는
+  시나리오, hang/unresponsive, 동시 다중 사용자 WebView/여러 프로세스
+  장기 압력, 악성 ACK와 비정상 종료의 결합 경계 실측.
 
 주의: release-ack은 **협조적 회계 처리**이며, JS 측 `releaseBuffer()`
 실행의 증명이 아니다. 현 문서가 유효 grant를 알고 ACK를 위조해도
@@ -141,3 +162,18 @@
 누적 32MiB 상한은 복원되지 않는다. 여러 문서/브라우저에서
 반복적으로 리로드하는 경우까지 메모리를 완전히 제한하는 것은
 아니다. 기본 `xytron` 바이너리 전송으로 자동 승격하지 않는다.
+
+### ProcessFailed 복구 범위와 측정 주의 (2026-10-17)
+
+- WebView2 `COREWEBVIEW2_PROCESS_FAILED_KIND_RENDER_PROCESS_EXITED`:
+  back end는 세션/SharedBuffer grant를 즉시 취소한다. 외부 호스트가
+  이후 명시적으로 `Reload()`를 호출한다. 정상 재활성화 시 새 토큰/
+  grant가 필요하다. 기존 자동 복구 또는 무조건 재로드는 하지 않는다.
+- `COREWEBVIEW2_PROCESS_FAILED_KIND_BROWSER_PROCESS_EXITED`:
+  동일하게 상태를 취소하지만 **Reload만으로는 복구 불가능**하다.
+  WebView 컨트롤러 재생성이 필요하며 실제 종료/재생성 E2E는 미완료.
+- 이 테스트용 `Page.crash`, quota 및 memory 관측용 메서드는
+  WebView2 내부/테스트 전용이다. 공개 `xytron` RPC로 노출하지 않는다.
+- 스모크의 작업 집합 수치는 호스트/브라우저 메인 프로세스만
+  측정한다. Chromium renderer/GPU/utility 및 공유 메모리의
+  모든 프로세스 기여분을 포함하지 않으며 leak-free 보증이 아니다.
