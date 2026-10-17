@@ -18,6 +18,7 @@ on:
       - "cito/src/posix_udp_control_manager.cpp"
       - "cito/src/linux_request_runtime_driver.cpp"
       - "cito/tests/net/quic_msquic_node.cpp"
+      - "cito/tests/net/quic_v23_native_admission_smoke.cpp"
       - "cito/tests/net/quic_public_request_node.cpp"
       - "cito/tests/net/quic_request_node.cpp"
       - "cito/tests/transport_selector_test.cpp"
