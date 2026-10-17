@@ -233,10 +233,21 @@ See [macOS/WebKit platform plan](MACOS_WEBKIT_PORT_PLAN_KO.md).
 - [x] 문서당 32MiB × 4회 reload = 128MiB 누적 전송·release
   스모크와 host/browser main process 작업 집합 기록:
   [CI 39012660459](https://github.com/nssang00/chatgpt-write-test/actions/runs/39012660459).
-  수동 `soak_cycles` 4~500회 확대 가능(장기 실행은 미검증).
-- [ ] WebView2 **브라우저 프로세스** 종료/재생성, 실제 장시간 soak
-  및 전체 renderer 프로세스 그룹 메모리, 악성 ACK/다중 창 장기 압력
-  검증과 제품 모드 정책 결정 전 공개 API 자동 전환 금지.
+  수동 `soak_cycles` 4~500회 확대 가능. PR CI에서는 100회 반복도
+  검증했으나 수십 분 이상 지속하는 장기 실행은 별도.
+- [x] WebView2 브라우저 **메인 프로세스 실제 강제 종료** 후
+  `ProcessFailed` 통보와 기존 grant 무효화, 전용 새 사용자 데이터 폴더의
+  새 컨트롤 생성 및 RPC/SharedBuffer 재활성화:
+  [CI 39036334075](https://github.com/nssang00/chatgpt-write-test/actions/runs/39036334075).
+- [x] 실제 100문서 × 32MiB = **3,200MiB 논리적 SharedBuffer 전송**,
+  매 문서 release-ACK/reload 및 WebView2 전체 프로세스 그룹
+  Private Bytes 101회 측정:
+  [CI 39036736024](https://github.com/nssang00/chatgpt-write-test/actions/runs/39036736024).
+  시작 81.2MB → 종료 94.7MB, 최고 121.9MB. 원본 CSV/JSON 보존.
+- [ ] 기존 사용자 데이터 폴더를 재사용하는 browser-process 복구,
+  수십 분 이상의 시간 기반 soak/여러 독립 Runner 분산,
+  동시 다중 사용자 프로세스 장기 압력, hang/unresponsive 실측,
+  제품 모드 정책 결정 전 공개 API 자동 전환 금지.
 - [ ] full baseline 5세션×5,000 표본, encode/decode 단계별 trace,
   Native→JS LAT-03, WebView2 고급 SharedBuffer 수명·보안 테스트.
 - [x] WebView2 Base64 Binary 프레이밍 예비 실측: 64KiB p50

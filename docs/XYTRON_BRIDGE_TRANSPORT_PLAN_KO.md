@@ -137,7 +137,8 @@
   실제 DevTools `Page.crash`로 renderer 종료, 1MiB grant 폐기,
   새 문서에서 새 grant/1KiB 전송 확인:
   [CI 39011968543](https://github.com/nssang00/chatgpt-write-test/actions/runs/39011968543).
-  *BrowserProcessExited*의 실제 브라우저 프로세스 재생성은 미검증.
+  브라우저 메인 프로세스 강제 종료 및 **새 격리 프로필 생성** 검증은
+  별도 [CI 39036334075](https://github.com/nssang00/chatgpt-write-test/actions/runs/39036334075)에서 완료.
 - [x] 동일 Win32 호스트의 실제 WebView2 **두 인스턴스**:
   A의 quota 2MiB 소진 후 B에서 1MiB 성공, 상호 grant ACK 거부,
   A reload 후 B의 pending quota 보존과 독립 해제 확인:
@@ -149,12 +150,23 @@
   메인 프로세스 약 86.8MB→최대 89.9MB(렌더러/유틸리티 제외).
 - [x] 수동 `Windows Bridge Paired Benchmark` workflow의
   `soak_cycles` 입력값(4~500)으로 확장 테스트를 재현할 수 있도록 준비.
-- [ ] 최소 수십 분/수백 회의 확장 soak를 **실제 실행**, 렌더러·유틸리티
-  프로세스 포함 전체 WebView2 프로세스 그룹 Private Bytes/RSS 관측,
-  메모리 증가 추세/크래시 여부 확인. 현재 4회 스모크만 실측.
-- [ ] 실제 browser process 강제 종료 후 host가 WebView2를 재생성하는
-  시나리오, hang/unresponsive, 동시 다중 사용자 WebView/여러 프로세스
-  장기 압력, 악성 ACK와 비정상 종료의 결합 경계 실측.
+- [x] 실제 100회 reload/총 3,200MiB 논리적 SharedBuffer 전송,
+  매 사이클 렌더러/GPU/utility 등 WebView2 Runtime 프로세스 그룹
+  Private Bytes 기록 (crashpad 제외):
+  [CI 39036736024](https://github.com/nssang00/chatgpt-write-test/actions/runs/39036736024).
+  101개 메모리 표본 및 CSV/JSON/요약 Markdown을 Actions artifact 보관.
+  프로세스 그룹 Private Bytes 81,162,240B → 94,679,040B,
+  중간 최대 121,913,344B. 5개 프로세스·렌더러 1개 관측.
+  해당 CI의 100회 전송은 약 40초 내외의 단기 스트레스이며
+  **수십 분 이상의 장기 누수·안정성 검증은 아직 아님**.
+- [x] 전용 temp 사용자 데이터 폴더의 실제 WebView2 browser
+  main process를 강제 종료하고 ProcessFailed(BROWSER_PROCESS_EXITED),
+  SharedBuffer grant 폐기 및 새 격리 프로필/컨트롤 생성 테스트:
+  [CI 39036334075](https://github.com/nssang00/chatgpt-write-test/actions/runs/39036334075).
+  기본 profile이나 다른 WebView2 앱 프로세스는 종료하지 않음.
+- [ ] 동일 사용자 데이터 폴더의 브라우저 재사용/재생성,
+  수십 분 이상 장기 압력/다중 호스트, hang/unresponsive,
+  악성 ACK와 비정상 종료의 결합 경계 실측.
 
 주의: release-ack은 **협조적 회계 처리**이며, JS 측 `releaseBuffer()`
 실행의 증명이 아니다. 현 문서가 유효 grant를 알고 ACK를 위조해도
@@ -171,9 +183,16 @@
   grant가 필요하다. 기존 자동 복구 또는 무조건 재로드는 하지 않는다.
 - `COREWEBVIEW2_PROCESS_FAILED_KIND_BROWSER_PROCESS_EXITED`:
   동일하게 상태를 취소하지만 **Reload만으로는 복구 불가능**하다.
-  WebView 컨트롤러 재생성이 필요하며 실제 종료/재생성 E2E는 미완료.
+  WebView 컨트롤러 재생성이 필요. **전용 첫 프로필의 브라우저를
+  강제 종료한 뒤 새로운 격리 프로필로 재생성**하는 E2E까지 완료:
+  [CI 39036334075](https://github.com/nssang00/chatgpt-write-test/actions/runs/39036334075).
+  동일 사용자 데이터 폴더 재사용과 Environment5 BrowserProcessExited
+  자원 종료 타이밍 검증은 별도 후속.
 - 이 테스트용 `Page.crash`, quota 및 memory 관측용 메서드는
   WebView2 내부/테스트 전용이다. 공개 `xytron` RPC로 노출하지 않는다.
-- 스모크의 작업 집합 수치는 호스트/브라우저 메인 프로세스만
-  측정한다. Chromium renderer/GPU/utility 및 공유 메모리의
-  모든 프로세스 기여분을 포함하지 않으며 leak-free 보증이 아니다.
+- 기존 작업 집합(Working Set) 스모크는 호스트/브라우저 메인만
+  보았지만, 새 `ICoreWebView2Environment8::GetProcessInfos` 실험은
+  같은 사용자 데이터 폴더의 browser/renderer/GPU/utility
+  Private Bytes를 집계한다(크래시패드 제외). 각 시점에 살아 있는
+  프로세스만 측정하며 공유 매핑 및 OS 캐시 전체 비용을 의미하지
+  않는다. **한 번의 100회 결과로 leak-free를 보증하지 않는다.**
