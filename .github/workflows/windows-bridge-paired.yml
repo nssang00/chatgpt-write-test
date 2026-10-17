@@ -63,6 +63,13 @@ jobs:
           & build/webview2/bin/nativeweb_webview2_process_failure_probe.exe |
             Tee-Object -FilePath build/renderer-failure-probe.log
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Two-WebView SharedBuffer quota isolation E2E
+        shell: pwsh
+        timeout-minutes: 3
+        run: |
+          & build/webview2/bin/nativeweb_webview2_sharedbuffer_multi_probe.exe |
+            Tee-Object -FilePath build/sharedbuffer-multi-probe.log
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Summarize same-page SharedBuffer vs Base64 transport
         shell: pwsh
         run: |
@@ -100,4 +107,5 @@ jobs:
             build/bridge-paired/**
             build/sharedbuffer-probe.log
             build/renderer-failure-probe.log
+            build/sharedbuffer-multi-probe.log
           if-no-files-found: warn
