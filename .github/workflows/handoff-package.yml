@@ -1,4 +1,5 @@
 name: NativeWeb Handoff Snapshot
+# Refresh exact-source handoff snapshot for the 2026-10-17 transfer.
 
 on:
   push:
