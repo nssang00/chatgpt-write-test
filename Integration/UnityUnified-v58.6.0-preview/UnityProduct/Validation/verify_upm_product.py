@@ -31,7 +31,7 @@ for s in ['UnifiedWebView.cs','CefTextureBackendBridge.cs','WebView2OverlayBacke
     assert (root/'ExistingRuntime'/s).exists(), s
 assert (root/'Editor/Company.WebView.Editor.asmdef').exists()
 # Avoid binding-time Join-Path failures in Windows PowerShell 5.1.
-param_text=builder.split('param(',1)[1].split('\\n)',1)[0]
+param_text=builder.split('param(',1)[1].split('\n)',1)[0]
 assert '$PSScriptRoot' not in param_text and 'Join-Path' not in param_text, 'Do not resolve paths while binding script arguments'
 for needle in ('$kitDir=$PSScriptRoot', 'Split-Path -Path $MyInvocation.MyCommand.Path -Parent',
                "Join-Path $kitDir 'CefOneClick-v58.4.4-source.zip'",
