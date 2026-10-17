@@ -2,7 +2,7 @@ name: Cito QUIC
 
 on:
   push:
-    branches: [cito-dev, cito-native-v23-validation]
+    branches: [cito-dev, cito-native-v23-validation, cito-v23-native-headers]
     paths:
       - "cito/CMakeLists.txt"
       - "cito/include/cito/data_packet.hpp"
@@ -11,6 +11,7 @@ on:
       - "cito/include/cito/detail/request_transport.hpp"
       - "cito/include/cito/detail/request_session_lifecycle.hpp"
       - "cito/include/cito/detail/msquic_request_session_manager.hpp"
+      - "cito/include/cito/detail/request_msquic_*.hpp"
       - "cito/include/cito/detail/posix_udp_control_manager.hpp"
       - "cito/include/cito/detail/linux_request_runtime_driver.hpp"
       - "cito/src/msquic_request_session_manager.cpp"
@@ -75,6 +76,19 @@ jobs:
             -Wl,-rpath,/usr/local/lib -lmsquic -o /tmp/cito-msquic-native-probe
           /tmp/cito-msquic-native-probe
           echo 'MsQuic 2.6.1 native compile/link/open/close probe PASS'
+
+      - name: Compile v23 native listener against real MsQuic SDK
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat >/tmp/cito-native-listener-check.cpp <<'EOF'
+          #include <cito/detail/request_msquic_listener.hpp>
+          #include <type_traits>
+          static_assert(!std::is_copy_constructible_v<cito::detail::RequestMsQuicListener>);
+          int main() { return 0; }
+          EOF
+          c++ -std=c++20 -Wall -Wextra -Werror -fsyntax-only \
+            -Icito/include -I/usr/local/include /tmp/cito-native-listener-check.cpp
 
       - name: Configure and build QUIC smoke
         run: |
