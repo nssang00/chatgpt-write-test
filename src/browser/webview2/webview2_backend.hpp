@@ -51,6 +51,22 @@ public:
     bool requestRendererCrashForTest();
     unsigned int rendererFailuresForTest() const;
     DWORD browserProcessIdForTest() const;
+    // Environment-wide snapshot includes renderer/GPU/utility processes
+    // sharing the WebView2 user data folder (excluding crashpad).
+    struct ProcessMemorySnapshot
+    {
+        ProcessMemorySnapshot()
+            : totalPrivateBytes(0), totalWorkingSetBytes(0),
+              rendererPrivateBytes(0), processCount(0),
+              rendererCount(0), sampledCount(0) {}
+        std::size_t totalPrivateBytes;
+        std::size_t totalWorkingSetBytes;
+        std::size_t rendererPrivateBytes;
+        unsigned int processCount;
+        unsigned int rendererCount;
+        unsigned int sampledCount;
+    };
+    bool processGroupMemoryForTest(ProcessMemorySnapshot* result) const;
     unsigned int browserProcessFailuresForTest() const;
 
 private:

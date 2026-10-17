@@ -12,6 +12,7 @@
 #include <objidl.h>
 
 #include <memory>
+#include <psapi.h>
 #include <cstring>
 #include <sstream>
 #include <stdexcept>
@@ -958,6 +959,60 @@ DWORD WebView2Backend::browserProcessIdForTest() const
     UINT32 pid=0;
     if(webview_) (void)webview_->get_BrowserProcessId(&pid);
     return static_cast<DWORD>(pid);
+}
+
+bool WebView2Backend::processGroupMemoryForTest(
+    ProcessMemorySnapshot* result) const
+{
+    requireUiThread();
+    if (!result || !environment_ || closing_.load())
+        return false;
+    Microsoft::WRL::ComPtr<ICoreWebView2Environment8> env8;
+    if (FAILED(environment_.As(&env8)))
+        return false;
+    Microsoft::WRL::ComPtr<ICoreWebView2ProcessInfoCollection> list;
+    if (FAILED(env8->GetProcessInfos(&list)) || !list)
+        return false;
+    UINT count=0;
+    if (FAILED(list->get_Count(&count)))
+        return false;
+    ProcessMemorySnapshot reading;
+    reading.processCount=count;
+    for (UINT i=0;i<count;++i)
+    {
+        Microsoft::WRL::ComPtr<ICoreWebView2ProcessInfo> info;
+        if (FAILED(list->GetValueAtIndex(i,&info)) || !info)
+            return false;
+        INT32 pid=0;
+        COREWEBVIEW2_PROCESS_KIND kind;
+        if (FAILED(info->get_ProcessId(&pid)) ||
+            FAILED(info->get_Kind(&kind)))
+            return false;
+        if (kind==COREWEBVIEW2_PROCESS_KIND_RENDERER)
+            ++reading.rendererCount;
+        // Processes may exit between enumerating and sampling. Report
+        // counts separately instead of fabricating zero-byte readings.
+        HANDLE process=OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION,
+                                   FALSE,static_cast<DWORD>(pid));
+        if (!process) continue;
+        PROCESS_MEMORY_COUNTERS_EX pmc={};
+        pmc.cb=sizeof(pmc);
+        const BOOL ok=GetProcessMemoryInfo(
+            process,reinterpret_cast<PROCESS_MEMORY_COUNTERS*>(&pmc),
+            sizeof(pmc));
+        CloseHandle(process);
+        if (!ok) continue;
+        ++reading.sampledCount;
+        reading.totalPrivateBytes+=pmc.PrivateUsage;
+        reading.totalWorkingSetBytes+=pmc.WorkingSetSize;
+        if (kind==COREWEBVIEW2_PROCESS_KIND_RENDERER)
+            reading.rendererPrivateBytes+=pmc.PrivateUsage;
+    }
+    // Do not present an empty or unsupported environment as zero usage.
+    if (!reading.sampledCount)
+        return false;
+    *result=reading;
+    return true;
 }
 
 unsigned int WebView2Backend::rendererFailuresForTest() const

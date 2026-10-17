@@ -82,6 +82,7 @@ target_link_libraries(nativeweb_webview2_backend
     user32
     version
     shlwapi
+    psapi
 )
 
 add_executable(nativeweb_webview2_bridge_integration

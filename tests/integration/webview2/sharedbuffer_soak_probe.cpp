@@ -124,6 +124,9 @@ int main(int argc,char* argv[])
     Listener listener(backend);
     backend.setListener(&listener);
     std::size_t hostStart=0,hostPeak=0,browserStart=0,browserPeak=0,browserEnd=0;
+    std::size_t groupPrivateStart=0,groupPrivatePeak=0,groupPrivateEnd=0;
+    std::size_t rendererPrivatePeak=0;
+    unsigned int processPeak=0,rendererCountPeak=0,samples=0;
     try {
         std::shared_ptr<nativeweb::AppResourceBundle> resources(
             new nativeweb::AppResourceBundle());
@@ -136,6 +139,15 @@ int main(int argc,char* argv[])
         hostStart=hostPeak=workingSetBytes(GetCurrentProcessId());
         const DWORD browserPid=backend.browserProcessIdForTest();
         browserStart=browserPeak=workingSetBytes(browserPid);
+        nativeweb::detail::WebView2Backend::ProcessMemorySnapshot first;
+        if(!backend.processGroupMemoryForTest(&first) ||
+           first.rendererCount==0)
+            throw std::runtime_error("WebView2 process group snapshot unavailable");
+        groupPrivateStart=groupPrivatePeak=first.totalPrivateBytes;
+        rendererPrivatePeak=first.rendererPrivateBytes;
+        processPeak=first.processCount;
+        rendererCountPeak=first.rendererCount;
+        ++samples;
         nativeweb::Binary bytes(1048576);
         for(std::size_t i=0;i<bytes.size();++i)
             bytes[i]=static_cast<unsigned char>((i*37+17)&255);
@@ -162,6 +174,25 @@ int main(int argc,char* argv[])
                 hostPeak=std::max(hostPeak,workingSetBytes(GetCurrentProcessId()));
                 browserEnd=workingSetBytes(browserPid);
                 browserPeak=std::max(browserPeak,browserEnd);
+                nativeweb::detail::WebView2Backend::ProcessMemorySnapshot snapshot;
+                if(!backend.processGroupMemoryForTest(&snapshot) ||
+                   snapshot.rendererCount==0)
+                    throw std::runtime_error("WebView2 renderer memory sample missing");
+                groupPrivateEnd=snapshot.totalPrivateBytes;
+                groupPrivatePeak=std::max(groupPrivatePeak,groupPrivateEnd);
+                rendererPrivatePeak=std::max(rendererPrivatePeak,
+                                             snapshot.rendererPrivateBytes);
+                processPeak=std::max(processPeak,snapshot.processCount);
+                rendererCountPeak=std::max(rendererCountPeak,snapshot.rendererCount);
+                ++samples;
+                std::cout << "xytron-sharedbuffer-soak-sample:"
+                          << " cycle=" << complete
+                          << " private_bytes=" << snapshot.totalPrivateBytes
+                          << " renderer_private_bytes=" << snapshot.rendererPrivateBytes
+                          << " processes=" << snapshot.processCount
+                          << " sampled_processes=" << snapshot.sampledCount
+                          << " renderers=" << snapshot.rendererCount
+                          << std::endl;
                 if(complete==cycles) {
                     result=0;
                     break;
@@ -187,8 +218,17 @@ int main(int argc,char* argv[])
              <<" browser_main_working_set_start_bytes="<<browserStart
              <<" browser_main_working_set_peak_bytes="<<browserPeak
              <<" browser_main_working_set_end_bytes="<<browserEnd
+             <<" process_group_private_start_bytes="<<groupPrivateStart
+             <<" process_group_private_peak_bytes="<<groupPrivatePeak
+             <<" process_group_private_end_bytes="<<groupPrivateEnd
+             <<" renderer_private_peak_bytes="<<rendererPrivatePeak
+             <<" process_group_peak_count="<<processPeak
+             <<" renderer_peak_count="<<rendererCountPeak
+             <<" memory_samples="<<samples
              <<std::endl;
-    // OS working sets are diagnostic: renderer/utility processes are not
-    // covered by browser main-process RSS and are never used as a hard gate.
+    // Process-group PrivateUsage includes available WebView2 runtime
+    // renderer/GPU/utility processes, but excludes crashpad and does not
+    // account for file cache/shared mappings globally. Never used as a hard
+    // leak threshold on variable shared GitHub-hosted runners.
     return result;
 }
