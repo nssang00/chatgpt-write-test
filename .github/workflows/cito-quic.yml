@@ -191,6 +191,7 @@ jobs:
           cat quic-untrusted-client.log
           test "$reject_status" -ne 0
           test "$reject_status" -ne 124
+          grep -q "quic_client_transport_shutdown status=" quic-untrusted-client.log
 
           RQBIN="$GITHUB_WORKSPACE/build-quic/cito_quic_request_node"
 
