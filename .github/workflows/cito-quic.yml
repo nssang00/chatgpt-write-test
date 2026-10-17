@@ -239,7 +239,10 @@ jobs:
           echo "=== deny server startup status ==="
           cat quic-v23-deny-server.log
           if ! grep -q 'admission_listener_ready' quic-v23-deny-server.log; then
-            echo "Denied mode listener did not start"
+            early_status=0
+            wait "$DENY_PID" || early_status=$?
+            echo "Denied mode listener did not start; exit status=$early_status"
+            ls -l /tmp/cito-v23-native-admission-smoke quic-v23-deny-server.log
             exit 1
           fi
           deny_client_status=0
