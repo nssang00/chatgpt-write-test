@@ -353,7 +353,8 @@ int run_server(
 }
 
 int run_client(
-    std::uint16_t control_port) {
+    std::uint16_t control_port,
+    const char* ca_file) {
     using namespace cito::detail;
 
     auto runtime =
@@ -368,9 +369,7 @@ int run_client(
         control_port;
     options.quic.registration_name =
         "cito-public-client";
-    options.quic
-        .skip_server_certificate_validation =
-        true;
+    options.quic.ca_certificate_file = ca_file;
 
     auto driver =
         install_linux_request_runtime(
@@ -543,7 +542,7 @@ int main(
         std::strcmp(
             argv[1],
             "client") == 0) {
-        if (argc != 3) {
+        if (argc != 4) {
             return 2;
         }
 
@@ -551,7 +550,8 @@ int main(
             static_cast<
                 std::uint16_t>(
                 std::stoul(
-                    argv[2])));
+                    argv[2])),
+            argv[3]);
     }
 
     return 2;
