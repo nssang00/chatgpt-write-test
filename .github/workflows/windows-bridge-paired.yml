@@ -2,6 +2,12 @@ name: Windows Bridge Paired Benchmark
 
 on:
   workflow_dispatch:
+    inputs:
+      soak_cycles:
+        description: 'Extended SharedBuffer soak cycles, 4..500; each transfers 32 MiB'
+        required: false
+        type: number
+        default: 100
   pull_request:
     paths:
       - '.github/workflows/windows-bridge-paired.yml'
@@ -70,6 +76,23 @@ jobs:
           & build/webview2/bin/nativeweb_webview2_sharedbuffer_multi_probe.exe |
             Tee-Object -FilePath build/sharedbuffer-multi-probe.log
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: SharedBuffer reload and memory-pressure smoke
+        shell: pwsh
+        timeout-minutes: 3
+        run: |
+          & build/webview2/bin/nativeweb_webview2_sharedbuffer_soak_probe.exe --cycles 4 |
+            Tee-Object -FilePath build/sharedbuffer-soak-probe.log
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Extended memory-pressure soak (manual only)
+        if: github.event_name == 'workflow_dispatch'
+        shell: pwsh
+        timeout-minutes: 25
+        run: |
+          $cycles = [int]'${{ inputs.soak_cycles }}'
+          if ($cycles -lt 4 -or $cycles -gt 500) { throw 'soak_cycles must be 4..500' }
+          & build/webview2/bin/nativeweb_webview2_sharedbuffer_soak_probe.exe --cycles $cycles |
+            Tee-Object -FilePath build/sharedbuffer-soak-extended.log
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Summarize same-page SharedBuffer vs Base64 transport
         shell: pwsh
         run: |
@@ -108,4 +131,6 @@ jobs:
             build/sharedbuffer-probe.log
             build/renderer-failure-probe.log
             build/sharedbuffer-multi-probe.log
+            build/sharedbuffer-soak-probe.log
+            build/sharedbuffer-soak-extended.log
           if-no-files-found: warn

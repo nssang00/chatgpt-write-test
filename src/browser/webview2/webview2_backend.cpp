@@ -952,6 +952,14 @@ bool WebView2Backend::requestRendererCrashForTest()
                 [](HRESULT, LPCWSTR)->HRESULT { return S_OK; }).Get()));
 }
 
+DWORD WebView2Backend::browserProcessIdForTest() const
+{
+    requireUiThread();
+    UINT32 pid=0;
+    if(webview_) (void)webview_->get_BrowserProcessId(&pid);
+    return static_cast<DWORD>(pid);
+}
+
 unsigned int WebView2Backend::rendererFailuresForTest() const
 {
     requireUiThread();

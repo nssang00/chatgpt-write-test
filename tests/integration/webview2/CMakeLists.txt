@@ -283,3 +283,19 @@ set_target_properties(nativeweb_webview2_sharedbuffer_multi_probe PROPERTIES
 add_test(NAME browser.webview2_sharedbuffer_multi_probe
   COMMAND nativeweb_webview2_sharedbuffer_multi_probe)
 set_tests_properties(browser.webview2_sharedbuffer_multi_probe PROPERTIES TIMEOUT 80)
+
+# Bounded per-document memory-pressure smoke, with an opt-in longer run.
+add_executable(nativeweb_webview2_sharedbuffer_soak_probe sharedbuffer_soak_probe.cpp)
+target_include_directories(nativeweb_webview2_sharedbuffer_soak_probe PRIVATE
+  "${NATIVEWEB_ROOT}/include" "${NATIVEWEB_ROOT}/src" "${WEBVIEW2_INCLUDE_DIR}")
+target_compile_features(nativeweb_webview2_sharedbuffer_soak_probe PRIVATE cxx_std_11)
+target_compile_definitions(nativeweb_webview2_sharedbuffer_soak_probe PRIVATE
+  UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX)
+target_link_libraries(nativeweb_webview2_sharedbuffer_soak_probe PRIVATE
+  nativeweb_webview2_backend nativeweb_core_for_webview2 user32 psapi)
+set_target_properties(nativeweb_webview2_sharedbuffer_soak_probe PROPERTIES
+  RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+  RUNTIME_OUTPUT_DIRECTORY_RELEASE "${CMAKE_BINARY_DIR}/bin")
+add_test(NAME browser.webview2_sharedbuffer_soak_probe
+  COMMAND nativeweb_webview2_sharedbuffer_soak_probe --cycles 4)
+set_tests_properties(browser.webview2_sharedbuffer_soak_probe PROPERTIES TIMEOUT 110)

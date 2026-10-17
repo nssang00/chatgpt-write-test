@@ -50,6 +50,7 @@ public:
     // for renderer failure; destroy/recreate for browser process failure).
     bool requestRendererCrashForTest();
     unsigned int rendererFailuresForTest() const;
+    DWORD browserProcessIdForTest() const;
     unsigned int browserProcessFailuresForTest() const;
 
 private:
