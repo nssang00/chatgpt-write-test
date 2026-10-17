@@ -201,7 +201,13 @@ jobs:
             "$GITHUB_WORKSPACE/quic-cert.pem" "$GITHUB_WORKSPACE/quic-key.pem" \
             >quic-v23-admission-server.log 2>&1 &
           ADMISSION_PID=$!
-          sleep 0.4
+          for attempt in $(seq 1 100); do
+            if grep -q 'admission_listener_ready' quic-v23-admission-server.log; then break; fi
+            if ! kill -0 "$ADMISSION_PID" 2>/dev/null; then break; fi
+            sleep 0.05
+          done
+          cat quic-v23-admission-server.log
+          grep -q 'admission_listener_ready' quic-v23-admission-server.log
           admission_client_status=0
           timeout 9s sudo ip netns exec cito-quic-c "$BIN" client 10.202.0.12 4442 \
             "$GITHUB_WORKSPACE/quic-ca.pem" \
