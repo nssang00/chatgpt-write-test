@@ -53,6 +53,29 @@ jobs:
           sudo ln -sf "$MSQUIC_SO" /usr/local/lib/libmsquic.so
           sudo ldconfig
 
+      - name: Verify installed MsQuic headers and native linker
+        shell: bash
+        run: |
+          set -euo pipefail
+          dpkg-query -W -f='${Package} ${Version}\n' libmsquic
+          test -s /usr/local/include/msquic.h
+          test -s /usr/local/include/msquic_posix.h
+          test -s /usr/local/include/quic_sal_stub.h
+          cat >/tmp/cito-msquic-native-probe.cpp <<'EOF'
+          #include <msquic.h>
+          int main() {
+            const QUIC_API_TABLE* api = nullptr;
+            if (QUIC_FAILED(MsQuicOpen2(&api)) || !api) return 1;
+            MsQuicClose(api);
+            return 0;
+          }
+          EOF
+          c++ -std=c++20 -Wall -Wextra -Werror -I/usr/local/include \
+            /tmp/cito-msquic-native-probe.cpp -L/usr/local/lib \
+            -Wl,-rpath,/usr/local/lib -lmsquic -o /tmp/cito-msquic-native-probe
+          /tmp/cito-msquic-native-probe
+          echo 'MsQuic 2.6.1 native compile/link/open/close probe PASS'
+
       - name: Configure and build QUIC smoke
         run: |
           cmake -S cito -B build-quic -G Ninja -DCMAKE_BUILD_TYPE=Debug -DCITO_ENABLE_MSQUIC=ON
