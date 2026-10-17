@@ -1,12 +1,21 @@
 #include "browser/cef/cef_backend.hpp"
+#include "nativeweb/app_resources.hpp"
 
 #include "browser/cef/cef_value_converter.hpp"
 #include "browser/common/backend_registry.hpp"
+#include "browser/common/trusted_document.hpp"
+#include "browser/common/document_session_token.hpp"
 #include "core/bridge_message.hpp"
 #include "include/cef_process_message.h"
 #include "include/cef_render_handler.h"
 #include "include/cef_request_handler.h"
 #include "include/cef_task.h"
+#include "include/cef_scheme.h"
+#include "include/cef_resource_handler.h"
+#include "include/cef_request_context.h"
+#include "include/cef_request_context_handler.h"
+#include <cstring>
+#include <algorithm>
 
 #include <cstdint>
 #include <functional>
@@ -37,6 +46,88 @@ RequestId stringToId(const std::string& value)
 
     return id;
 }
+
+// Each app:// handler owns its response bytes; it never opens a path on disk.
+// A dedicated CefRequestContext owns the factory per WebView, so unrelated
+// apps/windows cannot overwrite one another's asset table.
+class AppResourceHandler : public CefResourceHandler
+{
+public:
+    AppResourceHandler(const AppResource& resource, bool found)
+        : mime_(found ? resource.mimeType : "text/plain"),
+          bytes_(found ? resource.bytes : "Not Found"),
+          status_(found ? 200 : 404), offset_(0) {}
+
+    bool Open(CefRefPtr<CefRequest> request, bool& handle_request,
+              CefRefPtr<CefCallback> callback) override
+    {
+        handle_request = true;
+        return true;
+    }
+
+    void GetResponseHeaders(CefRefPtr<CefResponse> response,
+                            int64_t& response_length,
+                            CefString& redirect_url) override
+    {
+        response->SetStatus(status_);
+        response->SetMimeType(mime_);
+        CefResponse::HeaderMap headers;
+        headers.insert(std::make_pair(
+            CefString("X-Content-Type-Options"), CefString("nosniff")));
+        headers.insert(std::make_pair(
+            CefString("Cache-Control"), CefString("no-store")));
+        response->SetHeaderMap(headers);
+        response_length=static_cast<int64_t>(bytes_.size());
+    }
+
+    bool Read(void* data_out, int bytes_to_read, int& bytes_read,
+              CefRefPtr<CefResourceReadCallback> callback) override
+    {
+        bytes_read=0;
+        if (bytes_to_read <= 0 || offset_ >= bytes_.size()) return false;
+        const std::size_t count=std::min(
+            static_cast<std::size_t>(bytes_to_read), bytes_.size()-offset_);
+        std::memcpy(data_out, bytes_.data()+offset_, count);
+        offset_+=count;
+        bytes_read=static_cast<int>(count);
+        return true;
+    }
+
+    void Cancel() override {}
+
+private:
+    std::string mime_;
+    std::string bytes_;
+    int status_;
+    std::size_t offset_;
+    IMPLEMENT_REFCOUNTING(AppResourceHandler);
+};
+
+class AppResourceFactory : public CefSchemeHandlerFactory
+{
+public:
+    explicit AppResourceFactory(
+        const std::shared_ptr<const AppResourceBundle>& bundle)
+        : bundle_(bundle) {}
+
+    CefRefPtr<CefResourceHandler> Create(
+        CefRefPtr<CefBrowser> browser,
+        CefRefPtr<CefFrame> frame,
+        const CefString& scheme_name,
+        CefRefPtr<CefRequest> request) override
+    {
+        if (!request || scheme_name.ToString() != "app" || !bundle_)
+            return nullptr;
+        const std::string url=request->GetURL().ToString();
+        AppResource resource;
+        const bool found=bundle_->find(url, &resource);
+        return new AppResourceHandler(resource, found);
+    }
+
+private:
+    std::shared_ptr<const AppResourceBundle> bundle_;
+    IMPLEMENT_REFCOUNTING(AppResourceFactory);
+};
 
 class FunctionTask : public CefTask
 {
@@ -348,6 +439,26 @@ void CefBackend::create(
 #endif
     }
 
+    trustedEntryUrl_ = params.source;
+
+    if (params.source.compare(0, 6, "app://") == 0)
+    {
+        if (!params.appResources ||
+            !params.appResources->contains(params.source))
+            throw Error("app_resource_not_found",
+                        "app entry is not in the packaged resource bundle");
+        CefRequestContextSettings contextSettings;
+        appRequestContext_ =
+            CefRequestContext::CreateContext(contextSettings, nullptr);
+        if (!appRequestContext_ ||
+            !appRequestContext_->RegisterSchemeHandlerFactory(
+                "app", "", new AppResourceFactory(params.appResources)))
+            throw Error("app_scheme_registration_failed",
+                        "Could not register isolated CEF app resource scheme");
+    }
+    else
+        appRequestContext_ = nullptr;
+
     CefBrowserSettings settings;
 
     const bool started =
@@ -357,7 +468,7 @@ void CefBackend::create(
             params.source,
             settings,
             nullptr,
-            nullptr);
+            appRequestContext_);
 
     if (!started)
         throw std::runtime_error("CefBrowserHost::CreateBrowser failed");
@@ -428,15 +539,50 @@ void CefBackend::onBeforeClose(
 void CefBackend::onLoadStart(
     CefRefPtr<CefFrame> frame)
 {
-    if (listener_ && frame && frame->IsMain())
-        listener_->onLoadStarted(frame->GetURL().ToString());
+    if (frame && frame->IsMain())
+    {
+        mainFrameReady_ = false;
+        activeMainFrameIdentifier_.clear();
+        documentSessionToken_.clear();
+        ++navigation_;
+        if (listener_)
+            listener_->onLoadStarted(frame->GetURL().ToString());
+    }
 }
 
 void CefBackend::onLoadEnd(
     CefRefPtr<CefFrame> frame)
 {
     if (listener_ && frame && frame->IsMain())
-        listener_->onLoadFinished(frame->GetURL().ToString());
+    {
+        const std::string url=frame->GetURL().ToString();
+        const std::string frameIdentity=frame->GetIdentifier().ToString();
+        if (navigation_ && !frameIdentity.empty() &&
+            trustedEntryDocument(trustedEntryUrl_,url,true))
+        {
+            try { documentSessionToken_ = createDocumentSessionToken(); }
+            catch (...) { documentSessionToken_.clear(); }
+            if (!documentSessionToken_.empty()) mainFrameReady_=true;
+            activeMainFrameIdentifier_=frameIdentity;
+            VerifiedFrameContext ctx;
+            // Numeric slot remains private to the native backend. The exact
+            // engine string identifier is verified before accepting requests.
+            ctx.frameId=1;
+            ctx.navigation=navigation_;
+            ctx.engineVerified=true;
+            ctx.mainFrame=true;
+            ctx.trustedContent=true;
+            if (mainFrameReady_) {
+                listener_->onTrustedFrameActivated(ctx);
+                CefRefPtr<CefProcessMessage> offer =
+                    CefProcessMessage::Create("nativeweb.document.session");
+                offer->GetArgumentList()->SetString(0,documentSessionToken_);
+                frame->SendProcessMessage(PID_RENDERER,offer);
+                std::cerr << "cef-document-session-issued" << std::endl;
+            }
+        }
+        listener_->onLoadFinished(url);
+    }
 }
 
 bool CefBackend::onProcessMessage(
@@ -449,8 +595,36 @@ bool CefBackend::onProcessMessage(
     CefRefPtr<CefListValue> list =
         message->GetArgumentList();
 
+    if (messageName == "nativeweb.cancel")
+    {
+        // Authenticate from the engine frame, live document and session;
+        // a renderer cannot cancel another document's request ID.
+        if (frame && mainFrameReady_ &&
+            frame->IsMain() &&
+            frame->GetIdentifier().ToString()==activeMainFrameIdentifier_ &&
+            trustedEntryDocument(trustedEntryUrl_,
+                                 frame->GetURL().ToString(),true) &&
+            matchesDocumentSessionToken(
+                list->GetString(1).ToString(),documentSessionToken_))
+        {
+            const RequestId id=stringToId(list->GetString(0).ToString());
+            if(listener_) listener_->onBridgeMessage(makeCancelMessage(id));
+        }
+        return true;
+    }
+
     if (messageName == "nativeweb.call.response")
     {
+        // Renderer -> native responses are untrusted IPC too. A child
+        // frame/remote page cannot forge an answer to WebView::execute().
+        if (!frame || !mainFrameReady_ ||
+            frame->GetIdentifier().ToString()!=activeMainFrameIdentifier_ ||
+            !trustedEntryDocument(
+                trustedEntryUrl_, frame->GetURL().ToString(), frame->IsMain()) ||
+            !matchesDocumentSessionToken(
+                list->GetString(4).ToString(),documentSessionToken_))
+            return true;
+
         const RequestId requestId =
             stringToId(list->GetString(0).ToString());
 
@@ -478,11 +652,72 @@ bool CefBackend::onProcessMessage(
         return true;
     }
 
+    if (messageName == "nativeweb.client.event")
+    {
+        // The same engine-supplied main-frame and document-session checks
+        // apply to one-way messages, including same-URL reloads.
+        if (!frame || !frame->IsMain() || !mainFrameReady_ ||
+            frame->GetIdentifier().ToString()!=activeMainFrameIdentifier_ ||
+            !trustedEntryDocument(trustedEntryUrl_,
+                                  frame->GetURL().ToString(),true) ||
+            !matchesDocumentSessionToken(
+                list->GetString(3).ToString(),documentSessionToken_))
+            return true;
+        const std::string channel = list->GetString(0).ToString();
+        if (channel.empty() || channel.size()>256)
+            return true;
+        if (listener_)
+        {
+            VerifiedFrameContext ctx;
+            ctx.frameId=1; // Authenticated engine main-frame slot.
+            ctx.navigation=navigation_;
+            ctx.engineVerified=mainFrameReady_ &&
+                !activeMainFrameIdentifier_.empty() &&
+                frame->GetIdentifier().ToString()==activeMainFrameIdentifier_;
+            ctx.mainFrame=frame->IsMain();
+            ctx.trustedContent=trustedEntryDocument(
+                trustedEntryUrl_,frame->GetURL().ToString(),ctx.mainFrame);
+            listener_->onVerifiedBridgeMessage(
+                makeEventMessage(channel,cefValueToAny(list->GetValue(1))),ctx);
+        }
+        return true;
+    }
+
     if (messageName != "nativeweb.request")
         return false;
 
     const RequestId requestId =
         stringToId(list->GetString(0).ToString());
+
+    // The sender's CefFrame is engine-supplied, NOT request-payload data.
+    // Only the explicitly hosted local entry document gets bridge access.
+    if (!frame || !trustedEntryDocument(
+            trustedEntryUrl_, frame->GetURL().ToString(), frame->IsMain()))
+    {
+        // Return denial to the *originating* frame, not the main page.
+        // It must not reach BridgeRuntime, and must not strand a child's
+        // Promise waiting on a response sent to another document.
+        if (frame)
+        {
+            CefRefPtr<CefProcessMessage> denied =
+                CefProcessMessage::Create("nativeweb.response");
+            CefRefPtr<CefListValue> deniedArgs = denied->GetArgumentList();
+            deniedArgs->SetString(0, idToString(requestId));
+            deniedArgs->SetBool(1, false);
+            deniedArgs->SetString(2, "permission_denied");
+            deniedArgs->SetString(3, "Native APIs are unavailable in this frame");
+            frame->SendProcessMessage(PID_RENDERER, denied);
+        }
+        return true;
+    }
+
+    // Do not emit a rejection to the new main page: a stale document's
+    // request ID can collide with a new document's Promise request ID.
+    if (!mainFrameReady_ ||
+        frame->GetIdentifier().ToString()!=activeMainFrameIdentifier_ ||
+        !matchesDocumentSessionToken(
+            list->GetString(3).ToString(),documentSessionToken_))
+        return true;
 
     const std::string method =
         list->GetString(1).ToString();
@@ -502,11 +737,17 @@ bool CefBackend::onProcessMessage(
 
     if (listener_)
     {
-        listener_->onBridgeMessage(
-            makeRequestMessage(
-                requestId,
-                method,
-                args));
+        VerifiedFrameContext ctx;
+        ctx.frameId=1;
+        ctx.navigation=navigation_;
+        ctx.engineVerified=mainFrameReady_ &&
+            !activeMainFrameIdentifier_.empty() &&
+            frame->GetIdentifier().ToString()==activeMainFrameIdentifier_;
+        ctx.mainFrame=frame->IsMain();
+        ctx.trustedContent=trustedEntryDocument(
+            trustedEntryUrl_,frame->GetURL().ToString(),ctx.mainFrame);
+        listener_->onVerifiedBridgeMessage(
+            makeRequestMessage(requestId,method,args),ctx);
     }
 
     return true;

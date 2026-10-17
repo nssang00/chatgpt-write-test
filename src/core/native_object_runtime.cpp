@@ -55,6 +55,24 @@ void NativeObjectRuntime::bindMethod(
     const std::string& method,
     const DynamicFunction& function)
 {
+    if (!function)
+        throw Error(
+            "invalid_native_object_method",
+            "Native object method is invalid");
+
+    bindManagedMethod(
+        handle,
+        method,
+        [function](const std::shared_ptr<void>&, const VariantList& args) {
+            return function(args);
+        });
+}
+
+void NativeObjectRuntime::bindManagedMethod(
+    const NativeObjectHandle& handle,
+    const std::string& method,
+    const ManagedObjectMethod& function)
+{
     if (!handle.valid())
         throw Error(
             "invalid_native_object",
@@ -66,9 +84,7 @@ void NativeObjectRuntime::bindMethod(
             "Native object method is invalid");
 
     std::lock_guard<std::mutex> lock(mutex_);
-
-    std::map<ObjectId, Entry>::iterator found =
-        entries_.find(handle.id);
+    std::map<ObjectId, Entry>::iterator found = entries_.find(handle.id);
 
     if (found == entries_.end())
         throw Error(
@@ -88,14 +104,13 @@ Any NativeObjectRuntime::call(
     const std::string& method,
     const VariantList& args)
 {
-    DynamicFunction function;
+    ManagedObjectMethod function;
+    std::shared_ptr<void> object;
 
     {
         std::lock_guard<std::mutex> lock(mutex_);
 
-        std::map<ObjectId, Entry>::const_iterator found =
-            entries_.find(handle.id);
-
+        std::map<ObjectId, Entry>::const_iterator found = entries_.find(handle.id);
         if (found == entries_.end())
             throw Error(
                 "native_object_not_found",
@@ -106,18 +121,24 @@ Any NativeObjectRuntime::call(
                 "native_object_type_mismatch",
                 "Native object type does not match handle");
 
-        std::map<std::string, DynamicFunction>::const_iterator methodIt =
+        std::map<std::string, ManagedObjectMethod>::const_iterator methodIt =
             found->second.methods.find(method);
-
         if (methodIt == found->second.methods.end())
             throw Error(
                 "native_object_method_not_found",
                 "Native object method not found: " + method);
 
+        // Acquire the registry object's lease under the same lock that guards
+        // release(). This prevents dispatch against a destroyed plugin object.
+        object = objects_.get<void>(handle.id);
+        if (!object)
+            throw Error(
+                "native_object_not_found",
+                "Native object no longer exists");
         function = methodIt->second;
     }
 
-    return function(args);
+    return function(object, args);
 }
 
 bool NativeObjectRuntime::release(

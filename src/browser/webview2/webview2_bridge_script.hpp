@@ -10,6 +10,8 @@ static const wchar_t kWebView2BridgeScript[] = LR"NATIVEWEBJS(
 
   const pending = new Map();
   const subscriptions = new Map();
+  const queuedUntilSession = [];
+  let documentSession = null;
   let nextRequestId = 1;
   let nextSubscriptionId = 1;
 
@@ -20,14 +22,33 @@ static const wchar_t kWebView2BridgeScript[] = LR"NATIVEWEBJS(
     return String(error);
   };
 
+  // Keep 24KiB chunks (multiple of three) so concatenated base64 pieces
+  // never contain intermediate '=' padding. Avoid huge String.fromCharCode
+  // argument lists on large TypedArrays.
+  const bytesToBase64 = (bytes) => {
+    let result = "";
+    const chunkSize = 24576;
+    for (let start=0;start<bytes.length;start+=chunkSize) {
+      const chunk=bytes.subarray(start,start+chunkSize);
+      result+=btoa(String.fromCharCode.apply(null,chunk));
+    }
+    return result;
+  };
+  const base64ToBuffer = (encoded) => {
+    const binary=atob(encoded);
+    const bytes=new Uint8Array(binary.length);
+    for(let i=0;i<binary.length;++i) bytes[i]=binary.charCodeAt(i);
+    return bytes.buffer;
+  };
+
   const encode = (value) => {
     if (value instanceof ArrayBuffer) {
-      return { __nativeweb_binary: Array.from(new Uint8Array(value)) };
+      return { __nativeweb_binary_base64: bytesToBase64(new Uint8Array(value)) };
     }
 
     if (ArrayBuffer.isView(value)) {
       return {
-        __nativeweb_binary: Array.from(
+        __nativeweb_binary_base64: bytesToBase64(
           new Uint8Array(value.buffer, value.byteOffset, value.byteLength)
         )
       };
@@ -50,11 +71,14 @@ static const wchar_t kWebView2BridgeScript[] = LR"NATIVEWEBJS(
     return output;
   };
 
-  const invokeRaw = (method, ...args) => {
+  const startRequest = (method, args) => {
+    if (global !== global.top)
+      return { id:null, promise:Promise.reject(
+        new Error("permission_denied: not main frame")) };
     if (typeof method !== "string") {
-      return Promise.reject(
+      return { id:null, promise:Promise.reject(
         new TypeError("xytron.invoke(method, ...args) requires a method string")
-      );
+      ) };
     }
 
     const id = String(nextRequestId++);
@@ -62,13 +86,75 @@ static const wchar_t kWebView2BridgeScript[] = LR"NATIVEWEBJS(
       pending.set(id, { resolve, reject });
     });
 
-    global.chrome.webview.postMessage(
-      encode({ type: "request", id, method, args })
-    );
+    const transmit = () => {
+      if (!pending.has(id)) return;
+      global.chrome.webview.postMessage(
+        encode({ type: "request", id, method, args, session: documentSession })
+      );
+    };
+    if (documentSession) transmit();
+    else if (queuedUntilSession.length < 256) queuedUntilSession.push(transmit);
+    else {
+      pending.delete(id);
+      return Promise.reject(new Error("session_unavailable: pending queue full"));
+    }
 
+    return { id, promise };
+  };
+
+  const invokeRaw = (method, ...args) => startRequest(method, args).promise;
+
+  const cancelRaw = (id, code) => {
+    const key=String(id);
+    const item=pending.get(key);
+    if (!item) return false;
+    pending.delete(key);
+    const reason=code === "request_timeout" ? "request_timeout" : "request_cancelled";
+    item.reject(new Error(reason + ": JavaScript request cancelled"));
+    if (documentSession) {
+      global.chrome.webview.postMessage(
+        encode({ type:"cancel", id:key, session:documentSession })
+      );
+    }
+    return true;
+  };
+
+  // timeoutMs is a local JS Promise deadline; an already-running native
+  // method or managed subprocess cannot be forcibly interrupted safely.
+  const invokeWithOptions = (method, options, ...args) => {
+    const opts = options == null ? {} : options;
+    if (typeof opts !== "object")
+      return Promise.reject(new TypeError("options must be an object"));
+    const timeoutMs=opts.timeoutMs;
+    if (timeoutMs !== undefined &&
+        (!Number.isFinite(timeoutMs) || timeoutMs <= 0 ||
+         timeoutMs > 60000 || !Number.isInteger(timeoutMs)))
+      return Promise.reject(new RangeError("timeoutMs must be 1..60000"));
+    const signal=opts.signal;
+    if (signal != null &&
+        (typeof signal.addEventListener !== "function" ||
+         typeof signal.removeEventListener !== "function" ||
+         typeof signal.aborted !== "boolean"))
+      return Promise.reject(new TypeError("signal must be an AbortSignal"));
+    if (signal && signal.aborted)
+      return Promise.reject(new Error("request_cancelled: signal already aborted"));
+    const { id, promise } = startRequest(method, args);
+    if (!id) return promise;
+    const onAbort=() => cancelRaw(id,"request_cancelled");
+    if(signal) signal.addEventListener("abort",onAbort,{once:true});
+    const timer=timeoutMs === undefined ? null :
+        setTimeout(() => cancelRaw(id,"request_timeout"),timeoutMs);
+    const cleanup=() => {
+      if(timer !== null) clearTimeout(timer);
+      if(signal) signal.removeEventListener("abort",onAbort);
+    };
+    promise.then(cleanup,cleanup);
+    if (signal && signal.aborted) onAbort();
     return promise;
   };
 
+)NATIVEWEBJS"
+LR"NATIVEWEBJS(
   const createNativeObject = (value) => {
     const target = {
       __nativeweb_object: true,
@@ -105,9 +191,11 @@ static const wchar_t kWebView2BridgeScript[] = LR"NATIVEWEBJS(
   const decode = (value) => {
     if (!value || typeof value !== "object") return value;
 
-    if (
-      Object.prototype.hasOwnProperty.call(value, "__nativeweb_binary")
-    ) {
+    if (Object.prototype.hasOwnProperty.call(value, "__nativeweb_binary_base64")) {
+      return base64ToBuffer(value.__nativeweb_binary_base64);
+    }
+    // Accept legacy numeric array framing until old clients are retired.
+    if (Object.prototype.hasOwnProperty.call(value, "__nativeweb_binary")) {
       return Uint8Array.from(value.__nativeweb_binary).buffer;
     }
 
@@ -141,7 +229,8 @@ static const wchar_t kWebView2BridgeScript[] = LR"NATIVEWEBJS(
         type: "error",
         id: String(id),
         code,
-        message: String(message)
+        message: String(message),
+        session: documentSession
       })
     );
   };
@@ -170,7 +259,7 @@ static const wchar_t kWebView2BridgeScript[] = LR"NATIVEWEBJS(
     Promise.resolve(result).then(
       (value) => {
         global.chrome.webview.postMessage(
-          encode({ type: "response", id: String(message.id), value })
+          encode({ type: "response", id: String(message.id), value, session: documentSession })
         );
       },
       (error) => {
@@ -182,6 +271,15 @@ static const wchar_t kWebView2BridgeScript[] = LR"NATIVEWEBJS(
   global.chrome.webview.addEventListener("message", (event) => {
     const message = decode(event.data);
     if (!message || typeof message !== "object") return;
+
+    if (message.type === "nativeweb_session") {
+      if (global !== global.top || documentSession ||
+          typeof message.token !== "string" ||
+          !/^[0-9a-f]{48}$/.test(message.token)) return;
+      documentSession = message.token;
+      for (const transmit of queuedUntilSession.splice(0)) transmit();
+      return;
+    }
 
     if (message.type === "response" || message.type === "error") {
       const id = String(message.id);
@@ -217,6 +315,19 @@ static const wchar_t kWebView2BridgeScript[] = LR"NATIVEWEBJS(
     }
   });
 
+  const postMessage = (channel, payload = null) => {
+    if (global !== global.top)
+      throw new Error("permission_denied: not main frame");
+    if (typeof channel !== "string" || !channel || channel.length > 256)
+      throw new TypeError("Message channel must be 1..256 characters");
+    const transmit = () => global.chrome.webview.postMessage(encode({
+      type: "event", event: channel, payload, session: documentSession
+    }));
+    if (documentSession) transmit();
+    else if (queuedUntilSession.length < 256) queuedUntilSession.push(transmit);
+    else throw new Error("session_unavailable: pending queue full");
+  };
+
   const onRaw = (eventName, callback) => {
     if (typeof eventName !== "string" || typeof callback !== "function") {
       throw new TypeError(
@@ -231,10 +342,13 @@ static const wchar_t kWebView2BridgeScript[] = LR"NATIVEWEBJS(
 
   const offRaw = (id) => subscriptions.delete(String(id));
 
-  const native = { invokeRaw, onRaw, offRaw };
+  const native = { invokeRaw, invokeWithOptions, onRaw, offRaw };
   native.invoke = invokeRaw;
   native.on = onRaw;
   native.off = offRaw;
+  native.postMessage = postMessage;
+  native.onMessage = onRaw;
+  native.offMessage = offRaw;
 
   Object.defineProperty(global, "native", {
     value: native,
@@ -248,7 +362,11 @@ static const wchar_t kWebView2BridgeScript[] = LR"NATIVEWEBJS(
       get(_target, property) {
         if (property === "then") return undefined;
         if (path === "" && property === "invoke") return invokeRaw;
+        if (path === "" && property === "invokeWithOptions") return invokeWithOptions;
         if (path === "" && property === "on") return onRaw;
+        if (path === "" && property === "postMessage") return postMessage;
+        if (path === "" && property === "onMessage") return onRaw;
+        if (path === "" && property === "offMessage") return offRaw;
         if (path === "" && property === "off") return offRaw;
         if (typeof property !== "string") return undefined;
 

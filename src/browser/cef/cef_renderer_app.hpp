@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <functional>
 #include <map>
+#include <vector>
 #include <string>
 
 namespace nativeweb {
@@ -35,6 +36,9 @@ public:
     void setBrowserReadyCallback(
         const std::function<void()>& callback);
 
+    void OnRegisterCustomSchemes(
+        CefRawPtr<CefSchemeRegistrar> registrar) override;
+
     void OnContextInitialized() override;
 
     void OnContextCreated(
@@ -60,6 +64,10 @@ public:
         const CefString& method,
         const CefV8ValueList& arguments);
 
+    bool cancelInvoke(const std::string& requestId,
+                      CefRefPtr<CefV8Context> caller,
+                      const std::string& reason);
+
     std::string subscribeEvent(
         CefRefPtr<CefV8Context> context,
         const CefString& eventName,
@@ -72,6 +80,19 @@ private:
     {
         CefRefPtr<CefV8Context> context;
         CefRefPtr<CefV8Value> promise;
+    };
+
+    struct DocumentSession
+    {
+        CefRefPtr<CefV8Context> context;
+        std::string token;
+    };
+
+    struct QueuedDocumentRequest
+    {
+        CefRefPtr<CefFrame> frame;
+        CefRefPtr<CefV8Context> context;
+        CefRefPtr<CefProcessMessage> message;
     };
 
     struct EventSubscription
@@ -88,6 +109,8 @@ private:
     std::uint64_t nextRequestId_;
     std::uint64_t nextSubscriptionId_;
     std::map<std::string, PendingPromise> pending_;
+    std::vector<DocumentSession> documentSessions_;
+    std::vector<QueuedDocumentRequest> queuedDocumentRequests_;
     std::map<std::string, EventSubscription> subscriptions_;
 
     IMPLEMENT_REFCOUNTING(CefRendererApp);

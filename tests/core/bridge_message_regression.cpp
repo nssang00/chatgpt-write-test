@@ -62,6 +62,12 @@ void testResponseErrorEvent()
     CHECK(event.type == nativeweb::detail::BridgeMessageType::Event);
     CHECK(event.eventName == "camera.frame");
     CHECK(AnyCast<int>(event.value) == 42);
+
+    const nativeweb::detail::BridgeMessage cancel =
+        nativeweb::detail::parseBridgeMessage(
+            nativeweb::detail::makeCancelMessage(9007199254740993ULL));
+    CHECK(cancel.type == nativeweb::detail::BridgeMessageType::Cancel);
+    CHECK(cancel.requestId == 9007199254740993ULL);
 }
 
 void testMalformedMessage()

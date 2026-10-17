@@ -42,9 +42,20 @@ Engine resolveAutoEngine()
         return Engine::WebView2;
     if (findFactory(Engine::Cef))
         return Engine::Cef;
-#else
+#elif defined(__APPLE__)
+    // The system WKWebView is the macOS default when its adapter is linked.
+    if (findFactory(Engine::WkWebView))
+        return Engine::WkWebView;
     if (findFactory(Engine::Cef))
         return Engine::Cef;
+    if (findFactory(Engine::WebView2))
+        return Engine::WebView2;
+#else
+    // Retain CEF as the Linux default; WebKitGTK is opt-in/fallback.
+    if (findFactory(Engine::Cef))
+        return Engine::Cef;
+    if (findFactory(Engine::WebKitGtk))
+        return Engine::WebKitGtk;
     if (findFactory(Engine::WebView2))
         return Engine::WebView2;
 #endif

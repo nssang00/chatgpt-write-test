@@ -35,21 +35,8 @@ ADD_LOGICAL_TARGET(
   "${CEF_LIB_RELEASE}"
 )
 
-add_library(nativeweb_core_for_cef STATIC
-  "${NATIVEWEB_ROOT}/src/core/pending_call_registry.cpp"
-  "${NATIVEWEB_ROOT}/src/core/object_registry.cpp"
-  "${NATIVEWEB_ROOT}/src/core/native_object_runtime.cpp"
-  "${NATIVEWEB_ROOT}/src/core/event_dispatcher.cpp"
-  "${NATIVEWEB_ROOT}/src/core/bridge_message.cpp"
-  "${NATIVEWEB_ROOT}/src/core/json_codec.cpp"
-  "${NATIVEWEB_ROOT}/src/core/bridge_runtime.cpp"
-  "${NATIVEWEB_ROOT}/src/core/binding_registry.cpp"
-  "${NATIVEWEB_ROOT}/src/core/worker_pool.cpp"
-  "${NATIVEWEB_ROOT}/src/browser/common/backend_registry.cpp"
-  "${NATIVEWEB_ROOT}/src/plugin/shared_library.cpp"
-  "${NATIVEWEB_ROOT}/src/plugin/plugin_module.cpp"
-  "${NATIVEWEB_ROOT}/src/webview.cpp"
-)
+include("${NATIVEWEB_ROOT}/cmake/NativeWebCoreSources.cmake")
+add_library(nativeweb_core_for_cef STATIC ${NATIVEWEB_CORE_SOURCES})
 
 target_include_directories(nativeweb_core_for_cef
   PUBLIC
@@ -106,6 +93,11 @@ target_include_directories(nativeweb_cef_backend
 )
 
 SET_LIBRARY_TARGET_PROPERTIES(nativeweb_cef_backend)
+
+# Test-only renderer IPC injection; never enable for redistributable CEF.
+target_compile_definitions(nativeweb_cef_backend PRIVATE
+  NATIVEWEB_CEF_ENABLE_E2E_REPLAY_HOOKS=1
+)
 
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
   target_compile_options(nativeweb_cef_backend PRIVATE -frtti -fexceptions)
@@ -219,16 +211,65 @@ set_target_properties(${MULTI_TARGET} PROPERTIES
   RUNTIME_OUTPUT_DIRECTORY_RELEASE "${CEF_TARGET_OUT_DIR}"
 )
 
-COPY_FILES(
-  "${MULTI_TARGET}"
-  "${CEF_BINARY_FILES}"
-  "${CEF_BINARY_DIR}"
-  "${CEF_TARGET_OUT_DIR}"
+# Both executables share one runtime directory. Running two CEF COPY_FILES
+# post-build rules in parallel races on bin/locales under MSBuild (NW-009).
+# The bridge target owns the runtime copy; multi-WebView depends on it so
+# building multi-WebView also finishes runtime deployment first.
+add_dependencies(${MULTI_TARGET} ${TARGET})
+
+# Real SO/DLL used by --plugin-path E2E. Never replace with a mock module.
+add_library(nativeweb_plugin_browser_fixture SHARED
+  "${NATIVEWEB_ROOT}/tests/plugin/object_factory_plugin.cpp"
+)
+target_include_directories(nativeweb_plugin_browser_fixture PRIVATE
+  "${NATIVEWEB_ROOT}/include"
+)
+set_target_properties(nativeweb_plugin_browser_fixture PROPERTIES
+  CXX_STANDARD 11
+  CXX_STANDARD_REQUIRED YES
+  CXX_EXTENSIONS NO
+  LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+  RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+  RUNTIME_OUTPUT_DIRECTORY_RELEASE "${CMAKE_BINARY_DIR}/bin"
 )
 
-COPY_FILES(
-  "${MULTI_TARGET}"
-  "${CEF_RESOURCE_FILES}"
-  "${CEF_RESOURCE_DIR}"
-  "${CEF_TARGET_OUT_DIR}"
+# This is an opt-in external SDK build, so the browser E2E is mandatory
+# whenever this integration project is configured and CTest is run.
+include(CTest)
+find_package(Python3 COMPONENTS Interpreter REQUIRED)
+add_test(
+  NAME browser.plugin_object_lifecycle
+  COMMAND "${Python3_EXECUTABLE}"
+    "${NATIVEWEB_ROOT}/tools/run_browser_plugin_e2e.py"
+    --engine cef --build-dir "${CMAKE_BINARY_DIR}"
 )
+set_tests_properties(browser.plugin_object_lifecycle PROPERTIES TIMEOUT 150)
+
+# Real in-memory app:// scheme test: same JS->native plugin E2E,
+# but host entry and child fixtures are served without file:// navigation.
+add_test(
+  NAME browser.app_resource_lifecycle
+  COMMAND "${Python3_EXECUTABLE}"
+    "${NATIVEWEB_ROOT}/tools/run_browser_plugin_e2e.py"
+    --engine cef --build-dir "${CMAKE_BINARY_DIR}" --app-resources
+)
+set_tests_properties(browser.app_resource_lifecycle PROPERTIES TIMEOUT 150)
+
+
+# Actual JavaScript -> engine bridge -> C++11 ProcessBroker -> Python object host.
+add_test(
+  NAME browser.managed_python
+  COMMAND "${Python3_EXECUTABLE}"
+    "${NATIVEWEB_ROOT}/tools/run_browser_plugin_e2e.py"
+    --engine cef --build-dir "${CMAKE_BINARY_DIR}" --managed
+)
+set_tests_properties(browser.managed_python PROPERTIES TIMEOUT 150)
+
+# Real browser -> C++ ProcessBroker -> .NET 8 worker (requires built test assembly).
+add_test(
+  NAME browser.managed_dotnet
+  COMMAND "${Python3_EXECUTABLE}"
+    "${NATIVEWEB_ROOT}/tools/run_browser_plugin_e2e.py"
+    --engine cef --build-dir "${CMAKE_BINARY_DIR}" --managed-dotnet
+)
+set_tests_properties(browser.managed_dotnet PROPERTIES TIMEOUT 150)

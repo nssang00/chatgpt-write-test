@@ -13,6 +13,11 @@
 namespace nativeweb {
 namespace detail {
 
+/* A managed callback receives an object lease retained across the entire
+ * method invocation, even when release() races with call(). */
+typedef std::function<Any(const std::shared_ptr<void>&, const VariantList&)>
+    ManagedObjectMethod;
+
 class NativeObjectRuntime
 {
 public:
@@ -32,6 +37,11 @@ public:
         const std::string& method,
         const DynamicFunction& function);
 
+    void bindManagedMethod(
+        const NativeObjectHandle& handle,
+        const std::string& method,
+        const ManagedObjectMethod& function);
+
     Any call(
         const NativeObjectHandle& handle,
         const std::string& method,
@@ -46,7 +56,7 @@ private:
     struct Entry
     {
         std::string typeName;
-        std::map<std::string, DynamicFunction> methods;
+        std::map<std::string, ManagedObjectMethod> methods;
     };
 
     mutable std::mutex mutex_;

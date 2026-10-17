@@ -2,6 +2,7 @@
 
 #include <iostream>
 #include <string>
+#include <stdexcept>
 
 namespace {
 
@@ -63,12 +64,30 @@ void testCallbackCanUnsubscribeWithoutDeadlock()
     CHECK(calls == 1);
 }
 
+void testThrowingSubscriberDoesNotInterruptLaterSubscribers()
+{
+    nativeweb::detail::EventDispatcher events;
+    int second = 0;
+    events.subscribe("from-browser", [](const Any&) {
+        throw std::runtime_error("user callback failed");
+    });
+    events.subscribe("from-browser", [&second](const Any& data) {
+        second += AnyCast<int>(data);
+    });
+    bool propagated = false;
+    try { CHECK(events.emit("from-browser", Any(5)) == 2u); }
+    catch (...) { propagated = true; }
+    CHECK(!propagated);
+    CHECK(second == 5);
+}
+
 }
 
 int main()
 {
     testSubscribeEmitUnsubscribe();
     testCallbackCanUnsubscribeWithoutDeadlock();
+    testThrowingSubscriberDoesNotInterruptLaterSubscribers();
 
     if(failures){std::cerr<<"Event dispatcher regression failed: "<<failures<<std::endl;return 1;}
     std::cout<<"Event dispatcher regression: PASS"<<std::endl;
