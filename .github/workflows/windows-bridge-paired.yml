@@ -90,6 +90,23 @@ jobs:
           & build/webview2/bin/nativeweb_webview2_sharedbuffer_soak_probe.exe --cycles 4 |
             Tee-Object -FilePath build/sharedbuffer-soak-probe.log
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Longer PR SharedBuffer soak with renderer process memory
+        if: github.event_name == 'pull_request'
+        shell: pwsh
+        timeout-minutes: 12
+        run: |
+          & build/webview2/bin/nativeweb_webview2_sharedbuffer_soak_probe.exe --cycles 100 |
+            Tee-Object -FilePath build/sharedbuffer-soak-100.log
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Summarize full WebView2 process-group memory samples
+        shell: pwsh
+        run: |
+          python tools/summarize_webview2_soak.py --log build/sharedbuffer-soak-probe.log --output-dir build/bridge-paired/soak-4
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if (Test-Path build/sharedbuffer-soak-100.log) {
+            python tools/summarize_webview2_soak.py --log build/sharedbuffer-soak-100.log --output-dir build/bridge-paired/soak-100
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
       - name: Extended memory-pressure soak (manual only)
         if: github.event_name == 'workflow_dispatch'
         shell: pwsh
@@ -140,5 +157,6 @@ jobs:
             build/browser-process-crash-probe.log
             build/sharedbuffer-multi-probe.log
             build/sharedbuffer-soak-probe.log
+            build/sharedbuffer-soak-100.log
             build/sharedbuffer-soak-extended.log
           if-no-files-found: warn
