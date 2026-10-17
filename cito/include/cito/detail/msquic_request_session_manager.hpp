@@ -14,6 +14,10 @@ namespace cito::detail {
 struct MsQuicRequestSessionOptions {
     std::string registration_name{
         "cito-request"};
+    // An explicit trust anchor for self-managed LAN certificates. By default
+    // MsQuic uses the platform trust store and validates the peer's name.
+    std::string ca_certificate_file;
+    // Insecure test-only escape hatch. Never enable in shipped applications.
     bool skip_server_certificate_validation{
         false};
 };

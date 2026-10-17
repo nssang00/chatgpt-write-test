@@ -2,7 +2,7 @@ name: Cito QUIC
 
 on:
   push:
-    branches: [cito-dev, cito-native-v23-validation]
+    branches: [cito-dev, cito-native-v23-validation, cito-v23-native-headers]
     paths:
       - "cito/CMakeLists.txt"
       - "cito/include/cito/data_packet.hpp"
@@ -11,12 +11,14 @@ on:
       - "cito/include/cito/detail/request_transport.hpp"
       - "cito/include/cito/detail/request_session_lifecycle.hpp"
       - "cito/include/cito/detail/msquic_request_session_manager.hpp"
+      - "cito/include/cito/detail/request_msquic_*.hpp"
       - "cito/include/cito/detail/posix_udp_control_manager.hpp"
       - "cito/include/cito/detail/linux_request_runtime_driver.hpp"
       - "cito/src/msquic_request_session_manager.cpp"
       - "cito/src/posix_udp_control_manager.cpp"
       - "cito/src/linux_request_runtime_driver.cpp"
       - "cito/tests/net/quic_msquic_node.cpp"
+      - "cito/tests/net/quic_v23_native_admission_smoke.cpp"
       - "cito/tests/net/quic_public_request_node.cpp"
       - "cito/tests/net/quic_request_node.cpp"
       - "cito/tests/transport_selector_test.cpp"
@@ -76,6 +78,26 @@ jobs:
           /tmp/cito-msquic-native-probe
           echo 'MsQuic 2.6.1 native compile/link/open/close probe PASS'
 
+      - name: Compile v23 native listener and admission against real MsQuic SDK
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat >/tmp/cito-native-listener-check.cpp <<'EOF'
+          #include <cito/detail/request_msquic_listener.hpp>
+          #include <cito/detail/request_msquic_server_admission.hpp>
+          #include <type_traits>
+          static_assert(!std::is_copy_constructible_v<cito::detail::RequestMsQuicListener>);
+          static_assert(!std::is_copy_constructible_v<cito::detail::RequestMsQuicServerAdmission>);
+          int main() { return 0; }
+          EOF
+          c++ -std=c++20 -Wall -Wextra -Werror -fsyntax-only \
+            -Icito/include -I/usr/local/include /tmp/cito-native-listener-check.cpp
+          c++ -std=c++20 -Wall -Wextra -Werror \
+            -Icito/include -I/usr/local/include \
+            cito/tests/net/quic_v23_native_admission_smoke.cpp \
+            -L/usr/local/lib -Wl,-rpath,/usr/local/lib -lmsquic -pthread \
+            -o /tmp/cito-v23-native-admission-smoke
+
       - name: Configure and build QUIC smoke
         run: |
           cmake -S cito -B build-quic -G Ninja -DCMAKE_BUILD_TYPE=Debug -DCITO_ENABLE_MSQUIC=ON
@@ -92,7 +114,7 @@ jobs:
           openssl req -newkey rsa:2048 -nodes \
             -keyout quic-key.pem -out quic-request.csr -subj "/CN=10.202.0.12"
           cat > quic-server.ext <<'EOF'
-          subjectAltName=IP:10.202.0.12
+          subjectAltName=IP:10.202.0.12,IP:10.203.0.12
           basicConstraints=critical,CA:FALSE
           keyUsage=critical,digitalSignature,keyEncipherment
           extendedKeyUsage=serverAuth
@@ -101,6 +123,7 @@ jobs:
             -CA quic-ca.pem -CAkey quic-ca-key.pem -CAcreateserial \
             -out quic-cert.pem -days 1 -extfile quic-server.ext
           openssl verify -CAfile quic-ca.pem -verify_ip 10.202.0.12 quic-cert.pem
+          openssl verify -CAfile quic-ca.pem -verify_ip 10.203.0.12 quic-cert.pem
           openssl req -x509 -newkey rsa:2048 -nodes -days 1 \
             -keyout quic-untrusted-ca-key.pem -out quic-untrusted-ca.pem \
             -subj "/CN=Cito Untrusted Test Root" \
@@ -174,6 +197,68 @@ jobs:
           grep -q "quic_client stream=1 datagram=1" quic-client.log
           grep -q "quic_server stream=1 datagram=1" quic-server.log
 
+          # Real native listener+admission lifecycle with the existing QUIC client.
+          sudo ip netns exec cito-quic-s \
+            /tmp/cito-v23-native-admission-smoke 4442 \
+            "$GITHUB_WORKSPACE/quic-cert.pem" "$GITHUB_WORKSPACE/quic-key.pem" \
+            >quic-v23-admission-server.log 2>&1 &
+          ADMISSION_PID=$!
+          for attempt in $(seq 1 100); do
+            if grep -q 'admission_listener_ready' quic-v23-admission-server.log; then break; fi
+            if ! kill -0 "$ADMISSION_PID" 2>/dev/null; then break; fi
+            sleep 0.05
+          done
+          cat quic-v23-admission-server.log
+          grep -q 'admission_listener_ready' quic-v23-admission-server.log
+          admission_client_status=0
+          timeout 9s sudo ip netns exec cito-quic-c "$BIN" client 10.202.0.12 4442 \
+            "$GITHUB_WORKSPACE/quic-ca.pem" \
+            >quic-v23-admission-client.log 2>&1 || admission_client_status=$?
+          admission_server_status=0
+          wait "$ADMISSION_PID" || admission_server_status=$?
+          echo "=== v23 native admission client ==="
+          cat quic-v23-admission-client.log
+          echo "=== v23 native admission server ==="
+          cat quic-v23-admission-server.log
+          test "$admission_client_status" -eq 0
+          test "$admission_server_status" -eq 0
+          grep -q "cito_v23_native_admission seen=1 denied=0 authorized=1 closed=1 drained=1" quic-v23-admission-server.log
+
+          # Test the actual native admission rejection path, not merely a
+          # mock authorization unit test. The server must reject and reap the
+          # connection without ever publishing an authorized session.
+          sudo ip netns exec cito-quic-s \
+            /tmp/cito-v23-native-admission-smoke 4443 \
+            "$GITHUB_WORKSPACE/quic-cert.pem" "$GITHUB_WORKSPACE/quic-key.pem" deny \
+            >quic-v23-deny-server.log 2>&1 &
+          DENY_PID=$!
+          for attempt in $(seq 1 100); do
+            if grep -q 'admission_listener_ready' quic-v23-deny-server.log; then break; fi
+            if ! kill -0 "$DENY_PID" 2>/dev/null; then break; fi
+            sleep 0.05
+          done
+          echo "=== deny server startup status ==="
+          cat quic-v23-deny-server.log
+          if ! grep -q 'admission_listener_ready' quic-v23-deny-server.log; then
+            early_status=0
+            wait "$DENY_PID" || early_status=$?
+            echo "Denied mode listener did not start; exit status=$early_status"
+            ls -l /tmp/cito-v23-native-admission-smoke quic-v23-deny-server.log
+            exit 1
+          fi
+          deny_client_status=0
+          timeout 9s sudo ip netns exec cito-quic-c "$BIN" client 10.202.0.12 4443 \
+            "$GITHUB_WORKSPACE/quic-ca.pem" \
+            >quic-v23-deny-client.log 2>&1 || deny_client_status=$?
+          deny_server_status=0
+          wait "$DENY_PID" || deny_server_status=$?
+          echo "=== v23 denied admission client ($deny_client_status) ==="
+          cat quic-v23-deny-client.log
+          echo "=== v23 denied admission server ==="
+          cat quic-v23-deny-server.log
+          test "$deny_server_status" -eq 0
+          grep -q "cito_v23_native_admission seen=1 denied=1 authorized=0 closed=0 drained=1" quic-v23-deny-server.log
+
           # Negative test: a different CA must not authenticate the same server.
           # Run a second server using the same certificate after the positive test.
           sudo ip netns exec cito-quic-s "$BIN" server 4440 \
@@ -232,6 +317,7 @@ jobs:
 
           public_client_status=0
           sudo ip netns exec cito-quic-c "$PUBBIN" client 47320 \
+            "$GITHUB_WORKSPACE/quic-ca.pem" \
             >quic-public-client.log 2>&1 || public_client_status=$?
 
           public_server_status=0
@@ -246,6 +332,33 @@ jobs:
           test "$public_server_status" -eq 0
           grep -q "quic_public_request_client result=42 lazy=1 deadline=1 discovery=udp run=context" quic-public-client.log
           grep -q "quic_public_request_server handler=1 reply=1 discovery=udp run=context" quic-public-server.log
+
+          # Public Context request must never complete successfully when the
+          # server is signed by an untrusted CA. This is a full API failure
+          # test, distinct from the basic handshake rejection assertion.
+          sudo ip netns exec cito-quic-s "$PUBBIN" server 4439 47390 \
+            10.202.0.11 47321 \
+            "$GITHUB_WORKSPACE/quic-cert.pem" "$GITHUB_WORKSPACE/quic-key.pem" \
+            >quic-public-rejected-server.log 2>&1 &
+          PUBLIC_REJECT_PID=$!
+          sleep 0.3
+          public_rejected_client_status=0
+          timeout 12s sudo ip netns exec cito-quic-c "$PUBBIN" client 47321 \
+            "$GITHUB_WORKSPACE/quic-untrusted-ca.pem" \
+            >quic-public-rejected-client.log 2>&1 || public_rejected_client_status=$?
+          public_rejected_server_status=0
+          wait "$PUBLIC_REJECT_PID" || public_rejected_server_status=$?
+          echo "=== public RPC with untrusted CA: client status $public_rejected_client_status ==="
+          cat quic-public-rejected-client.log
+          cat quic-public-rejected-server.log
+          test "$public_rejected_client_status" -ne 0
+          test "$public_rejected_client_status" -ne 124
+          if grep -q "quic_public_request_client result=42" quic-public-rejected-client.log; then
+            echo "Unauthorized public RPC unexpectedly succeeded"
+            exit 1
+          fi
+          test "$public_rejected_server_status" -ne 0
+
 
 
       - name: Configure sanitized public Request/Reply smoke
@@ -308,6 +421,7 @@ jobs:
 
           client_status=0
           sudo ip netns exec cito-quic-san-c env $SAN_ENV "$BIN" client 47330 \
+            "$GITHUB_WORKSPACE/quic-ca.pem" \
             >quic-public-san-client.log 2>&1 || client_status=$?
 
           server_status=0
