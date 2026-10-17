@@ -17,6 +17,15 @@ struct MsQuicRequestSessionOptions {
     // An explicit trust anchor for self-managed LAN certificates. By default
     // MsQuic uses the platform trust store and validates the peer's name.
     std::string ca_certificate_file;
+    // Optional client identity when this node dials an mTLS server.
+    // Both files are required; a half-specified key pair fails closed.
+    std::string client_certificate_file;
+    std::string client_private_key_file;
+    // Optional server-side mTLS trust anchor. When require_client_certificate
+    // is true, this CA is mandatory; a handshake without a trusted client
+    // certificate is rejected before application authorization.
+    std::string trusted_client_ca_file;
+    bool require_client_certificate{false};
     // Insecure test-only escape hatch. Never enable in shipped applications.
     bool skip_server_certificate_validation{
         false};

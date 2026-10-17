@@ -2,7 +2,7 @@ name: Cito QUIC
 
 on:
   push:
-    branches: [cito-dev, cito-native-v23-validation, cito-v23-native-headers]
+    branches: [cito-dev, cito-native-v23-validation, cito-v23-native-headers, cito-v24-mtls-native]
     paths:
       - "cito/CMakeLists.txt"
       - "cito/include/cito/data_packet.hpp"
@@ -124,6 +124,33 @@ jobs:
             -out quic-cert.pem -days 1 -extfile quic-server.ext
           openssl verify -CAfile quic-ca.pem -verify_ip 10.202.0.12 quic-cert.pem
           openssl verify -CAfile quic-ca.pem -verify_ip 10.203.0.12 quic-cert.pem
+          # Client certificate: only signed clients may pass server mTLS.
+          openssl req -newkey rsa:2048 -nodes \
+            -keyout quic-client-key.pem -out quic-client.csr \
+            -subj "/CN=cito-authorized-client"
+          cat > quic-client.ext <<'EOF'
+          basicConstraints=critical,CA:FALSE
+          keyUsage=critical,digitalSignature
+          extendedKeyUsage=clientAuth
+          EOF
+          openssl x509 -req -in quic-client.csr \
+            -CA quic-ca.pem -CAkey quic-ca-key.pem -CAcreateserial \
+            -out quic-client-cert.pem -days 1 -extfile quic-client.ext
+          openssl verify -CAfile quic-ca.pem -purpose sslclient quic-client-cert.pem
+          openssl x509 -in quic-client-cert.pem -outform DER -out quic-client.der
+          # Same trusted CA but different leaf identity: TLS should succeed,
+          # Cito node authorization must reject this certificate.
+          openssl req -newkey rsa:2048 -nodes \
+            -keyout quic-other-client-key.pem -out quic-other-client.csr \
+            -subj "/CN=cito-unlisted-client"
+          openssl x509 -req -in quic-other-client.csr \
+            -CA quic-ca.pem -CAkey quic-ca-key.pem -CAcreateserial \
+            -out quic-other-client-cert.pem -days 1 -extfile quic-client.ext
+          openssl verify -CAfile quic-ca.pem -purpose sslclient quic-other-client-cert.pem
+          if cmp -s quic-client.der <(openssl x509 -in quic-other-client-cert.pem -outform DER); then
+            echo "Distinct identity certificates unexpectedly identical"
+            exit 1
+          fi
           openssl req -x509 -newkey rsa:2048 -nodes -days 1 \
             -keyout quic-untrusted-ca-key.pem -out quic-untrusted-ca.pem \
             -subj "/CN=Cito Untrusted Test Root" \
@@ -259,6 +286,122 @@ jobs:
           test "$deny_server_status" -eq 0
           grep -q "cito_v23_native_admission seen=1 denied=1 authorized=0 closed=0 drained=1" quic-v23-deny-server.log
 
+          # Positive mTLS: server validates a CA-signed client certificate
+          # before triggering the application-level admission callback.
+          sudo ip netns exec cito-quic-s /tmp/cito-v23-native-admission-smoke \
+            4444 "$GITHUB_WORKSPACE/quic-cert.pem" \
+            "$GITHUB_WORKSPACE/quic-key.pem" mtls "$GITHUB_WORKSPACE/quic-ca.pem" \
+            >quic-mtls-server.log 2>&1 &
+          MTLS_PID=$!
+          for attempt in $(seq 1 100); do
+            if grep -q 'admission_listener_ready' quic-mtls-server.log; then break; fi
+            if ! kill -0 "$MTLS_PID" 2>/dev/null; then break; fi
+            sleep 0.05
+          done
+          cat quic-mtls-server.log
+          grep -q 'admission_listener_ready' quic-mtls-server.log
+          mtls_client_status=0
+          timeout 9s sudo ip netns exec cito-quic-c "$BIN" \
+            client 10.202.0.12 4444 "$GITHUB_WORKSPACE/quic-ca.pem" \
+            "$GITHUB_WORKSPACE/quic-client-cert.pem" \
+            "$GITHUB_WORKSPACE/quic-client-key.pem" \
+            >quic-mtls-client.log 2>&1 || mtls_client_status=$?
+          mtls_server_status=0
+          wait "$MTLS_PID" || mtls_server_status=$?
+          echo "=== valid client certificate ==="
+          cat quic-mtls-client.log
+          cat quic-mtls-server.log
+          test "$mtls_client_status" -eq 0
+          test "$mtls_server_status" -eq 0
+          grep -q 'cito_v23_native_admission seen=1 denied=0 authorized=1 closed=1 drained=1 mtls=1 no_client=0' quic-mtls-server.log
+
+          # Negative mTLS: a client without any certificate must be rejected
+          # by TLS. The owner-loop Authorize/OnAuthorized hooks never run.
+          sudo ip netns exec cito-quic-s /tmp/cito-v23-native-admission-smoke \
+            4445 "$GITHUB_WORKSPACE/quic-cert.pem" \
+            "$GITHUB_WORKSPACE/quic-key.pem" mtls-reject "$GITHUB_WORKSPACE/quic-ca.pem" \
+            >quic-mtls-no-cert-server.log 2>&1 &
+          NO_CERT_PID=$!
+          for attempt in $(seq 1 100); do
+            if grep -q 'admission_listener_ready' quic-mtls-no-cert-server.log; then break; fi
+            if ! kill -0 "$NO_CERT_PID" 2>/dev/null; then break; fi
+            sleep 0.05
+          done
+          grep -q 'admission_listener_ready' quic-mtls-no-cert-server.log
+          no_cert_client_status=0
+          timeout 9s sudo ip netns exec cito-quic-c "$BIN" \
+            client 10.202.0.12 4445 "$GITHUB_WORKSPACE/quic-ca.pem" \
+            >quic-mtls-no-cert-client.log 2>&1 || no_cert_client_status=$?
+          no_cert_server_status=0
+          wait "$NO_CERT_PID" || no_cert_server_status=$?
+          echo "=== client missing certificate ==="
+          cat quic-mtls-no-cert-client.log
+          cat quic-mtls-no-cert-server.log
+          test "$no_cert_client_status" -ne 0
+          test "$no_cert_client_status" -ne 124
+          test "$no_cert_server_status" -eq 0
+          grep -q 'cito_v23_native_admission seen=0 denied=0 authorized=0 closed=0 drained=1 mtls=1 no_client=1' quic-mtls-no-cert-server.log
+
+          # Certificate-to-node binding, with the certificate already
+          # validated by MsQuic. These are application identity checks.
+          sudo ip netns exec cito-quic-s /tmp/cito-v23-native-admission-smoke \
+            4447 "$GITHUB_WORKSPACE/quic-cert.pem" \
+            "$GITHUB_WORKSPACE/quic-key.pem" mtls-id \
+            "$GITHUB_WORKSPACE/quic-ca.pem" "$GITHUB_WORKSPACE/quic-client.der" \
+            >quic-identity-allowed-server.log 2>&1 &
+          ID_OK_PID=$!
+          for attempt in $(seq 1 100); do
+            if grep -q 'admission_listener_ready' quic-identity-allowed-server.log; then break; fi
+            if ! kill -0 "$ID_OK_PID" 2>/dev/null; then break; fi
+            sleep 0.05
+          done
+          cat quic-identity-allowed-server.log
+          grep -q 'admission_listener_ready' quic-identity-allowed-server.log
+          identity_allowed_client_status=0
+          timeout 9s sudo ip netns exec cito-quic-c "$BIN" client 10.202.0.12 4447 \
+            "$GITHUB_WORKSPACE/quic-ca.pem" \
+            "$GITHUB_WORKSPACE/quic-client-cert.pem" \
+            "$GITHUB_WORKSPACE/quic-client-key.pem" \
+            >quic-identity-allowed-client.log 2>&1 || identity_allowed_client_status=$?
+          identity_allowed_server_status=0
+          wait "$ID_OK_PID" || identity_allowed_server_status=$?
+          echo "=== allowed client certificate identity ==="
+          cat quic-identity-allowed-client.log
+          cat quic-identity-allowed-server.log
+          test "$identity_allowed_client_status" -eq 0
+          test "$identity_allowed_server_status" -eq 0
+          grep -q 'cito_v23_native_admission seen=1 denied=0 authorized=1 closed=1 drained=1 mtls=1 no_client=0 identity=1' quic-identity-allowed-server.log
+
+          # A different leaf certificate from the same CA must pass TLS
+          # chain verification but fail the application identity allowlist.
+          sudo ip netns exec cito-quic-s /tmp/cito-v23-native-admission-smoke \
+            4448 "$GITHUB_WORKSPACE/quic-cert.pem" \
+            "$GITHUB_WORKSPACE/quic-key.pem" mtls-id-reject \
+            "$GITHUB_WORKSPACE/quic-ca.pem" "$GITHUB_WORKSPACE/quic-client.der" \
+            >quic-identity-rejected-server.log 2>&1 &
+          ID_DENY_PID=$!
+          for attempt in $(seq 1 100); do
+            if grep -q 'admission_listener_ready' quic-identity-rejected-server.log; then break; fi
+            if ! kill -0 "$ID_DENY_PID" 2>/dev/null; then break; fi
+            sleep 0.05
+          done
+          cat quic-identity-rejected-server.log
+          grep -q 'admission_listener_ready' quic-identity-rejected-server.log
+          identity_denied_client_status=0
+          timeout 9s sudo ip netns exec cito-quic-c "$BIN" client 10.202.0.12 4448 \
+            "$GITHUB_WORKSPACE/quic-ca.pem" \
+            "$GITHUB_WORKSPACE/quic-other-client-cert.pem" \
+            "$GITHUB_WORKSPACE/quic-other-client-key.pem" \
+            >quic-identity-rejected-client.log 2>&1 || identity_denied_client_status=$?
+          identity_denied_server_status=0
+          wait "$ID_DENY_PID" || identity_denied_server_status=$?
+          echo "=== same-CA unlisted client identity (client exit $identity_denied_client_status) ==="
+          cat quic-identity-rejected-client.log
+          cat quic-identity-rejected-server.log
+          test "$identity_denied_client_status" -ne 124
+          test "$identity_denied_server_status" -eq 0
+          grep -q 'cito_v23_native_admission seen=0 denied=0 authorized=0 closed=0 drained=1 mtls=1 no_client=1 identity=1' quic-identity-rejected-server.log
+
           # Negative test: a different CA must not authenticate the same server.
           # Run a second server using the same certificate after the positive test.
           sudo ip netns exec cito-quic-s "$BIN" server 4440 \
@@ -358,6 +501,59 @@ jobs:
             exit 1
           fi
           test "$public_rejected_server_status" -ne 0
+
+          # The *public* Cito Context::request API with mutual TLS.
+          sudo ip netns exec cito-quic-s "$PUBBIN" server 4451 47510 \
+            10.202.0.11 47421 \
+            "$GITHUB_WORKSPACE/quic-cert.pem" "$GITHUB_WORKSPACE/quic-key.pem" \
+            "$GITHUB_WORKSPACE/quic-ca.pem" \
+            >quic-public-mtls-server.log 2>&1 &
+          PUBLIC_MTLS_PID=$!
+          sleep 0.3
+          public_mtls_client_status=0
+          timeout 14s sudo ip netns exec cito-quic-c "$PUBBIN" client 47421 \
+            "$GITHUB_WORKSPACE/quic-ca.pem" \
+            "$GITHUB_WORKSPACE/quic-client-cert.pem" \
+            "$GITHUB_WORKSPACE/quic-client-key.pem" \
+            >quic-public-mtls-client.log 2>&1 || public_mtls_client_status=$?
+          public_mtls_server_status=0
+          wait "$PUBLIC_MTLS_PID" || public_mtls_server_status=$?
+          echo "=== public Context RPC with mutual TLS ==="
+          cat quic-public-mtls-client.log
+          cat quic-public-mtls-server.log
+          test "$public_mtls_client_status" -eq 0
+          test "$public_mtls_server_status" -eq 0
+          grep -q 'quic_public_request_client result=42' quic-public-mtls-client.log
+          grep -q 'quic_public_request_server handler=1 reply=1' quic-public-mtls-server.log
+
+          # No client certificate: server TLS must reject the public API call.
+          sudo ip netns exec cito-quic-s "$PUBBIN" server 4452 47520 \
+            10.202.0.11 47422 \
+            "$GITHUB_WORKSPACE/quic-cert.pem" "$GITHUB_WORKSPACE/quic-key.pem" \
+            "$GITHUB_WORKSPACE/quic-ca.pem" \
+            >quic-public-no-cert-server.log 2>&1 &
+          PUBLIC_NO_CERT_PID=$!
+          sleep 0.3
+          public_no_cert_client_status=0
+          timeout 14s sudo ip netns exec cito-quic-c "$PUBBIN" client 47422 \
+            "$GITHUB_WORKSPACE/quic-ca.pem" \
+            >quic-public-no-cert-client.log 2>&1 || public_no_cert_client_status=$?
+          public_no_cert_server_status=0
+          wait "$PUBLIC_NO_CERT_PID" || public_no_cert_server_status=$?
+          echo "=== public Context RPC without required mTLS certificate ==="
+          cat quic-public-no-cert-client.log
+          cat quic-public-no-cert-server.log
+          test "$public_no_cert_client_status" -ne 0
+          test "$public_no_cert_client_status" -ne 124
+          test "$public_no_cert_server_status" -ne 0
+          if grep -q 'quic_public_request_client result=42' quic-public-no-cert-client.log; then
+            echo 'Unauthenticated public RPC unexpectedly succeeded'
+            exit 1
+          fi
+          if grep -q 'quic_public_request_server handler=1 reply=1' quic-public-no-cert-server.log; then
+            echo 'Unauthenticated RPC unexpectedly executed the remote handler'
+            exit 1
+          fi
 
 
 

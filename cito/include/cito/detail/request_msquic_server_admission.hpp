@@ -4,6 +4,8 @@
 
 #include <atomic>
 #include <cstddef>
+#include <cstdint>
+#include <span>
 #include <exception>
 #include <functional>
 #include <memory>
@@ -32,12 +34,22 @@ public:
     using AcceptStream = std::function<bool(HQUIC, HQUIC)>; // MsQuic worker only
     using OnClosed = std::function<void(HQUIC)>; // owner thread, before ConnectionClose
 
+    // Optional certificate-bound node identity. Requires the MsQuic server
+    // credential to set REQUIRE_CLIENT_AUTHENTICATION,
+    // INDICATE_CERTIFICATE_RECEIVED and USE_PORTABLE_CERTIFICATES, with
+    // actual CA validation enabled. The callback sees a borrowed DER buffer
+    // on the Cito owner thread, never on an MsQuic worker.
+    using AuthorizeIdentity = std::function<bool(HQUIC, std::span<const std::uint8_t>)>;
+    static constexpr std::size_t kMaxPeerCertificateBytes = 16 * 1024;
+
     RequestMsQuicServerAdmission(const QUIC_API_TABLE* api, HQUIC configuration,
                                  std::size_t max_connections, Authorize authorize,
-                                 OnAuthorized ready, AcceptStream stream, OnClosed on_closed = {})
+                                 OnAuthorized ready, AcceptStream stream, OnClosed on_closed = {},
+                                 AuthorizeIdentity authorize_identity = {})
         : api_(api), configuration_(configuration), limit_(max_connections),
           authorize_(std::move(authorize)), ready_(std::move(ready)),
-          accept_stream_(std::move(stream)), on_closed_(std::move(on_closed)) {}
+          accept_stream_(std::move(stream)), on_closed_(std::move(on_closed)),
+          authorize_identity_(std::move(authorize_identity)) {}
     RequestMsQuicServerAdmission(const RequestMsQuicServerAdmission&) = delete;
     RequestMsQuicServerAdmission& operator=(const RequestMsQuicServerAdmission&) = delete;
 
@@ -96,7 +108,21 @@ public:
                 !entry->decided.exchange(true, std::memory_order_acq_rel)) {
                 bool allowed = false;
                 try {
-                    if (authorize_(entry->connection)) {
+                    bool identity_ok = true;
+                    if (authorize_identity_) {
+                        identity_ok = false; // deny missing, oversized or malformed certificates
+                        if (entry->certificate_observed.load(std::memory_order_acquire) &&
+                            !entry->certificate_invalid.load(std::memory_order_acquire)) {
+                            std::vector<std::uint8_t> der;
+                            {
+                                std::lock_guard lock(entry->certificate_mutex);
+                                der = entry->certificate_der;
+                            }
+                            if (!der.empty())
+                                identity_ok = authorize_identity_(entry->connection, der);
+                        }
+                    }
+                    if (identity_ok && authorize_(entry->connection)) {
                         allowed = ready_(entry->connection);
                         if (allowed) entry->prepared.store(true, std::memory_order_release);
                     }
@@ -162,6 +188,10 @@ private:
         std::atomic<bool> prepared{false};
         std::atomic<bool> shutdown_requested{false};
         std::atomic<bool> shutdown_seen{false};
+        std::mutex certificate_mutex;
+        std::vector<std::uint8_t> certificate_der;
+        std::atomic<bool> certificate_observed{false};
+        std::atomic<bool> certificate_invalid{false};
     };
 
     static QUIC_STATUS QUIC_API connection_callback(HQUIC connection, void* context,
@@ -175,6 +205,25 @@ private:
         } guard{entry};
         try {
             switch (event->Type) {
+                case QUIC_CONNECTION_EVENT_PEER_CERTIFICATE_RECEIVED: {
+                    // The MsQuic credential MUST enable portable certificates.
+                    // Its QUIC_BUFFER exists only during this callback, so
+                    // copy bounded bytes before returning to MsQuic.
+                    entry->certificate_observed.store(true, std::memory_order_release);
+                    if (entry->parent->authorize_identity_) {
+                        auto* buffer = reinterpret_cast<const QUIC_BUFFER*>(
+                            event->PEER_CERTIFICATE_RECEIVED.Certificate);
+                        if (!buffer || !buffer->Buffer || buffer->Length == 0 ||
+                            buffer->Length > kMaxPeerCertificateBytes) {
+                            entry->certificate_invalid.store(true, std::memory_order_release);
+                            break;
+                        }
+                        std::lock_guard lock(entry->certificate_mutex);
+                        entry->certificate_der.assign(buffer->Buffer,
+                                                       buffer->Buffer + buffer->Length);
+                    }
+                    break;
+                }
                 case QUIC_CONNECTION_EVENT_CONNECTED:
                     entry->connected.store(true, std::memory_order_release);
                     break;
@@ -233,6 +282,7 @@ private:
     OnAuthorized ready_;
     AcceptStream accept_stream_;
     OnClosed on_closed_;
+    AuthorizeIdentity authorize_identity_;
     mutable std::mutex mutex_;
     std::unordered_map<HQUIC, std::shared_ptr<Entry>> connections_;
     bool stopping_{false};
