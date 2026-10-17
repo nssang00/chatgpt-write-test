@@ -8,11 +8,14 @@
 #include <cstdlib>
 #include <iostream>
 #include <thread>
+#include <string_view>
 
 using namespace std::chrono_literals;
 
 int main(int argc, char** argv) {
-    if (argc != 4) return 2;
+    if (argc != 4 && argc != 5) return 2;
+    const bool deny = argc == 5 && std::string_view(argv[4]) == "deny";
+    if (argc == 5 && !deny) return 2;
     const unsigned long number = std::strtoul(argv[1], nullptr, 10);
     if (number == 0 || number > 65535) return 2;
 
@@ -50,6 +53,7 @@ int main(int argc, char** argv) {
         return 13;
     }
 
+    std::atomic<unsigned> seen{0};
     std::atomic<unsigned> authorized{0};
     std::atomic<unsigned> closed{0};
     bool ok = false;
@@ -58,7 +62,10 @@ int main(int argc, char** argv) {
         // It is deliberately NOT a substitute for a peer certificate policy.
         cito::detail::RequestMsQuicServerAdmission admission(
             api, configuration, 4,
-            [](HQUIC) { return true; },
+            [&](HQUIC) {
+                seen.fetch_add(1, std::memory_order_relaxed);
+                return !deny;
+            },
             [&](HQUIC) {
                 authorized.fetch_add(1, std::memory_order_relaxed);
                 return true;
@@ -77,11 +84,12 @@ int main(int argc, char** argv) {
 
         const auto deadline = std::chrono::steady_clock::now() + 8s;
         while (std::chrono::steady_clock::now() < deadline &&
-               authorized.load(std::memory_order_relaxed) == 0) {
+               !(deny ? (seen.load(std::memory_order_relaxed) == 1 && admission.empty())
+                      : authorized.load(std::memory_order_relaxed) == 1)) {
             admission.poll();
             std::this_thread::sleep_for(2ms);
         }
-        std::this_thread::sleep_for(500ms);
+        if (!deny) std::this_thread::sleep_for(500ms);
         listener.close();
         admission.shutdown_all();
         const auto close_deadline = std::chrono::steady_clock::now() + 5s;
@@ -90,8 +98,12 @@ int main(int argc, char** argv) {
             admission.poll();
             std::this_thread::sleep_for(2ms);
         }
-        ok = admission.empty() && authorized.load() == 1 && closed.load() == 1;
-        std::cout << "cito_v23_native_admission authorized=" << authorized.load()
+        ok = admission.empty() && seen.load() == 1 &&
+             authorized.load() == (deny ? 0U : 1U) &&
+             closed.load() == (deny ? 0U : 1U);
+        std::cout << "cito_v23_native_admission seen=" << seen.load()
+                  << " denied=" << deny
+                  << " authorized=" << authorized.load()
                   << " closed=" << closed.load()
                   << " drained=" << admission.empty() << std::endl;
         // Do not return while accepted callbacks are still alive.
