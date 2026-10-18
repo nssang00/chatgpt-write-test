@@ -8,12 +8,15 @@ param(
  [string]$WebView2Dll,
  [string]$OutputRoot
 )
-# Resolve defaults after parameter binding, not within param().
+# Resolve defaults only after PowerShell initializes this script's execution context.
+# $PSScriptRoot can be empty while parameter default expressions are evaluated.
 $kitDir=$PSScriptRoot
 if([string]::IsNullOrWhiteSpace($kitDir)) {
  $kitDir=Split-Path -Path $MyInvocation.MyCommand.Path -Parent
 }
-if([string]::IsNullOrWhiteSpace($kitDir)) { throw 'Cannot locate Build-UnityProduct.ps1 directory' }
+if([string]::IsNullOrWhiteSpace($kitDir)) {
+ throw 'Cannot locate Build-UnityProduct.ps1 directory'
+}
 if([string]::IsNullOrWhiteSpace($CefArchive)) {
  $CefArchive=Join-Path $kitDir 'CefOneClick-v58.4.4-source.zip'
 }
@@ -23,12 +26,6 @@ if([string]::IsNullOrWhiteSpace($WebView2Dll)) {
 if([string]::IsNullOrWhiteSpace($OutputRoot)) {
  $OutputRoot=Join-Path $kitDir 'Dist'
 }
-if([string]::IsNullOrWhiteSpace($CefStage)) {
- if([string]::IsNullOrWhiteSpace($env:LOCALAPPDATA)) {
-  throw 'LOCALAPPDATA is unset; provide -CefStage with your existing CEF stage path'
- }
- $CefStage=Join-Path $env:LOCALAPPDATA 'CompanyWebView\CEF-v58.4.4\Build\cef-native\stage'
-}
 $ErrorActionPreference='Stop'
 Set-StrictMode -Version Latest
 Add-Type -AssemblyName System.IO.Compression
@@ -36,7 +33,6 @@ Add-Type -AssemblyName System.IO.Compression.FileSystem
 function RequireFile([string]$file){if(-not (Test-Path -LiteralPath $file -PathType Leaf)){throw "Required validated file missing: $file"}}
 function CopySource([string]$source,[string]$destination){RequireFile $source;New-Item -ItemType Directory -Force -Path (Split-Path $destination -Parent)|Out-Null;Copy-Item -LiteralPath $source -Destination $destination -Force}
 $CefArchive=[IO.Path]::GetFullPath($CefArchive)
-$CefStage=[IO.Path]::GetFullPath($CefStage)
 $WebView2Dll=[IO.Path]::GetFullPath($WebView2Dll)
 $OutputRoot=[IO.Path]::GetFullPath($OutputRoot)
 RequireFile $CefArchive;RequireFile $WebView2Dll
@@ -48,8 +44,15 @@ if((Get-FileHash -LiteralPath $WebView2Dll -Algorithm SHA256).Hash.ToLowerInvari
 $actual=(Get-FileHash -LiteralPath $CefArchive -Algorithm SHA256).Hash.ToLowerInvariant()
 $expected='07e06a42f38cab584ce4e35091d47710539cbaee21883e033ecb97565ec24eb8'
 if($actual -cne $expected){throw "CEF source archive identity mismatch: expected $expected; found $actual"}
-$plugin=Join-Path $CefStage 'native\Release\CompanyWebViewCefTextureProbe.dll'
-$runtime=Join-Path $CefStage 'runtime\Release'
+# Reuse the same offline split-stage OR flat Player plugin layout as the validated OneClick.
+$finder=Join-Path $kitDir 'Find-CefRuntime.ps1'
+RequireFile $finder
+. $finder
+$cefLayout=Find-ValidatedCefLayout -RequestedPath $CefStage -KitDir $kitDir
+$CefStage=$cefLayout.Root
+$plugin=Join-Path $cefLayout.Native 'CompanyWebViewCefTextureProbe.dll'
+$runtime=$cefLayout.Runtime
+Write-Host ('[UPM CEF] Reusing existing compiled CEF from: '+$CefStage)
 RequireFile $plugin
 foreach($name in @('libcef.dll','CompanyWebViewCefSubprocess.exe','icudtl.dat','resources.pak','chrome_100_percent.pak','locales\en-US.pak')){RequireFile (Join-Path $runtime $name)}
 $package=Join-Path $OutputRoot 'com.company.webview'
@@ -88,8 +91,13 @@ CopySource $plugin (Join-Path $package 'Runtime\Plugins\x86_64\CompanyWebViewCef
 # Native support resources must not be interpreted as DLLs in Editor.
 $nativeOut=Join-Path $package 'NativePayload~\x86_64'
 Get-ChildItem -LiteralPath $runtime -File -Recurse|ForEach-Object {
- $rel=$_.FullName.Substring($runtime.Length).TrimStart('\','/')
- CopySource $_.FullName (Join-Path $nativeOut $rel)
+ # A flat Player Plugins directory may also contain Unity/WebView2 DLLs and logs.
+ # Package only CEF runtime resources; CEF probe & WebView2 DLL were copied above.
+ if($_.Name -notin @('CompanyWebViewCefTextureProbe.dll','CompanyWebView2UnifiedPreview.dll') -and
+    $_.Extension -notin @('.log','.json','.pdb','.meta')) {
+  $rel=$_.FullName.Substring($runtime.Length).TrimStart('\','/')
+  CopySource $_.FullName (Join-Path $nativeOut $rel)
+ }
 }
 $meta=[ordered]@{
  name='com.company.webview';version='1.1.0-preview.1';displayName='Company WebView (Windows Dual Preview)';
@@ -101,4 +109,3 @@ CopySource (Join-Path $kitDir 'README_KO.md') (Join-Path $package 'README_KO.md'
 if((Get-FileHash -LiteralPath $expectedManaged -Algorithm SHA256).Hash -ne $managedBefore){throw 'Validated CEF C# WebView changed unexpectedly'}
 Write-Host ('UPM PRODUCT PREVIEW READY: '+$package)
 Write-Host 'Windows x64 Standalone only. Verify prefab from Tools > Company WebView > Create Texture + Overlay Prefabs.'
-
