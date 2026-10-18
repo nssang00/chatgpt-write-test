@@ -17,7 +17,8 @@ namespace Company.WebView.Unified.Editor
         public void OnPostprocessBuild(BuildReport report)
         {
             if (report.summary.platform != BuildTarget.StandaloneWindows64) return;
-            var info = PackageInfo.FindForAssembly(typeof(UnifiedWebViewPanel).Assembly);
+            // Both UnityEditor.PackageInfo and UnityEditor.PackageManager.PackageInfo exist in Unity 2022.
+            var info = UnityEditor.PackageManager.PackageInfo.FindForAssembly(typeof(UnifiedWebViewPanel).Assembly);
             if (info == null) throw new BuildFailedException("Company WebView UPM PackageInfo not found");
             var native = Path.Combine(info.resolvedPath, "NativePayload~", "x86_64");
             var required = new[] { "libcef.dll", "CompanyWebViewCefSubprocess.exe",
