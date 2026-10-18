@@ -27,7 +27,18 @@
 - CEF runtime을 상용 빌드에 포함하려면 적절한 오픈소스 고지와 CEF 재배포 조건을 별도로 검토.
 - 이 UPM 제품 코드의 정적·컴파일 회귀 통과는 네이티브 Unity Player의 새 프리팹 실기 PASS가 아님.
 
+## v58.7.0 Windows PowerShell startup path fix (2026-10-18)
 
-## 2026-10-18 Windows PowerShell 5.1 startup fix
+`Build-UnityProduct.ps1` now resolves `CefArchive`, `WebView2Dll`, `OutputRoot`, and default `CefStage` **after** the `param()` block. This prevents the `Join-Path : Path parameter is empty` error on Windows PowerShell 5.1. Nothing is downloaded; existing local validated CEF stage remains mandatory. Custom `-CefStage` paths are still supported.
 
-Default arguments are resolved in the script body, after `param()` binding. This corrects `Join-Path : 'Path' 매개 변수가 빈 문자열` when invoking `Build-UnityProduct.cmd`. No CEF or Unity runtime is downloaded by this script. Missing local stage files now produce explicit required-file errors.
+If a required runtime file is absent, the installer will now report its actual missing path rather than the earlier parameter-binding error.
+
+## v58.7.0 CEF 재사용 경로 수정 (2026-10-18)
+
+첫 UPM 소스 키트는 `%LOCALAPPDATA%\CompanyWebView\CEF-v58.4.4\Build\cef-native\stage`의 `native\Release` 레이아웃만 검사해서, 기존 OneClick이 저장한 **Unity Player 캐시**의 평면 `Plugins\x86_64` 형식을 놓쳤습니다. 이번 수정은 캐시를 먼저 검색합니다. CEF 다운로드나 컴파일은 수행하지 않습니다.
+
+자동 검색 우선순위: `CEF_V58_4_4_RUNTIME_DIR`, `%LOCALAPPDATA%\CWV58\pc\*\Player\UnifiedDualPreview_Data\Plugins\x86_64`, `%LOCALAPPDATA%\CWV58\dual-*` Player, 이전 CEF stage, Downloads의 이전 OneClick 디렉터리(제한된 깊이).
+
+실제 파일이 다른 위치에 있다면 `Build-UnityProduct.ps1 -CefStage "C:\...\Player\UnifiedDualPreview_Data\Plugins\x86_64"`처럼 직접 지정할 수 있습니다. `-CefStage`는 완성된 `native/Release + runtime/Release` 디렉터리 또는 `libcef.dll`과 `CompanyWebViewCefTextureProbe.dll` 등이 모두 있는 평면 `Plugins\x86_64` 경로를 받습니다. 선택한 경로가 불완전하면 자동으로 다른 바이너리로 대체하지 않고 명확히 실패합니다.
+
+**실기 범위:** 자동 경로 탐색의 정적·Windows PowerShell 검사와 Unity Player 실행/패키지 설치 검증은 별개입니다. 이미 통과한 5분짜리 렌더링 시험은 다시 실행할 필요가 없습니다.
