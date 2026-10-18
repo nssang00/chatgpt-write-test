@@ -15,6 +15,7 @@ on:
       - feature/unified-unity-v58-7-0-upm-psscriptroot-fix
       - feature/unified-unity-v58-7-0-upm-reuse-cef-stage
       - feature/unified-unity-v58-7-1-oneclick-upm-autobuild
+      - fix/upm-unity2022-packageinfo-cs0104
   workflow_dispatch:
 permissions:
   contents: read
@@ -38,6 +39,8 @@ jobs:
           if($LASTEXITCODE -ne 0){throw 'Unity UPM product panel C# compilation failed'}
           dotnet build --configuration Release Integration/UnityUnified-v58.6.0-preview/UnityProduct/Validation/AutoBuildCompile.csproj
           if($LASTEXITCODE -ne 0){throw 'Product Unity batch build method C# compilation failed'}
+          dotnet build --configuration Release Integration/UnityUnified-v58.6.0-preview/UnityProduct/Validation/BuildCopyCompile.csproj
+          if($LASTEXITCODE -ne 0){throw 'Unity 2022 PackageInfo ambiguity regression failed'}
       - name: Contract and PowerShell 5.1 syntax checks
         shell: powershell
         run: |
