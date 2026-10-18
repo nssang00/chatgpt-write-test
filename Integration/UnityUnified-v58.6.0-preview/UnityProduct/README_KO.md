@@ -1,3 +1,19 @@
+# 완전 자동 설치·빌드 (2026-10-18 추가)
+
+**`Run-Auto.cmd`를 한 번 실행**하면 CEF v58.4.4 기존 컴파일 캐시를 재사용해 다음을 자동 처리합니다.
+
+1. 로컬 CEF와 WebView2에서 `Dist/com.company.webview` UPM 패키지를 조립합니다. 다운로드나 CEF 재컴파일은 하지 않습니다.
+2. `%LOCALAPPDATA%\CWV58\upm-product\<캐시키>\UnityProject`에 **별도 Unity 2022.3.62f3 프로젝트**를 생성하고 embedded UPM 패키지를 설치합니다. 기존 사용자 프로젝트는 수정하지 않습니다.
+3. Unity `-batchmode`로 Texture 및 Overlay Prefab, `Assets/CompanyWebViewGenerated/DualPreview.unity` 예제 씬을 자동 생성합니다.
+4. Windows x64 D3D11 Standalone Player를 빌드하고 CEF 리소스 파일을 배치합니다. 동일 입력으로 재실행하면 `CACHE HIT`로 기존 Player를 재사용합니다.
+5. `AutoResults/product-auto-summary.json`에 성공 여부와 Player·Unity Editor 로그 경로를 기록합니다.
+
+Unity Editor는 기본 `C:\Program Files\Unity\Hub\Editor\2022.3.62f3\Editor\Unity.exe`에서 탐색합니다. 필요하면 `Run-Auto.cmd -UnityExe "C:\...\Unity.exe"`로 직접 지정하세요. 최초 자동 빌드에는 Unity Editor와 Windows Build Support가 필요합니다. 실행까지 원하면 `Run-Auto.cmd -LaunchPlayer`를 사용합니다.
+
+**검증 경계:** GitHub Windows CI는 배치 메서드 컴파일·PowerShell 구문·계약 검사만 수행합니다. 실제 Unity Editor 패키지 설치 및 Player 실행은 사용자 PC의 결과가 나오기 전까지 통과로 판정하지 않습니다. 이전의 5분짜리 렌더링 검증은 반복하지 않습니다.
+
+---
+
 # Company WebView Unity UPM — Preview 1 (Windows x64)
 
 **목표:** 실험용 `Run-Dual.cmd`가 아닌 Unity Project에 설치해 CEF Texture / WebView2 Overlay를 선택하는 첫 제품형 패키지.
