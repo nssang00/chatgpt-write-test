@@ -30,13 +30,27 @@ assert 'Editor' not in (root/'Runtime/UnifiedWebViewPanel.cs').read_text('utf-8'
 for s in ['UnifiedWebView.cs','CefTextureBackendBridge.cs','WebView2OverlayBackendBridge.cs']:
     assert (root/'ExistingRuntime'/s).exists(), s
 assert (root/'Editor/Company.WebView.Editor.asmdef').exists()
-# Avoid binding-time Join-Path failures in Windows PowerShell 5.1.
-param_text=builder.split('param(',1)[1].split('\n)',1)[0]
-assert '$PSScriptRoot' not in param_text and 'Join-Path' not in param_text, 'Do not resolve paths while binding script arguments'
+
+# Regression: PowerShell initializes PSScriptRoot only after argument binding.
+# Never use it or LOCALAPPDATA to resolve Join-Path inside a param default.
+param_text=builder.split('param(', 1)[1].split('\n)', 1)[0]
+assert '$PSScriptRoot' not in param_text and 'Join-Path' not in param_text
 for needle in ('$kitDir=$PSScriptRoot', 'Split-Path -Path $MyInvocation.MyCommand.Path -Parent',
                "Join-Path $kitDir 'CefOneClick-v58.4.4-source.zip'",
                "Join-Path $kitDir 'CompanyWebView2UnifiedPreview.dll'",
                "Join-Path $kitDir 'Dist'"):
-    assert needle in builder, 'UPM path resolution contract: '+needle
-print('UPM product preview source contract PASS (no Unity Editor/Player execution)')
+    assert needle in builder, 'Kit path regression: '+needle
 
+# The offline CEF loader accepts both split native/Release+runtime/Release and
+# flat Unity Player Plugins/x86_64 layouts, never downloading missing binaries.
+finder=(root/'Find-CefRuntime.ps1').read_text('utf-8')
+for needle in ('Find-ValidatedCefLayout', 'Test-ExistingCefLayout',
+               'CompanyWebViewCefTextureProbe.dll', 'libcef.dll',
+               'CWV58', 'pc', 'dual-*', 'Build\\cef-native\\stage',
+               'Plugins\\x86_64', 'No download attempted'):
+    assert needle in finder, 'CEF stage resolver regression: '+needle
+assert 'Find-ValidatedCefLayout -RequestedPath $CefStage' in builder
+assert "Join-Path $CefStage 'native\\Release\\CompanyWebViewCefTextureProbe.dll'" not in builder
+assert 'Invoke-WebRequest' not in finder and 'Start-Process' not in finder
+assert (root/'Validation/Test-CefRuntimeFinder.ps1').exists()
+print('UPM product preview source contract PASS (no Unity Editor/Player execution)')
