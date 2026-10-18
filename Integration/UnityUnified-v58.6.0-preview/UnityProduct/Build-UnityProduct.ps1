@@ -83,7 +83,7 @@ foreach($name in @('UnifiedWebView.cs','CefTextureBackendBridge.cs','WebView2Ove
   CopySource (Join-Path $kitDir ('ExistingRuntime\'+$name)) (Join-Path $unified $name)
 }
 CopySource (Join-Path $kitDir 'Runtime\UnifiedWebViewPanel.cs') (Join-Path $unified 'UnifiedWebViewPanel.cs')
-foreach($name in @('UnifiedWebViewSetupMenu.cs','UnifiedWebViewBuildCopy.cs','Company.WebView.Editor.asmdef')){
+foreach($name in @('UnifiedWebViewSetupMenu.cs','UnifiedWebViewBuildCopy.cs','UnifiedWebViewAutoBuild.cs','Company.WebView.Editor.asmdef')){
   CopySource (Join-Path $kitDir ('Editor\'+$name)) (Join-Path $package ('Editor\'+$name))
 }
 CopySource $WebView2Dll (Join-Path $package 'Runtime\Plugins\x86_64\CompanyWebView2UnifiedPreview.dll')
