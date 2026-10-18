@@ -26,6 +26,12 @@ namespace Company.WebView.Unified.Editor
         public static void CreateExampleScene()
         {
             if (!EditorSceneManager.SaveCurrentModifiedScenesIfUserWantsTo()) return;
+            CreateExampleSceneBatch();
+        }
+
+        // Non-interactive variant for -batchmode; it never opens Save Scene dialogs.
+        public static void CreateExampleSceneBatch()
+        {
             CreatePrefabs();
             var scene = EditorSceneManager.NewScene(NewSceneSetup.DefaultGameObjects, NewSceneMode.Single);
             var root = new GameObject("Company WebView Preview Canvas", typeof(RectTransform),
