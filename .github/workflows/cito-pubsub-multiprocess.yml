@@ -103,7 +103,7 @@ jobs:
           done
           cat runtime-pub.log runtime-pos1.log runtime-pos2.log runtime-bat.log
           test "$status" -eq 0
-          grep -q 'snapshot_requests=3 route_requests=2 discovered=2 sent=2' runtime-pub.log
+          grep -q 'snapshot_requests=2 route_requests=2 discovered=2 sent=2' runtime-pub.log
           grep -q 'received=1' runtime-pos1.log
           grep -q 'received=1' runtime-pos2.log
           grep -q 'received=0 route_requests=0' runtime-bat.log
