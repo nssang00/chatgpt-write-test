@@ -42,7 +42,9 @@ for sig in ("'Runtime\\CefTextureInputForwarder.cs'", "'Demo-cef-input-demo.html
     assert sig in auto,sig
 assert 'ResolveTextureUrl' in panel and 'streamingAssetsPath' in panel
 assert 'title.StartsWith(TitlePrefix' in cef and 'Uri.UnescapeDataString' in cef
-assert 'ScriptExecution = false' in cef and 'Messages = false' in cef and 'PageToUnityMessages = true' in cef
+assert 'ScriptExecution = false' in cef and 'Messages = false' in cef and 'PageToUnityMessages = false' in cef
+assert 'Capabilities.PageToUnityMessages = options.EnableCefPageTitleMessages' in cef
+assert 'EnableCefPageTitleMessages' in panel
 assert 'if(!Capabilities.Messages && !Capabilities.PageToUnityMessages) return;' in facade
 assert "document.title='cwmsg:v1:'" in page
 assert '<input ' in page and '<textarea ' in page
