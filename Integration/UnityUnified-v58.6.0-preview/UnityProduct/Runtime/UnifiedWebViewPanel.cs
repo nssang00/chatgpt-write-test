@@ -33,6 +33,12 @@ namespace Company.WebView.Unified.Experimental
         private WinRect lastWindow;
         private bool windowObserved;
         public PresentationMode Mode => mode;
+        public int BrowserWidth => browserWidth;
+        public int BrowserHeight => browserHeight;
+        // Used by texture input adapter; never calls the CEF DLL in the Unity Editor.
+        internal bool CanForwardTextureInput => view != null && !closing &&
+            activeMode == PresentationMode.Texture && view.IsReady &&
+            view.Capabilities.NativeInput;
         public bool IsReady => view != null && !closing && view.IsReady;
         public WebViewCapabilities Capabilities => view != null ? view.Capabilities : null;
         public event Action<string> MessageReceived;
@@ -70,7 +76,7 @@ namespace Company.WebView.Unified.Experimental
                     Directory.CreateDirectory(cache);
                     view = UnifiedWebView.Create(new UnifiedWebViewOptions {
                         Mode = PresentationMode.Texture, Target = TargetKind.RawImage,
-                        Url = initialUrl, Width = browserWidth, Height = browserHeight,
+                        Url = ResolveTextureUrl(initialUrl), Width = browserWidth, Height = browserHeight,
                         TargetFrameRate = targetFrameRate, CefSubprocessPath = subprocess,
                         CefCachePath = cache
                     });
@@ -109,7 +115,24 @@ namespace Company.WebView.Unified.Experimental
 #endif
         }
 
-        private void OnNativeMessage(string text) => MessageReceived?.Invoke(text);
+        private static string ResolveTextureUrl(string configured)
+        {
+            if (String.Equals(configured, "companywebview-demo://input", StringComparison.Ordinal))
+            {
+                var page = Path.Combine(Application.streamingAssetsPath, "CompanyWebView", "cef-input-demo.html");
+                if (!File.Exists(page)) throw new FileNotFoundException("Generated input demo HTML missing", page);
+                return new Uri(page).AbsoluteUri;
+            }
+            return configured;
+        }
+
+        private void OnNativeMessage(string text)
+        {
+            if (activeMode == PresentationMode.Texture &&
+                String.Equals(initialUrl, "companywebview-demo://input", StringComparison.Ordinal))
+                Debug.Log("[CEF PAGE->UNITY DEMO] " + text, this);
+            MessageReceived?.Invoke(text);
+        }
         private RectInt GetPixelBounds(WinRect client)
         {
             var corners = new Vector3[4];
