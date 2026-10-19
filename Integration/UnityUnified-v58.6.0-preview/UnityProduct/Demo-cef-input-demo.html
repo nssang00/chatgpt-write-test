@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>CompanyWebView Input Demo</title>
+<style>body{margin:25px;background:#162035;color:#f2f5ff;font:16px system-ui,sans-serif}h1{font-size:24px}input,textarea,button{font:16px system-ui;padding:9px;border-radius:6px;margin:4px 0}input,textarea{width:90%}button{cursor:pointer;background:#9edffc;border:0;color:#172033}section{border:1px solid #60738e;padding:14px;margin:12px 0;border-radius:10px}#result{white-space:pre-wrap;color:#a0f0a0}</style>
+</head><body><h1>CEF Texture — Input &amp; Page-to-Unity Demo</h1>
+<section><label>Click then type, including Korean IME (experimental)</label><br><input id="text" placeholder="Click and enter characters"><br><textarea id="area" rows="3" placeholder="Multiline text / arrows / backspace"></textarea></section>
+<section><button id="send">Send one message to Unity</button><button id="clear">Clear demo</button><p>Mouse moves, clicks, wheel and keyboard are forwarded by the Unity RawImage.</p><div id="result">Ready.</div></section>
+<section style="min-height:450px">Scroll test. If the wheel reaches CEF, this box moves with the page.</section>
+<script>
+// v58.8 controlled-page proof-of-concept only. The current native DLL cannot inject JS,
+// and title polling loses rapid consecutive messages; never use as reliable RPC.
+let sequence=0;
+function sendToUnity(text){document.title='cwmsg:v1:'+(++sequence)+':'+encodeURIComponent(text);}
+const result=document.getElementById('result');
+document.getElementById('send').addEventListener('click',()=>{
+  const text=document.getElementById('text').value;
+  sendToUnity(text || 'Hello from CEF controlled page');
+  result.textContent='Page-to-Unity title message sent (check Unity Player.log)';
+});
+document.getElementById('clear').addEventListener('click',()=>{document.getElementById('text').value='';document.getElementById('area').value='';result.textContent='Cleared.';});
+</script></body></html>
+
