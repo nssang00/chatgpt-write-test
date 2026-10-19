@@ -17,6 +17,7 @@ on:
       - feature/unified-unity-v58-7-1-oneclick-upm-autobuild
       - fix/upm-unity2022-packageinfo-cs0104
       - fix/upm-v58-7-3-rectint-cs0019
+      - feature/unified-unity-v58-8-0-cef-ui-input-title-message-preview
   workflow_dispatch:
 permissions:
   contents: read
@@ -55,6 +56,8 @@ jobs:
           if($LASTEXITCODE -ne 0){throw 'Unity UPM product static contract failed'}
           python "$r/UnityProduct/Validation/verify_auto_product.py"
           if($LASTEXITCODE -ne 0){throw 'Unity one-click automation source contract failed'}
+          python "$r/UnityProduct/Validation/verify_interaction.py"
+          if($LASTEXITCODE -ne 0){throw 'CEF Texture UI input and controlled-page message contract failed'}
           # Simulate a prior CS0019 failure without launching Unity: the resolver
           # must patch the embedded panel and preserve the existing project.
           $recover="$r/UnityProduct/Recover-CS0104.ps1"
