@@ -3,7 +3,7 @@
 - `Run-Auto.cmd`가 독립 Unity 프로젝트의 새 UPM 패키지, `CefTextureInputForwarder`, `EventSystem`, `StandaloneInputModule`, 데모 HTML 페이지를 생성한 뒤 Windows x64 D3D11 Player를 빌드합니다. 기존 v58.7.3 성공 Player는 변경하지 않으며 새 캐시 키를 사용합니다.
 - CEF 텍스처 클릭·마우스 이동·휠·드래그·기본 키/텍스트를 **기존 컴파일된** `CompanyWebViewCefTextureProbe.dll`의 `Interaction*` 네이티브 함수에 전달합니다. Unity 2022.3 레거시 Input Manager 필요. 터치, 고급 IME, 브라우저 단축키, 자동화된 실기 인증은 아직 P0 미완료입니다.
 - 데모 CEF 페이지는 `Assets/StreamingAssets/CompanyWebView/cef-input-demo.html`에 설치됩니다. `companywebview-demo://input` URL에서 이 페이지가 열리고, 버튼 하나의 JS 메시지를 `document.title`을 통해 Unity `MessageReceived`로 전달하며 Unity Player.log에는 `[CEF PAGE->UNITY DEMO]`가 찍힙니다.
-- 이 **단방향 제목 폴링은 임시 프로토타입**입니다. 문서 제목을 변경하며, 빠른 연속 메시지가 유실될 수 있고 3,200문자 길이 제한이 있습니다. 범용 `ExecuteJavaScript`, Unity→CEF `PostMessage`, 비동기 RPC는 네이티브 재빌드와 별도 검증이 필요합니다. 현재 CEF `Capabilities.ScriptExecution=false`, `Capabilities.Messages=false`, `Capabilities.PageToUnityMessages=true`입니다.
+- 이 **단방향 제목 폴링은 임시 프로토타입**입니다. 문서 제목을 변경하며, 빠른 연속 메시지가 유실될 수 있고 3,200문자 길이 제한이 있습니다. 범용 `ExecuteJavaScript`, Unity→CEF `PostMessage`, 비동기 RPC는 네이티브 재빌드와 별도 검증이 필요합니다. 현재 CEF `Capabilities.ScriptExecution=false`, `Capabilities.Messages=false`이며 `Capabilities.PageToUnityMessages`는 **데모에서만 opt-in 활성화**됩니다. 외부 웹사이트 메시지를 신뢰해서 실행하지 마세요.
 - `Window > Package Manager` 수동 설치는 여전히 가능하며, 자동 빌드 성공과 Player 실제 상호작용 성공은 구분합니다.
 
 ---
