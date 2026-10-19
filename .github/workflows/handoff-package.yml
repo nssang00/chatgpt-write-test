@@ -1,5 +1,5 @@
 name: NativeWeb Handoff Snapshot
-# Refresh exact-source handoff snapshot for the 2026-10-17 transfer.
+# Refresh exact-source handoff snapshot for the 2026-10-19 transfer.
 
 on:
   push:
@@ -51,18 +51,24 @@ jobs:
           5. docs/EXECUTION_PLAN.md and docs/RELEASE_TEST_MATRIX.md
           6. docs/ISSUE_LOG.md and docs/ACCEPTANCE_CRITERIA.md
 
-          ## Latest verified state
-          Packaged app:// UI resources work in Linux CEF, Windows CEF and
-          Windows WebView2. Native C++11 Core and generated CLI/plugin
-          scaffolds pass regression on both OS. Python/C# export metadata
-          discovery passes on both OS but is not a live backend host.
+          ## Current engineering checkpoint (read docs for details)
+          Windows/Linux CEF, Windows WebView2 and macOS WKWebView have real
+          browser bridge E2E coverage (macOS ARM64 and Intel). Experimental
+          WebView2 SharedBuffer has measured latency improvements but is NOT
+          the default bridge transport. Per-allocation random grant checks,
+          per-document pending limits and non-refundable cumulative budget
+          have CI coverage; renderer crash/recovery, multiple WebView isolation,
+          and sustained memory-pressure testing remain release blockers.
 
-          ## Blockers (do NOT claim product completion)
-          NW-014: per-method/frame/native-object permission grants;
-          standalone native app shell/OS menu; xytron restore/run/build/
-          publish; Python/.NET real module runtime/JS IPC; PluginManager
-          catalog/leases; embedded WPF/WinForms/MFC/GTK controls.
-          app:// origins do not automatically grant native calls.
+          Performance baselines are diagnostic, not service-level guarantees.
+          See docs/BRIDGE_LATENCY_RESULTS_2026-10-16.md and
+          docs/XYTRON_BRIDGE_TRANSPORT_PLAN_KO.md.
+
+          ## Still incomplete
+          NW-014 full per-method/frame/native-object permissions; app shell
+          and packaging, xytron run/build/publish, full Python/.NET runtime
+          wiring, PluginManager lifecycle and embedded host controls.
+          Linux WebKitGTK is optional and not yet implemented.
           Do not merge main or publish without owner approval.
 
           ## Source trust
