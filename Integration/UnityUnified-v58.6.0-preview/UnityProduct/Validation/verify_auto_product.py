@@ -27,3 +27,13 @@ for word in ('BuildPipeline.BuildPlayer', 'GraphicsDeviceType.Direct3D11',
              'GetCommandLineArgs', '-productBuildPath'):
     assert word in builder,word
 print('One-click UPM product automation static contract PASS; no Unity Editor/Player executed')
+
+# Unity 2022 RectInt does not implement !=, and our stub must faithfully model it.
+panel=(root/'Runtime/UnifiedWebViewPanel.cs').read_text('utf-8')
+stub=(root/'Validation/ProductPanelCompileStub.cs').read_text('utf-8')
+assert 'bounds != lastBounds' not in panel
+for name in ('bounds.x != lastBounds.x', 'bounds.y != lastBounds.y',
+             'bounds.width != lastBounds.width', 'bounds.height != lastBounds.height'):
+    assert name in panel, name
+assert 'operator !=(RectInt' not in stub and 'operator ==(RectInt' not in stub
+print('Unity 2022 RectInt CS0019 source regression PASS')
