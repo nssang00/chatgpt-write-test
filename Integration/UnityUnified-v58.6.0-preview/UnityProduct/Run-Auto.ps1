@@ -35,7 +35,9 @@ try {
  $validPackage=(Test-Path -LiteralPath (Join-Path $package 'package.json') -PathType Leaf) -and
                (Test-Path -LiteralPath (Join-Path $native 'libcef.dll') -PathType Leaf) -and
                (Test-Path -LiteralPath (Join-Path $package 'Editor\UnifiedWebViewAutoBuild.cs') -PathType Leaf) -and
-               (Test-Path -LiteralPath (Join-Path $package 'Runtime\UnifiedExperimental\UnifiedWebViewPanel.cs') -PathType Leaf)
+               (Test-Path -LiteralPath (Join-Path $package 'Runtime\UnifiedExperimental\UnifiedWebViewPanel.cs') -PathType Leaf) -and
+               (Test-Path -LiteralPath (Join-Path $package 'Runtime\UnifiedExperimental\CefTextureInputForwarder.cs') -PathType Leaf) -and
+               (Test-Path -LiteralPath (Join-Path $package 'Samples~\cef-input-demo.html') -PathType Leaf)
  if(-not $validPackage){
   if(Test-Path -LiteralPath $package){
    throw "Incomplete Dist package: $package . Move or remove this generated Dist package explicitly, then rerun."
@@ -78,6 +80,7 @@ try {
   'Build-UnityProduct.ps1','Find-CefRuntime.ps1','Run-Auto.ps1',
   'Editor\UnifiedWebViewAutoBuild.cs','Editor\UnifiedWebViewSetupMenu.cs',
   'Editor\UnifiedWebViewBuildCopy.cs','Runtime\UnifiedWebViewPanel.cs',
+  'Runtime\CefTextureInputForwarder.cs','Demo-cef-input-demo.html',
   'ExistingRuntime\UnifiedWebView.cs','ExistingRuntime\CefTextureBackendBridge.cs',
   'ExistingRuntime\WebView2OverlayBackendBridge.cs')){
   $file=Join-Path $kitDir $rel
@@ -192,3 +195,4 @@ try {
  Write-Host ('[UPM AUTO] Summary: '+$report)
  if($summary.status -ne 'AUTO_BUILD_PASS'){exit 1}
 }
+
