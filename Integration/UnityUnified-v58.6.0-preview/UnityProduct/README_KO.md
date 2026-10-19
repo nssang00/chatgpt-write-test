@@ -12,7 +12,7 @@
 
 - 이전 `compile-errors-redacted.txt`의 `UnityEngine.RectInt` `!=` 오류(CS0019)를 좌표·크기별 비교로 수정했습니다.
 - **Run-Auto.cmd** 한 번으로 시작하세요. 직전의 미완료 `2e63f1e5b65ba40e8f5a4a00` Unity 프로젝트가 남아 있고 CS0019 로그가 기록되어 있으면, **기존 `Library` 임포트 캐시를 보존한 채 한 줄만 수정해 Player 빌드를 재시도**합니다.
-- 기존 CS0104 복구도 계속 지원합니다. 기존 CEF·WebView2 바이너리는 수정하지 않고 다운로드하지 않습니다.
+- 이전 오류 복구용 `Recover-CS0104.ps1`은 별도 유지하되, v58.8 `Run-Auto.cmd`는 구버전 성공·실패 캐시로 돌아가지 않고 신규 기능용 별도 캐시를 생성합니다. 기존 CEF·WebView2 바이너리는 수정하거나 다운로드하지 않습니다.
 - 새 Unity 프로젝트가 필요한 경우에는 기존 오프라인 UPM 조립 → Unity Editor 일괄 빌드로 진행합니다.
 - 성공: `AutoResults/product-auto-summary.json` `status=AUTO_BUILD_PASS`; 실패: 동일 폴더 `compile-errors-redacted.txt` 및 UnityEditorAutoBuild.log 확인.
 - CI는 C# 계약/PowerShell 파서 검증이며, 새 Unity Player 실기 성공을 주장하지 않습니다.
@@ -24,8 +24,8 @@
 **실행:** ZIP을 별도 폴더에 압축 해제한 후 `Run-Auto.cmd` 한 번 실행합니다. 
 
 - Unity 2022.3.62f3의 `CS0104: PackageInfo ... ambiguous reference` 컴파일 오류를 소스에서 수정했습니다.
-- 기존 v58.7.1이 이 오류로 실패한 `%LOCALAPPDATA%\CWV58\upm-product\<키>\UnityProject`가 있으면, `Run-Auto.cmd`가 **실패한 프로젝트를 자동으로 복구하고 기존 `Library` 임포트 캐시로 빌드만 다시 실행**합니다. 이전 프로젝트를 지우지 않습니다.
-- 해당 이전 실패 캐시가 없으면 이전과 같이 CEF 캐시를 재사용하여 새로운 UPM 패키지·샘플 프로젝트·Prefab·씬 및 Win64 D3D11 Player를 조립합니다.
+- v58.7.x에서 CS0104/CS0019로 실패한 프로젝트는 **별도 복구 도구 `Recover-CS0104.ps1`**로만 수정 가능합니다. v58.8 원클릭은 새 입력 기능을 포함해야 하므로 **구버전 Unity 프로젝트 복구 경로로 우회하지 않습니다**.
+- v58.8 원클릭은 이전 버전의 성공/실패 여부와 관계없이 기존 CEF 네이티브 바이너리를 재사용하면서 **새 UPM 패키지·별도 샘플 프로젝트·Prefab·씬 및 Win64 D3D11 Player**를 생성합니다.
 - CEF, WebView2 네이티브 DLL과 검증된 CEF 소스 ZIP은 이전 버전과 **동일한 바이너리**입니다. 네트워크 다운로드 없음.
 - `AutoResults/product-auto-summary.json`에서 `AUTO_BUILD_PASS`를 확인합니다. 실패 시 `AutoResults/compile-errors-redacted.txt` 또는 요약의 `unityLog`를 확인합니다. 공유 전 민감정보를 검토하세요.
 - Unity 2022.3.62f3 및 Windows Build Support가 필요합니다. 기본 Editor 경로가 아니면 `Run-Auto.cmd -UnityExe "C:\...\Unity.exe"`로 지정합니다.
