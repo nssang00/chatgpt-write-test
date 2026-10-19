@@ -74,7 +74,7 @@ Unity Editor 기본 경로는 `C:\Program Files\Unity\Hub\Editor\2022.3.62f3\Edi
 ## 분명한 제한
 
 - **한 모드당 인스턴스 1개:** CEF 1개 + WebView2 1개까지; 다중 브라우저 구현 전.
-- Texture의 마우스·키보드·한글 IME 전달과 CEF JS Bridge는 아직 지원하지 않음.
+- Texture의 마우스·휠·기본 키/텍스트 입력은 v58.8.0에 실험적으로 연결됨. 한글 IME는 정식 인증 전이고, 범용 CEF JS Bridge는 아직 미지원.
 - Overlay의 한글 IME·복수 DPI·Z-order는 아직 완전한 제품 검증 전.
 - JS `ExecuteJavaScript`는 WebView2에서만 발송 가능하며 반환값/예외 전달 미구현.
 - CEF runtime을 상용 빌드에 포함하려면 적절한 오픈소스 고지와 CEF 재배포 조건을 별도로 검토.
