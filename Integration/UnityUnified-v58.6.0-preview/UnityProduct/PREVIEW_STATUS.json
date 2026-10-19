@@ -23,7 +23,7 @@
   ],
   "fixedIssues": [
     "Unity 2022.3.62f3 CS0104 PackageInfo ambiguity",
-    "Reuses old CS0104-failed Unity project and Library cache via Run-Auto.cmd when eligible",
+    "Legacy CS0104/CS0019 recovery tool remains separately available; v58.8 Run-Auto builds a new feature-keyed Unity project",
     "Rejects pre-fix Dist packages to avoid stale editor compiler bug",
     "Unity 2022 CS0019 RectInt inequality -> explicit x/y/width/height bounds comparison",
     "Recover-CS0104.ps1 handles existing failed CS0019 projects without reimporting Unity Library"
