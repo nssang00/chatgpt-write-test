@@ -88,6 +88,9 @@ jobs:
             Write-Host 'UPM Unity CS0019 reuse/recovery fixture PASS'
           } finally {
             $env:LOCALAPPDATA=$originalAppData
+            # An intentional child-process exit 1 is expected in this failure fixture.
+            # Clear native-command exit state so this successful test does not fail the CI step.
+            $global:LASTEXITCODE=0
           }
 
           & "$r/UnityProduct/Validation/Test-CefRuntimeFinder.ps1"
