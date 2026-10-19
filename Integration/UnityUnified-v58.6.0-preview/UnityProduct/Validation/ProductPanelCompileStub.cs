@@ -20,8 +20,6 @@ namespace UnityEngine
     {
         public int x,y,width,height;
         public RectInt(int x,int y,int w,int h){this.x=x;this.y=y;width=w;height=h;}
-        public static bool operator ==(RectInt a,RectInt b)=>a.Equals(b);
-        public static bool operator !=(RectInt a,RectInt b)=>!a.Equals(b);
         public override bool Equals(object obj)=>obj is RectInt r && r.x==x && r.y==y && r.width==width && r.height==height;
         public override int GetHashCode()=>x^y^width^height;
     }
