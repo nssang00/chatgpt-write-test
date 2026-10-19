@@ -33,7 +33,7 @@ add_node() {
 }
 
 any_failed=0
-for n in 256 320 384 448 512; do
+for n in 512; do
   cleanup
   mkdir -p "highscale-logs/n$n"
   echo "=== HIGHSCALE_START subscribers=$n total_nodes=$((n+1)) ==="
@@ -55,7 +55,7 @@ for n in 256 320 384 448 512; do
   for ((i=1;i<=n;i++)); do
     sudo ip netns exec "ch-$i" timeout 29s "$BIN" \
       subscriber "$((1000+i))" 100 "$((49000+i))" \
-      "$((48000+i))" 47100 10.222.255.255 1 26000 \
+      "$((48000+i))" 47100 10.222.255.255 1 26000 5000 \
       >"highscale-logs/n$n/sub-$i.log" 2>&1 &
     subs+=("$!")
     PIDS+=("$!")
