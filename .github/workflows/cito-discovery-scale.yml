@@ -1,0 +1,152 @@
+name: Cito Discovery Scale
+
+on:
+  push:
+    branches: [cito-discovery-scale-actions]
+    paths:
+      - "cito/tests/net/runtime_udp_node.cpp"
+      - ".github/workflows/cito-discovery-scale.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  demand-discovery-fanout-scale:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 24
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build genuine Cito UDP discovery/runtime test program
+        run: |
+          set -euo pipefail
+          cmake -S cito -B build-cito-scale -G Ninja -DCMAKE_BUILD_TYPE=Release
+          cmake --build build-cito-scale --target cito_runtime_udp_node -j2
+
+      - name: Measure independent nodes at progressively higher fanout
+        shell: bash
+        run: |
+          set -euo pipefail
+          ulimit -a
+          BIN="$GITHUB_WORKSPACE/build-cito-scale/cito_runtime_udp_node"
+          output="$GITHUB_WORKSPACE/discovery-scale-results.tsv"
+          printf "subscribers\ttotal_nodes\tdiscovered\tsent\treceived\tsubscriber_failures\tpublisher_exit\telapsed_ms\tresult\n" > "$output"
+
+          declare -a PIDS=()
+          cleanup() {
+            for pid in "${PIDS[@]}"; do
+              kill "$pid" 2>/dev/null || true
+            done
+            wait 2>/dev/null || true
+            for ns in $(sudo ip netns list | awk '{print $1}' | grep -E '^(cs-pub|cs-[0-9]+)$' || true); do
+              sudo ip netns del "$ns" 2>/dev/null || true
+            done
+            sudo ip link del csbridge 2>/dev/null || true
+            PIDS=()
+          }
+          trap cleanup EXIT
+
+          add_node() {
+            local ns="$1" host="$2" peer="$3" addr="$4"
+            sudo ip netns add "$ns"
+            sudo ip link add "$host" type veth peer name "$peer"
+            sudo ip link set "$host" master csbridge
+            sudo ip link set "$host" up
+            sudo ip link set "$peer" netns "$ns"
+            sudo ip netns exec "$ns" ip link set lo up
+            sudo ip netns exec "$ns" ip link set "$peer" name eth0
+            sudo ip netns exec "$ns" ip addr add "$addr"/24 dev eth0
+            sudo ip netns exec "$ns" ip link set eth0 up
+          }
+
+          any_failed=0
+          # Each fanout level is a fresh topology, one unique network
+          # namespace, IP address and process per logical Cito node.
+          for n in 4 8 16 32 64; do
+            cleanup
+            mkdir -p "scale-logs/n$n"
+            echo "=== SCALE_START subscribers=$n total_nodes=$((n+1)) ==="
+            sudo ip link add csbridge type bridge
+            sudo ip link set csbridge up
+            add_node cs-pub csvpub csvpubn 10.221.0.10
+            for ((i=1; i<=n; i++)); do
+              add_node "cs-$i" "cv$i" "cn$i" "10.221.0.$((30+i))"
+            done
+            start_ms=$(date +%s%3N)
+            sudo ip netns exec cs-pub timeout 21s "$BIN" \
+              publisher 100 47100 "$n" 18000 \
+              >"scale-logs/n$n/publisher.log" 2>&1 &
+            PUB_PID=$!
+            PIDS+=("$PUB_PID")
+            sleep 0.3
+
+            sub_pids=()
+            for ((i=1; i<=n; i++)); do
+              # 14000 ms lifetime: periodic discovery advertisements.
+              sudo ip netns exec "cs-$i" timeout 17s "$BIN" \
+                subscriber "$((1000+i))" 100 "$((49000+i))" \
+                "$((48000+i))" 47100 10.221.0.255 1 14000 \
+                >"scale-logs/n$n/sub-$i.log" 2>&1 &
+              sub_pids+=("$!")
+              PIDS+=("$!")
+            done
+
+            publisher_exit=0
+            wait "$PUB_PID" || publisher_exit=$?
+            subscriber_failures=0
+            received=0
+            for ((i=1; i<=n; i++)); do
+              rc=0
+              wait "${sub_pids[i-1]}" || rc=$?
+              if [[ "$rc" -eq 0 ]] &&
+                 grep -q 'received=1' "scale-logs/n$n/sub-$i.log"; then
+                received=$((received+1))
+              else
+                subscriber_failures=$((subscriber_failures+1))
+                echo "NODE_FAIL fanout=$n node=$i exit=$rc"
+                tail -n 3 "scale-logs/n$n/sub-$i.log" || true
+              fi
+            done
+            elapsed_ms=$(( $(date +%s%3N) - start_ms ))
+            echo "=== publisher fanout=$n exit=$publisher_exit ==="
+            cat "scale-logs/n$n/publisher.log"
+            discovered=$(sed -nE 's/.*discovered=([0-9]+).*/\1/p' "scale-logs/n$n/publisher.log" | tail -1)
+            sent=$(sed -nE 's/.*sent=([0-9]+).*/\1/p' "scale-logs/n$n/publisher.log" | tail -1)
+            discovered=${discovered:-0}
+            sent=${sent:-0}
+            result=FAIL
+            if [[ "$publisher_exit" -eq 0 && "$discovered" -eq "$n" &&
+                  "$sent" -eq "$n" && "$received" -eq "$n" &&
+                  "$subscriber_failures" -eq 0 ]]; then
+              result=PASS
+            else
+              any_failed=1
+            fi
+            printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+              "$n" "$((n+1))" "$discovered" "$sent" "$received" \
+              "$subscriber_failures" "$publisher_exit" "$elapsed_ms" "$result" >> "$output"
+            echo "SCALE_RESULT subscribers=$n total_nodes=$((n+1)) discovered=$discovered sent=$sent received=$received failures=$subscriber_failures elapsed_ms=$elapsed_ms result=$result"
+            cleanup
+          done
+
+          echo "=== Full scaling data ==="
+          cat "$output"
+          echo "=== Runner resource snapshot ==="
+          free -m
+          df -h /
+          if [[ "$any_failed" -ne 0 ]]; then
+            echo "Some requested scales failed; see per-node logs in artifact."
+            exit 1
+          fi
+
+      - name: Upload detailed results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cito-discovery-scale-evidence
+          path: |
+            discovery-scale-results.tsv
+            scale-logs/
+          if-no-files-found: warn
+          retention-days: 14
