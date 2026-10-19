@@ -55,6 +55,41 @@ jobs:
           if($LASTEXITCODE -ne 0){throw 'Unity UPM product static contract failed'}
           python "$r/UnityProduct/Validation/verify_auto_product.py"
           if($LASTEXITCODE -ne 0){throw 'Unity one-click automation source contract failed'}
+          # Simulate a prior CS0019 failure without launching Unity: the resolver
+          # must patch the embedded panel and preserve the existing project.
+          $recover="$r/UnityProduct/Recover-CS0104.ps1"
+          $rt=$null;$re=$null
+          [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $recover).Path,[ref]$rt,[ref]$re)|Out-Null
+          if(@($re).Count -gt 0){throw 'Cached Unity CS0019 recovery PowerShell parser failed'}
+          $originalAppData=$env:LOCALAPPDATA
+          $fakeRoot=Join-Path $env:RUNNER_TEMP 'upm-cs0019-fake-user'
+          $fakeWork=Join-Path $fakeRoot 'CWV58\\upm-product\\aaaaaaaaaaaaaaaaaaaaaaaa'
+          $fakeProject=Join-Path $fakeWork 'UnityProject'
+          $fakePackage=Join-Path $fakeProject 'Packages\\com.company.webview'
+          New-Item -ItemType Directory -Path (Join-Path $fakePackage 'Runtime\\UnifiedExperimental') -Force|Out-Null
+          New-Item -ItemType Directory -Path (Join-Path $fakePackage 'Editor') -Force|Out-Null
+          $realPanel=Get-Content "$r/UnityProduct/Runtime/UnifiedWebViewPanel.cs" -Raw
+          $newRect='if (bounds.x != lastBounds.x || bounds.y != lastBounds.y ||' + [Environment]::NewLine + '                            bounds.width != lastBounds.width || bounds.height != lastBounds.height)'
+          if(-not $realPanel.Contains($newRect)){throw 'RectInt regression fixture source changed unexpectedly'}
+          $oldPanel=$realPanel.Replace($newRect,'if (bounds != lastBounds)')
+          Set-Content -LiteralPath (Join-Path $fakePackage 'Runtime\\UnifiedExperimental\\UnifiedWebViewPanel.cs') -Value $oldPanel -Encoding UTF8
+          Copy-Item "$r/UnityProduct/Editor/UnifiedWebViewBuildCopy.cs" (Join-Path $fakePackage 'Editor\\UnifiedWebViewBuildCopy.cs')
+          Set-Content -LiteralPath (Join-Path $fakePackage 'Editor\\UnifiedWebViewAutoBuild.cs') -Value '// fixture builder' -Encoding UTF8
+          Set-Content -LiteralPath (Join-Path $fakeWork 'UnityEditorAutoBuild.log') -Value "Packages/com.company.webview/Runtime/UnifiedExperimental/UnifiedWebViewPanel.cs(141,29): error CS0019: Operator '!=' cannot be applied to operands of type 'RectInt' and 'RectInt'" -Encoding UTF8
+          $env:LOCALAPPDATA=$fakeRoot
+          try {
+            & $recover -UnityExe (Join-Path $fakeRoot 'missing-Unity.exe')
+            if($LASTEXITCODE -ne 1){throw 'Expected fake recovery to stop before launching nonexistent Unity'}
+            $fixedPanel=Get-Content (Join-Path $fakePackage 'Runtime\\UnifiedExperimental\\UnifiedWebViewPanel.cs') -Raw
+            if($fixedPanel.Contains('if (bounds != lastBounds)') -or -not $fixedPanel.Contains('bounds.width != lastBounds.width')){throw 'CS0019 recovery failed to patch old Unity project'}
+            if(-not (Test-Path -LiteralPath (Join-Path $fakePackage 'Runtime\\UnifiedExperimental\\UnifiedWebViewPanel.cs.before-cs0019-fix.bak'))){throw 'CS0019 source backup missing'}
+            $recoverSummary=Get-Content "$r/UnityProduct/AutoResults/product-auto-summary.json" -Raw|ConvertFrom-Json
+            if(-not $recoverSummary.fixedCS0019 -or -not $recoverSummary.reusedExistingProject -or $recoverSummary.unityProjectRecreated){throw 'CS0019 recovery summary is wrong'}
+            Write-Host 'UPM Unity CS0019 reuse/recovery fixture PASS'
+          } finally {
+            $env:LOCALAPPDATA=$originalAppData
+          }
+
           & "$r/UnityProduct/Validation/Test-CefRuntimeFinder.ps1"
           if(-not $?){throw 'Offline CEF runtime layout resolver failed'}
           $finder="$r/UnityProduct/Find-CefRuntime.ps1"
