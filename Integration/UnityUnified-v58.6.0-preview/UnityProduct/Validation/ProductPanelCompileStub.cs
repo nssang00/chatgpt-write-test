@@ -49,7 +49,8 @@ namespace UnityEngine {
     public enum KeyCode {Backspace,Return,KeypadEnter,Tab,Delete,LeftArrow,UpArrow,RightArrow,DownArrow,Home,End,Escape}
     public static class Input {
         public static Vector2 mousePosition=>new Vector2();
-        public static string compositionString=>"",inputString=>"";
+        public static string compositionString=>"";
+        public static string inputString=>"";
         public static bool GetMouseButtonDown(int b)=>false;
         public static bool GetKeyDown(KeyCode k)=>false;
         public static bool GetKeyUp(KeyCode k)=>false;
