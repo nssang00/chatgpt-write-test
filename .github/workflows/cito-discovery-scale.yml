@@ -5,6 +5,7 @@ on:
     branches: [cito-discovery-scale-actions]
     paths:
       - "cito/tests/net/runtime_udp_node.cpp"
+      - "cito/include/cito/detail/discovery_control_core.hpp"
       - ".github/workflows/cito-discovery-scale.yml"
   workflow_dispatch:
 
