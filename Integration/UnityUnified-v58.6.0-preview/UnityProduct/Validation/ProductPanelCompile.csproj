@@ -9,6 +9,7 @@
 </PropertyGroup>
 <ItemGroup>
  <Compile Include="../Runtime/UnifiedWebViewPanel.cs" />
+ <Compile Include="../Runtime/CefTextureInputForwarder.cs" />
  <Compile Include="../ExistingRuntime/UnifiedWebView.cs" />
  <Compile Include="../ExistingRuntime/CefTextureBackendBridge.cs" />
  <Compile Include="../ExistingRuntime/WebView2OverlayBackendBridge.cs" />
