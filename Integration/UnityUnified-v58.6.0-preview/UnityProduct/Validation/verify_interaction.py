@@ -5,8 +5,27 @@ import hashlib
 r=Path(__file__).resolve().parents[1]
 expected_archive='07e06a42f38cab584ce4e35091d47710539cbaee21883e033ecb97565ec24eb8'
 expected_wv2='d5fdceca1991d4797148b0d20e4169d4b8e7f318d378da07ad23ac526efba644'
-for name,expected in [('CefOneClick-v58.4.4-source.zip',expected_archive),('CompanyWebView2UnifiedPreview.dll',expected_wv2)]:
-    assert hashlib.sha256((r/name).read_bytes()).hexdigest()==expected,name
+# The distributable ZIP includes pinned binary assets. GitHub's source-only CI
+# deliberately does not version the large CEF source ZIP or WebView2 DLL.
+cef_archive=r/'CefOneClick-v58.4.4-source.zip'
+wv2_binary=r/'CompanyWebView2UnifiedPreview.dll'
+if cef_archive.exists() and wv2_binary.exists():
+    for name,expected in [(cef_archive.name,expected_archive),(wv2_binary.name,expected_wv2)]:
+        assert hashlib.sha256((r/name).read_bytes()).hexdigest()==expected,name
+    with ZipFile(cef_archive) as z:
+        hdr=z.read('oneclick_bundle/Package/com.company.webview/Runtime/Backends/CEF/Native/include/CefPrototypeApi.h').decode()
+        for sig in ('CefPrototype_InteractionSetFocus','CefPrototype_InteractionMouseMove',
+                    'CefPrototype_InteractionMouseClick','CefPrototype_InteractionMouseWheel',
+                    'CefPrototype_InteractionSendKey','CefPrototype_InteractionSendChar',
+                    'CefPrototype_InteractionImeSetComposition','CefPrototype_InteractionImeCommitText',
+                    'CefPrototype_GetTitleUtf8'):
+            assert sig in hdr, 'Native export not present in pinned SDK header: '+sig
+elif not cef_archive.exists() and not wv2_binary.exists():
+    assembler=(r/'Build-UnityProduct.ps1').read_text('utf-8')
+    assert expected_archive in assembler and expected_wv2 in assembler
+    print('Source-only CI: pinned binary assets absent (native header checked in offline distributable)')
+else:
+    raise AssertionError('Partially populated pinned binary kit; refusing unchecked artifacts')
 source=(r/'Runtime/CefTextureInputForwarder.cs').read_text('utf-8')
 panel=(r/'Runtime/UnifiedWebViewPanel.cs').read_text('utf-8')
 setup=(r/'Editor/UnifiedWebViewSetupMenu.cs').read_text('utf-8')
@@ -20,14 +39,6 @@ for sig in ('CefPrototype_InteractionSetFocus','CefPrototype_InteractionMouseMov
             'CefPrototype_InteractionSendKey','CefPrototype_InteractionSendChar',
             'CefPrototype_InteractionImeSetComposition','CefPrototype_InteractionImeCommitText'):
     assert sig in source, sig
-with ZipFile(r/'CefOneClick-v58.4.4-source.zip') as z:
-    hdr=z.read('oneclick_bundle/Package/com.company.webview/Runtime/Backends/CEF/Native/include/CefPrototypeApi.h').decode()
-    for sig in ('CefPrototype_InteractionSetFocus','CefPrototype_InteractionMouseMove',
-                'CefPrototype_InteractionMouseClick','CefPrototype_InteractionMouseWheel',
-                'CefPrototype_InteractionSendKey','CefPrototype_InteractionSendChar',
-                'CefPrototype_InteractionImeSetComposition','CefPrototype_InteractionImeCommitText',
-                'CefPrototype_GetTitleUtf8'):
-        assert sig in hdr, 'Native export not present in pinned SDK header: '+sig
 for sig in ('IPointerDownHandler','IPointerUpHandler','IDragHandler','IScrollHandler',
             'IPointerEnterHandler','IPointerExitHandler','RectTransformUtility.ScreenPointToLocalPointInRectangle',
             'GetMouseButtonDown(0)','OnApplicationFocus','CefPrototype_InteractionSetFocus(1)'):
