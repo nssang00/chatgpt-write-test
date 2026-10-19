@@ -78,7 +78,9 @@ namespace Company.WebView.Unified.Experimental
                         Mode = PresentationMode.Texture, Target = TargetKind.RawImage,
                         Url = ResolveTextureUrl(initialUrl), Width = browserWidth, Height = browserHeight,
                         TargetFrameRate = targetFrameRate, CefSubprocessPath = subprocess,
-                        CefCachePath = cache
+                        CefCachePath = cache,
+                        EnableCefPageTitleMessages =
+                            String.Equals(initialUrl, "companywebview-demo://input", StringComparison.Ordinal)
                     });
                 }
                 else
