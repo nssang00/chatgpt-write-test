@@ -196,7 +196,8 @@ int subscriber(
     int argc,
     char** argv) {
     if (argc != 9 &&
-        argc != 10) {
+        argc != 10 &&
+        argc != 11) {
         std::cerr
             << "subscriber args\n";
         return 2;
@@ -224,9 +225,14 @@ int subscriber(
     const bool lease_source_only =
         behavior == 2;
     const auto lifetime_ms =
-        argc == 10
+        argc >= 10
             ? std::stoull(argv[9])
             : 3200ull;
+    // Optional scaling-only lease. Unspecified runs retain the original
+    // 600-ms lease and 150-ms announcements.
+    const auto lease_ms = argc == 11 ? std::stoull(argv[10]) : 600ull;
+    if (lease_ms == 0 || lease_ms > 60000) return 2;
+    const auto announce_interval_ms = lease_ms > 600 ? 500ull : 150ull;
 
     const cito::InterestKey key{
         7,
@@ -306,7 +312,7 @@ int subscriber(
     const auto announcement =
         udp.announcement(
             control_port,
-            600);
+            static_cast<std::uint32_t>(lease_ms));
 
     const auto start =
         Clock::now();
@@ -336,7 +342,7 @@ int subscriber(
             next_announce =
                 now +
                 std::chrono::milliseconds(
-                    150);
+                    announce_interval_ms);
         }
 
         pollfd fds[2]{
