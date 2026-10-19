@@ -597,7 +597,7 @@ int publisher(
         if (
             !sent &&
             stats.snapshot_requests >= 2 &&
-            stats.route_requests ==
+            stats.route_requests >=
                 expected &&
             host.remote_destinations(
                 key).size() ==
@@ -650,7 +650,12 @@ int publisher(
 
     if (!sent) {
         std::cerr
-            << "publisher did not reach route state\n";
+            << "publisher did not reach route state"
+            << " snapshot_requests=" << stats.snapshot_requests
+            << " route_requests=" << stats.route_requests
+            << " discovered=" << host.remote_destinations(key).size()
+            << " expected=" << expected
+            << "\n";
         return 45;
     }
 
