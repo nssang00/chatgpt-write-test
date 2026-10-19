@@ -1,4 +1,6 @@
+using System.IO;
 using Company.WebView;
+using UnityEngine.EventSystems;
 using Company.WebView.Unified.Experimental;
 using UnityEditor;
 using UnityEditor.SceneManagement;
@@ -33,9 +35,12 @@ namespace Company.WebView.Unified.Editor
         public static void CreateExampleSceneBatch()
         {
             CreatePrefabs();
+            InstallDemoPage();
             var scene = EditorSceneManager.NewScene(NewSceneSetup.DefaultGameObjects, NewSceneMode.Single);
             var root = new GameObject("Company WebView Preview Canvas", typeof(RectTransform),
                 typeof(Canvas), typeof(CanvasScaler), typeof(GraphicRaycaster));
+            // Pointer events need an EventSystem; the old sample scene only had a raycaster.
+            new GameObject("Company WebView EventSystem", typeof(EventSystem), typeof(StandaloneInputModule));
             var canvas = root.GetComponent<Canvas>();
             canvas.renderMode = RenderMode.ScreenSpaceOverlay;
             var scaler = root.GetComponent<CanvasScaler>();
@@ -57,6 +62,18 @@ namespace Company.WebView.Unified.Editor
             Debug.Log("Example scene created: " + scenePath + ". Build Windows x64 D3D11 Standalone; not Editor Play Mode.");
         }
 
+        private static void InstallDemoPage()
+        {
+            var info = UnityEditor.PackageManager.PackageInfo.FindForAssembly(typeof(UnifiedWebViewPanel).Assembly);
+            if (info == null) throw new IOException("UPM package location not found for CEF demo");
+            var source = Path.Combine(info.resolvedPath, "Samples~", "cef-input-demo.html");
+            if (!File.Exists(source)) throw new FileNotFoundException("CEF demo HTML is missing from the UPM package", source);
+            var destination = Path.Combine(Application.streamingAssetsPath, "CompanyWebView", "cef-input-demo.html");
+            System.IO.Directory.CreateDirectory(Path.GetDirectoryName(destination));
+            File.Copy(source, destination, true);
+            AssetDatabase.Refresh();
+        }
+
         private static void EnsureFolders()
         {
             if (!AssetDatabase.IsValidFolder("Assets/CompanyWebViewGenerated"))
@@ -74,9 +91,10 @@ namespace Company.WebView.Unified.Editor
         private static GameObject CreateTexturePanel()
         {
             var go = new GameObject("CEF Texture WebView (Preview)", typeof(RectTransform),
-                typeof(CanvasRenderer), typeof(RawImage), typeof(CefTextureSurface), typeof(UnifiedWebViewPanel));
+                typeof(CanvasRenderer), typeof(RawImage), typeof(CefTextureSurface), typeof(UnifiedWebViewPanel), typeof(CefTextureInputForwarder));
             var raw = go.GetComponent<RawImage>();
             raw.color = Color.white;
+            raw.uvRect = new Rect(0f, 1f, 1f, -1f); // Match native CEF top-left GPU frame orientation.
             var surface = new SerializedObject(go.GetComponent<CefTextureSurface>());
             surface.FindProperty("target").objectReferenceValue = raw;
             surface.ApplyModifiedPropertiesWithoutUndo();
@@ -84,7 +102,12 @@ namespace Company.WebView.Unified.Editor
             panel.FindProperty("mode").enumValueIndex = (int)PresentationMode.Texture;
             panel.FindProperty("textureTarget").objectReferenceValue = raw;
             panel.FindProperty("textureSurface").objectReferenceValue = go.GetComponent<CefTextureSurface>();
+            panel.FindProperty("initialUrl").stringValue = "companywebview-demo://input";
             panel.ApplyModifiedPropertiesWithoutUndo();
+            var input = new SerializedObject(go.GetComponent<CefTextureInputForwarder>());
+            input.FindProperty("owner").objectReferenceValue = go.GetComponent<UnifiedWebViewPanel>();
+            input.FindProperty("target").objectReferenceValue = raw;
+            input.ApplyModifiedPropertiesWithoutUndo();
             return go;
         }
         private static GameObject CreateOverlayPanel()
@@ -121,7 +144,7 @@ namespace Company.WebView.Unified.Editor
                 EditorGUILayout.PropertyField(serializedObject.FindProperty("targetFrameRate"));
                 EditorGUILayout.PropertyField(serializedObject.FindProperty("textureTarget"));
                 EditorGUILayout.PropertyField(serializedObject.FindProperty("textureSurface"));
-                EditorGUILayout.HelpBox("CEF Texture currently exposes no generic JS bridge and no native mouse/IME forwarding. URL display is functional.", MessageType.Warning);
+                EditorGUILayout.HelpBox("CEF Texture: mouse, wheel and basic keyboard forwarding enabled in Windows Player. IME is experimental. Controlled pages may send limited title messages to Unity; arbitrary JS execution and reliable bidirectional bridge require a new native CEF DLL.", MessageType.Warning);
             }
             else
             {
