@@ -1,0 +1,110 @@
+name: Cito PubSub Multiprocess
+
+on:
+  push:
+    branches: [cito-pubsub-multiprocess-validation]
+    paths:
+      - "cito/**"
+      - ".github/workflows/cito-pubsub-multiprocess.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  pubsub-process-matrix:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build PubSub binaries
+        shell: bash
+        run: |
+          set -euo pipefail
+          cmake -S cito -B build-pubsub -G Ninja -DCMAKE_BUILD_TYPE=Debug
+          cmake --build build-pubsub --target cito_udp_node cito_runtime_udp_node cito_shm_node -j2
+
+      - name: Shared memory PubSub across three independent processes
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash cito/tests/run_shm_smoke.sh "$GITHUB_WORKSPACE/build-pubsub/cito_shm_node"
+
+      - name: Four distinct nodes across isolated network namespaces
+        shell: bash
+        run: |
+          set -euo pipefail
+          cleanup() {
+            sudo ip netns del cp-pub 2>/dev/null || true
+            sudo ip netns del cp-pos1 2>/dev/null || true
+            sudo ip netns del cp-pos2 2>/dev/null || true
+            sudo ip netns del cp-bat 2>/dev/null || true
+            sudo ip link del cp-bridge 2>/dev/null || true
+          }
+          trap cleanup EXIT
+          cleanup
+          sudo ip link add cp-bridge type bridge
+          sudo ip link set cp-bridge up
+          add_node() {
+            local ns="$1" host="$2" peer="$3" addr="$4"
+            sudo ip netns add "$ns"
+            sudo ip link add "$host" type veth peer name "$peer"
+            sudo ip link set "$host" master cp-bridge
+            sudo ip link set "$host" up
+            sudo ip link set "$peer" netns "$ns"
+            sudo ip netns exec "$ns" ip link set lo up
+            sudo ip netns exec "$ns" ip link set "$peer" name eth0
+            sudo ip netns exec "$ns" ip addr add "$addr"/24 dev eth0
+            sudo ip netns exec "$ns" ip link set eth0 up
+          }
+          add_node cp-pub cp-vp cp-vpn 10.212.0.11
+          add_node cp-pos1 cp-v1 cp-v1n 10.212.0.12
+          add_node cp-pos2 cp-v2 cp-v2n 10.212.0.14
+          add_node cp-bat cp-vb cp-vbn 10.212.0.13
+
+          BIN="$GITHUB_WORKSPACE/build-pubsub/cito_udp_node"
+          sudo ip netns exec cp-pub "$BIN" publisher 100 47000 2 2200 >pub.log 2>&1 &
+          PUB=$!
+          sleep 0.2
+          sudo ip netns exec cp-pos1 "$BIN" subscriber 12 100 48012 47000 10.212.0.255 1 >pos1.log 2>&1 &
+          P1=$!
+          sudo ip netns exec cp-pos2 "$BIN" subscriber 14 100 48014 47000 10.212.0.255 1 >pos2.log 2>&1 &
+          P2=$!
+          sudo ip netns exec cp-bat "$BIN" subscriber 13 200 48013 47000 10.212.0.255 0 >bat.log 2>&1 &
+          BAT=$!
+          status=0
+          for pid in "$PUB" "$P1" "$P2" "$BAT"; do
+            wait "$pid" || status=1
+          done
+          cat pub.log pos1.log pos2.log bat.log
+          test "$status" -eq 0
+          grep -q 'discovered=2 sent=2' pub.log
+          grep -q 'received expected data' pos1.log
+          grep -q 'received expected data' pos2.log
+          grep -q 'no matching data received' bat.log || grep -q 'received no matching' bat.log || grep -q 'unrelated' bat.log || grep -q 'no data' bat.log
+          echo 'CITO four-node UDP PubSub PASS'
+
+          # Repeat using the reusable HostRuntimeCore + UdpRuntimeAdapter,
+          # exercising demand negotiation, routing and CTD1 delivery.
+          RBIN="$GITHUB_WORKSPACE/build-pubsub/cito_runtime_udp_node"
+          sudo ip netns exec cp-pub "$RBIN" publisher 100 47100 2 2500 >runtime-pub.log 2>&1 &
+          RPUB=$!
+          sleep 0.2
+          sudo ip netns exec cp-pos1 "$RBIN" subscriber 12 100 48112 47112 47100 10.212.0.255 1 >runtime-pos1.log 2>&1 &
+          RP1=$!
+          sudo ip netns exec cp-pos2 "$RBIN" subscriber 14 100 48114 47114 47100 10.212.0.255 1 >runtime-pos2.log 2>&1 &
+          RP2=$!
+          sudo ip netns exec cp-bat "$RBIN" subscriber 13 200 48113 47113 47100 10.212.0.255 0 >runtime-bat.log 2>&1 &
+          RBAT=$!
+          status=0
+          for pid in "$RPUB" "$RP1" "$RP2" "$RBAT"; do
+            wait "$pid" || status=1
+          done
+          cat runtime-pub.log runtime-pos1.log runtime-pos2.log runtime-bat.log
+          test "$status" -eq 0
+          grep -q 'snapshot_requests=3 route_requests=2 discovered=2 sent=2' runtime-pub.log
+          grep -q 'received=1' runtime-pos1.log
+          grep -q 'received=1' runtime-pos2.log
+          grep -q 'received=0 route_requests=0' runtime-bat.log
+          echo 'CITO four-node demand-driven runtime PubSub PASS'
