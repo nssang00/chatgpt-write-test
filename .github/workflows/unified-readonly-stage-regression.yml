@@ -78,7 +78,7 @@ jobs:
           Set-Content -LiteralPath (Join-Path $fakeWork 'UnityEditorAutoBuild.log') -Value "Packages/com.company.webview/Runtime/UnifiedExperimental/UnifiedWebViewPanel.cs(141,29): error CS0019: Operator '!=' cannot be applied to operands of type 'RectInt' and 'RectInt'" -Encoding UTF8
           $env:LOCALAPPDATA=$fakeRoot
           try {
-            & $recover -UnityExe (Join-Path $fakeRoot 'missing-Unity.exe')
+            powershell.exe -NoProfile -ExecutionPolicy Bypass -File $recover -UnityExe (Join-Path $fakeRoot 'missing-Unity.exe')
             if($LASTEXITCODE -ne 1){throw 'Expected fake recovery to stop before launching nonexistent Unity'}
             $fixedPanel=Get-Content (Join-Path $fakePackage 'Runtime\\UnifiedExperimental\\UnifiedWebViewPanel.cs') -Raw
             if($fixedPanel.Contains('if (bounds != lastBounds)') -or -not $fixedPanel.Contains('bounds.width != lastBounds.width')){throw 'CS0019 recovery failed to patch old Unity project'}
