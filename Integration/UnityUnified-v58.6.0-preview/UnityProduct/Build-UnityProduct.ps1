@@ -83,6 +83,8 @@ foreach($name in @('UnifiedWebView.cs','CefTextureBackendBridge.cs','WebView2Ove
   CopySource (Join-Path $kitDir ('ExistingRuntime\'+$name)) (Join-Path $unified $name)
 }
 CopySource (Join-Path $kitDir 'Runtime\UnifiedWebViewPanel.cs') (Join-Path $unified 'UnifiedWebViewPanel.cs')
+CopySource (Join-Path $kitDir 'Runtime\CefTextureInputForwarder.cs') (Join-Path $unified 'CefTextureInputForwarder.cs')
+CopySource (Join-Path $kitDir 'Demo-cef-input-demo.html') (Join-Path $package 'Samples~\cef-input-demo.html')
 foreach($name in @('UnifiedWebViewSetupMenu.cs','UnifiedWebViewBuildCopy.cs','UnifiedWebViewAutoBuild.cs','Company.WebView.Editor.asmdef')){
   CopySource (Join-Path $kitDir ('Editor\'+$name)) (Join-Path $package ('Editor\'+$name))
 }
@@ -100,7 +102,7 @@ Get-ChildItem -LiteralPath $runtime -File -Recurse|ForEach-Object {
  }
 }
 $meta=[ordered]@{
- name='com.company.webview';version='1.1.0-preview.1';displayName='Company WebView (Windows Dual Preview)';
+ name='com.company.webview';version='1.1.0-preview.2';displayName='Company WebView (Windows Dual Preview)';
  unity='2022.3';description='Windows x64: validated CEF D3D11 Texture and WebView2 HWND Overlay behind experimental unified Unity API. Single instance per mode.';
  dependencies=@{'com.unity.ugui'='1.0.0'}
 }
@@ -109,3 +111,4 @@ CopySource (Join-Path $kitDir 'README_KO.md') (Join-Path $package 'README_KO.md'
 if((Get-FileHash -LiteralPath $expectedManaged -Algorithm SHA256).Hash -ne $managedBefore){throw 'Validated CEF C# WebView changed unexpectedly'}
 Write-Host ('UPM PRODUCT PREVIEW READY: '+$package)
 Write-Host 'Windows x64 Standalone only. Verify prefab from Tools > Company WebView > Create Texture + Overlay Prefabs.'
+
