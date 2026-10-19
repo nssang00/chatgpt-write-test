@@ -27,7 +27,9 @@ namespace Company.WebView.Unified.Experimental
         public bool Navigation { get; internal set; }
         public bool TextureSurface { get; internal set; }
         public bool ScriptExecution { get; internal set; }
-        public bool Messages { get; internal set; }
+        public bool Messages { get; internal set; } // full native PostMessage and read
+        public bool PageToUnityMessages { get; internal set; } // may be limited to controlled pages
+        public bool NativeInput { get; internal set; }
         public bool FullImeComposition { get; internal set; }
         public bool MultiWebView { get; internal set; }
     }
@@ -151,7 +153,7 @@ namespace Company.WebView.Unified.Experimental
         // Called once each Unity main-thread Update; do not call from worker threads.
         public void Pump() {
             AssertActive(); driver.Pump();
-            if(!Capabilities.Messages) return;
+            if(!Capabilities.Messages && !Capabilities.PageToUnityMessages) return;
             string msg;
             int guard=0;
             while(guard++<32 && driver.TryReadMessage(out msg))
