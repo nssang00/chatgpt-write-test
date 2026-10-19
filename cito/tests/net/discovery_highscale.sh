@@ -59,6 +59,9 @@ for n in 512; do
       >"highscale-logs/n$n/sub-$i.log" 2>&1 &
     subs+=("$!")
     PIDS+=("$!")
+    # Avoid a 512-process simultaneous advertisement/ARP burst. Each
+    # subscriber still has its own OS process and network namespace.
+    if ((i % 8 == 0)); then sleep 0.05; fi
   done
   pub_exit=0
   wait "$PUB_PID" || pub_exit=$?
