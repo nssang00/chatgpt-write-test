@@ -19,7 +19,7 @@ namespace Company.WebView.Unified.Experimental
             TextureSurface = true,
             ScriptExecution = false, // old public facade exposes no generic ExecuteJavaScript
             Messages = false,       // Unity->CEF native messaging still unavailable
-            PageToUnityMessages = true, // opt-in, controlled-page document.title polling only
+            PageToUnityMessages = false, // opt-in, controlled-page document.title polling only
             NativeInput = true,      // pinned DLL already exports Interaction* functions
             FullImeComposition = false,
             MultiWebView = false     // this facade wraps the singleton interface
@@ -32,6 +32,7 @@ namespace Company.WebView.Unified.Experimental
             rc = validatedCef.Open(options.Url, options.Width, options.Height, options.TargetFrameRate, false);
             if (rc != 0) throw new InvalidOperationException("CEF CreateBrowser failed: " + rc);
             opened = true;
+            Capabilities.PageToUnityMessages = options.EnableCefPageTitleMessages;
             hasTitle = false;
             lastTitle = null;
             lastTitlePollTicks = 0;
@@ -54,7 +55,7 @@ namespace Company.WebView.Unified.Experimental
         public bool TryReadMessage(out string message)
         {
             message = null;
-            if (!opened || disposed) return false;
+            if (!opened || disposed || !Capabilities.PageToUnityMessages) return false;
             var nowTicks = DateTime.UtcNow.Ticks;
             if (nowTicks - lastTitlePollTicks < TimeSpan.TicksPerMillisecond * 100) return false;
             lastTitlePollTicks = nowTicks;
