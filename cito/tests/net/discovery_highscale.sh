@@ -33,7 +33,7 @@ add_node() {
 }
 
 any_failed=0
-for n in 256 512; do
+for n in 256 320 384 448 512; do
   cleanup
   mkdir -p "highscale-logs/n$n"
   echo "=== HIGHSCALE_START subscribers=$n total_nodes=$((n+1)) ==="
