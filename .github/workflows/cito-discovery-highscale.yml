@@ -14,7 +14,7 @@ permissions:
   contents: read
 
 jobs:
-  discovery-256-512:
+  discovery-512:
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     steps:
@@ -29,22 +29,8 @@ jobs:
           set -euo pipefail
           cmake -S cito -B build-discovery-unit -G Ninja -DCMAKE_BUILD_TYPE=Debug
           cmake --build build-discovery-unit --target cito_discovery_control_core_tests -j2
-          ctest --test-dir build-discovery-unit -R '^cito_discovery_control_core_tests        shell: bash
-        run: |
-          bash cito/tests/net/discovery_highscale.sh "$GITHUB_WORKSPACE/build-cito-highscale/cito_runtime_udp_node"
-      - name: Upload node-level evidence
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: cito-discovery-highscale-evidence
-          path: |
-            discovery-highscale-results.tsv
-            highscale-logs/
-          if-no-files-found: warn
-          retention-days: 14
- --output-on-failure
-
-      - name: Measure 513 independent nodes (5-second lease)
+          ctest --test-dir build-discovery-unit -R cito_discovery_control_core_tests --output-on-failure
+      - name: Measure 513 independent nodes with discovery retry
         shell: bash
         run: |
           bash cito/tests/net/discovery_highscale.sh "$GITHUB_WORKSPACE/build-cito-highscale/cito_runtime_udp_node"
