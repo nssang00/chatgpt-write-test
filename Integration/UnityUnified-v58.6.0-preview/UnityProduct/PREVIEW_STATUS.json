@@ -1,0 +1,32 @@
+{
+  "version": "58.7.3",
+  "mode": "upm-product-auto-preview",
+  "offlinePackaging": true,
+  "downloadsRequired": false,
+  "cefNativeModified": false,
+  "automaticStages": [
+    "UPM assembly",
+    "isolated embedded Unity project",
+    "prefabs and scene",
+    "Win64 D3D11 Player build"
+  ],
+  "verifiedInThisEnvironment": [
+    "source checksums",
+    "archive integrity",
+    "static automation contract",
+    "CS0104 source regression",
+    "automatic old-failure recovery static contract",
+    "RectInt no-operator compilation stub source contract"
+  ],
+  "notYetVerified": [
+    "Unity Editor batch execution on user Windows",
+    "product prefabs live runtime"
+  ],
+  "fixedIssues": [
+    "Unity 2022.3.62f3 CS0104 PackageInfo ambiguity",
+    "Reuses old CS0104-failed Unity project and Library cache via Run-Auto.cmd when eligible",
+    "Rejects pre-fix Dist packages to avoid stale editor compiler bug",
+    "Unity 2022 CS0019 RectInt inequality -> explicit x/y/width/height bounds comparison",
+    "Recover-CS0104.ps1 handles existing failed CS0019 projects without reimporting Unity Library"
+  ]
+}
