@@ -138,7 +138,8 @@ namespace Company.WebView.Unified.Experimental
                     if (GetClientRect(parentWindow, out client))
                     {
                         var bounds = GetPixelBounds(client);
-                        if (bounds != lastBounds)
+                        if (bounds.x != lastBounds.x || bounds.y != lastBounds.y ||
+                            bounds.width != lastBounds.width || bounds.height != lastBounds.height)
                         {
                             view.SetBounds(bounds.x, bounds.y, bounds.width, bounds.height);
                             lastBounds = bounds;
