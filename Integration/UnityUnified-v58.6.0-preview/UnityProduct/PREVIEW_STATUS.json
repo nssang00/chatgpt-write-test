@@ -1,5 +1,5 @@
 {
-  "version": "58.7.3",
+  "version": "v58.8.0",
   "mode": "upm-product-auto-preview",
   "offlinePackaging": true,
   "downloadsRequired": false,
@@ -11,16 +11,15 @@
     "Win64 D3D11 Player build"
   ],
   "verifiedInThisEnvironment": [
-    "source checksums",
-    "archive integrity",
-    "static automation contract",
-    "CS0104 source regression",
-    "automatic old-failure recovery static contract",
-    "RectInt no-operator compilation stub source contract"
+    "v58.7.3 Windows Unity batch build success reported by user (previous version only)",
+    "v58.8 pinned binary checksums",
+    "v58.8 source contracts",
+    "v58.8 archive integrity"
   ],
   "notYetVerified": [
-    "Unity Editor batch execution on user Windows",
-    "product prefabs live runtime"
+    "v58.8 Unity 2022 Editor batch compilation & Windows Player execution on user PC",
+    "CEF texture input, IME, title-message behavior inside v58.8 Windows Player",
+    "full bidirectional CEF JavaScript bridge requires new native exports"
   ],
   "fixedIssues": [
     "Unity 2022.3.62f3 CS0104 PackageInfo ambiguity",
@@ -28,5 +27,15 @@
     "Rejects pre-fix Dist packages to avoid stale editor compiler bug",
     "Unity 2022 CS0019 RectInt inequality -> explicit x/y/width/height bounds comparison",
     "Recover-CS0104.ps1 handles existing failed CS0019 projects without reimporting Unity Library"
-  ]
+  ],
+  "input": {
+    "cefTexture": "Unity UI RawImage mouse click/move/drag/wheel + basic keyboard; pinned CEF native exports, editor not verified",
+    "ime": "experimental, not product certified"
+  },
+  "javascriptBridge": {
+    "cefToUnity": "controlled-page document.title v1 polling proof only; may drop bursts, clobbers title",
+    "unityToCef": "not implemented in pinned native DLL",
+    "webView2": "existing native JS execution + message bridge"
+  }
 }
+
