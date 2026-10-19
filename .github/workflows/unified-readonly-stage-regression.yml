@@ -16,6 +16,7 @@ on:
       - feature/unified-unity-v58-7-0-upm-reuse-cef-stage
       - feature/unified-unity-v58-7-1-oneclick-upm-autobuild
       - fix/upm-unity2022-packageinfo-cs0104
+      - fix/upm-v58-7-3-rectint-cs0019
   workflow_dispatch:
 permissions:
   contents: read
