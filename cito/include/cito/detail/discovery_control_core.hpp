@@ -39,6 +39,7 @@ private:
         DemandSummaryStamp stamp{};
         std::vector<InterestKey> keys;
         std::uint32_t next_offset{};
+        std::uint64_t last_request_ms{};
     };
 
     using RequestedRoutes =
@@ -115,6 +116,21 @@ public:
             pending_it != pending_.end() &&
             pending_it->second.stamp ==
                 message.stamp) {
+            // UDP does not guarantee delivery of the initial snapshot
+            // request or its response. A fresh identical announcement is
+            // an opportunity to retry a still-pending transfer. Throttle
+            // retries to avoid control-plane amplification under load.
+            auto& pending = pending_it->second;
+            constexpr std::uint64_t retry_interval_ms = 500;
+            if (now_ms >= pending.last_request_ms &&
+                now_ms - pending.last_request_ms >= retry_interval_ms) {
+                actions.push_back(
+                    snapshot_request_action(
+                        message.coordinator,
+                        pending.stamp,
+                        pending.next_offset));
+                pending.last_request_ms = now_ms;
+            }
             return actions;
         }
 
@@ -123,7 +139,8 @@ public:
             PendingSnapshot{
                 message.stamp,
                 {},
-                0});
+                0,
+                now_ms});
 
         actions.push_back(
             snapshot_request_action(
