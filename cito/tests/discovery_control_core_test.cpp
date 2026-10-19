@@ -216,5 +216,38 @@ int main() {
         publisher_control.stats()
             .route_requests == 1);
 
+    // Simulate a lost UDP snapshot request/response: the initial request
+    // never reaches the subscriber, but the same Announcement is repeated.
+    // Recovery must be throttled and must not require an incarnation change.
+    {
+        cito::detail::HostRuntimeCore src;
+        src.register_app(51, [](auto, auto, auto) { return std::size_t{1}; });
+        src.add_interest(51, position);
+        cito::detail::HostRuntimeCore dst;
+        cito::detail::DiscoveryControlCore src_control(src, 51, 51001);
+        cito::detail::DiscoveryControlCore dst_control(dst, 52, 52001);
+        const auto announced = src_control.announcement(47051, 5000);
+
+        auto first = dst_control.on_summary(announced, 2000);
+        assert(first.size() == 1);
+        assert(dst_control.pending_snapshot_count() == 1);
+        assert(dst_control.on_summary(announced, 2400).empty());
+
+        auto retried = dst_control.on_summary(announced, 2600);
+        assert(retried.size() == 1);
+        assert(snapshot_request(retried[0]).offset == 0);
+        assert(dst_control.stats().snapshot_requests == 2);
+        assert(dst_control.on_summary(announced, 2800).empty());
+
+        const auto response = src_control.on_snapshot_request(
+            snapshot_request(retried[0]));
+        assert(response.target == cito::detail::ControlTargetKind::Source);
+        const auto batch = cito::decode_snapshot_batch(response.bytes);
+        assert(dst_control.on_snapshot_batch(batch).empty());
+        assert(dst_control.pending_snapshot_count() == 0);
+        assert(dst.candidate_hosts(position).contains(51));
+        assert(dst_control.on_summary(announced, 3300).empty());
+    }
+
     return 0;
 }
