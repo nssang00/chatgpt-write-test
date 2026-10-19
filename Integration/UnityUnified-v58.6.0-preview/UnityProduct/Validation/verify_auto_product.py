@@ -34,7 +34,8 @@ post=(root/'Editor/UnifiedWebViewBuildCopy.cs').read_text('utf-8')
 recovery=(root/'Recover-CS0104.ps1').read_text('utf-8')
 assert 'var info = PackageInfo.FindForAssembly(' not in post
 assert 'UnityEditor.PackageManager.PackageInfo.FindForAssembly(' in post
-assert 'Recover-CS0104.ps1' in cmd and '"%RECOVER_RC%"=="20"' in cmd
+assert 'Run-Auto.ps1' in cmd and 'powershell.exe' in cmd
+assert 'Recover-CS0104.ps1' not in cmd, 'Feature release must not silently rebuild old v58.7 projects'
 assert 'CS0104.*PackageInfo' in recovery and 'Select-String' in recovery
 assert 'BuildComplete.key' in recovery and 'error CS[0-9]+' in recovery
 assert 'Invoke-WebRequest' not in recovery and 'Run-Dual' not in recovery
