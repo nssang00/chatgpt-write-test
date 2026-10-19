@@ -63,7 +63,7 @@ jobs:
           any_failed=0
           # Each fanout level is a fresh topology, one unique network
           # namespace, IP address and process per logical Cito node.
-          for n in 4 8 16 32 64; do
+          for n in 4 8 16 32 64 96 128 192 220; do
             cleanup
             mkdir -p "scale-logs/n$n"
             echo "=== SCALE_START subscribers=$n total_nodes=$((n+1)) ==="
