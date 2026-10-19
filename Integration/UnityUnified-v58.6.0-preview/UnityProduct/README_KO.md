@@ -1,16 +1,43 @@
+# v58.7.3 Unity CS0019 자동 수정 (2026-10-19)
+
+- 이전 `compile-errors-redacted.txt`의 `UnityEngine.RectInt` `!=` 오류(CS0019)를 좌표·크기별 비교로 수정했습니다.
+- **Run-Auto.cmd** 한 번으로 시작하세요. 직전의 미완료 `2e63f1e5b65ba40e8f5a4a00` Unity 프로젝트가 남아 있고 CS0019 로그가 기록되어 있으면, **기존 `Library` 임포트 캐시를 보존한 채 한 줄만 수정해 Player 빌드를 재시도**합니다.
+- 기존 CS0104 복구도 계속 지원합니다. 기존 CEF·WebView2 바이너리는 수정하지 않고 다운로드하지 않습니다.
+- 새 Unity 프로젝트가 필요한 경우에는 기존 오프라인 UPM 조립 → Unity Editor 일괄 빌드로 진행합니다.
+- 성공: `AutoResults/product-auto-summary.json` `status=AUTO_BUILD_PASS`; 실패: 동일 폴더 `compile-errors-redacted.txt` 및 UnityEditorAutoBuild.log 확인.
+- CI는 C# 계약/PowerShell 파서 검증이며, 새 Unity Player 실기 성공을 주장하지 않습니다.
+
+---
+
+# v58.7.2 (2026-10-19) — CS0104 수정 통합 원클릭
+
+**실행:** ZIP을 별도 폴더에 압축 해제한 후 `Run-Auto.cmd` 한 번 실행합니다. 
+
+- Unity 2022.3.62f3의 `CS0104: PackageInfo ... ambiguous reference` 컴파일 오류를 소스에서 수정했습니다.
+- 기존 v58.7.1이 이 오류로 실패한 `%LOCALAPPDATA%\CWV58\upm-product\<키>\UnityProject`가 있으면, `Run-Auto.cmd`가 **실패한 프로젝트를 자동으로 복구하고 기존 `Library` 임포트 캐시로 빌드만 다시 실행**합니다. 이전 프로젝트를 지우지 않습니다.
+- 해당 이전 실패 캐시가 없으면 이전과 같이 CEF 캐시를 재사용하여 새로운 UPM 패키지·샘플 프로젝트·Prefab·씬 및 Win64 D3D11 Player를 조립합니다.
+- CEF, WebView2 네이티브 DLL과 검증된 CEF 소스 ZIP은 이전 버전과 **동일한 바이너리**입니다. 네트워크 다운로드 없음.
+- `AutoResults/product-auto-summary.json`에서 `AUTO_BUILD_PASS`를 확인합니다. 실패 시 `AutoResults/compile-errors-redacted.txt` 또는 요약의 `unityLog`를 확인합니다. 공유 전 민감정보를 검토하세요.
+- Unity 2022.3.62f3 및 Windows Build Support가 필요합니다. 기본 Editor 경로가 아니면 `Run-Auto.cmd -UnityExe "C:\...\Unity.exe"`로 지정합니다.
+- 이 키트는 현재 계정의 개인 Windows 프로젝트 캐시에만 작동하며, 다른 Unity 프로젝트는 수정하지 않습니다.
+
+**검증 경계:** Windows CI에서 컴파일 및 소스 계약을 검증했으며, v58.7.2 원클릭이 실제 사용자 PC의 Unity Editor에서 빌드된 것은 아직 확인되지 않았습니다.
+
+---
+
 # 완전 자동 설치·빌드 (2026-10-18 추가)
 
-**`Run-Auto.cmd`를 한 번 실행**하면 CEF v58.4.4 기존 컴파일 캐시를 재사용해 다음을 자동 처리합니다.
+**`Run-Auto.cmd`를 한 번 실행**하면 CEF v58.4.4 기존 컴파일 캐시를 재사용하여 다음을 자동 처리합니다.
 
-1. 로컬 CEF와 WebView2에서 `Dist/com.company.webview` UPM 패키지를 조립합니다. 다운로드나 CEF 재컴파일은 하지 않습니다.
-2. `%LOCALAPPDATA%\CWV58\upm-product\<캐시키>\UnityProject`에 **별도 Unity 2022.3.62f3 프로젝트**를 생성하고 embedded UPM 패키지를 설치합니다. 기존 사용자 프로젝트는 수정하지 않습니다.
-3. Unity `-batchmode`로 Texture 및 Overlay Prefab, `Assets/CompanyWebViewGenerated/DualPreview.unity` 예제 씬을 자동 생성합니다.
-4. Windows x64 D3D11 Standalone Player를 빌드하고 CEF 리소스 파일을 배치합니다. 동일 입력으로 재실행하면 `CACHE HIT`로 기존 Player를 재사용합니다.
-5. `AutoResults/product-auto-summary.json`에 성공 여부와 Player·Unity Editor 로그 경로를 기록합니다.
+1. 로컬 CEF + WebView2에서 `Dist/com.company.webview` UPM 패키지 조립 (기존 패키지가 완전하면 재사용). **다운로드나 CEF 재컴파일 없음.**
+2. `%LOCALAPPDATA%\CWV58\upm-product\<키>\UnityProject`에 **독립된 Unity 2022.3.62f3 프로젝트** 생성; UPM 패키지를 embedded package로 자동 설치. 기존 프로젝트는 변경하지 않습니다.
+3. Unity `-batchmode`로 CEF Texture + WebView2 Overlay Prefab과 `Assets/CompanyWebViewGenerated/DualPreview.unity` 예제 씬 생성 (저장 대화상자 없음).
+4. Windows x64 / D3D11 Standalone Player 빌드, CEF 네이티브 리소스 배치, 결과 검증. 재실행 시 입력이 같으면 `CACHE HIT`로 완성된 Player 재사용.
+5. `AutoResults/product-auto-summary.json`에 상태·캐시 히트·프로젝트 및 Player 경로 기록.
 
-Unity Editor는 기본 `C:\Program Files\Unity\Hub\Editor\2022.3.62f3\Editor\Unity.exe`에서 탐색합니다. 필요하면 `Run-Auto.cmd -UnityExe "C:\...\Unity.exe"`로 직접 지정하세요. 최초 자동 빌드에는 Unity Editor와 Windows Build Support가 필요합니다. 실행까지 원하면 `Run-Auto.cmd -LaunchPlayer`를 사용합니다.
+Unity Editor 기본 경로는 `C:\Program Files\Unity\Hub\Editor\2022.3.62f3\Editor\Unity.exe`입니다. 다른 위치라면 `Run-Auto.cmd -UnityExe "C:\...\Unity.exe"`를 사용하세요. 첫 실행에는 Unity Windows Build Support(IL2CPP 필수 아님, Mono로 검증)가 설치되어 있어야 합니다. 완성 후 실행까지 원하면 `Run-Auto.cmd -LaunchPlayer`를 사용할 수 있습니다.
 
-**검증 경계:** GitHub Windows CI는 배치 메서드 컴파일·PowerShell 구문·계약 검사만 수행합니다. 실제 Unity Editor 패키지 설치 및 Player 실행은 사용자 PC의 결과가 나오기 전까지 통과로 판정하지 않습니다. 이전의 5분짜리 렌더링 검증은 반복하지 않습니다.
+**검증의 경계:** Windows CI에서는 코드 컴파일 및 자동화 계약을 확인할 수 있지만, 사용자 PC의 Unity Editor 일괄 빌드와 새 제품 프리팹 실기 동작은 실제 실행 결과가 나와야 확정됩니다. 실패 시 5분짜리 이전 렌더링 테스트는 필요하지 않고 `AutoResults/product-auto-summary.json`과 해당 캐시 폴더의 `UnityEditorAutoBuild.log`만 확인하면 됩니다.
 
 ---
 
