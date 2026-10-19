@@ -225,9 +225,9 @@ jobs:
           grep -q "quic_client stream=1 datagram=1" quic-client.log
           grep -q "quic_server stream=1 datagram=1" quic-server.log
 
-          # Cito Context::publish -> CTD1 -> genuine MsQuic Stream ->
-          # separate process Context::on. The test manually provisions the
-          # interest route and QUIC session (auto-discovery is NOT asserted).
+          # CTD1 native MsQuic Stream -> separate process Context::on.
+          # This explicitly calls the host delivery bridge on its owner thread.
+          # GitHub's old Context::publish remote path remains unintegrated.
           PUBSUB_BIN="$GITHUB_WORKSPACE/build-quic/cito_quic_context_pubsub_node"
           sudo ip netns exec cito-quic-s "$PUBSUB_BIN" server 4446 \
             "$GITHUB_WORKSPACE/quic-cert.pem" "$GITHUB_WORKSPACE/quic-key.pem" \
@@ -246,7 +246,7 @@ jobs:
           cat quic-context-sub.log
           test "$ctx_pub_status" -eq 0
           test "$ctx_sub_status" -eq 0
-          grep -q 'quic_context_publisher published=1 wire=CTD1' quic-context-pub.log
+          grep -q 'quic_ctd1_transport_sender wire=CTD1' quic-context-pub.log
           grep -q 'quic_context_subscriber received=1 value=42' quic-context-sub.log
 
           # Real native listener+admission lifecycle with the existing QUIC client.
