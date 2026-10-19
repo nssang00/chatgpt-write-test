@@ -51,7 +51,7 @@ namespace Company.WebView.Unified.Experimental
         private bool opened, closing, joined, disposed;
         private int x,y;
         public WebViewCapabilities Capabilities { get; } = new WebViewCapabilities {
-            Navigation=true,TextureSurface=false,ScriptExecution=true,Messages=true,
+            Navigation=true,TextureSurface=false,ScriptExecution=true,Messages=true,PageToUnityMessages=true,
             FullImeComposition=false,MultiWebView=false
         };
         public bool IsReady { get { return opened && !closing && WV2Unified_GetState()==2; } }
