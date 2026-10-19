@@ -1,3 +1,13 @@
+# v58.8.0 신규 기능: CEF 텍스처 UI 입력 (실험적)
+
+- `Run-Auto.cmd`가 독립 Unity 프로젝트의 새 UPM 패키지, `CefTextureInputForwarder`, `EventSystem`, `StandaloneInputModule`, 데모 HTML 페이지를 생성한 뒤 Windows x64 D3D11 Player를 빌드합니다. 기존 v58.7.3 성공 Player는 변경하지 않으며 새 캐시 키를 사용합니다.
+- CEF 텍스처 클릭·마우스 이동·휠·드래그·기본 키/텍스트를 **기존 컴파일된** `CompanyWebViewCefTextureProbe.dll`의 `Interaction*` 네이티브 함수에 전달합니다. Unity 2022.3 레거시 Input Manager 필요. 터치, 고급 IME, 브라우저 단축키, 자동화된 실기 인증은 아직 P0 미완료입니다.
+- 데모 CEF 페이지는 `Assets/StreamingAssets/CompanyWebView/cef-input-demo.html`에 설치됩니다. `companywebview-demo://input` URL에서 이 페이지가 열리고, 버튼 하나의 JS 메시지를 `document.title`을 통해 Unity `MessageReceived`로 전달하며 Unity Player.log에는 `[CEF PAGE->UNITY DEMO]`가 찍힙니다.
+- 이 **단방향 제목 폴링은 임시 프로토타입**입니다. 문서 제목을 변경하며, 빠른 연속 메시지가 유실될 수 있고 3,200문자 길이 제한이 있습니다. 범용 `ExecuteJavaScript`, Unity→CEF `PostMessage`, 비동기 RPC는 네이티브 재빌드와 별도 검증이 필요합니다. 현재 CEF `Capabilities.ScriptExecution=false`, `Capabilities.Messages=false`, `Capabilities.PageToUnityMessages=true`입니다.
+- `Window > Package Manager` 수동 설치는 여전히 가능하며, 자동 빌드 성공과 Player 실제 상호작용 성공은 구분합니다.
+
+---
+
 # v58.7.3 Unity CS0019 자동 수정 (2026-10-19)
 
 - 이전 `compile-errors-redacted.txt`의 `UnityEngine.RectInt` `!=` 오류(CS0019)를 좌표·크기별 비교로 수정했습니다.
@@ -85,3 +95,4 @@ If a required runtime file is absent, the installer will now report its actual m
 실제 파일이 다른 위치에 있다면 `Build-UnityProduct.ps1 -CefStage "C:\...\Player\UnifiedDualPreview_Data\Plugins\x86_64"`처럼 직접 지정할 수 있습니다. `-CefStage`는 완성된 `native/Release + runtime/Release` 디렉터리 또는 `libcef.dll`과 `CompanyWebViewCefTextureProbe.dll` 등이 모두 있는 평면 `Plugins\x86_64` 경로를 받습니다. 선택한 경로가 불완전하면 자동으로 다른 바이너리로 대체하지 않고 명확히 실패합니다.
 
 **실기 범위:** 자동 경로 탐색의 정적·Windows PowerShell 검사와 Unity Player 실행/패키지 설치 검증은 별개입니다. 이미 통과한 5분짜리 렌더링 시험은 다시 실행할 필요가 없습니다.
+
