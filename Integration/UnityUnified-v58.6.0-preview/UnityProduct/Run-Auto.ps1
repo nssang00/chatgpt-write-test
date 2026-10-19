@@ -52,6 +52,25 @@ try {
    throw 'UPM package assembly returned without complete pinned CEF runtime'
   }
  }
+ # If user extracted this kit over an old folder, never silently reuse the broken Editor source.
+ $postCopy=Join-Path $package 'Editor\UnifiedWebViewBuildCopy.cs'
+ if(-not (Test-Path -LiteralPath $postCopy -PathType Leaf)){
+  throw "UPM package is missing the fixed Editor postprocessor: $postCopy"
+ }
+ $currentCopy=[IO.File]::ReadAllText($postCopy,[Text.Encoding]::UTF8)
+ $fixedApi='UnityEditor.PackageManager.PackageInfo.FindForAssembly('
+ if($currentCopy.IndexOf($fixedApi,[StringComparison]::Ordinal) -lt 0){
+  throw 'An old Dist package contains the CS0104 bug. Extract the new ZIP into a fresh folder.'
+ }
+ # An existing Dist package must not silently preserve the old Unity 2022 RectInt bug.
+ $panelSource=Join-Path $package 'Runtime\UnifiedExperimental\UnifiedWebViewPanel.cs'
+ if(-not (Test-Path -LiteralPath $panelSource -PathType Leaf)){
+  throw "UPM package missing runtime panel source: $panelSource"
+ }
+ $panelContents=[IO.File]::ReadAllText($panelSource,[Text.Encoding]::UTF8)
+ if($panelContents.Contains('if (bounds != lastBounds)')){
+  throw 'An old Dist package contains Unity 2022 CS0019. Extract the v58.7.3 ZIP to a fresh folder.'
+ }
  $summary.package=$package
  # Stable build identity; changing UPM sources, pinned archives or Unity installation invalidates the cache.
  $keyItems=New-Object 'System.Collections.Generic.List[string]'
@@ -153,6 +172,21 @@ try {
  Write-Error ('[UPM AUTO] '+$summary.error)
 } finally {
  if($null -ne $lock){$lock.Dispose()}
+ if($summary.status -ne 'AUTO_BUILD_PASS' -and -not [string]::IsNullOrWhiteSpace($summary.unityLog) -and
+    (Test-Path -LiteralPath $summary.unityLog -PathType Leaf)) {
+  $errorPath=Join-Path $results 'compile-errors-redacted.txt'
+  $lines=@(Get-Content -LiteralPath $summary.unityLog -Encoding UTF8 | Where-Object {
+   $_ -match '(error CS[0-9]+|BuildFailedException|ScriptCompilation.*fail|Exception:|Error building Player|BuildPipeline.*fail)'
+  } | Select-Object -Unique -First 35)
+  $safe=@()
+  foreach($line in $lines){
+   if(-not [string]::IsNullOrWhiteSpace($env:USERPROFILE)){
+    $safe+=[regex]::Replace($line,[regex]::Escape($env:USERPROFILE),'<USERPROFILE>',[Text.RegularExpressions.RegexOptions]::IgnoreCase)
+   }else{$safe+=$line}
+  }
+  $safe|Set-Content -LiteralPath $errorPath -Encoding UTF8
+  Write-Host ('[UPM AUTO] Build errors: '+$errorPath)
+ }
  $report=Join-Path $results 'product-auto-summary.json'
  $summary|ConvertTo-Json -Depth 5|Set-Content -LiteralPath $report -Encoding UTF8
  Write-Host ('[UPM AUTO] Summary: '+$report)
