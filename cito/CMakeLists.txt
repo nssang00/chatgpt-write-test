@@ -340,6 +340,13 @@ if(BUILD_TESTING)
     target_link_libraries(cito_quic_msquic_node PRIVATE cito ${MSQUIC_LIBRARY})
     target_compile_options(cito_quic_msquic_node PRIVATE -Wall -Wextra)
 
+    # Public Context Pub/Sub over native MsQuic. Route/session provisioning is
+    # explicit in this integration test; it does not assert auto discovery.
+    add_executable(cito_quic_context_pubsub_node tests/net/quic_context_pubsub_node.cpp)
+    target_include_directories(cito_quic_context_pubsub_node PRIVATE ${MSQUIC_INCLUDE_DIR})
+    target_link_libraries(cito_quic_context_pubsub_node PRIVATE cito ${MSQUIC_LIBRARY})
+    target_compile_options(cito_quic_context_pubsub_node PRIVATE -Wall -Wextra -Wpedantic)
+
     add_executable(cito_quic_request_node tests/net/quic_request_node.cpp)
     target_include_directories(cito_quic_request_node PRIVATE ${MSQUIC_INCLUDE_DIR})
     target_link_libraries(cito_quic_request_node PRIVATE cito ${MSQUIC_LIBRARY})

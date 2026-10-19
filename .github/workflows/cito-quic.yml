@@ -2,7 +2,7 @@ name: Cito QUIC
 
 on:
   push:
-    branches: [cito-dev, cito-native-v23-validation, cito-v23-native-headers, cito-v24-mtls-native]
+    branches: [cito-dev, cito-native-v23-validation, cito-v23-native-headers, cito-v24-mtls-native, cito-pubsub-multiprocess-validation]
     paths:
       - "cito/CMakeLists.txt"
       - "cito/include/cito/data_packet.hpp"
@@ -18,6 +18,7 @@ on:
       - "cito/src/posix_udp_control_manager.cpp"
       - "cito/src/linux_request_runtime_driver.cpp"
       - "cito/tests/net/quic_msquic_node.cpp"
+      - "cito/tests/net/quic_context_pubsub_node.cpp"
       - "cito/tests/net/quic_v23_native_admission_smoke.cpp"
       - "cito/tests/net/quic_public_request_node.cpp"
       - "cito/tests/net/quic_request_node.cpp"
@@ -101,7 +102,7 @@ jobs:
       - name: Configure and build QUIC smoke
         run: |
           cmake -S cito -B build-quic -G Ninja -DCMAKE_BUILD_TYPE=Debug -DCITO_ENABLE_MSQUIC=ON
-          cmake --build build-quic --target cito_quic_msquic_node cito_quic_request_node cito_quic_public_request_node -j2
+          cmake --build build-quic --target cito_quic_msquic_node cito_quic_context_pubsub_node cito_quic_request_node cito_quic_public_request_node -j2
 
       - name: Generate private test CA and IP-SAN server certificate
         shell: bash
@@ -223,6 +224,30 @@ jobs:
           test "$server_status" -eq 0
           grep -q "quic_client stream=1 datagram=1" quic-client.log
           grep -q "quic_server stream=1 datagram=1" quic-server.log
+
+          # CTD1 native MsQuic Stream -> separate process Context::on.
+          # This explicitly calls the host delivery bridge on its owner thread.
+          # GitHub's old Context::publish remote path remains unintegrated.
+          PUBSUB_BIN="$GITHUB_WORKSPACE/build-quic/cito_quic_context_pubsub_node"
+          sudo ip netns exec cito-quic-s "$PUBSUB_BIN" server 4446 \
+            "$GITHUB_WORKSPACE/quic-cert.pem" "$GITHUB_WORKSPACE/quic-key.pem" \
+            >quic-context-sub.log 2>&1 &
+          CTX_SUB_PID=$!
+          sleep 0.4
+          ctx_pub_status=0
+          timeout 11s sudo ip netns exec cito-quic-c "$PUBSUB_BIN" client \
+            10.202.0.12 4446 "$GITHUB_WORKSPACE/quic-ca.pem" \
+            >quic-context-pub.log 2>&1 || ctx_pub_status=$?
+          ctx_sub_status=0
+          wait "$CTX_SUB_PID" || ctx_sub_status=$?
+          echo '=== real QUIC Context publisher ==='
+          cat quic-context-pub.log
+          echo '=== real QUIC Context subscriber ==='
+          cat quic-context-sub.log
+          test "$ctx_pub_status" -eq 0
+          test "$ctx_sub_status" -eq 0
+          grep -q 'quic_ctd1_transport_sender wire=CTD1' quic-context-pub.log
+          grep -q 'quic_context_subscriber received=1 value=42' quic-context-sub.log
 
           # Real native listener+admission lifecycle with the existing QUIC client.
           sudo ip netns exec cito-quic-s \
