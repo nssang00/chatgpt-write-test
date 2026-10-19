@@ -16,6 +16,8 @@ namespace Company.WebView.Unified.Experimental
         public int TargetFrameRate { get; set; } = 60;
         public string CefSubprocessPath { get; set; }
         public string CefCachePath { get; set; }
+        // Safe default false. Controlled-page title messages are NOT origin-authenticated RPC.
+        public bool EnableCefPageTitleMessages { get; set; } = false;
         // Native Win32 HWND owned by the current Unity Windows Player process (Overlay only).
         public IntPtr OverlayParentHwnd { get; set; }
         public int OverlayX { get; set; }
