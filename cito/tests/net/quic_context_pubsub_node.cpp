@@ -238,27 +238,15 @@ bool open_configuration(bool server, const char* cert = nullptr, const char* key
 }
 
 std::vector<std::uint8_t> make_payload() {
-    using namespace cito;
-    using namespace cito::detail;
-    auto runtime = acquire_embedded_host_runtime();
-    const InterestKey key{stable_name_id("fleet.quic"),
-                          stable_name_id("position"),
-                          static_type_ref<NetSample>().type_id()};
-    if (runtime->host().observe_coordinator(7, 1, 30000, 0) !=
-        CoordinatorLeaseObservation::Added) return {};
-    if (!runtime->host().apply_remote_snapshot(7, {1,1,1},
-                                                std::array{key})) return {};
-    if (!runtime->host().replace_remote_routes(7, 1, key,
-                                               std::array<DestinationId,1>{77})) return {};
-    std::vector<std::uint8_t> wire;
-    if (!runtime->request_network().attach_session(77,
-        [&](std::span<const std::uint8_t> data) {
-            wire.assign(data.begin(), data.end());
-            return true;
-        })) return {};
-    Context publisher("fleet.quic");
-    if (publisher.publish("position", NetSample{42}) != 1) return {};
-    return wire;
+    // Explicit CTD1 transport frame: the GitHub base branch does not yet
+    // wire Context::publish() to a remote MsQuic session. This proves the
+    // actual native transport + typed receiving Context separately.
+    const cito::InterestKey key{
+        cito::stable_name_id("fleet.quic"),
+        cito::stable_name_id("position"),
+        cito::static_type_ref<NetSample>().type_id()};
+    const std::array<std::uint8_t, 1> payload{42};
+    return cito::encode_data_packet(key, payload);
 }
 
 int run_server(std::uint16_t port, const char* cert, const char* key) {
@@ -289,7 +277,11 @@ int run_server(std::uint16_t port, const char* cert, const char* key) {
     lock.unlock();
     // Never call the Cito application runtime from an MsQuic worker callback.
     // Drain the copied packet on the owner thread after its native receipt.
-    const auto delivered = runtime->request_network().receive_data(77, stream_packet);
+    // Manual owner-thread handoff from native QUIC to the older HostRuntime.
+    // This is NOT the yet-to-be-integrated automatic v25 receive adapter.
+    const auto data = cito::decode_data_packet_view(stream_packet);
+    const auto delivered = runtime->host().deliver_local(data.key, "position",
+                                                          data.payload);
     if (delivered != 1 || deliveries.load() != 1) return 14;
     std::cout << "quic_context_subscriber received=1 value=42 stream=1 datagram_verified=1" << std::endl;
     std::_Exit(0);
@@ -323,7 +315,7 @@ int run_client(const char* host, std::uint16_t port, const char* ca,
                 return state.failed || (state.stream_send_done && state.datagram_send_done);
             }) || state.failed) return 28;
     }
-    std::cout << "quic_context_publisher published=1 wire=CTD1 stream=1 datagram=1" << std::endl;
+    std::cout << "quic_ctd1_transport_sender wire=CTD1 stream=1 datagram=1" << std::endl;
     std::_Exit(0);
 }
 
