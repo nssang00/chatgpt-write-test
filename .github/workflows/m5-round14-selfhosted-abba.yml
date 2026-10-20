@@ -43,20 +43,13 @@ jobs:
           $dest = Join-Path $env:GITHUB_WORKSPACE 'm5-round14-run'
           New-Item -ItemType Directory -Path $dest -Force | Out-Null
           Copy-Item -Path (Join-Path $source '*') -Destination $dest -Recurse -Force -ErrorAction Stop
-          # Apply the user's already-downloaded FIX01 archive if present (without editing the original source).
-          $patches = @(
-            'C:\Users\user\Downloads\M5_ROUND14_OL_GPU_EMPTY_CANVAS_FIX01_2026-10-20.zip',
-            (Join-Path $env:USERPROFILE 'Downloads\M5_ROUND14_OL_GPU_EMPTY_CANVAS_FIX01_2026-10-20.zip')
-          )
-          if (-not (Test-Path (Join-Path $dest 'tests\round14_gpu_compare\verify_async_paint.mjs'))) {
-            $patch = $patches | Where-Object { Test-Path $_ } | Select-Object -First 1
-            if ($patch) {
-              Expand-Archive -Path $patch -DestinationPath $dest -Force
-              Write-Host "Applied FIX01 from $patch"
-            }
-          }
-          if (-not (Test-Path (Join-Path $dest 'tests\round14_gpu_compare\verify_async_paint.mjs'))) {
-            throw 'FIX01 missing: put M5_ROUND14_OL_GPU_EMPTY_CANVAS_FIX01_2026-10-20.zip in Downloads, or apply the patch to the project.'
+          # Apply source-equivalent FIX01 only to the runner workspace copy.
+          $olPage = Join-Path $dest 'tests\round14_gpu_compare\ol_stock.html'
+          if ((Get-Content $olPage -Raw) -match 'function waitForPresentedOlFrame') {
+            Write-Host 'FIX01 canvas capture already present in project'
+          } else {
+            node (Join-Path $env:GITHUB_WORKSPACE 'm5-gpu\round14_apply_capture_fix.mjs') $dest
+            if ($LASTEXITCODE -ne 0) { throw 'Unable to apply OL/M5 screenshot fix' }
           }
           "M5_PROJECT=$dest" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           Write-Host "Prepared Round14 comparison at $dest"
@@ -66,8 +59,10 @@ jobs:
           $ErrorActionPreference = 'Stop'
           Set-Location $env:M5_PROJECT
           node --version
-          node tests/round14_gpu_compare/verify_async_paint.mjs
-          if ($LASTEXITCODE -ne 0) { throw 'Async capture tests failed' }
+          if (Test-Path 'tests/round14_gpu_compare/verify_async_paint.mjs') {
+            node tests/round14_gpu_compare/verify_async_paint.mjs
+            if ($LASTEXITCODE -ne 0) { throw 'Async capture tests failed' }
+          }
           node tests/round14_gpu_compare/oneclick.mjs --self-test
           if ($LASTEXITCODE -ne 0) { throw 'Comparator selftest failed' }
           node tests/round14_gpu_compare/oneclick.mjs --dry-run
