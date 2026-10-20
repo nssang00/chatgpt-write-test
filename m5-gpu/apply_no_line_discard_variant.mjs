@@ -1,0 +1,10 @@
+import {readFile,writeFile} from 'node:fs/promises';
+import {join} from 'node:path';
+const root=process.argv[2]||process.cwd();
+const path=join(root,'our-renderer','shaders','lineShaders.js');
+let s=await readFile(path,'utf8');
+const before='  if(gl_FragColor.a < 0.1) { discard; }\n';
+if(s.split(before).length!==2)throw Error('Unexpected stock Round14 line-shader parity anchor');
+s=s.replace(before,'  // Render ordinary translucent edge fragments, matching OL 10.10.0 screen-paint contract.\n');
+await writeFile(path,s);
+console.log('LINE_FRAGMENT_ALPHA_DISCARD_REMOVED_FOR_PARITY_VARIANT');
