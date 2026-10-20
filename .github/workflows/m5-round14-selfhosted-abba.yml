@@ -135,6 +135,38 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Combined regression failed' }
           node tests/round14_gpu_compare/oneclick.mjs --rounds=1 --headless
           if ($LASTEXITCODE -ne 0) { throw 'Combined RTX A/B failed' }
+      - name: RTX isolate fill/stroke with no-MSAA
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $variant = Join-Path $env:GITHUB_WORKSPACE 'm5-round14-diag-no-msaa'
+          New-Item -ItemType Directory -Path $variant -Force | Out-Null
+          Copy-Item -Path (Join-Path $env:M5_PROJECT '*') -Destination $variant -Recurse -Force
+          node m5-gpu/apply_parity_isolation.mjs $variant
+          if ($LASTEXITCODE -ne 0) { throw 'Scene isolation failed' }
+          node m5-gpu/apply_no_msaa_variant.mjs $variant
+          if ($LASTEXITCODE -ne 0) { throw 'no-MSAA isolated setup failed' }
+          if (Test-Path (Join-Path $variant 'RESULTS')) { Remove-Item (Join-Path $variant 'RESULTS') -Recurse -Force }
+          Set-Location $variant
+          node tests/round14_gpu_compare/oneclick.mjs --rounds=1 --headless
+          if ($LASTEXITCODE -ne 0) { throw 'no-MSAA isolated RTX A/B failed' }
+      - name: RTX isolate fill/stroke with no-MSAA plus alpha fix
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $variant = Join-Path $env:GITHUB_WORKSPACE 'm5-round14-diag-combined'
+          New-Item -ItemType Directory -Path $variant -Force | Out-Null
+          Copy-Item -Path (Join-Path $env:M5_PROJECT '*') -Destination $variant -Recurse -Force
+          node m5-gpu/apply_parity_isolation.mjs $variant
+          if ($LASTEXITCODE -ne 0) { throw 'Scene isolation failed' }
+          node m5-gpu/apply_no_msaa_variant.mjs $variant
+          if ($LASTEXITCODE -ne 0) { throw 'no-MSAA isolated setup failed' }
+          node m5-gpu/apply_no_line_discard_variant.mjs $variant
+          if ($LASTEXITCODE -ne 0) { throw 'line alpha isolated setup failed' }
+          if (Test-Path (Join-Path $variant 'RESULTS')) { Remove-Item (Join-Path $variant 'RESULTS') -Recurse -Force }
+          Set-Location $variant
+          node tests/round14_gpu_compare/oneclick.mjs --rounds=1 --headless
+          if ($LASTEXITCODE -ne 0) { throw 'combined isolated RTX A/B failed' }
       - name: Upload raw results, browser logs and PNG pixel differences
         if: always()
         uses: actions/upload-artifact@v4
@@ -146,5 +178,7 @@ jobs:
             m5-round14-no-msaa/RESULTS/**
             m5-round14-line-alpha/RESULTS/**
             m5-round14-combined/RESULTS/**
+            m5-round14-diag-no-msaa/RESULTS/**
+            m5-round14-diag-combined/RESULTS/**
           if-no-files-found: warn
           retention-days: 30
