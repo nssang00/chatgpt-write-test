@@ -27,7 +27,8 @@ def status(**data):
 def paint_windows():
     user32 = ctypes.windll.user32
     windows = []
-    callback = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_void_p, ctypes.c_void_p)
+    callback = ctypes.WINFUNCTYPE(ctypes.wintypes.BOOL, ctypes.wintypes.HWND, ctypes.wintypes.LPARAM)
+    user32.EnumWindows.argtypes = [callback, ctypes.wintypes.LPARAM]
 
     def visit(hwnd, _):
         if not user32.IsWindowVisible(hwnd):
@@ -60,6 +61,16 @@ def main():
         ctypes.windll.user32.SetProcessDPIAware()
     except Exception:
         pass
+
+    # Win32 HWND is pointer-sized; without prototypes ctypes may truncate it.
+    u = ctypes.windll.user32
+    u.IsWindowVisible.argtypes = [ctypes.wintypes.HWND]
+    u.GetWindowTextLengthW.argtypes = [ctypes.wintypes.HWND]
+    u.GetWindowTextW.argtypes = [ctypes.wintypes.HWND, ctypes.wintypes.LPWSTR, ctypes.c_int]
+    u.GetWindowRect.argtypes = [ctypes.wintypes.HWND, ctypes.POINTER(ctypes.wintypes.RECT)]
+    u.GetForegroundWindow.restype = ctypes.wintypes.HWND
+    u.SetForegroundWindow.argtypes = [ctypes.wintypes.HWND]
+    u.ShowWindow.argtypes = [ctypes.wintypes.HWND, ctypes.c_int]
 
     import pyautogui as p
     p.FAILSAFE = True
