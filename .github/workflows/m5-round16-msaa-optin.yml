@@ -52,6 +52,41 @@ jobs:
           Set-Location $env:R16_PROJECT
           node tests/round14_gpu_compare/oneclick.mjs --rounds=2 --headless
           if($LASTEXITCODE -ne 0){throw 'RTX candidate A/B failed to capture frames'}
+      - name: RTX corrected default round cap and join style
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $variant = Join-Path $env:GITHUB_WORKSPACE 'candidate-stroke-defaults'
+          New-Item -ItemType Directory -Path $variant -Force | Out-Null
+          Copy-Item -Path (Join-Path $env:R16_PROJECT '*') -Destination $variant -Recurse -Force
+          if (Test-Path (Join-Path $variant 'RESULTS')) { Remove-Item (Join-Path $variant 'RESULTS') -Recurse -Force }
+          node (Join-Path $env:GITHUB_WORKSPACE 'm5-gpu\apply_ol_stroke_defaults_variant.mjs') $variant
+          if ($LASTEXITCODE -ne 0) { throw 'OL stroke style default patch failed' }
+          Copy-Item m5-gpu/verify_round16_stroke_defaults.mjs (Join-Path $variant 'tests\verify_round16_stroke_defaults.mjs')
+          Set-Location $variant
+          node tests/verify_round16_stroke_defaults.mjs
+          if ($LASTEXITCODE -ne 0) { throw 'Default stroke test failed' }
+          node tests/verify_round14_loop_and_style.mjs
+          if ($LASTEXITCODE -ne 0) { throw '68 byte-parity test failed' }
+          node tests/round14_gpu_compare/oneclick.mjs --rounds=2 --headless
+          if ($LASTEXITCODE -ne 0) { throw 'OL round style parity A/B failed' }
+      - name: RTX corrected styles plus subthreshold alpha preservation
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $variant = Join-Path $env:GITHUB_WORKSPACE 'candidate-stroke-alpha'
+          New-Item -ItemType Directory -Path $variant -Force | Out-Null
+          Copy-Item -Path (Join-Path $env:R16_PROJECT '*') -Destination $variant -Recurse -Force
+          if (Test-Path (Join-Path $variant 'RESULTS')) { Remove-Item (Join-Path $variant 'RESULTS') -Recurse -Force }
+          node (Join-Path $env:GITHUB_WORKSPACE 'm5-gpu\apply_ol_stroke_defaults_variant.mjs') $variant
+          if ($LASTEXITCODE -ne 0) { throw 'OL default patch failed' }
+          node (Join-Path $env:GITHUB_WORKSPACE 'm5-gpu\apply_no_line_discard_variant.mjs') $variant
+          if ($LASTEXITCODE -ne 0) { throw 'OL edge alpha patch failed' }
+          Set-Location $variant
+          node tests/verify_round14_loop_and_style.mjs
+          if ($LASTEXITCODE -ne 0) { throw '68 byte-parity test failed' }
+          node tests/round14_gpu_compare/oneclick.mjs --rounds=2 --headless
+          if ($LASTEXITCODE -ne 0) { throw 'OL round plus alpha RTX A/B failed' }
       - name: Preserve strict pixel and GPU evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -59,4 +94,7 @@ jobs:
           name: round16-msaa-optin-rtx
           retention-days: 30
           if-no-files-found: warn
-          path: candidate/RESULTS/**
+          path: |
+            candidate/RESULTS/**
+            candidate-stroke-defaults/RESULTS/**
+            candidate-stroke-alpha/RESULTS/**
