@@ -1,0 +1,10 @@
+import {readFile,writeFile} from 'node:fs/promises';
+import {join} from 'node:path';
+const root=process.argv[2]||process.cwd(),mode=process.argv[3];
+const variants={'preserve-only':{antialias:true,preserveDrawingBuffer:true},'msaa-only':{antialias:false,preserveDrawingBuffer:false}};
+if(!variants[mode])throw Error('Expected preserve-only or msaa-only');
+const path=join(root,'tests','round14_gpu_compare','round14_m5.html');
+let s=await readFile(path,'utf8');const needle="const backend=new WebGL1Backend(canvas,{gpuCompletionMode:'blocking'";
+if(!s.includes(needle))throw Error('Round14 backend anchor missing');
+s=s.replace(needle,"canvas.getContext('webgl',"+JSON.stringify(variants[mode])+");\n  "+needle);
+await writeFile(path,s);console.log('WEBGL1_CONTEXT_VARIANT',mode,variants[mode]);
