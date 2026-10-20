@@ -15,6 +15,14 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+      - name: Validate all Round17 patcher syntax before GPU setup
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          foreach($file in @('m5-gpu/apply_round17_ol_angle_variant.mjs','m5-gpu/apply_round17_painter_variant.mjs','m5-gpu/strict_round17_pixel_gate.mjs')){
+            node --check $file
+            if($LASTEXITCODE -ne 0){throw "Patcher syntax check failed: $file"}
+          }
       - name: Prepare independent baseline and experimental copies
         shell: powershell
         run: |
