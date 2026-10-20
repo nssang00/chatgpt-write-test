@@ -3,8 +3,10 @@
 
 #include "nativeweb/any.hpp"
 #include "nativeweb/types.hpp"
+#include "core/native_permission_policy.hpp"
 
 #include <string>
+#include <memory>
 
 namespace nativeweb {
 namespace detail {
@@ -18,6 +20,7 @@ struct BrowserCreateParams
 
     NativeWindowHandle parent;
     std::string source;
+    std::shared_ptr<const AppResourceBundle> appResources;
 };
 
 class BrowserBackendListener
@@ -34,6 +37,14 @@ public:
     // Browser engines deliver structured bridge envelopes through this method.
     // The Core/Bridge layer owns request IDs, method routing and Promise logic.
     virtual void onBridgeMessage(const Any& message) = 0;
+
+    // Engine-derived identity; NEVER deserialize from a renderer request.
+    virtual void onTrustedFrameActivated(const VerifiedFrameContext&) {}
+    virtual void onVerifiedBridgeMessage(const Any& message,
+                                        const VerifiedFrameContext&)
+    {
+        onBridgeMessage(message);
+    }
 
     virtual void onBrowserClosed() = 0;
 };

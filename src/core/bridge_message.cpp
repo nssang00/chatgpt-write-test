@@ -92,6 +92,14 @@ Any makeErrorMessage(
     return Any(dict);
 }
 
+Any makeCancelMessage(RequestId requestId)
+{
+    VariantDict dict;
+    dict["type"]="cancel";
+    dict["id"]=requestIdToString(requestId);
+    return Any(dict);
+}
+
 Any makeEventMessage(
     const std::string& eventName,
     const Any& payload)
@@ -140,6 +148,13 @@ BridgeMessage parseBridgeMessage(const Any& message)
             requireString(dict, "id"));
         result.errorCode = requireString(dict, "code");
         result.errorMessage = requireString(dict, "message");
+        return result;
+    }
+
+    if (type == "cancel")
+    {
+        result.type=BridgeMessageType::Cancel;
+        result.requestId=requestIdFromString(requireString(dict,"id"));
         return result;
     }
 

@@ -4,6 +4,7 @@
 #include "browser/common/browser_backend.hpp"
 #include "include/cef_browser.h"
 #include "include/cef_client.h"
+#include "include/cef_request_context.h"
 
 namespace nativeweb {
 namespace detail {
@@ -44,6 +45,12 @@ private:
     BrowserBackendListener* listener_;
     CefRefPtr<Client> client_;
     CefRefPtr<CefBrowser> browser_;
+    CefRefPtr<CefRequestContext> appRequestContext_;
+    std::string trustedEntryUrl_;
+    std::uint64_t navigation_ = 0;
+    bool mainFrameReady_ = false;
+    std::string activeMainFrameIdentifier_;
+    std::string documentSessionToken_;
 };
 
 void registerCefBackendFactory();

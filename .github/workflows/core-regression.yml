@@ -28,3 +28,6 @@ jobs:
 
       - name: Regression
         run: ctest --test-dir build -C Release --output-on-failure
+
+      - name: Repeated async cancellation and request-ID reuse regression
+        run: ctest --test-dir build -C Release -R core.bridge_async --repeat until-fail:20 --output-on-failure

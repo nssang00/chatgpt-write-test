@@ -548,3 +548,11 @@ NATIVEWEB_PLUGIN(CameraPlugin, "camera")
 
 실제 regression은 C++ wrapper로 작성한 DLL/SO를 빌드하고 PluginModule로 다시 로드해
 add/string/binary/error mapping과 teardown unregister를 검증한다.
+
+## Implementation note (2026-10-12)
+
+The previous pending checklist reflects the historical design stage.
+`PluginModule` now implements C ABI v1 optional object factories/object
+methods and explicit quiescing `unload()` with `plugin_busy` checks; Linux SO
+regressions are green. WebView plugin-manager wiring and real-browser
+integration remain open. See `PLUGIN_OBJECT_LIFETIME.md`.

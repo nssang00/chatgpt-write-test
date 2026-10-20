@@ -73,13 +73,68 @@ void appendEscapedString(
     output << '"';
 }
 
+const char kBase64Alphabet[] =
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
+void appendBase64(std::ostringstream& output, const Binary& data)
+{
+    for (std::size_t i=0;i<data.size();i+=3)
+    {
+        const unsigned int a=data[i];
+        const unsigned int b=i+1<data.size()?data[i+1]:0;
+        const unsigned int c=i+2<data.size()?data[i+2]:0;
+        output << kBase64Alphabet[a>>2]
+               << kBase64Alphabet[((a&3)<<4)|(b>>4)]
+               << (i+1<data.size()?kBase64Alphabet[((b&15)<<2)|(c>>6)]:'=')
+               << (i+2<data.size()?kBase64Alphabet[c&63]:'=');
+    }
+}
+
+int base64Digit(char c)
+{
+    if(c>='A'&&c<='Z') return c-'A';
+    if(c>='a'&&c<='z') return c-'a'+26;
+    if(c>='0'&&c<='9') return c-'0'+52;
+    if(c=='+') return 62;
+    if(c=='/') return 63;
+    return -1;
+}
+
+Binary decodeBase64(const std::string& encoded)
+{
+    if(encoded.size()%4!=0)
+        throw std::runtime_error("Invalid NativeWeb base64 length");
+    Binary bytes;
+    bytes.reserve(encoded.size()/4*3);
+    for(std::size_t i=0;i<encoded.size();i+=4)
+    {
+        const int a=base64Digit(encoded[i]);
+        const int b=base64Digit(encoded[i+1]);
+        const bool last=i+4==encoded.size();
+        const bool twoPad=encoded[i+2]=='=';
+        const bool onePad=encoded[i+3]=='=';
+        const int c=twoPad?0:base64Digit(encoded[i+2]);
+        const int d=onePad?0:base64Digit(encoded[i+3]);
+        if(a<0||b<0||c<0||d<0||
+           (twoPad&&!onePad)||((twoPad||onePad)&&!last)||
+           (twoPad&&(b&15)!=0)||(onePad&&!twoPad&&(c&3)!=0))
+            throw std::runtime_error("Invalid NativeWeb base64 bytes");
+        bytes.push_back(static_cast<unsigned char>((a<<2)|(b>>4)));
+        if(!twoPad)
+            bytes.push_back(static_cast<unsigned char>(((b&15)<<4)|(c>>2)));
+        if(!onePad)
+            bytes.push_back(static_cast<unsigned char>(((c&3)<<6)|d));
+    }
+    return bytes;
+}
+
 void encodeJson(
     std::ostringstream& output,
-    const Any& value);
+    const Any& value, bool compactBinary);
 
 void encodeList(
     std::ostringstream& output,
-    const VariantList& list)
+    const VariantList& list, bool compactBinary)
 {
     output << '[';
 
@@ -88,7 +143,7 @@ void encodeList(
         if (i != 0)
             output << ',';
 
-        encodeJson(output, list[i]);
+        encodeJson(output, list[i], compactBinary);
     }
 
     output << ']';
@@ -96,7 +151,7 @@ void encodeList(
 
 void encodeDictionary(
     std::ostringstream& output,
-    const VariantDict& dict)
+    const VariantDict& dict, bool compactBinary)
 {
     output << '{';
 
@@ -113,7 +168,7 @@ void encodeDictionary(
 
         appendEscapedString(output, it->first);
         output << ':';
-        encodeJson(output, it->second);
+        encodeJson(output, it->second, compactBinary);
     }
 
     output << '}';
@@ -121,7 +176,7 @@ void encodeDictionary(
 
 void encodeJson(
     std::ostringstream& output,
-    const Any& value)
+    const Any& value, bool compactBinary)
 {
     if (value.empty())
     {
@@ -169,7 +224,7 @@ void encodeJson(
     {
         encodeList(
             output,
-            AnyCast<const VariantList&>(value));
+            AnyCast<const VariantList&>(value), compactBinary);
         return;
     }
 
@@ -177,7 +232,7 @@ void encodeJson(
     {
         encodeDictionary(
             output,
-            AnyCast<const VariantDict&>(value));
+            AnyCast<const VariantDict&>(value), compactBinary);
         return;
     }
 
@@ -185,6 +240,14 @@ void encodeJson(
     {
         const Binary& bytes =
             AnyCast<const Binary&>(value);
+
+        if (compactBinary)
+        {
+            output << "{\"__nativeweb_binary_base64\":\"";
+            appendBase64(output, bytes);
+            output << "\"}";
+            return;
+        }
 
         output <<
             "{\"__nativeweb_binary\":[";
@@ -651,6 +714,9 @@ private:
             require(':');
             skipWhitespace();
 
+            if (dict.find(key) != dict.end())
+                fail("Duplicate JSON object key");
+
             dict[key] = parseValue();
 
             skipWhitespace();
@@ -660,6 +726,19 @@ private:
 
             require(',');
             skipWhitespace();
+        }
+
+        VariantDict::const_iterator compactIt =
+            dict.find("__nativeweb_binary_base64");
+        if(compactIt!=dict.end())
+        {
+            if(dict.size()!=1 || compactIt->second.type()!=typeid(std::string))
+                fail("Invalid NativeWeb compact binary marker");
+            try {
+                return Any(decodeBase64(AnyCast<std::string>(compactIt->second)));
+            } catch(const std::runtime_error&) {
+                fail("Invalid NativeWeb base64 binary");
+            }
         }
 
         VariantDict::const_iterator binaryIt =
@@ -893,7 +972,14 @@ private:
 std::string anyToJson(const Any& value)
 {
     std::ostringstream output;
-    encodeJson(output, value);
+    encodeJson(output, value, false);
+    return output.str();
+}
+
+std::string anyToJsonCompactBinary(const Any& value)
+{
+    std::ostringstream output;
+    encodeJson(output, value, true);
     return output.str();
 }
 

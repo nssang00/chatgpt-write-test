@@ -8,6 +8,8 @@
 #include "nativeweb/detail/pending_result.hpp"
 #include "nativeweb/types.hpp"
 
+#include <cstdint>
+#include <functional>
 #include <future>
 #include <memory>
 #include <string>
@@ -42,6 +44,9 @@ public:
     }
 };
 
+typedef std::uint64_t MessageSubscriptionId;
+typedef std::function<void(const Any&)> MessageCallback;
+
 class WebView
 {
 public:
@@ -72,6 +77,35 @@ public:
     void load(const std::string& source);
     void reload();
 
+    // Loads a C ABI plugin and registers its ordinary function bindings.
+    // Returns the plugin's declared id. Works before WebView::create().
+    std::string loadPlugin(const std::string& path);
+    // Exposes a native object factory as an asynchronous xytron.* method.
+    void bindPluginFactory(const std::string& method,
+                           const std::string& pluginId,
+                           const std::string& relativeType);
+    NativeObjectHandle createPluginObject(const std::string& pluginId,
+                                          const std::string& relativeType,
+                                          const VariantList& args = VariantList());
+    // Returns plugin_busy while native objects or calls are active.
+    void unloadPlugin(const std::string& pluginId);
+
+    // EXPERIMENTAL: bind explicit managed worker operations for a trusted
+    // packaged app:// main document only. Register after initial load.
+    // Any navigation or reload revokes the worker session permanently.
+    // The executable must be an absolute, host-trusted local path.
+    void bindManagedWorker(
+        const std::string& pluginId,
+        const std::vector<std::string>& allowedOperations,
+        const std::vector<std::string>& command,
+        unsigned timeoutMs = 5000);
+
+    // Host-only grants. Call from the WebView owner thread, never JS.
+    // Revocation rejects pending result delivery after the worker returns.
+    bool revokeManagedOperation(const std::string& pluginId,
+                                const std::string& operation);
+    bool revokeManagedWorker(const std::string& pluginId);
+
     // Dynamic primitive API. Typed bind below adapts ordinary C++ callables to
     // this canonical Any/VariantList contract.
     void bind(const std::string& method, const DynamicFunction& function);
@@ -80,6 +114,17 @@ public:
         const std::string& method,
         const VariantList& args = VariantList());
 
+    // Fire-and-forget messages. Delivery is not acknowledged; callbacks run
+    // on the browser dispatch thread and must not block it.
+    void postMessage(
+        const std::string& channel,
+        const Any& payload = Any());
+    MessageSubscriptionId onMessage(
+        const std::string& channel,
+        const MessageCallback& callback);
+    bool offMessage(MessageSubscriptionId subscription);
+
+    // Legacy Native -> JS event spelling; equivalent to postMessage().
     void emit(
         const std::string& event,
         const Any& payload = Any());

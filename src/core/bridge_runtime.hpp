@@ -2,6 +2,7 @@
 #define NATIVEWEB_BRIDGE_RUNTIME_HPP_INCLUDED
 
 #include "core/binding_registry.hpp"
+#include "core/module_registry.hpp"
 #include "core/bridge_message.hpp"
 #include "core/event_dispatcher.hpp"
 #include "core/pending_call_registry.hpp"
@@ -9,6 +10,8 @@
 
 #include <atomic>
 #include <future>
+#include <map>
+#include <mutex>
 #include <functional>
 #include <memory>
 #include <string>
@@ -91,6 +94,14 @@ public:
         const std::string& method,
         const Callable& callable);
 
+    // First stage of language-neutral module methods. These callbacks
+    // must own their executable code for the duration of in-flight calls.
+    // Python/.NET process adapters and DLL/SO unload leases come later.
+    ModuleRegistration registerModule(const ModuleDescriptor& descriptor);
+    void bindModuleMethod(const std::string& moduleId,
+                          const std::string& relativeMethod,
+                          const Callable& handler);
+
     bool unbind(const std::string& method);
     bool hasMethod(const std::string& method) const;
 
@@ -129,6 +140,14 @@ public:
         const std::string& eventName,
         const Any& payload) const;
 
+    BindingRegistry& bindingRegistry() { return bindings_; }
+
+    // Cancel all outstanding native-to-JS calls without shutting down
+    // bindings, subscriptions or future calls (for document navigation).
+    void rejectPending(const Error& error);
+    bool cancelIncoming(RequestId requestId);
+    void cancelAllIncoming();
+    std::size_t incomingCount() const;
     void shutdown();
 
     std::size_t pendingCount() const;
@@ -143,11 +162,14 @@ private:
         }
 
         std::atomic<bool> active;
+        std::mutex mutex;
+        std::map<RequestId,std::shared_ptr<std::atomic<bool> > > requests;
     };
 
     Callable findMethod(const std::string& method) const;
 
     BindingRegistry bindings_;
+    std::shared_ptr<ModuleRegistry> modules_;
     PendingCallRegistry pending_;
     EventDispatcher events_;
     std::shared_ptr<AsyncDispatchState> asyncState_;

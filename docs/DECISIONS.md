@@ -306,3 +306,169 @@ Static constructor registration은 user convenience implementation detail로도 
 Qt QLibrary, Boost.DLL, POCO SharedLibrary의 공통 low-level 역할을 참고해 OS library load/symbol/unload abstraction을 둔다.
 
 현재 Core에 Boost/Qt/POCO를 plugin loading을 위한 필수 dependency로 추가하지 않는다.
+
+## D-032: First usable SDK scope includes real native host and distribution
+
+**Status: SUPERSEDED in part by D-033–D-042 — owner 2026-10-13**
+
+The original paragraph's deferral of CLI/formal host controls was replaced by later explicit owner requirements: standalone shell, CLI, initial MFC/WinForms/WPF components, Main + mixed-language Modules and Python/C# actual backends. Preserve as historical context only.
+
+Scope A replaces the prior Core + Plugin SDK-only first-completion proposal.
+The first deliverable must have secure, reproducible Windows/Linux native-host
+embedding (minimal Win32 + GTK3), real browser+plugin behavior, engine-inclusive
+SDK bundling and clean-machine consumption. Formal other host adapters, full
+Desktop API parity, CLI and Sidecar remain subsequent milestones.
+
+The existing decisions D-001 through D-031 remain in force, especially
+C++11 compatibility, `Engine::Auto`, stable C ABI, direct `xytron` API and
+thin host layer. Do not merge into `main` or publish without approval.
+See `docs/RELEASE_SCOPE_A.md` and `docs/ACCEPTANCE_CRITERIA.md`.
+
+## D-033: Product category and backend language (owner-confirmed)
+
+**Status: Accepted — 2026-10-13**
+
+NativeWeb competes in the Electron/Tauri *desktop application platform*
+category. The primary native backend is **C/C++**, not mandatory Node.js
+or Rust. Existing app embedding and fresh native app creation are **both
+first-class product paths**. C++11 Core baseline stays unchanged.
+
+## D-034: Bidirectional plugin JS bridge is product-core
+
+**Status: Accepted — 2026-10-13**
+
+A C++ DLL/SO plugin should not be limited to functions invoked from JS;
+it must also call JS and deliver callbacks/events asynchronously with
+typed/error semantics, lifecycle-safe references, cancellation/unsubscribe
+and module ownership constraints. Preserve the stable versioned C ABI.
+
+## D-035: Official Python and C# wrappers
+
+**Status: Accepted — 2026-10-13**
+
+Python and C#/.NET wrappers are first-class SDK access paths to the native
+Core (including async, objects and callbacks). Optional Sidecar service
+execution is a separate architecture, not a replacement for wrappers.
+The first deliverable includes minimal tested wrapper vertical slices;
+full SDK API parity follows incrementally.
+
+## D-036: .NET-like CLI is first-class development workflow
+
+**Status: Accepted — 2026-10-13**
+
+A simple command-line workflow for project creation, SDK and browser
+dependency acquisition, build, run, test, publish and plugin development is
+a defining product feature. The `xweb` command name is provisional.
+The first usable product requires a working CLI vertical slice; treating
+CLI as optional long-term documentation contradicts the product vision.
+Commands must manage versions/cache reproducibly and report actionable errors.
+
+## D-037: Dual UI host modes; native standalone shell
+
+**Status: Accepted — owner clarification 2026-10-13**
+
+The platform must support a real Electron-like native application with OS
+windows, app menus, context menus, menu command callbacks and lifecycle;
+AND WebView2-like UI controls in WPF, WinForms, MFC, Win32, GTK3. Host
+controls stay thin and reuse the identical C++ Core, bridge, security
+and plugin system. First-release basic app/context menu and minimal
+MFC/WinForms/WPF components are required, not optional future features.
+
+## D-038: cpp/python/csharp are actual backend authoring profiles
+
+**Status: Accepted — owner clarification 2026-10-13**
+
+Common runtime is C/C++11; developers choose actual application backend
+logic in C/C++, Python (especially LLM/AI) or C#/.NET (especially legacy).
+Official wrappers exist but a wrapper-only capability does not satisfy
+the Python or C# backend choice. Supervised language process/FFI transport
+is an implementation detail; JS async/callback behavior is consistent.
+
+## D-039: Canonical intended CLI command is xytron
+
+**Status: Accepted — owner clarification 2026-10-13**
+
+The user-facing CLI is `xytron` for project creation, SDK/runtime
+download and restore, run, build, test, publish and C++ plugin new/build.
+The previous `xweb` was a working name; decide alias compatibility
+before renaming any shipped command. No CLI functionality is yet verified.
+
+## D-040: Native app menus and context menus are core desktop APIs
+
+**Status: Accepted — owner clarification 2026-10-13**
+
+Menu bar/menus, right-click/context popup menu, menu command and JS/backend
+callback routing, UI thread dispatch and permission checks are mandatory
+first usable app features. Full Electron desktop API parity is longer term.
+
+## D-041: One Main Backend, many Modules; Plugin is a delivery subtype
+
+**Status: Accepted — owner 2026-10-13**
+
+NativeWeb application owns **exactly one logical Main Backend**, which is
+a Module with role `main`. It may have **0..N other Modules**, implemented
+in C/C++, Python or C# concurrently. Their roles and implementations do
+not alter the common JS API contract. **Plugin is a Module configured for
+independent build/deployment/load/unload**; C++ DLL/SO is first, Python/
+C# packaged plugins may be supported later. The registry is per app,
+IDs are unique, lifetime tokens prevent stale deregistration, methods
+and cross-module calls share native-side authorization. Core remains
+the shared infrastructure, not the Main Backend.
+
+One Main is an application logical role, not an unconditional in-process
+thread or privileged bypass. Full contract: `docs/MODULE_ARCHITECTURE.md`.
+
+## D-042: Language-neutral JS namespace with authorized module routing
+
+**Status: Accepted — owner 2026-10-13**
+
+JS should not know or select whether a call targets C/C++, Python or C#,
+Main, feature Module, or independently packaged Plugin. Public methods,
+objects, callbacks, events and errors share contracts. Same API may be
+implemented in another language provided observable contract compatibility.
+Requests are routed via app-scoped Core dispatcher and explicit capability
+checks, including backend-to-backend calls. Untrusted frames and Main do
+not get implicit cross-module rights.
+
+## D-043: Official language-specific export authoring APIs
+
+**Accepted direction — owner 2026-10-14**. Preserve the uploaded binding
+document's user-facing registration concepts: C++ `XYTRON_MODULE(m)`
+with `m.function` and later fluent `m.class_<T>`, C# `[Export]` with
+reflection and Python `@xytron.export` with introspection. All three
+produce one Module Registry/Invoker contract. Main and feature Modules
+share the same public registration behavior, regardless of language.
+
+## D-044: C++11 + C ABI compatibility and manifest single identity
+
+**Accepted implementation policy — 2026-10-14**. The uploaded sample's
+C++17 `std::any`/`if constexpr` is conceptual, not the literal Core
+implementation. Keep public NativeWeb C++11, `nativeweb::Any`, and stable
+versioned `nw_*_v1` C ABI. `plugin.json` is the *single plugin identity
+declaration*, passed to C++ compilation by the build system; no user
+plugin ID argument in `XYTRON_MODULE(m)`. Preserve existing
+`NATIVEWEB_PLUGIN(Type, "id")` ABI and source compatibility. Allow
+controlled migration of existing CLI `module.json` scaffolds.
+
+## D-045: Async JS and explicit PluginManager scope
+
+**Accepted architectural recommendation — 2026-10-14**. Default calls
+are JS Promises; native ESM named imports require static export metadata/
+generated proxy before link, while runtime implementation loading is lazy.
+PluginManager discovers/loads/leases independently packaged Modules only;
+the app-scoped Module Registry also owns Main and embedded Modules.
+Python/.NET supervised process is initial language-host default, not an
+assumption of in-process CPython or CLR embedding. Native-dispatch per-call
+grants remain required despite export markers.
+
+## D-046: app:// is the packaged app resource origin; file:// is restricted
+
+**Accepted direction — owner 2026-10-14.** App UI packages use
+`app://desktop/` with host-separated feature/plugin resources. Native
+Core owns scheme policy and routing. Individual modules may supply
+handlers only for manifest-declared custom schemes, with engine setup
+done before browser creation. Arbitrary `file://` never implicitly
+grants filesystem or native API access. Resource ability is separate
+from per-method native invoke permissions (NW-014 P0). CEF/WebView2
+real custom-scheme registration must be proven before the CLI claims
+app:// is usable, see docs/APP_RESOURCE_PROTOCOLS.md.
