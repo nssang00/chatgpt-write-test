@@ -1,0 +1,10 @@
+import {readFile,writeFile} from 'node:fs/promises';
+import {join} from 'node:path';
+const root=process.argv[2]||process.cwd();
+const path=join(root,'our-renderer/backend/WebGL1Backend.js');
+let s=await readFile(path,'utf8');
+const anchor='const gl=this.gl; gl.viewport(0,0,this.canvas.width,this.canvas.height);';
+if(s.split(anchor).length!==2)throw Error('DITHER backend anchor missing');
+s=s.replace(anchor,anchor+' gl.disable(gl.DITHER);');
+await writeFile(path,s);
+console.log('R16_DITHER_OFF_VARIANT_READY');
