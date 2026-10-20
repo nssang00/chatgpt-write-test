@@ -1,0 +1,82 @@
+name: Round16 RTX Pixel Parity Isolation Dither Gate
+on:
+  push:
+    paths:
+      - .github/workflows/m5-round16-pixel-isolation.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  pixel-parity:
+    runs-on: self-hosted
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Copy baseline and stage corrected M5 on RTX
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $source='C:\Users\user\Downloads\M5_GPU_COMPARE_UNPACKED\M5_Round14_OL_GPU_Compare'
+          if(-not (Test-Path (Join-Path $source 'tests\round14_gpu_compare\oneclick.mjs'))){throw 'Round14 baseline missing'}
+          $dest=Join-Path $env:GITHUB_WORKSPACE 'parity-base'
+          New-Item -ItemType Directory -Path $dest -Force|Out-Null
+          Copy-Item (Join-Path $source '*') $dest -Recurse -Force
+          if(Test-Path (Join-Path $dest 'RESULTS')){Remove-Item (Join-Path $dest 'RESULTS') -Recurse -Force}
+          $patchers=@('round14_apply_capture_fix.mjs','apply_backend_msaa_optin.mjs','apply_ol_stroke_defaults_variant.mjs','apply_no_line_discard_variant.mjs')
+          foreach($name in $patchers){
+            node (Join-Path $env:GITHUB_WORKSPACE ('m5-gpu\' + $name)) $dest
+            if($LASTEXITCODE -ne 0){throw "Parity patch failed: $name"}
+          }
+          "PARITY_PROJECT=$dest" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
+          $gpu=Get-CimInstance Win32_VideoController | Where-Object {$_.Name -match 'NVIDIA.*RTX'}
+          if(-not $gpu){throw 'RTX device not present'}
+          $gpu|Format-List Name,DriverVersion
+      - name: Regression and API correctness
+        shell: powershell
+        run: |
+          Set-Location $env:PARITY_PROJECT
+          node tests/verify_round14_loop_and_style.mjs
+          if($LASTEXITCODE -ne 0){throw 'Round14 parity regression failed'}
+          node tests/verify_direct_feature_gpu_draw.mjs
+          if($LASTEXITCODE -ne 0){throw 'GPU draw regression failed'}
+          node tests/round14_gpu_compare/oneclick.mjs --self-test
+          if($LASTEXITCODE -ne 0){throw 'Runner self-test failed'}
+      - name: Isolated OL vs corrected-M5 Fill/Stroke six-scene RTX
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $dest=Join-Path $env:GITHUB_WORKSPACE 'parity-isolated'
+          Copy-Item $env:PARITY_PROJECT $dest -Recurse -Force
+          node m5-gpu/apply_parity_isolation.mjs $dest
+          if($LASTEXITCODE -ne 0){throw 'Scene isolation patch failed'}
+          Push-Location $dest
+          node tests/round14_gpu_compare/oneclick.mjs --rounds=1 --headless
+          $rc=$LASTEXITCODE
+          Pop-Location
+          if($rc -ne 0){throw 'Isolated GPU run failed'}
+      - name: Mixed-4L no-dither A/B on RTX
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $dest=Join-Path $env:GITHUB_WORKSPACE 'parity-dither'
+          Copy-Item $env:PARITY_PROJECT $dest -Recurse -Force
+          node m5-gpu/apply_dither_off_variant.mjs $dest
+          if($LASTEXITCODE -ne 0){throw 'DITHER override failed'}
+          Push-Location $dest
+          node tests/round14_gpu_compare/oneclick.mjs --rounds=1 --headless
+          $rc=$LASTEXITCODE
+          Pop-Location
+          if($rc -ne 0){throw 'No-dither GPU run failed'}
+      - name: Collect pixel comparisons and render artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: round16-parity-isolation-dither-rtx
+          retention-days: 30
+          if-no-files-found: warn
+          path: |
+            parity-isolated/RESULTS/**
+            parity-dither/RESULTS/**
