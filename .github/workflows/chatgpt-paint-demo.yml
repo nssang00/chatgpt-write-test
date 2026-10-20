@@ -5,6 +5,7 @@ on:
     branches: [chatgpt-paint-demo]
     paths:
       - paint-demo/commands/house.json
+      - paint-demo/scripts/draw_in_paint.py
       - .github/workflows/chatgpt-paint-demo.yml
   workflow_dispatch:
 
