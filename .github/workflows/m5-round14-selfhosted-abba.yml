@@ -43,6 +43,7 @@ jobs:
           $dest = Join-Path $env:GITHUB_WORKSPACE 'm5-round14-run'
           New-Item -ItemType Directory -Path $dest -Force | Out-Null
           Copy-Item -Path (Join-Path $source '*') -Destination $dest -Recurse -Force -ErrorAction Stop
+          if (Test-Path (Join-Path $dest 'RESULTS')) { Remove-Item (Join-Path $dest 'RESULTS') -Recurse -Force }
           # Apply source-equivalent FIX01 only to the runner workspace copy.
           $olPage = Join-Path $dest 'tests\round14_gpu_compare\ol_stock.html'
           if ((Get-Content $olPage -Raw) -match 'function waitForPresentedOlFrame') {
@@ -167,6 +168,23 @@ jobs:
           Set-Location $variant
           node tests/round14_gpu_compare/oneclick.mjs --rounds=1 --headless
           if ($LASTEXITCODE -ne 0) { throw 'combined isolated RTX A/B failed' }
+      - name: RTX context attribute causality - antialias-only vs preserve-only
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          foreach ($variantName in @('preserve-only','msaa-only')) {
+            $variant = Join-Path $env:GITHUB_WORKSPACE ("m5-round14-" + $variantName)
+            New-Item -ItemType Directory -Path $variant -Force | Out-Null
+            Copy-Item -Path (Join-Path $env:M5_PROJECT '*') -Destination $variant -Recurse -Force
+            node (Join-Path $env:GITHUB_WORKSPACE 'm5-gpu\apply_webgl_context_flags_variant.mjs') $variant $variantName
+            if ($LASTEXITCODE -ne 0) { throw "Context $variantName setup failed" }
+            if (Test-Path (Join-Path $variant 'RESULTS')) { Remove-Item (Join-Path $variant 'RESULTS') -Recurse -Force }
+            Push-Location $variant
+            node tests/round14_gpu_compare/oneclick.mjs --rounds=1 --headless
+            $code = $LASTEXITCODE
+            Pop-Location
+            if ($code -ne 0) { throw "Context $variantName RTX test failed" }
+          }
       - name: Upload raw results, browser logs and PNG pixel differences
         if: always()
         uses: actions/upload-artifact@v4
@@ -180,5 +198,7 @@ jobs:
             m5-round14-combined/RESULTS/**
             m5-round14-diag-no-msaa/RESULTS/**
             m5-round14-diag-combined/RESULTS/**
+            m5-round14-preserve-only/RESULTS/**
+            m5-round14-msaa-only/RESULTS/**
           if-no-files-found: warn
           retention-days: 30
