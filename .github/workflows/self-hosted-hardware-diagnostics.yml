@@ -1,0 +1,32 @@
+name: Self-hosted OS GPU CUDA diagnostics
+on:
+  push:
+    paths:
+      - .github/workflows/self-hosted-hardware-diagnostics.yml
+  workflow_dispatch:
+jobs:
+  diagnostics:
+    runs-on: self-hosted
+    timeout-minutes: 5
+    steps:
+      - name: OS and architecture
+        shell: bash
+        run: |
+          uname -a
+          if test -f /etc/os-release; then cat /etc/os-release; fi
+          echo "RUNNER_OS=$RUNNER_OS"
+          echo "RUNNER_ARCH=$RUNNER_ARCH"
+      - name: GPU and NVIDIA driver
+        shell: bash
+        run: |
+          if command -v nvidia-smi >/dev/null 2>&1; then
+            nvidia-smi
+            nvidia-smi --query-gpu=name,driver_version,memory.total --format=csv,noheader
+          else
+            echo "nvidia-smi not installed or unavailable"
+          fi
+      - name: CUDA toolkit
+        shell: bash
+        run: |
+          if command -v nvcc >/dev/null 2>&1; then nvcc --version; else echo "nvcc not installed or not on PATH"; fi
+          if test -f /usr/local/cuda/version.json; then cat /usr/local/cuda/version.json; fi
