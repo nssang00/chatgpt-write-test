@@ -9,24 +9,21 @@ jobs:
     runs-on: self-hosted
     timeout-minutes: 5
     steps:
-      - name: OS and architecture
-        shell: bash
+      - name: OS GPU CUDA diagnostics on Windows
+        shell: powershell
         run: |
-          uname -a
-          if test -f /etc/os-release; then cat /etc/os-release; fi
-          echo "RUNNER_OS=$RUNNER_OS"
-          echo "RUNNER_ARCH=$RUNNER_ARCH"
-      - name: GPU and NVIDIA driver
-        shell: bash
-        run: |
-          if command -v nvidia-smi >/dev/null 2>&1; then
-            nvidia-smi
-            nvidia-smi --query-gpu=name,driver_version,memory.total --format=csv,noheader
-          else
-            echo "nvidia-smi not installed or unavailable"
-          fi
-      - name: CUDA toolkit
-        shell: bash
-        run: |
-          if command -v nvcc >/dev/null 2>&1; then nvcc --version; else echo "nvcc not installed or not on PATH"; fi
-          if test -f /usr/local/cuda/version.json; then cat /usr/local/cuda/version.json; fi
+          Write-Output "=== OS ==="
+          Get-CimInstance Win32_OperatingSystem | Select-Object Caption, Version, BuildNumber | Format-List
+          Write-Output "=== GPU ==="
+          Get-CimInstance Win32_VideoController | Select-Object Name, DriverVersion, AdapterRAM | Format-List
+          Write-Output "=== NVIDIA SMI ==="
+          $smi = Get-Command nvidia-smi.exe -ErrorAction SilentlyContinue
+          if (-not $smi) {
+            $p = "$env:ProgramFiles\NVIDIA Corporation\NVSMI\nvidia-smi.exe"
+            if (Test-Path $p) { $smi = $p }
+          }
+          if ($smi) { & $smi } else { Write-Output "nvidia-smi unavailable" }
+          Write-Output "=== CUDA Toolkit ==="
+          $nvcc = Get-Command nvcc.exe -ErrorAction SilentlyContinue
+          if ($nvcc) { & $nvcc.Source --version } else { Write-Output "nvcc unavailable in PATH" }
+          Get-ChildItem Env:CUDA* -ErrorAction SilentlyContinue | Format-Table -AutoSize
