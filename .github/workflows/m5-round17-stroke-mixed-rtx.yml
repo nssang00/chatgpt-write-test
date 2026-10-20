@@ -1,0 +1,82 @@
+name: Round17 Stroke Angle and Mixed Order RTX
+on:
+  push:
+    paths:
+      - .github/workflows/m5-round17-stroke-mixed-rtx.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  stroke-mixed:
+    runs-on: self-hosted
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Prepare independent baseline and experimental copies
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $source='C:\Users\user\Downloads\M5_GPU_COMPARE_UNPACKED\M5_Round14_OL_GPU_Compare'
+          if(-not (Test-Path (Join-Path $source 'tests\round14_gpu_compare\oneclick.mjs'))){throw 'Original Round14 project not found'}
+          $gpu=Get-CimInstance Win32_VideoController|Where-Object{$_.Name -match 'NVIDIA.*RTX'}
+          if(-not $gpu){throw 'NVIDIA RTX not found'}
+          $gpu | Select-Object Name,DriverVersion | Format-Table
+          foreach($kind in @('baseline','angle','painter','angle-painter')){
+            $dest=Join-Path $env:GITHUB_WORKSPACE ('r17-'+$kind)
+            New-Item -ItemType Directory -Path $dest -Force|Out-Null
+            Copy-Item (Join-Path $source '*') $dest -Recurse -Force
+            if(Test-Path (Join-Path $dest 'RESULTS')){Remove-Item (Join-Path $dest 'RESULTS') -Recurse -Force}
+            foreach($patch in @('round14_apply_capture_fix.mjs','apply_backend_msaa_optin.mjs','apply_ol_stroke_defaults_variant.mjs','apply_no_line_discard_variant.mjs')){
+              node (Join-Path $env:GITHUB_WORKSPACE ('m5-gpu\'+$patch)) $dest
+              if($LASTEXITCODE -ne 0){throw "Failed patch $patch on $kind"}
+            }
+            if($kind -match 'angle'){
+              node m5-gpu/apply_round17_ol_angle_variant.mjs $dest
+              if($LASTEXITCODE -ne 0){throw 'OL exact angle shader patch failed'}
+            }
+            if($kind -match 'painter'){
+              node m5-gpu/apply_round17_painter_variant.mjs $dest
+              if($LASTEXITCODE -ne 0){throw 'Painter order patch failed'}
+            }
+          }
+      - name: Static regression on base and GPU angle shader
+        shell: powershell
+        run: |
+          foreach($kind in @('baseline','angle')){
+            $dest=Join-Path $env:GITHUB_WORKSPACE ('r17-'+$kind)
+            Push-Location $dest
+            node tests/verify_round14_loop_and_style.mjs
+            if($LASTEXITCODE -ne 0){throw "$kind encoding parity regression"}
+            node tests/verify_direct_feature_gpu_draw.mjs
+            if($LASTEXITCODE -ne 0){throw "$kind FakeGL draw regression"}
+            node tests/round14_gpu_compare/oneclick.mjs --self-test
+            if($LASTEXITCODE -ne 0){throw "$kind comparator regression"}
+            Pop-Location
+          }
+      - name: Real RTX side-by-side A/B variants
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          foreach($kind in @('baseline','angle','painter','angle-painter')){
+            $dest=Join-Path $env:GITHUB_WORKSPACE ('r17-'+$kind)
+            Push-Location $dest
+            node tests/round14_gpu_compare/oneclick.mjs --rounds=1 --headless
+            $code=$LASTEXITCODE
+            Pop-Location
+            if($code -ne 0){throw "RTX $kind capture failed; see artifact"}
+          }
+      - name: Upload all raw rgba comparisons
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: r17-stroke-mixed-rtx
+          if-no-files-found: warn
+          retention-days: 30
+          path: |
+            r17-baseline/RESULTS/**
+            r17-angle/RESULTS/**
+            r17-painter/RESULTS/**
+            r17-angle-painter/RESULTS/**
