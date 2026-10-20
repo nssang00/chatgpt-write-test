@@ -46,6 +46,11 @@ jobs:
           }
           Get-FileHash RecoveryLabBeta/publish/RecoveryLab.exe -Algorithm SHA256
           Get-FileHash RecoveryLabBeta/publish/RecoveryNative.dll -Algorithm SHA256
+      - name: Native DLL end-to-end scan and recovery smoke test
+        shell: pwsh
+        run: |
+          dotnet run --project validation/RecoverySmoke/RecoverySmoke.csproj -c Release -- RecoveryLabBeta/tests/synthetic-ntfs.img RecoveryLabBeta/publish/RecoveryNative.dll
+          if ($LASTEXITCODE -ne 0) { throw 'Windows native DLL smoke test failed' }
       - name: Upload Windows build artifact
         if: success()
         uses: actions/upload-artifact@v4
