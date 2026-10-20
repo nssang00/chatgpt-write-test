@@ -79,6 +79,20 @@ jobs:
           Set-Location $env:M5_PROJECT
           node tests/round14_gpu_compare/oneclick.mjs --rounds=5 --headless
           if ($LASTEXITCODE -ne 0) { throw 'Full RTX A/B did not complete. Inspect RESULTS artifact.' }
+      - name: RTX geometry vs style isolation (six diagnostic scenes)
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $diag = Join-Path $env:GITHUB_WORKSPACE 'm5-round14-diag'
+          New-Item -ItemType Directory -Path $diag -Force | Out-Null
+          Copy-Item -Path (Join-Path $env:M5_PROJECT '*') -Destination $diag -Recurse -Force
+          node m5-gpu/apply_parity_isolation.mjs $diag
+          if ($LASTEXITCODE -ne 0) { throw 'Could not isolate renderer/style paths' }
+          Set-Location $diag
+          node tests/round14_gpu_compare/oneclick.mjs --self-test
+          if ($LASTEXITCODE -ne 0) { throw 'Diagnostic self test failed' }
+          node tests/round14_gpu_compare/oneclick.mjs --rounds=1 --headless
+          if ($LASTEXITCODE -ne 0) { throw 'Diagnostic GPU captures incomplete' }
       - name: Upload raw results, browser logs and PNG pixel differences
         if: always()
         uses: actions/upload-artifact@v4
@@ -86,5 +100,6 @@ jobs:
           name: m5-round14-ol-rtx-abba
           path: |
             m5-round14-run/RESULTS/**
+            m5-round14-diag/RESULTS/**
           if-no-files-found: warn
           retention-days: 30
