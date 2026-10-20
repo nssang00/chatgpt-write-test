@@ -1,6 +1,13 @@
 name: Browser plugin E2E
 
 on:
+  push:
+    branches: [nativeweb/public-ci]
+    paths:
+      - '.github/workflows/browser-plugin-e2e.yml'
+      - 'src/**'
+      - 'include/**'
+      - 'tests/integration/**'
   workflow_dispatch:
   pull_request:
     paths:
