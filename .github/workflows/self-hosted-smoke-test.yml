@@ -9,11 +9,11 @@ jobs:
     runs-on: self-hosted
     timeout-minutes: 3
     steps:
-      - name: Basic runner test
-        shell: bash
+      - name: Basic Windows runner test
+        shell: powershell
         run: |
-          echo "SELF_HOSTED_RUNNER_OK"
-          echo "Runner name: $RUNNER_NAME"
-          echo "Runner OS: $RUNNER_OS"
-          uname -s
-          echo "Smoke test completed"
+          Write-Output "SELF_HOSTED_RUNNER_OK"
+          Write-Output "Runner name: $env:RUNNER_NAME"
+          Write-Output "Runner OS: $env:RUNNER_OS"
+          [System.Environment]::OSVersion.VersionString
+          Write-Output "Smoke test completed"
