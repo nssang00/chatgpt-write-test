@@ -1,0 +1,46 @@
+name: ChatGPT - draw a house in Windows Paint
+
+on:
+  push:
+    branches: [chatgpt-paint-demo]
+    paths:
+      - paint-demo/commands/house.json
+      - .github/workflows/chatgpt-paint-demo.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: chatgpt-paint-demo-single-pc
+  cancel-in-progress: false
+
+jobs:
+  paint:
+    runs-on: [self-hosted, windows]
+    timeout-minutes: 8
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install mouse and screenshot tool
+        shell: powershell
+        run: python -m pip install --disable-pip-version-check pyautogui==0.9.54 Pillow
+
+      - name: Draw in a new Paint window
+        shell: powershell
+        run: python paint-demo/scripts/draw_in_paint.py
+
+      - name: Upload Paint screenshot and status
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: paint-demo-result
+          path: paint-demo/out/
+          if-no-files-found: warn
+          retention-days: 2
