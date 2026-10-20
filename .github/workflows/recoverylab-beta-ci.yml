@@ -1,0 +1,56 @@
+name: RecoveryLab Beta 0.1 Windows verification
+on:
+  push:
+    branches:
+      - ci/recoverylab-beta-0-1-20261020
+    paths:
+      - validation/RecoveryLabBeta_source.tar.xz
+      - .github/workflows/recoverylab-beta-ci.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows-build-test:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: .NET 8 SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Extract RecoveryLab Beta source
+        shell: pwsh
+        run: |
+          tar -xJf validation/RecoveryLabBeta_source.tar.xz
+          if (!(Test-Path 'RecoveryLabBeta/scripts/build-windows.ps1')) { throw 'Project extraction failed' }
+      - name: Compile native DLL and WPF; run native CTest
+        shell: pwsh
+        run: |
+          pwsh -NoProfile -ExecutionPolicy Bypass -File .\RecoveryLabBeta\scripts\build-windows.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'Windows build or tests failed' }
+      - name: Validate produced files
+        shell: pwsh
+        run: |
+          $paths = @(
+            'RecoveryLabBeta/publish/RecoveryLab.exe',
+            'RecoveryLabBeta/publish/RecoveryNative.dll',
+            'RecoveryLabBeta/build/native/Release/ntfs_tests.exe'
+          )
+          foreach ($p in $paths) {
+            if (!(Test-Path $p)) { throw "Missing expected build output: $p" }
+            Write-Host "$p exists"
+          }
+          Get-FileHash RecoveryLabBeta/publish/RecoveryLab.exe -Algorithm SHA256
+          Get-FileHash RecoveryLabBeta/publish/RecoveryNative.dll -Algorithm SHA256
+      - name: Upload Windows build artifact
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: RecoveryLabBeta-win-x64
+          path: RecoveryLabBeta/publish/
+          if-no-files-found: error
+          retention-days: 7
