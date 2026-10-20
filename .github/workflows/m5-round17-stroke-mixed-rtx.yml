@@ -80,3 +80,10 @@ jobs:
             r17-angle/RESULTS/**
             r17-painter/RESULTS/**
             r17-angle-painter/RESULTS/**
+      - name: Strict acceptance - require zero RGBA8 pixels in all three scenes
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $roots=@('r17-baseline','r17-angle','r17-painter','r17-angle-painter') | ForEach-Object { Join-Path $env:GITHUB_WORKSPACE $_ }
+          node m5-gpu/strict_round17_pixel_gate.mjs @roots
+          if($LASTEXITCODE -ne 0){throw 'No parity-exact variant on RTX; workflow fails closed'}
