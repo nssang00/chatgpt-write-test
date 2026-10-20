@@ -105,6 +105,36 @@ jobs:
           Set-Location $variant
           node tests/round14_gpu_compare/oneclick.mjs --rounds=1 --headless
           if ($LASTEXITCODE -ne 0) { throw 'No-MSAA GPU campaign failed' }
+      - name: RTX line-alpha discard isolated versus stock OL
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $variant = Join-Path $env:GITHUB_WORKSPACE 'm5-round14-line-alpha'
+          New-Item -ItemType Directory -Path $variant -Force | Out-Null
+          Copy-Item -Path (Join-Path $env:M5_PROJECT '*') -Destination $variant -Recurse -Force
+          node m5-gpu/apply_no_line_discard_variant.mjs $variant
+          if ($LASTEXITCODE -ne 0) { throw 'Line alpha variant injection failed' }
+          Set-Location $variant
+          node tests/verify_direct_feature_gpu_draw.mjs
+          if ($LASTEXITCODE -ne 0) { throw 'Line alpha static regression failed' }
+          node tests/round14_gpu_compare/oneclick.mjs --rounds=1 --headless
+          if ($LASTEXITCODE -ne 0) { throw 'Line alpha RTX A/B failed' }
+      - name: RTX combined no-MSAA and OL-like alpha edges
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $variant = Join-Path $env:GITHUB_WORKSPACE 'm5-round14-combined'
+          New-Item -ItemType Directory -Path $variant -Force | Out-Null
+          Copy-Item -Path (Join-Path $env:M5_PROJECT '*') -Destination $variant -Recurse -Force
+          node m5-gpu/apply_no_msaa_variant.mjs $variant
+          if ($LASTEXITCODE -ne 0) { throw 'No-MSAA variant injection failed' }
+          node m5-gpu/apply_no_line_discard_variant.mjs $variant
+          if ($LASTEXITCODE -ne 0) { throw 'Line alpha variant injection failed' }
+          Set-Location $variant
+          node tests/verify_direct_feature_gpu_draw.mjs
+          if ($LASTEXITCODE -ne 0) { throw 'Combined regression failed' }
+          node tests/round14_gpu_compare/oneclick.mjs --rounds=1 --headless
+          if ($LASTEXITCODE -ne 0) { throw 'Combined RTX A/B failed' }
       - name: Upload raw results, browser logs and PNG pixel differences
         if: always()
         uses: actions/upload-artifact@v4
@@ -114,5 +144,7 @@ jobs:
             m5-round14-run/RESULTS/**
             m5-round14-diag/RESULTS/**
             m5-round14-no-msaa/RESULTS/**
+            m5-round14-line-alpha/RESULTS/**
+            m5-round14-combined/RESULTS/**
           if-no-files-found: warn
           retention-days: 30
