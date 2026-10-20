@@ -1,0 +1,19 @@
+name: Self-hosted runner smoke test
+on:
+  push:
+    paths:
+      - .github/workflows/self-hosted-smoke-test.yml
+  workflow_dispatch:
+jobs:
+  smoke:
+    runs-on: self-hosted
+    timeout-minutes: 3
+    steps:
+      - name: Basic runner test
+        shell: bash
+        run: |
+          echo "SELF_HOSTED_RUNNER_OK"
+          echo "Runner name: $RUNNER_NAME"
+          echo "Runner OS: $RUNNER_OS"
+          uname -s
+          echo "Smoke test completed"
