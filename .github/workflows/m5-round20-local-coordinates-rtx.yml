@@ -1,0 +1,82 @@
+name: Round20 Tile Local Coordinate Precision RTX
+on:
+  push:
+    paths:
+      - .github/workflows/m5-round20-local-coordinates-rtx.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  local-coordinate:
+    runs-on: self-hosted
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Stage exact reference and tile-local variants
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $source='C:\Users\user\Downloads\M5_GPU_COMPARE_UNPACKED\M5_Round14_OL_GPU_Compare'
+          if(-not (Test-Path (Join-Path $source 'tests\round14_gpu_compare\oneclick.mjs'))){throw 'Round14 source missing'}
+          $gpu=Get-CimInstance Win32_VideoController|Where-Object{$_.Name -match 'NVIDIA.*RTX'}
+          if(-not $gpu){throw 'Hardware NVIDIA RTX missing'}
+          $gpu|Format-List Name,DriverVersion
+          foreach($variant in @('baseline','local')){
+            $dest=Join-Path $env:GITHUB_WORKSPACE ('r20-'+$variant)
+            New-Item -ItemType Directory -Path $dest -Force|Out-Null
+            Copy-Item (Join-Path $source '*') $dest -Recurse -Force
+            if(Test-Path (Join-Path $dest 'RESULTS')){Remove-Item (Join-Path $dest 'RESULTS') -Recurse -Force}
+            $patches=@('round14_apply_capture_fix.mjs','apply_backend_msaa_optin.mjs','apply_ol_stroke_defaults_variant.mjs','apply_no_line_discard_variant.mjs','apply_round18_tile_scissor.mjs','apply_round18_layer_fbo.mjs','apply_round18_polygon_stroke_noclip.mjs','apply_round18_flat_stroke_direct.mjs')
+            if($variant -eq 'local'){$patches+=('apply_round20_tile_local_stroke.mjs')}
+            foreach($patch in $patches){
+              $file=Join-Path $env:GITHUB_WORKSPACE ('m5-gpu\'+$patch)
+              node --check $file
+              if($LASTEXITCODE -ne 0){throw "Syntax failure: $patch"}
+              node $file $dest
+              if($LASTEXITCODE -ne 0){throw "Patch failure: $patch"}
+            }
+            Push-Location $dest
+            node tests/verify_round14_loop_and_style.mjs
+            if($LASTEXITCODE -ne 0){throw "Encoding regression: $variant"}
+            node tests/verify_direct_feature_gpu_draw.mjs
+            if($LASTEXITCODE -ne 0){throw "Draw regression: $variant"}
+            node tests/round14_gpu_compare/oneclick.mjs --self-test
+            if($LASTEXITCODE -ne 0){throw "Benchmark regression: $variant"}
+            Pop-Location
+          }
+      - name: RTX two-cold ABBA each in independent Chrome/GPU contexts
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          foreach($variant in @('baseline','local')){
+            Push-Location (Join-Path $env:GITHUB_WORKSPACE ('r20-'+$variant))
+            node tests/round14_gpu_compare/oneclick.mjs --rounds=2 --headless
+            $rc=$LASTEXITCODE
+            Pop-Location
+            if($rc -ne 0){throw "RTX $variant GPU capture failed"}
+          }
+      - name: Preserve raw screenshots and cold timing samples
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: round20-tile-local-coordinate-rtx
+          retention-days: 30
+          if-no-files-found: warn
+          path: |
+            r20-baseline/RESULTS/**
+            r20-local/RESULTS/**
+      - name: Strict RGBA8 equivalence gate
+        shell: powershell
+        run: |
+          foreach($variant in @('baseline','local')){
+            $files=Get-ChildItem (Join-Path $env:GITHUB_WORKSPACE ('r20-'+$variant+'\RESULTS')) -Filter manifest.json -Recurse|Sort-Object LastWriteTime -Descending
+            $m=Get-Content $files[0].FullName -Raw|ConvertFrom-Json
+            Write-Host "===== $variant ====="
+            $m.rows|Format-Table scene,pixelDiffRuns,pixelExact,olMedianMs,m5MedianMs
+            if($variant -eq 'local'){
+              if(-not $m.complete -or -not $m.withinRendererStable -or -not $m.pixelParityAll){throw 'Round20 local-coordinate exact-pixel requirement failed'}
+            }
+          }
