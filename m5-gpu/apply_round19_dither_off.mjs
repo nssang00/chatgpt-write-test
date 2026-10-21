@@ -1,0 +1,10 @@
+import {readFile,writeFile} from 'node:fs/promises';
+import {join} from 'node:path';
+const root=process.argv[2]||process.cwd();
+const path=join(root,'our-renderer/backend/WebGL1Backend.js');
+let s=await readFile(path,'utf8');
+const anchor='gl.enable(gl.BLEND); gl.blendFunc(gl.ONE,gl.ONE_MINUS_SRC_ALPHA);';
+if(s.split(anchor).length!==2)throw Error('Expected M5 WebGL1 beginFrame blend state');
+s=s.replace(anchor,'gl.disable(gl.DITHER); '+anchor);
+await writeFile(path,s);
+console.log('R19_M5_DITHER_OFF_VARIANT');
