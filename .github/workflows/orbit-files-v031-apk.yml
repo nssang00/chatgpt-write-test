@@ -5,6 +5,7 @@ on:
     paths:
       - 'android/orbit-files-v031/**'
       - '.github/workflows/orbit-files-v031-apk.yml'
+      - '.github/scripts/orbit-emulator-smoke.sh'
   pull_request:
     paths:
       - 'android/orbit-files-v031/**'
