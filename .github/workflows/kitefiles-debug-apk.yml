@@ -138,7 +138,7 @@ jobs:
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs "$APK"
           "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK" | tee .build/apk-badging.txt
           grep -q "package: name='com.kitefiles.android'" .build/apk-badging.txt
-          grep -q "versionName='2.2.0'" .build/apk-badging.txt
+          grep -q "versionName='2.3.0'" .build/apk-badging.txt
           grep -q "targetSdkVersion:'35'" .build/apk-badging.txt
           "$ANDROID_HOME/build-tools/35.0.0/aapt" dump permissions "$APK" | tee .build/apk-permissions.txt
           grep -q 'android.permission.MANAGE_EXTERNAL_STORAGE' .build/apk-permissions.txt
