@@ -33,7 +33,14 @@ jobs:
           tar -xJf kitefiles.tar.xz
           tar -xJf kitefiles-es-next-patch.tar.xz
           echo "a454eab5265fa7ec2467963f43674ef156caf84844907f8f288f89a0ce11eea5  kitefiles-navigation-v2.1.patch.gz" | sha256sum --check
-          gzip -dc kitefiles-navigation-v2.1.patch.gz | patch --batch -p1
+          # Existing CI smoke script changed upstream. Apply app + Gradle + README hunks,
+          # then install the new smoke scenario as a separate source file.
+          gzip -dc kitefiles-navigation-v2.1.patch.gz | awk '
+            /^--- a\/tests\/android-ui-smoke.sh$/ {skip=1}
+            skip && /^--- a\/README.md$/ {skip=0}
+            !skip {print}
+          ' | patch --batch -p1
+          cp tests/android-ui-drawer.sh tests/android-ui-smoke.sh
           grep -q "versionName '2.1.0'" app/build.gradle
           grep -q 'MANAGE_EXTERNAL_STORAGE' app/src/main/AndroidManifest.xml
           grep -q 'jcifs-ng:2.1.10' app/build.gradle
