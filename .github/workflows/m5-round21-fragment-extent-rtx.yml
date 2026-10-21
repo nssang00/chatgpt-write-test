@@ -1,0 +1,83 @@
+name: Round21 OL Fragment Tile Extent RTX
+on:
+  push:
+    paths:
+      - .github/workflows/m5-round21-fragment-extent-rtx.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  fragment-extent:
+    runs-on: self-hosted
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Stage independent Round18 reference and OL fragment extent variant
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $source='C:\Users\user\Downloads\M5_GPU_COMPARE_UNPACKED\M5_Round14_OL_GPU_Compare'
+          if(-not (Test-Path (Join-Path $source 'tests\round14_gpu_compare\oneclick.mjs'))){throw 'Round14 source unavailable'}
+          $gpu=Get-CimInstance Win32_VideoController|Where-Object{$_.Name -match 'NVIDIA.*RTX'}
+          if(-not $gpu){throw 'Physical NVIDIA RTX missing'}
+          $gpu|Format-Table Name,DriverVersion
+          foreach($variant in @('baseline','fragment')){
+            $root=Join-Path $env:GITHUB_WORKSPACE ('r21-'+$variant)
+            New-Item -ItemType Directory -Path $root -Force|Out-Null
+            Copy-Item (Join-Path $source '*') $root -Recurse -Force
+            if(Test-Path (Join-Path $root 'RESULTS')){Remove-Item (Join-Path $root 'RESULTS') -Recurse -Force}
+            $patches=@('round14_apply_capture_fix.mjs','apply_backend_msaa_optin.mjs','apply_ol_stroke_defaults_variant.mjs','apply_no_line_discard_variant.mjs','apply_round18_tile_scissor.mjs','apply_round18_layer_fbo.mjs','apply_round18_polygon_stroke_noclip.mjs','apply_round18_flat_stroke_direct.mjs')
+            if($variant -eq 'fragment'){$patches+=('apply_round21_fragment_extent_clip.mjs')}
+            foreach($p in $patches){
+              $file=Join-Path $env:GITHUB_WORKSPACE ('m5-gpu\'+$p)
+              node --check $file
+              if($LASTEXITCODE -ne 0){throw "Patcher syntax failed $p"}
+              node $file $root
+              if($LASTEXITCODE -ne 0){throw "Patcher failed $p"}
+            }
+            Push-Location $root
+            node tests/verify_round14_loop_and_style.mjs
+            if($LASTEXITCODE -ne 0){throw "CPU 68 geometry parity failed $variant"}
+            node tests/verify_direct_feature_gpu_draw.mjs
+            if($LASTEXITCODE -ne 0){throw "FakeGL draw regression failed $variant"}
+            node tests/round14_gpu_compare/oneclick.mjs --self-test
+            if($LASTEXITCODE -ne 0){throw "Selftest failed $variant"}
+            Pop-Location
+          }
+      - name: Run independent RTX 2 cold ABBA comparisons
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          foreach($variant in @('baseline','fragment')){
+            Push-Location (Join-Path $env:GITHUB_WORKSPACE ('r21-'+$variant))
+            node tests/round14_gpu_compare/oneclick.mjs --rounds=2 --headless
+            $code=$LASTEXITCODE
+            Pop-Location
+            if($code -ne 0){throw "RTX run incomplete $variant"}
+          }
+      - name: Preserve raw OL/M5 images and perf logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: round21-fragment-tile-extent-rtx
+          retention-days: 30
+          if-no-files-found: warn
+          path: |
+            r21-baseline/RESULTS/**
+            r21-fragment/RESULTS/**
+      - name: Strict RGBA8 pixel gate
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          foreach($variant in @('baseline','fragment')){
+            $dir=Join-Path $env:GITHUB_WORKSPACE ('r21-'+$variant+'\RESULTS')
+            $f=Get-ChildItem $dir -Recurse -Filter manifest.json|Sort-Object LastWriteTime -Descending|Select-Object -First 1
+            if(-not $f){throw "No result $variant"}
+            $m=Get-Content $f.FullName -Raw|ConvertFrom-Json
+            Write-Host "=== $variant ==="
+            $m.rows|Format-Table scene,pixelDiffRuns,pixelExact,olMedianMs,m5MedianMs,m5ChangePercent
+            if($variant -eq 'fragment' -and (-not $m.complete -or -not $m.pixelParityAll -or -not $m.withinRendererStable)){throw 'Fragment tile extent exact RGBA8 parity FAIL'}
+          }
