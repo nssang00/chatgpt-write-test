@@ -25,7 +25,7 @@ PyTorch CUDA 12.8 is selected to support RTX 50 series.
 Allow substantial RAM, free disk space (~30 GB or more recommended), and disk caching time.
 
 Model weights persist in the runner user's HF_HOME cache.
-llama.cpp prebuilt Windows CUDA 12.8 binaries are pulled from pinned tag b11361 unless
+llama.cpp prebuilt Windows CUDA 13.4 binaries are pulled from pinned tag b11361 unless
 LLAMA_SERVER_EXE specifies a local trusted llama-server.exe executable.
 JoyCaption Q6_K weights come from mradermacher's GGUF repo; its F16 vision mmproj comes
 from concedo/llama-joycaption-beta-one-hf-llava-mmproj-gguf. Both are necessary.
