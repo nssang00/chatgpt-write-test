@@ -1,0 +1,21 @@
+import {readFile,writeFile} from 'node:fs/promises';
+import {join} from 'node:path';
+const root=process.argv[2]||process.cwd(),mode=process.argv[3];
+if(!['right','all'].includes(mode))throw Error('pad mode must be right or all');
+const file=join(root,'our-renderer/integration/DirectFeatureWebGLPipeline.js');
+let s=await readFile(file,'utf8');
+const anchor='      g.scissor(left,bottom,Math.max(0,right-left),Math.max(0,top-bottom));';
+if(!s.includes(anchor))throw Error('Tile-scissor anchor missing');
+const replacement=`      // EXPERIMENT only: one pixel inclusive stroke seam to test OL boundary coverage.
+      const pad=this.tileScissorPaddingMode===${JSON.stringify(mode)}?1:0;
+      const lx=${JSON.stringify(mode)}==='all'?Math.max(0,left-pad):left;
+      const ly=${JSON.stringify(mode)}==='all'?Math.max(0,bottom-pad):bottom;
+      const rx=Math.min(width,right+pad),ty=Math.min(height,top+pad);
+      g.scissor(lx,ly,Math.max(0,rx-lx),Math.max(0,ty-ly));`;
+await writeFile(file,s.replace(anchor,replacement));
+const page=join(root,'tests/round14_gpu_compare/round14_m5.html');
+s=await readFile(page,'utf8');
+const line='binding.bridge.pipeline.tileScissorEnabled=true;';
+if(!s.includes(line))throw Error('Benchmark tileScissorEnabled missing');
+await writeFile(page,s.replace(line,line+'binding.bridge.pipeline.tileScissorPaddingMode='+JSON.stringify(mode)+';'));
+console.log('ROUND18_SCISSOR_PAD_MODE_'+mode);
