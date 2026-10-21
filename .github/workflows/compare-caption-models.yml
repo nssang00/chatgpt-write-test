@@ -39,10 +39,6 @@ on:
 permissions:
   contents: read
 
-concurrency:
-  group: caption-models-self-hosted
-  cancel-in-progress: false
-
 jobs:
   lint:
     name: Validate Python script and prompts
@@ -94,6 +90,9 @@ jobs:
 
   compare:
     name: Run three caption models (manual only)
+    concurrency:
+      group: caption-models-gpu-inference
+      cancel-in-progress: false
     if: github.event_name == 'workflow_dispatch'
     needs: preflight
     runs-on: [self-hosted, Windows, X64, m5-gpu]
