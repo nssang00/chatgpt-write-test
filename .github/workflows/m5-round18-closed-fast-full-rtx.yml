@@ -28,7 +28,7 @@ jobs:
           New-Item -ItemType Directory -Path $root -Force | Out-Null
           Copy-Item (Join-Path $source '*') $root -Recurse -Force
           if(Test-Path (Join-Path $root 'RESULTS')){Remove-Item (Join-Path $root 'RESULTS') -Recurse -Force}
-          foreach($patch in @('round14_apply_capture_fix.mjs','apply_backend_msaa_optin.mjs','apply_ol_stroke_defaults_variant.mjs','apply_no_line_discard_variant.mjs','apply_round18_tile_scissor.mjs','apply_round18_layer_fbo.mjs','apply_round18_polygon_stroke_noclip.mjs','apply_round18_flat_stroke_direct.mjs')){
+          foreach($patch in @('round14_apply_capture_fix.mjs','apply_backend_msaa_optin.mjs','apply_ol_stroke_defaults_variant.mjs','apply_no_line_discard_variant.mjs','apply_round18_tile_scissor.mjs','apply_round18_layer_fbo.mjs','apply_round18_polygon_stroke_noclip.mjs','apply_round18_flat_stroke_direct.mjs','apply_round20_tile_local_stroke.mjs')){
             $file=Join-Path $env:GITHUB_WORKSPACE ('m5-gpu\'+$patch)
             node --check $file
             if($LASTEXITCODE -ne 0){throw "Syntax: $patch"}
