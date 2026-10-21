@@ -1,0 +1,10 @@
+import {readFile,writeFile} from 'node:fs/promises';
+import {join} from 'node:path';
+const root=process.argv[2]||process.cwd();
+const file=join(root,'our-renderer/integration/DirectM5SceneBinding.js');
+let s=await readFile(file,'utf8');
+const anchor='this.vectorTileOptions.olLayerFboComposition===true&&this.layers.size>1';
+if(s.split(anchor).length!==2)throw Error('Round18 layer FBO activation anchor not found');
+s=s.replace(anchor,'this.vectorTileOptions.olLayerFboComposition===true&&this.layers.size>=1');
+await writeFile(file,s);
+console.log('R19_OL_PER_LAYER_FBO_FOR_ALL_LAYERS_ENABLED');
