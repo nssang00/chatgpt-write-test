@@ -1,0 +1,81 @@
+name: Round18 Closed Polygon Direct Stroke Full RTX
+on:
+  push:
+    paths:
+      - .github/workflows/m5-round18-closed-fast-full-rtx.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  round18-full:
+    runs-on: self-hosted
+    timeout-minutes: 80
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Build corrected close-ring + direct-flat candidate on RTX source copy
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $source='C:\Users\user\Downloads\M5_GPU_COMPARE_UNPACKED\M5_Round14_OL_GPU_Compare'
+          if(-not (Test-Path (Join-Path $source 'tests\round14_gpu_compare\oneclick.mjs'))){throw 'Required original Round14 missing'}
+          $gpu=Get-CimInstance Win32_VideoController|Where-Object{$_.Name -match 'NVIDIA.*RTX'}
+          if(-not $gpu){throw 'Real NVIDIA RTX missing'}
+          $gpu | Format-Table Name,DriverVersion
+          $root=Join-Path $env:GITHUB_WORKSPACE 'round18-candidate'
+          New-Item -ItemType Directory -Path $root -Force | Out-Null
+          Copy-Item (Join-Path $source '*') $root -Recurse -Force
+          if(Test-Path (Join-Path $root 'RESULTS')){Remove-Item (Join-Path $root 'RESULTS') -Recurse -Force}
+          foreach($patch in @('round14_apply_capture_fix.mjs','apply_backend_msaa_optin.mjs','apply_ol_stroke_defaults_variant.mjs','apply_no_line_discard_variant.mjs','apply_round18_tile_scissor.mjs','apply_round18_layer_fbo.mjs','apply_round18_polygon_stroke_noclip.mjs','apply_round18_flat_stroke_direct.mjs')){
+            $file=Join-Path $env:GITHUB_WORKSPACE ('m5-gpu\'+$patch)
+            node --check $file
+            if($LASTEXITCODE -ne 0){throw "Syntax: $patch"}
+            node $file $root
+            if($LASTEXITCODE -ne 0){throw "Patch: $patch"}
+          }
+          "M5_R18=$root"|Out-File $env:GITHUB_ENV -Encoding utf8 -Append
+      - name: Run complete 95 CPU verify script suite
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          Set-Location $env:M5_R18
+          $tests=@(Get-ChildItem (Join-Path $env:M5_R18 'tests') -Filter 'verify_*.mjs' -File -Recurse|Sort-Object FullName)
+          Write-Host "CPU_VERIFICATION_COUNT=$($tests.Count)"
+          $n=0
+          foreach($test in $tests){
+            Write-Host "START $($test.FullName)"
+            node $test.FullName
+            if($LASTEXITCODE -ne 0){throw "Node test failure: $($test.Name)"}
+            $n++
+          }
+          Write-Host "CPU_VERIFICATION_ALL_PASS=$n"
+          node tests/round14_gpu_compare/oneclick.mjs --self-test
+          if($LASTEXITCODE -ne 0){throw 'Comparator self-test failure'}
+      - name: Hardware RTX OL/M5 full 5-cold ABBA
+        shell: powershell
+        run: |
+          Set-Location $env:M5_R18
+          node tests/round14_gpu_compare/oneclick.mjs --rounds=5 --headless
+          if($LASTEXITCODE -ne 0){throw 'RTX campaign failed'}
+      - name: Save all RGBA8 screenshots raw data and timing evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: round18-closed-fast-5cold-rtx
+          if-no-files-found: warn
+          retention-days: 30
+          path: round18-candidate/RESULTS/**
+      - name: Strict exact-pixel and 50-percent speed acceptance
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $f=Get-ChildItem (Join-Path $env:M5_R18 'RESULTS') -Filter manifest.json -File -Recurse|Sort-Object LastWriteTime -Descending|Select-Object -First 1
+          if(-not $f){throw 'RTX evidence missing'}
+          $m=Get-Content $f.FullName -Raw|ConvertFrom-Json
+          $m.rows | Format-Table scene,olMedianMs,m5MedianMs,m5ChangePercent,pixelDiffRuns,pixelExact
+          if(-not $m.complete -or -not $m.performanceComparable){throw 'RTX test incomplete'}
+          if(-not $m.withinRendererStable){throw 'Same renderer produced nondeterministic pixels'}
+          if(-not $m.pixelParityAll){throw 'STRICT_PIXELS_FAIL: 0-pixel parity not achieved'}
+          if(@($m.rows|Where-Object{$_.m5ChangePercent -gt -50}).Count -gt 0){throw 'STRICT_SPEED_FAIL: <50% OL cold render improvement'}
