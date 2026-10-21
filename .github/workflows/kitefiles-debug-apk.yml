@@ -64,6 +64,37 @@ jobs:
       - name: Build Android debug APK
         run: gradle --no-daemon --stacktrace :app:assembleDebug
 
+      - name: Start test-only Samba SMB2/3 share
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq samba
+          sudo useradd --no-create-home --shell /usr/sbin/nologin kfsci || true
+          printf 'KiteCI!2026\nKiteCI!2026\n' | sudo smbpasswd -s -a kfsci
+          sudo install -d -m 770 -o kfsci -g kfsci /tmp/kitefiles-samba
+          cat <<'CONF' | sudo tee /tmp/kitefiles-smb.conf >/dev/null
+          [global]
+              workgroup = WORKGROUP
+              security = user
+              server min protocol = SMB2_02
+              server max protocol = SMB3_11
+              interfaces = lo
+              bind interfaces only = yes
+          [share]
+              path = /tmp/kitefiles-samba
+              read only = no
+              browsable = yes
+              valid users = kfsci
+          CONF
+          sudo /usr/sbin/smbd -D -s /tmp/kitefiles-smb.conf
+          sleep 2
+          sudo ss -ltn | grep ':445'
+
+      - name: Run authenticated SMB2 integration regression
+        env:
+          KITE_SMB_CI: '1'
+        run: gradle --no-daemon --stacktrace :app:testDebugUnitTest --tests com.kitefiles.android.SmbFileStoreIntegrationTest
+
       - name: Verify package, permission, signing and APK hash
         run: |
           set -euo pipefail
