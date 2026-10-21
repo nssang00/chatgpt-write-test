@@ -1,0 +1,63 @@
+name: Round19 Corrected Painter Order RTX
+on:
+  push:
+    paths:
+      - .github/workflows/m5-round19-painter-rtx.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  painter:
+    runs-on: self-hosted
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Apply proven tile scissor and layer RGBA8 fixes before painter test
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $source='C:\Users\user\Downloads\M5_GPU_COMPARE_UNPACKED\M5_Round14_OL_GPU_Compare'
+          if(-not (Test-Path (Join-Path $source 'tests\round14_gpu_compare\oneclick.mjs'))){throw 'Round14 source unavailable'}
+          $dest=Join-Path $env:GITHUB_WORKSPACE 'r19-painter'
+          New-Item -ItemType Directory -Path $dest -Force|Out-Null
+          Copy-Item (Join-Path $source '*') $dest -Recurse -Force
+          if(Test-Path (Join-Path $dest 'RESULTS')){Remove-Item (Join-Path $dest 'RESULTS') -Recurse -Force}
+          foreach($patch in @('round14_apply_capture_fix.mjs','apply_backend_msaa_optin.mjs','apply_ol_stroke_defaults_variant.mjs','apply_no_line_discard_variant.mjs','apply_round18_tile_scissor.mjs','apply_round18_layer_fbo.mjs','apply_round18_polygon_stroke_noclip.mjs','apply_round18_flat_stroke_direct.mjs','apply_round17_painter_variant.mjs')){
+            $file=Join-Path $env:GITHUB_WORKSPACE ('m5-gpu\'+$patch)
+            node --check $file
+            if($LASTEXITCODE -ne 0){throw "Patcher syntax failed $patch"}
+            node $file $dest
+            if($LASTEXITCODE -ne 0){throw "Patcher failed $patch"}
+          }
+          "R19_PROJECT=$dest"|Out-File $env:GITHUB_ENV -Encoding utf8 -Append
+      - name: Local CPU regression and real GPU A/B on RTX
+        shell: powershell
+        run: |
+          $gpu=Get-CimInstance Win32_VideoController|Where-Object{$_.Name -match 'NVIDIA.*RTX'}
+          if(-not $gpu){throw 'Physical RTX missing'}
+          Set-Location $env:R19_PROJECT
+          node tests/verify_round14_loop_and_style.mjs
+          if($LASTEXITCODE -ne 0){throw 'CPU 68 regression'}
+          node tests/verify_direct_feature_gpu_draw.mjs
+          if($LASTEXITCODE -ne 0){throw 'GPU direct draw regression'}
+          node tests/round14_gpu_compare/oneclick.mjs --rounds=2 --headless
+          if($LASTEXITCODE -ne 0){throw 'Painter GPU ABBA failed'}
+      - name: Save actual PNG and timings
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: round19-painter-order-rtx
+          if-no-files-found: warn
+          retention-days: 30
+          path: r19-painter/RESULTS/**
+      - name: Exact pixel parity gate
+        shell: powershell
+        run: |
+          $f=Get-ChildItem (Join-Path $env:R19_PROJECT 'RESULTS') -Recurse -Filter manifest.json|Sort-Object LastWriteTime -Descending|Select-Object -First 1
+          if(-not $f){throw 'No measured GPU result'}
+          $m=Get-Content $f.FullName -Raw|ConvertFrom-Json
+          $m.rows|Format-Table scene,pixelDiffRuns,pixelExact,m5ChangePercent
+          if(-not $m.complete -or -not $m.pixelParityAll -or -not $m.withinRendererStable){throw 'Painter still differs from OL'}
