@@ -3,6 +3,7 @@ on:
   push:
     paths:
       - .github/workflows/m5-round18-flat-polygon-rtx.yml
+      - m5-gpu/apply_round18_flat_stroke_direct.mjs
   workflow_dispatch:
 permissions:
   contents: read
