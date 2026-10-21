@@ -1,0 +1,69 @@
+name: Round19 Static Stroke Color Precision RTX
+on:
+  push:
+    paths:
+      - .github/workflows/m5-round19-static-color-rtx.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  precision:
+    runs-on: self-hosted
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Prepare OL style-specialized M5 and validate GPU
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $source='C:\Users\user\Downloads\M5_GPU_COMPARE_UNPACKED\M5_Round14_OL_GPU_Compare'
+          if(-not (Test-Path (Join-Path $source 'tests\round14_gpu_compare\oneclick.mjs'))){throw 'Missing source benchmark'}
+          $gpu=Get-CimInstance Win32_VideoController | Where-Object {$_.Name -match 'NVIDIA.*RTX'}
+          if(-not $gpu){throw 'RTX missing'}
+          $root=Join-Path $env:GITHUB_WORKSPACE 'r19-static-color'
+          New-Item -ItemType Directory -Path $root -Force | Out-Null
+          Copy-Item (Join-Path $source '*') $root -Recurse -Force
+          if(Test-Path (Join-Path $root 'RESULTS')){Remove-Item (Join-Path $root 'RESULTS') -Recurse -Force}
+          foreach($patch in @('round14_apply_capture_fix.mjs','apply_backend_msaa_optin.mjs','apply_ol_stroke_defaults_variant.mjs','apply_no_line_discard_variant.mjs','apply_round18_tile_scissor.mjs','apply_round18_layer_fbo.mjs','apply_round18_polygon_stroke_noclip.mjs','apply_round18_flat_stroke_direct.mjs','apply_round19_static_color.mjs')){
+            $file=Join-Path $env:GITHUB_WORKSPACE ('m5-gpu\'+$patch)
+            node --check $file
+            if($LASTEXITCODE -ne 0){throw "Bad syntax $patch"}
+            node $file $root
+            if($LASTEXITCODE -ne 0){throw "Patch failed $patch"}
+          }
+          "R19_ROOT=$root" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
+      - name: Core numerical and GPU draw unit regressions
+        shell: powershell
+        run: |
+          Set-Location $env:R19_ROOT
+          node tests/verify_round14_loop_and_style.mjs
+          if($LASTEXITCODE -ne 0){throw '68 encode parity fail'}
+          node tests/verify_direct_feature_gpu_draw.mjs
+          if($LASTEXITCODE -ne 0){throw 'GPU static color shader regression failed'}
+          node tests/round14_gpu_compare/oneclick.mjs --self-test
+          if($LASTEXITCODE -ne 0){throw 'A/B preflight fail'}
+      - name: RTX OL/M5 static shader literals ABBA
+        shell: powershell
+        run: |
+          Set-Location $env:R19_ROOT
+          node tests/round14_gpu_compare/oneclick.mjs --rounds=2 --headless
+          if($LASTEXITCODE -ne 0){throw 'RTX benchmark failed'}
+      - name: Preserve raw pixel diff
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: r19-static-stroke-rtx
+          retention-days: 30
+          if-no-files-found: warn
+          path: r19-static-color/RESULTS/**
+      - name: Strict RTX pixel gate
+        shell: powershell
+        run: |
+          $file=Get-ChildItem (Join-Path $env:R19_ROOT 'RESULTS') -Recurse -Filter manifest.json|Select-Object -First 1
+          if(-not $file){throw 'No RTX evidence'}
+          $m=Get-Content $file.FullName -Raw|ConvertFrom-Json
+          $m.rows|Format-Table scene,pixelDiffRuns,pixelExact,olMedianMs,m5MedianMs,m5ChangePercent
+          if(-not $m.complete -or -not $m.pixelParityAll -or -not $m.withinRendererStable){throw 'Not yet bit-exact across OL and M5'}
