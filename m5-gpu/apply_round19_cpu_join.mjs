@@ -1,0 +1,16 @@
+import {readFile,writeFile} from 'node:fs/promises';
+import {join} from 'node:path';
+const root=process.argv[2]||process.cwd();
+const source=join(root,'our-renderer/integration/DirectFeatureWebGLPipeline.js');
+let s=await readFile(source,'utf8');
+const needle='    const gpu=appendRenderFeatureGpuJoinNeighborsDirect(flat,ends,stride,lineWriter,rangeStart,rangeEnd);';
+if(s.split(needle).length!==2)throw Error('GPU join encoder selection anchor not found');
+s=s.replace(needle,"    const gpu=globalThis.__m5R19ForceCpuJoin===true?null:appendRenderFeatureGpuJoinNeighborsDirect(flat,ends,stride,lineWriter,rangeStart,rangeEnd);");
+await writeFile(source,s);
+const page=join(root,'tests/round14_gpu_compare/round14_m5.html');
+s=await readFile(page,'utf8');
+const entry='globalThis.__m5R18FlatUnclippedStroke=true;';
+if(s.split(entry).length!==2)throw Error('Round18 flat stroke benchmark anchor not found');
+s=s.replace(entry,'globalThis.__m5R19ForceCpuJoin=true;'+entry);
+await writeFile(page,s);
+console.log('R19_FORCE_CPU_LINE_JOINS_READY');
