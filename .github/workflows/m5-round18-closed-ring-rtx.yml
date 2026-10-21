@@ -1,0 +1,77 @@
+name: Round18 Closed Polygon Stroke Join RTX
+on:
+  push:
+    paths:
+      - .github/workflows/m5-round18-closed-ring-rtx.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  compare:
+    runs-on: self-hosted
+    timeout-minutes: 55
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Setup source, original accepted candidate, closed-ring experiment
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $source='C:\Users\user\Downloads\M5_GPU_COMPARE_UNPACKED\M5_Round14_OL_GPU_Compare'
+          if(-not (Test-Path (Join-Path $source 'tests\round14_gpu_compare\oneclick.mjs'))){throw 'Original source missing'}
+          $gpu=Get-CimInstance Win32_VideoController|Where-Object{$_.Name -match 'NVIDIA.*RTX'}
+          if(-not $gpu){throw 'RTX GPU missing'}
+          foreach($kind in @('r18-best','r18-closed-join')){
+            $dest=Join-Path $env:GITHUB_WORKSPACE $kind
+            New-Item -ItemType Directory -Path $dest -Force|Out-Null
+            Copy-Item (Join-Path $source '*') $dest -Recurse -Force
+            if(Test-Path (Join-Path $dest 'RESULTS')){Remove-Item (Join-Path $dest 'RESULTS') -Recurse -Force}
+            $patches=@('round14_apply_capture_fix.mjs','apply_backend_msaa_optin.mjs','apply_ol_stroke_defaults_variant.mjs','apply_no_line_discard_variant.mjs','apply_round18_tile_scissor.mjs','apply_round18_layer_fbo.mjs','apply_round18_polygon_stroke_noclip.mjs')
+            if($kind -eq 'r18-closed-join'){$patches+=('apply_round18_closed_ring_join.mjs')}
+            foreach($patch in $patches){
+              $file=Join-Path $env:GITHUB_WORKSPACE ('m5-gpu\'+$patch)
+              node --check $file
+              if($LASTEXITCODE -ne 0){throw "Syntax failed $patch"}
+              node $file $dest
+              if($LASTEXITCODE -ne 0){throw "Patcher failed $patch"}
+            }
+            Push-Location $dest
+            node tests/verify_round14_loop_and_style.mjs
+            if($LASTEXITCODE -ne 0){throw "$kind 68 parity"}
+            node tests/verify_direct_feature_gpu_draw.mjs
+            if($LASTEXITCODE -ne 0){throw "$kind draw regression"}
+            Pop-Location
+          }
+      - name: Original 2-round GPU ABBA
+        shell: powershell
+        run: |
+          Set-Location (Join-Path $env:GITHUB_WORKSPACE 'r18-best')
+          node tests/round14_gpu_compare/oneclick.mjs --rounds=2 --headless
+          if($LASTEXITCODE -ne 0){throw 'Original GPU A/B failed'}
+      - name: Closed-ring GPU ABBA
+        shell: powershell
+        run: |
+          Set-Location (Join-Path $env:GITHUB_WORKSPACE 'r18-closed-join')
+          node tests/round14_gpu_compare/oneclick.mjs --rounds=2 --headless
+          if($LASTEXITCODE -ne 0){throw 'Closed ring GPU A/B failed'}
+      - name: Preserve comparison evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: round18-closed-ring-join-rtx
+          retention-days: 30
+          if-no-files-found: warn
+          path: |
+            r18-best/RESULTS/**
+            r18-closed-join/RESULTS/**
+      - name: Strict pixel-parity acceptance
+        shell: powershell
+        run: |
+          $dir=Join-Path $env:GITHUB_WORKSPACE 'r18-closed-join\RESULTS'
+          $f=Get-ChildItem $dir -Filter manifest.json -Recurse|Sort-Object LastWriteTime -Descending|Select-Object -First 1
+          if(-not $f){throw 'Missing measured results'}
+          $m=Get-Content $f.FullName -Raw|ConvertFrom-Json
+          $m.rows|Format-Table scene,pixelDiffRuns,pixelExact,olMedianMs,m5MedianMs
+          if(-not $m.complete -or -not $m.pixelParityAll -or -not $m.withinRendererStable){throw 'Not RGBA8 exact and stable'}
