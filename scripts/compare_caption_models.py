@@ -170,11 +170,11 @@ def ensure_llama_server(cache, tag):
     res = requests.get(api, timeout=30)
     res.raise_for_status()
     assets = res.json()["assets"]
-    for marker in ("bin-win-cuda-12.8-x64.zip",
-                   "cudart-llama-bin-win-cuda-12.8-x64.zip"):
-        found = [x for x in assets if x["name"].endswith(marker)]
+    for name in (f"llama-{tag}-bin-win-cuda-13.4-x64.zip",
+                 "cudart-llama-bin-win-cuda-13.4-x64.zip"):
+        found = [x for x in assets if x["name"] == name]
         if len(found) != 1:
-            raise RuntimeError(f"Cannot find llama.cpp asset ending {marker}")
+            raise RuntimeError(f"Cannot find llama.cpp release asset {name}")
         asset = found[0]
         archive = download_file(asset["browser_download_url"],
                                 cache / "downloads" / asset["name"])
