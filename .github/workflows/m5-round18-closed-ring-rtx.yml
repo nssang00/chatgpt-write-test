@@ -3,6 +3,7 @@ on:
   push:
     paths:
       - .github/workflows/m5-round18-closed-ring-rtx.yml
+      - m5-gpu/apply_round18_closed_ring_join.mjs
   workflow_dispatch:
 permissions:
   contents: read
