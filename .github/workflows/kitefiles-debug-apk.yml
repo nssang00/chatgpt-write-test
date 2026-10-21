@@ -93,7 +93,14 @@ jobs:
       - name: Run authenticated SMB2 integration regression
         env:
           KITE_SMB_CI: '1'
-        run: gradle --no-daemon --stacktrace :app:testDebugUnitTest --tests com.kitefiles.android.SmbFileStoreIntegrationTest
+        run: |
+          if ! gradle --no-daemon :app:testDebugUnitTest --tests com.kitefiles.android.SmbFileStoreIntegrationTest; then
+            echo "===== SMB TEST XML ====="
+            find app/build/test-results -name '*.xml' -exec cat {} \; || true
+            echo "===== SAMBA STATUS ====="
+            sudo smbstatus || true
+            exit 1
+          fi
 
       - name: Verify package, permission, signing and APK hash
         run: |
