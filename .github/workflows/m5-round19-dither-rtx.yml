@@ -1,0 +1,63 @@
+name: Round19 Remaining Pixel Dither RTX
+on:
+  push:
+    paths:
+      - .github/workflows/m5-round19-dither-rtx.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  dither:
+    runs-on: self-hosted
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Prepare corrected real M5 baseline with only DITHER changed
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $source='C:\Users\user\Downloads\M5_GPU_COMPARE_UNPACKED\M5_Round14_OL_GPU_Compare'
+          if(-not (Test-Path (Join-Path $source 'tests\round14_gpu_compare\oneclick.mjs'))){throw 'Round14 baseline missing'}
+          $dest=Join-Path $env:GITHUB_WORKSPACE 'r19-dither'
+          New-Item -ItemType Directory -Path $dest -Force|Out-Null
+          Copy-Item (Join-Path $source '*') $dest -Recurse -Force
+          if(Test-Path (Join-Path $dest 'RESULTS')){Remove-Item (Join-Path $dest 'RESULTS') -Recurse -Force}
+          foreach($patch in @('round14_apply_capture_fix.mjs','apply_backend_msaa_optin.mjs','apply_ol_stroke_defaults_variant.mjs','apply_no_line_discard_variant.mjs','apply_round18_tile_scissor.mjs','apply_round18_layer_fbo.mjs','apply_round18_polygon_stroke_noclip.mjs','apply_round18_flat_stroke_direct.mjs','apply_round19_dither_off.mjs')){
+            $file=Join-Path $env:GITHUB_WORKSPACE ('m5-gpu\'+$patch)
+            node --check $file
+            if($LASTEXITCODE -ne 0){throw "Syntax error $patch"}
+            node $file $dest
+            if($LASTEXITCODE -ne 0){throw "Patch error $patch"}
+          }
+          "R19_PROJECT=$dest"|Out-File $env:GITHUB_ENV -Encoding utf8 -Append
+      - name: Static regressions and physical RTX compare
+        shell: powershell
+        run: |
+          $gpu=Get-CimInstance Win32_VideoController|Where-Object{$_.Name -match 'NVIDIA.*RTX'}
+          if(-not $gpu){throw 'Missing NVIDIA RTX'}
+          Set-Location $env:R19_PROJECT
+          node tests/verify_round14_loop_and_style.mjs
+          if($LASTEXITCODE -ne 0){throw '68-geometry parity failed'}
+          node tests/verify_direct_feature_gpu_draw.mjs
+          if($LASTEXITCODE -ne 0){throw 'GPU draw regression failed'}
+          node tests/round14_gpu_compare/oneclick.mjs --rounds=2 --headless
+          if($LASTEXITCODE -ne 0){throw 'GPU readback failed'}
+      - name: Upload results even on failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: round19-dither-rtx
+          retention-days: 30
+          if-no-files-found: warn
+          path: r19-dither/RESULTS/**
+      - name: Strict OL pixels equal zero
+        shell: powershell
+        run: |
+          $file=Get-ChildItem (Join-Path $env:R19_PROJECT 'RESULTS') -Filter manifest.json -Recurse|Sort-Object LastWriteTime -Descending|Select-Object -First 1
+          if(-not $file){throw 'Missing GPU results'}
+          $m=Get-Content $file.FullName -Raw|ConvertFrom-Json
+          $m.rows|Format-Table scene,pixelDiffRuns,pixelExact
+          if(-not $m.pixelParityAll -or -not $m.withinRendererStable){throw 'DITHER variant is not fully pixel equivalent to OL'}
