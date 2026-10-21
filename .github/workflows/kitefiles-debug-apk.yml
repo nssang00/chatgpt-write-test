@@ -1,4 +1,4 @@
-name: KiteFiles ES-Lite Inspired Debug APK
+name: KiteFiles 2.1 Drawer and Swipe Debug APK
 
 on:
   pull_request:
@@ -32,6 +32,9 @@ jobs:
           echo "e57cd3d7bca4238f950effd229429a699f7763759e13dcac6bcaaa18872aa13d  kitefiles-es-next-patch.tar.xz" | sha256sum --check
           tar -xJf kitefiles.tar.xz
           tar -xJf kitefiles-es-next-patch.tar.xz
+          echo "a454eab5265fa7ec2467963f43674ef156caf84844907f8f288f89a0ce11eea5  kitefiles-navigation-v2.1.patch.gz" | sha256sum --check
+          gzip -dc kitefiles-navigation-v2.1.patch.gz | patch --batch -p1
+          grep -q "versionName '2.1.0'" app/build.gradle
           grep -q 'MANAGE_EXTERNAL_STORAGE' app/src/main/AndroidManifest.xml
           grep -q 'jcifs-ng:2.1.10' app/build.gradle
 
@@ -116,7 +119,7 @@ jobs:
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs "$APK"
           "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK" | tee .build/apk-badging.txt
           grep -q "package: name='com.kitefiles.android'" .build/apk-badging.txt
-          grep -q "versionName='2.0.0'" .build/apk-badging.txt
+          grep -q "versionName='2.1.0'" .build/apk-badging.txt
           grep -q "targetSdkVersion:'35'" .build/apk-badging.txt
           "$ANDROID_HOME/build-tools/35.0.0/aapt" dump permissions "$APK" | tee .build/apk-permissions.txt
           grep -q 'android.permission.MANAGE_EXTERNAL_STORAGE' .build/apk-permissions.txt
@@ -132,7 +135,7 @@ jobs:
           retention-days: 14
 
   ui-smoke:
-    name: Android emulator folders and swipe tabs
+    name: Android emulator drawer and animated tab swipe
     needs: build
     runs-on: ubuntu-latest
     timeout-minutes: 35
