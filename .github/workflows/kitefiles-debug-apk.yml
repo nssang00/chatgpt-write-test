@@ -68,7 +68,7 @@ jobs:
         run: |
           set -euo pipefail
           sudo apt-get update -qq
-          sudo apt-get install -y -qq samba
+          sudo apt-get install -y -qq samba smbclient
           sudo useradd --no-create-home --shell /usr/sbin/nologin kfsci || true
           printf 'KiteCI!2026\nKiteCI!2026\n' | sudo smbpasswd -s -a kfsci
           sudo install -d -m 770 -o kfsci -g kfsci /tmp/kitefiles-samba
@@ -86,9 +86,14 @@ jobs:
               browsable = yes
               valid users = kfsci
           CONF
-          sudo /usr/sbin/smbd -D -s /tmp/kitefiles-smb.conf
+          sudo cp /tmp/kitefiles-smb.conf /etc/samba/smb.conf
+          sudo testparm -s /etc/samba/smb.conf
+          sudo systemctl restart smbd
           sleep 2
           sudo ss -ltn | grep ':445'
+          smbclient -L //127.0.0.1 -U 'kfsci%KiteCI!2026' -m SMB3 | tee .build/samba-shares.txt
+          grep -Eq '^\s*share\s+Disk\s+' .build/samba-shares.txt
+          smbclient //127.0.0.1/share -U 'kfsci%KiteCI!2026' -m SMB3 -c ls
 
       - name: Run authenticated SMB2 integration regression
         env:
