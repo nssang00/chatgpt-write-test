@@ -1,0 +1,6 @@
+transformers>=4.57.0,<5
+accelerate>=1.0,<2
+huggingface_hub>=0.35,<2
+pillow>=11,<13
+requests>=2.32,<3
+safetensors>=0.5,<1
