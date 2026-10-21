@@ -1,0 +1,87 @@
+name: Round19 OL Fragment Numeric Parity RTX
+on:
+  push:
+    paths:
+      - .github/workflows/m5-round19-fragment-numeric-rtx.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  gpu-fragment:
+    runs-on: self-hosted
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Stage reproducible Round18 baseline and OL-style numeric variants
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $source='C:\Users\user\Downloads\M5_GPU_COMPARE_UNPACKED\M5_Round14_OL_GPU_Compare'
+          if(-not (Test-Path (Join-Path $source 'tests\round14_gpu_compare\oneclick.mjs'))){throw 'Baseline missing'}
+          $gpu=Get-CimInstance Win32_VideoController | Where-Object {$_.Name -match 'NVIDIA.*RTX'}
+          if(-not $gpu){throw 'Physical RTX GPU missing'}
+          $gpu | Format-Table Name,DriverVersion
+          foreach($variant in @('baseline','fragment','fragment-vertex')){
+            $dest=Join-Path $env:GITHUB_WORKSPACE ("r19-"+$variant)
+            New-Item -ItemType Directory -Path $dest -Force|Out-Null
+            Copy-Item (Join-Path $source '*') $dest -Recurse -Force
+            if(Test-Path (Join-Path $dest 'RESULTS')){Remove-Item (Join-Path $dest 'RESULTS') -Recurse -Force}
+            foreach($patch in @('round14_apply_capture_fix.mjs','apply_backend_msaa_optin.mjs','apply_ol_stroke_defaults_variant.mjs','apply_no_line_discard_variant.mjs','apply_round18_tile_scissor.mjs','apply_round18_layer_fbo.mjs','apply_round18_polygon_stroke_noclip.mjs','apply_round18_flat_stroke_direct.mjs')){
+              $p=Join-Path $env:GITHUB_WORKSPACE ('m5-gpu\'+$patch)
+              node --check $p
+              if($LASTEXITCODE -ne 0){throw "Patcher syntax $patch"}
+              node $p $dest
+              if($LASTEXITCODE -ne 0){throw "Patcher failed $patch"}
+            }
+            if($variant -ne 'baseline'){
+              node m5-gpu/apply_round19_ol_fragment_math.mjs $dest $variant
+              if($LASTEXITCODE -ne 0){throw "Shader numeric change failed $variant"}
+            }
+            Push-Location $dest
+            node tests/verify_round14_loop_and_style.mjs
+            if($LASTEXITCODE -ne 0){throw "Encode parity test failed $variant"}
+            node tests/verify_direct_feature_gpu_draw.mjs
+            if($LASTEXITCODE -ne 0){throw "Draw regression failed $variant"}
+            node tests/round14_gpu_compare/oneclick.mjs --self-test
+            if($LASTEXITCODE -ne 0){throw "Comparator self-test failed $variant"}
+            Pop-Location
+          }
+      - name: RTX three shader precision campaigns (cold 2 per campaign)
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          foreach($variant in @('baseline','fragment','fragment-vertex')){
+            Push-Location (Join-Path $env:GITHUB_WORKSPACE ("r19-"+$variant))
+            node tests/round14_gpu_compare/oneclick.mjs --rounds=2 --headless
+            $exitCode=$LASTEXITCODE
+            Pop-Location
+            if($exitCode -ne 0){throw "RTX incomplete $variant"}
+          }
+      - name: Preserve RTX pixels and timings
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: round19-numeric-shader-rtx
+          retention-days: 30
+          if-no-files-found: warn
+          path: |
+            r19-baseline/RESULTS/**
+            r19-fragment/RESULTS/**
+            r19-fragment-vertex/RESULTS/**
+      - name: Report measured diff and fail closed if not exactly equal
+        shell: powershell
+        run: |
+          $found=$false
+          foreach($variant in @('baseline','fragment','fragment-vertex')){
+            $root=Join-Path $env:GITHUB_WORKSPACE ("r19-"+$variant+"\RESULTS")
+            $f=Get-ChildItem $root -Recurse -Filter manifest.json | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+            if(-not $f){throw "Missing $variant evidence"}
+            $m=Get-Content $f.FullName -Raw | ConvertFrom-Json
+            Write-Host "===== $variant ====="
+            $m.rows | Format-Table scene,pixelDiffRuns,pixelExact,olMedianMs,m5MedianMs
+            if($m.pixelParityAll -and $m.withinRendererStable -and $m.complete){$found=$true}
+          }
+          if(-not $found){throw 'STRICT_PARITY_FAILED: no shader variant reached zero RGBA8 diff across all scenes'}
