@@ -3,6 +3,7 @@ on:
   push:
     paths:
       - .github/workflows/m5-round19-static-color-rtx.yml
+      - m5-gpu/apply_round19_static_color.mjs
   workflow_dispatch:
 permissions:
   contents: read
