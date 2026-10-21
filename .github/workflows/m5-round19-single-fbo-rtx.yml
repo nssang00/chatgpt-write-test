@@ -1,0 +1,75 @@
+name: Round19 OL Single Layer RGBA8 FBO RTX
+on:
+  push:
+    paths:
+      - .github/workflows/m5-round19-single-fbo-rtx.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  fbo:
+    runs-on: self-hosted
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Build baseline and single-layer post-pass candidates
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $source='C:\Users\user\Downloads\M5_GPU_COMPARE_UNPACKED\M5_Round14_OL_GPU_Compare'
+          if(-not (Test-Path (Join-Path $source 'tests\round14_gpu_compare\oneclick.mjs'))){throw 'Round14 fixture absent'}
+          $gpu=Get-CimInstance Win32_VideoController|Where-Object{$_.Name -match 'NVIDIA.*RTX'}
+          if(-not $gpu){throw 'NVIDIA RTX GPU missing'}
+          foreach($variant in @('baseline','single-fbo')){
+            $root=Join-Path $env:GITHUB_WORKSPACE ('r19-'+$variant)
+            New-Item -ItemType Directory -Path $root -Force|Out-Null
+            Copy-Item (Join-Path $source '*') $root -Recurse -Force
+            if(Test-Path (Join-Path $root 'RESULTS')){Remove-Item (Join-Path $root 'RESULTS') -Recurse -Force}
+            $patches=@('round14_apply_capture_fix.mjs','apply_backend_msaa_optin.mjs','apply_ol_stroke_defaults_variant.mjs','apply_no_line_discard_variant.mjs','apply_round18_tile_scissor.mjs','apply_round18_layer_fbo.mjs','apply_round18_polygon_stroke_noclip.mjs','apply_round18_flat_stroke_direct.mjs')
+            if($variant -eq 'single-fbo'){$patches+=('apply_round19_single_layer_fbo.mjs')}
+            foreach($p in $patches){
+              $file=Join-Path $env:GITHUB_WORKSPACE ('m5-gpu\'+$p)
+              node --check $file
+              if($LASTEXITCODE -ne 0){throw "Syntax fail $p"}
+              node $file $root
+              if($LASTEXITCODE -ne 0){throw "Apply fail $p"}
+            }
+            Push-Location $root
+            node tests/verify_round14_loop_and_style.mjs
+            if($LASTEXITCODE -ne 0){throw "68 CPU parity FAIL: $variant"}
+            node tests/verify_direct_feature_gpu_draw.mjs
+            if($LASTEXITCODE -ne 0){throw "GPU draw FAIL: $variant"}
+            Pop-Location
+          }
+      - name: Hardware RTX two cold ABBA on each variant
+        shell: powershell
+        run: |
+          foreach($variant in @('baseline','single-fbo')){
+            Push-Location (Join-Path $env:GITHUB_WORKSPACE ('r19-'+$variant))
+            node tests/round14_gpu_compare/oneclick.mjs --rounds=2 --headless
+            $code=$LASTEXITCODE
+            Pop-Location
+            if($code -ne 0){throw "RTX A/B capture failure: $variant"}
+          }
+      - name: Upload original screenshots and all metrics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: r19-single-layer-fbo-rtx
+          if-no-files-found: warn
+          retention-days: 30
+          path: |
+            r19-baseline/RESULTS/**
+            r19-single-fbo/RESULTS/**
+      - name: Strict pixel acceptance
+        shell: powershell
+        run: |
+          $dir=Join-Path $env:GITHUB_WORKSPACE 'r19-single-fbo\RESULTS'
+          $f=Get-ChildItem $dir -Recurse -Filter manifest.json|Sort-Object LastWriteTime -Descending|Select-Object -First 1
+          if(-not $f){throw 'Missing RTX result'}
+          $m=Get-Content $f.FullName -Raw|ConvertFrom-Json
+          $m.rows|Format-Table scene,pixelDiffRuns,pixelExact,olMedianMs,m5MedianMs
+          if(-not $m.complete -or -not $m.withinRendererStable -or -not $m.pixelParityAll){throw 'Exact RGBA8 parity still incomplete'}
