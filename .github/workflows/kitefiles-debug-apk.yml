@@ -40,22 +40,9 @@ jobs:
             test "$(find . -name '*.rej' | wc -l)" -eq 1
             rm tests/android-ui-smoke.sh.rej
           fi
-          # Apply self-authored v2.2 overflow toolbar and ES-style folder-list patch.
-          xz -dc ui-v2.2.patch.xz > /tmp/kitefiles-v22-ui.patch
-          echo "d4d7f025779fc0c97ae3fe2cca4d9001f6bebd66e1b76b44ec6901e1e8521b3c  /tmp/kitefiles-v22-ui.patch" | sha256sum --check
-          patch --batch -p1 < /tmp/kitefiles-v22-ui.patch
-          # Keep existing v2.1 swipe smoke test's exact '+ 새 창' label.
-          python3 - <<'PY'
-          from pathlib import Path
-          p=Path('app/src/main/java/com/kitefiles/android/MainActivity.java')
-          s=p.read_text()
-          assert 'TextView newTab=text("+", 25, Color.WHITE, true);' in s
-          s=s.replace('TextView newTab=text("+", 25, Color.WHITE, true);',
-                      'TextView newTab=text("+ 새 창", 13, Color.WHITE, true);')
-          s=s.replace('bar.addView(newTab, lp(43,39));',
-                      'newTab.setPadding(dp(13),0,dp(13),0);\n        bar.addView(newTab, lp(-2,39));')
-          p.write_text(s)
-          PY
+          # Override Android Java UI and version with complete validated v2.2 source files.
+          echo "4c905673ac4063931dec5909a3b771c2b539744de187f7a2bb3b87471f9e570f  ui-v2.2-files.tar.xz" | sha256sum --check
+          tar -xJf ui-v2.2-files.tar.xz
           grep -q 'showTopOptions' app/src/main/java/com/kitefiles/android/MainActivity.java
           grep -q 'FileItemIcon' app/src/main/java/com/kitefiles/android/MainActivity.java
           grep -qi 'drawer' app/src/main/java/com/kitefiles/android/MainActivity.java
