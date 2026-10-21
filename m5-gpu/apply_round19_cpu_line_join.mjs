@@ -1,0 +1,16 @@
+import {readFile,writeFile} from 'node:fs/promises';
+import {join} from 'node:path';
+const root=process.argv[2]||process.cwd();
+const file=join(root,'our-renderer/integration/DirectFeatureWebGLPipeline.js');
+let s=await readFile(file,'utf8');
+const needle='    const gpu=appendRenderFeatureGpuJoinNeighborsDirect(flat,ends,stride,lineWriter,rangeStart,rangeEnd);';
+if(s.split(needle).length!==2)throw Error('Expected line GPU join anchor not found');
+s=s.replace(needle,'    const gpu=globalThis.__m5R19CPUStrokeJoin===true?null:appendRenderFeatureGpuJoinNeighborsDirect(flat,ends,stride,lineWriter,rangeStart,rangeEnd);');
+await writeFile(file,s);
+const page=join(root,'tests/round14_gpu_compare/round14_m5.html');
+s=await readFile(page,'utf8');
+const flag='globalThis.__m5R18FlatUnclippedStroke=true;';
+if(!s.includes(flag))throw Error('Round18 closed + flat base missing');
+s=s.replace(flag,'globalThis.__m5R19CPUStrokeJoin=true;\n'+flag);
+await writeFile(page,s);
+console.log('R19_CPU_LINE_JOIN_DIAGNOSTIC_READY');
