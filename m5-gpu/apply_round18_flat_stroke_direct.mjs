@@ -23,7 +23,8 @@ const helper=`  // Opt-in: read polygon stroke rings directly from flat feature 
       if(Math.fround(ax)===Math.fround(bx)&&Math.fround(ay)===Math.fround(by)){
         lineWriter.truncate(rollback);return null;
       }
-      const prev=i?i-1:i,next=i+2<count?i+2:i+1;
+      const joinClosed=globalThis.__m5R18ClosedRingJoin===true&&closed&&count>=4;
+      const prev=i?i-1:(joinClosed?count-2:0),next=i+2<count?i+2:(joinClosed?1:i+1);
       lineWriter.push8Reserved(readX(prev),readY(prev),ax,ay,bx,by,readX(next),readY(next));
     }
     counters.lineSegments+=instances;
@@ -39,5 +40,5 @@ const page=join(root,'tests/round14_gpu_compare/round14_m5.html');
 s=await readFile(page,'utf8');
 const needle='globalThis.__m5R18PolygonStrokeUnclipped=true;';
 if(!s.includes(needle))throw Error('Must enable Polygon stroke no CPU clipping');
-await writeFile(page,s.replace(needle,'globalThis.__m5R18FlatUnclippedStroke=true;\n'+needle));
+await writeFile(page,s.replace(needle,'globalThis.__m5R18ClosedRingJoin=true;\nglobalThis.__m5R18FlatUnclippedStroke=true;\n'+needle));
 console.log('ROUND18_FLAT_POLYGON_STROKE_DIRECT_READY');
