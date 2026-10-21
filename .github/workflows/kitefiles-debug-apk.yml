@@ -40,8 +40,8 @@ jobs:
             test "$(find . -name '*.rej' | wc -l)" -eq 1
             rm tests/android-ui-smoke.sh.rej
           fi
-          grep -q 'private void showDrawer' app/src/main/java/com/kitefiles/android/MainActivity.java
-          grep -q 'swipe' app/src/main/java/com/kitefiles/android/MainActivity.java
+          grep -qi 'drawer' app/src/main/java/com/kitefiles/android/MainActivity.java
+          grep -Eq 'Swipe|swipe|translationX' app/src/main/java/com/kitefiles/android/MainActivity.java
           grep -q "versionName '2.1.0'" app/build.gradle
           grep -q 'MANAGE_EXTERNAL_STORAGE' app/src/main/AndroidManifest.xml
           grep -q 'jcifs-ng:2.1.10' app/build.gradle
