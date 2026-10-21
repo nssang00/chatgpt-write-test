@@ -1,0 +1,81 @@
+name: Round18 Direct Polygon Stroke CPU RTX
+on:
+  push:
+    paths:
+      - .github/workflows/m5-round18-flat-polygon-rtx.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  flat-stroke:
+    runs-on: self-hosted
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Assemble optimized Round18 test and original baseline
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $source='C:\Users\user\Downloads\M5_GPU_COMPARE_UNPACKED\M5_Round14_OL_GPU_Compare'
+          if(-not (Test-Path (Join-Path $source 'tests\round14_gpu_compare\oneclick.mjs'))){throw 'Original Round14 source missing'}
+          $gpu=Get-CimInstance Win32_VideoController|Where-Object{$_.Name -match 'NVIDIA.*RTX'}
+          if(-not $gpu){throw 'Self-hosted RTX unavailable'}
+          $gpu|Select-Object Name,DriverVersion|Format-Table
+          foreach($variant in @('best','flat-stroke')){
+            $dest=Join-Path $env:GITHUB_WORKSPACE ('r18-'+$variant)
+            New-Item -ItemType Directory -Path $dest -Force|Out-Null
+            Copy-Item (Join-Path $source '*') $dest -Recurse -Force
+            if(Test-Path (Join-Path $dest 'RESULTS')){Remove-Item (Join-Path $dest 'RESULTS') -Recurse -Force}
+            $patches=@('round14_apply_capture_fix.mjs','apply_backend_msaa_optin.mjs','apply_ol_stroke_defaults_variant.mjs','apply_no_line_discard_variant.mjs','apply_round18_tile_scissor.mjs','apply_round18_layer_fbo.mjs','apply_round18_polygon_stroke_noclip.mjs')
+            if($variant -eq 'flat-stroke'){$patches+=('apply_round18_flat_stroke_direct.mjs')}
+            foreach($patch in $patches){
+              $p=Join-Path $env:GITHUB_WORKSPACE ('m5-gpu\'+$patch)
+              node --check $p
+              if($LASTEXITCODE -ne 0){throw "Invalid JavaScript: $patch"}
+              node $p $dest
+              if($LASTEXITCODE -ne 0){throw "Patch failed: $patch"}
+            }
+            Push-Location $dest
+            node tests/verify_round14_loop_and_style.mjs
+            if($LASTEXITCODE -ne 0){throw "$variant 68-parity failed"}
+            node tests/verify_direct_feature_gpu_draw.mjs
+            if($LASTEXITCODE -ne 0){throw "$variant GPU draw failed"}
+            node tests/round14_gpu_compare/oneclick.mjs --self-test
+            if($LASTEXITCODE -ne 0){throw "$variant suite self-test failed"}
+            Pop-Location
+          }
+      - name: Baseline original Round18 2-cold RTX ABBA
+        shell: powershell
+        run: |
+          Set-Location (Join-Path $env:GITHUB_WORKSPACE 'r18-best')
+          node tests/round14_gpu_compare/oneclick.mjs --rounds=2 --headless
+          if($LASTEXITCODE -ne 0){throw 'Baseline RTX ABBA failed'}
+      - name: Direct-flat-stroke Round18 2-cold RTX ABBA
+        shell: powershell
+        run: |
+          Set-Location (Join-Path $env:GITHUB_WORKSPACE 'r18-flat-stroke')
+          node tests/round14_gpu_compare/oneclick.mjs --rounds=2 --headless
+          if($LASTEXITCODE -ne 0){throw 'Direct polygon stroke RTX ABBA failed'}
+      - name: Preserve side-by-side metrics and pixels
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: round18-direct-flat-stroke-rtx
+          retention-days: 30
+          if-no-files-found: warn
+          path: |
+            r18-best/RESULTS/**
+            r18-flat-stroke/RESULTS/**
+      - name: Pixel and performance acceptance
+        shell: powershell
+        run: |
+          $dir=Join-Path $env:GITHUB_WORKSPACE 'r18-flat-stroke\RESULTS'
+          $f=Get-ChildItem $dir -Filter manifest.json -Recurse|Sort-Object LastWriteTime -Descending|Select-Object -First 1
+          if(-not $f){throw 'Missing GPU manifest'}
+          $m=Get-Content $f.FullName -Raw|ConvertFrom-Json
+          $m.rows|Format-Table scene,pixelDiffRuns,pixelExact,olMedianMs,m5MedianMs,m5ChangePercent
+          if(-not $m.complete -or -not $m.pixelParityAll -or -not $m.withinRendererStable){throw 'Exact RGBA8 parity not yet passed'}
+          if(@($m.rows|Where-Object {$_.m5ChangePercent -gt -50}).Count -gt 0){throw 'M5 slower than 50% cold target'}
