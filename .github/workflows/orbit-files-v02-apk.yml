@@ -1,0 +1,65 @@
+name: Orbit Files 0.2 APK
+on:
+  push:
+    branches: [feat/orbit-files-apk]
+    paths:
+      - 'android/orbit-files-v02/**'
+      - '.github/workflows/orbit-files-v02-apk.yml'
+  pull_request:
+    paths:
+      - 'android/orbit-files-v02/**'
+      - '.github/workflows/orbit-files-v02-apk.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  android-apk:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify and restore Orbit Files 0.1 source
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat android/orbit-files-source/part-*.b64 | base64 --decode > /tmp/orbit-base.tar.xz
+          echo "b60b69d8949d4b5209109fac740cba971db4f117d92653a56775e943b1bd3254  /tmp/orbit-base.tar.xz" | sha256sum -c -
+          tar -xJf /tmp/orbit-base.tar.xz
+      - name: Verify and apply v0.2 source delta
+        shell: bash
+        run: |
+          set -euo pipefail
+          base64 --decode android/orbit-files-v02/delta.b64 > /tmp/orbit-delta.tar.xz
+          echo "49b0fffb6923760691214aaefb7191edbab65341a0beee9caf6373e58c5bb735  /tmp/orbit-delta.tar.xz" | sha256sum -c -
+          tar -xJf /tmp/orbit-delta.tar.xz
+          grep -q "versionName '0.2.0'" OrbitFiles/app/build.gradle
+          test -f OrbitFiles/app/src/main/java/dev/orbit/files/SmbStorage.java
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools platforms;android-35 build-tools;35.0.0'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - name: Pure Java core regression and source audit
+        working-directory: OrbitFiles
+        run: bash scripts/check-all.sh
+      - name: Android assembleDebug
+        working-directory: OrbitFiles
+        run: gradle --no-daemon --stacktrace :app:assembleDebug
+      - name: APK artifact fingerprint
+        run: |
+          set -euo pipefail
+          APK=OrbitFiles/app/build/outputs/apk/debug/app-debug.apk
+          test -s "$APK"
+          ls -lh "$APK"
+          sha256sum "$APK"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: OrbitFiles-0.2.0-debug-apk
+          path: OrbitFiles/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 30
