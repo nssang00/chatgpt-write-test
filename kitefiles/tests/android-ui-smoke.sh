@@ -5,8 +5,8 @@ APK="${1:-apk/app-debug.apk}"
 $ADB wait-for-device
 $ADB install -r "$APK"
 $ADB shell appops set --uid com.kitefiles.android MANAGE_EXTERNAL_STORAGE allow
-$ADB shell mkdir -p /sdcard/A_KiteFilesProbe
-$ADB shell 'echo proof-data > /sdcard/A_KiteFilesProbe/probe.txt'
+$ADB shell run-as com.kitefiles.android mkdir -p /sdcard/A_KiteFilesProbe
+$ADB shell run-as com.kitefiles.android touch /sdcard/A_KiteFilesProbe/probe.txt
 $ADB shell am start -n com.kitefiles.android/.MainActivity
 sleep 5
 TMP_DIR="${RUNNER_TEMP:-/tmp}"
