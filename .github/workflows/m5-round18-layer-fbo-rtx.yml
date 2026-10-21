@@ -24,13 +24,14 @@ jobs:
           if(-not (Test-Path (Join-Path $source 'tests\round14_gpu_compare\oneclick.mjs'))){throw 'Round14 source missing'}
           $gpu=Get-CimInstance Win32_VideoController|Where-Object{$_.Name -match 'NVIDIA.*RTX'}
           if(-not $gpu){throw 'NVIDIA RTX missing'}
-          foreach($kind in @('scissor','layer-fbo')){
+          foreach($kind in @('scissor','layer-fbo','stroke-unclipped')){
             $dest=Join-Path $env:GITHUB_WORKSPACE ('r18-'+$kind)
             New-Item -ItemType Directory -Path $dest -Force|Out-Null
             Copy-Item (Join-Path $source '*') $dest -Recurse -Force
             if(Test-Path (Join-Path $dest 'RESULTS')){Remove-Item (Join-Path $dest 'RESULTS') -Recurse -Force}
             $patches=@('round14_apply_capture_fix.mjs','apply_backend_msaa_optin.mjs','apply_ol_stroke_defaults_variant.mjs','apply_no_line_discard_variant.mjs','apply_round18_tile_scissor.mjs')
-            if($kind -eq 'layer-fbo'){$patches+=('apply_round18_layer_fbo.mjs')}
+            if($kind -ne 'scissor'){$patches+=('apply_round18_layer_fbo.mjs')}
+            if($kind -eq 'stroke-unclipped'){$patches+=('apply_round18_polygon_stroke_noclip.mjs')}
             foreach($patch in $patches){
               node --check (Join-Path $env:GITHUB_WORKSPACE ('m5-gpu\'+$patch))
               if($LASTEXITCODE -ne 0){throw "Syntax error $patch"}
@@ -58,6 +59,12 @@ jobs:
           Set-Location (Join-Path $env:GITHUB_WORKSPACE 'r18-layer-fbo')
           node tests/round14_gpu_compare/oneclick.mjs --rounds=2 --headless
           if($LASTEXITCODE -ne 0){throw 'FBO RTX test failed'}
+      - name: RTX no CPU polygon stroke clipping with tile scissor and FBO
+        shell: powershell
+        run: |
+          Set-Location (Join-Path $env:GITHUB_WORKSPACE 'r18-stroke-unclipped')
+          node tests/round14_gpu_compare/oneclick.mjs --rounds=2 --headless
+          if($LASTEXITCODE -ne 0){throw 'RTX no-clip stroke run failed'}
       - name: Preserve performance, canvases and RGBA8 diff
         if: always()
         uses: actions/upload-artifact@v4
@@ -68,10 +75,11 @@ jobs:
           path: |
             r18-scissor/RESULTS/**
             r18-layer-fbo/RESULTS/**
+            r18-stroke-unclipped/RESULTS/**
       - name: Strict acceptance of actual rendered RGBA8 equality
         shell: powershell
         run: |
-          $dir=Join-Path $env:GITHUB_WORKSPACE 'r18-layer-fbo\RESULTS'
+          $dir=Join-Path $env:GITHUB_WORKSPACE 'r18-stroke-unclipped\RESULTS'
           $f=Get-ChildItem $dir -Recurse -Filter manifest.json|Sort-Object LastWriteTime -Descending|Select-Object -First 1
           if(-not $f){throw 'No GPU manifest'}
           $m=Get-Content $f.FullName -Raw|ConvertFrom-Json
