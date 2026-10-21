@@ -1,0 +1,83 @@
+name: Round18 Tile Seam and Mixed Pixel RTX
+on:
+  push:
+    paths:
+      - .github/workflows/m5-round18-tile-seam-rtx.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  tile-seams:
+    runs-on: self-hosted
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Prepare baseline plus scissor variant from pinned local source
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $source='C:\Users\user\Downloads\M5_GPU_COMPARE_UNPACKED\M5_Round14_OL_GPU_Compare'
+          if(-not (Test-Path (Join-Path $source 'tests\round14_gpu_compare\oneclick.mjs'))){throw 'Round14 benchmark assets missing'}
+          $gpu=Get-CimInstance Win32_VideoController|Where-Object{$_.Name -match 'NVIDIA.*RTX'}
+          if(-not $gpu){throw 'RTX missing'}
+          foreach($variant in @('baseline','scissor')){
+            $dest=Join-Path $env:GITHUB_WORKSPACE ('r18-'+$variant)
+            New-Item -Type Directory -Path $dest -Force|Out-Null
+            Copy-Item (Join-Path $source '*') $dest -Recurse -Force
+            if(Test-Path (Join-Path $dest 'RESULTS')){Remove-Item (Join-Path $dest 'RESULTS') -Recurse -Force}
+            foreach($patch in @('round14_apply_capture_fix.mjs','apply_backend_msaa_optin.mjs','apply_ol_stroke_defaults_variant.mjs','apply_no_line_discard_variant.mjs')){
+              node (Join-Path $env:GITHUB_WORKSPACE ('m5-gpu\'+$patch)) $dest
+              if($LASTEXITCODE -ne 0){throw "Patch failed $variant $patch"}
+            }
+            if($variant -eq 'scissor'){
+              node --check m5-gpu/apply_round18_tile_scissor.mjs
+              if($LASTEXITCODE -ne 0){throw 'Scissor patch syntax error'}
+              node m5-gpu/apply_round18_tile_scissor.mjs $dest
+              if($LASTEXITCODE -ne 0){throw 'Scissor patch failed'}
+            }
+            Push-Location $dest
+            node tests/verify_round14_loop_and_style.mjs
+            if($LASTEXITCODE -ne 0){throw "$variant typed-array 68 parity failed"}
+            node tests/verify_direct_feature_gpu_draw.mjs
+            if($LASTEXITCODE -ne 0){throw "$variant FakeGL failed"}
+            node tests/round14_gpu_compare/oneclick.mjs --self-test
+            if($LASTEXITCODE -ne 0){throw "$variant self-test failed"}
+            Pop-Location
+          }
+      - name: RTX OL/R18 baseline A/B
+        shell: powershell
+        run: |
+          Set-Location (Join-Path $env:GITHUB_WORKSPACE 'r18-baseline')
+          node tests/round14_gpu_compare/oneclick.mjs --rounds=2 --headless
+          if($LASTEXITCODE -ne 0){throw 'RTX baseline failed'}
+      - name: RTX OL/R18 tile-scissor A/B
+        shell: powershell
+        run: |
+          Set-Location (Join-Path $env:GITHUB_WORKSPACE 'r18-scissor')
+          node tests/round14_gpu_compare/oneclick.mjs --rounds=2 --headless
+          if($LASTEXITCODE -ne 0){throw 'RTX tile scissor failed'}
+      - name: Store original pixel screenshots and metrics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: r18-tile-seam-rtx
+          retention-days: 30
+          if-no-files-found: warn
+          path: |
+            r18-baseline/RESULTS/**
+            r18-scissor/RESULTS/**
+      - name: Strict OL/M5 RGBA8 parity acceptance
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $r=Join-Path $env:GITHUB_WORKSPACE 'r18-scissor\RESULTS'
+          $m=Get-ChildItem $r -Filter manifest.json -File -Recurse|Sort-Object LastWriteTime -Descending|Select-Object -First 1
+          if(-not $m){throw 'Missing measured GPU parity manifest'}
+          $json=Get-Content $m.FullName -Raw|ConvertFrom-Json
+          $json.rows|Format-Table scene,pixelExact,pixelDiffRuns,withinRendererStable
+          if(-not $json.complete){throw 'GPU suite incomplete'}
+          if(-not $json.pixelParityAll){throw 'STRICT_RGBA8_PARITY_FAILED: tile scissor alone did not reach pixel equality'}
+          if(-not $json.withinRendererStable){throw 'M5 or OL nondeterministic pixels'}
