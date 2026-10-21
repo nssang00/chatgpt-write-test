@@ -29,7 +29,7 @@ jobs:
         run: |
           set -euo pipefail
           echo "dd378dbd9dd679c78f19058d4aadb1397f4c413d758dc23c1a7e0c4b04c595ba  kitefiles.tar.xz" | sha256sum --check
-          echo "d402fe84d6bccae9bb62b17d1026d276c3f4334b253dbcb3de10ce07e8dd15a5  kitefiles-es-next-patch.tar.xz" | sha256sum --check
+          echo "e57cd3d7bca4238f950effd229429a699f7763759e13dcac6bcaaa18872aa13d  kitefiles-es-next-patch.tar.xz" | sha256sum --check
           tar -xJf kitefiles.tar.xz
           tar -xJf kitefiles-es-next-patch.tar.xz
           grep -q 'MANAGE_EXTERNAL_STORAGE' app/src/main/AndroidManifest.xml
