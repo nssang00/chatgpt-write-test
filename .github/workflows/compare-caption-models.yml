@@ -44,8 +44,21 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  lint:
+    name: Validate Python script and prompts
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Python syntax and JSON validation
+        run: |
+          python -m py_compile scripts/compare_caption_models.py
+          python -m json.tool prompts/prompts.json > /dev/null
+          python -c "import json; p=json.load(open('prompts/prompts.json',encoding='utf-8'))['prompts']; assert len(p)==5 and all('id' in x and 'text' in x for x in p)"
+
   preflight:
     name: Verify NVIDIA self-hosted runner
+    needs: lint
     runs-on: [self-hosted, Windows, X64, m5-gpu]
     timeout-minutes: 8
     steps:
