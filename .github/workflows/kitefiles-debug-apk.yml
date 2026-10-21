@@ -1,4 +1,4 @@
-name: KiteFiles 2.1 Drawer and Swipe Debug APK
+name: KiteFiles 2.2 ES-style Folder and Options APK
 
 on:
   pull_request:
@@ -40,9 +40,27 @@ jobs:
             test "$(find . -name '*.rej' | wc -l)" -eq 1
             rm tests/android-ui-smoke.sh.rej
           fi
+          # Apply self-authored v2.2 overflow toolbar and ES-style folder-list patch.
+          xz -dc ui-v2.2.patch.xz > /tmp/kitefiles-v22-ui.patch
+          echo "d4d7f025779fc0c97ae3fe2cca4d9001f6bebd66e1b76b44ec6901e1e8521b3c  /tmp/kitefiles-v22-ui.patch" | sha256sum --check
+          patch --batch -p1 < /tmp/kitefiles-v22-ui.patch
+          # Keep existing v2.1 swipe smoke test's exact '+ 새 창' label.
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('app/src/main/java/com/kitefiles/android/MainActivity.java')
+          s=p.read_text()
+          assert 'TextView newTab=text("+", 25, Color.WHITE, true);' in s
+          s=s.replace('TextView newTab=text("+", 25, Color.WHITE, true);',
+                      'TextView newTab=text("+ 새 창", 13, Color.WHITE, true);')
+          s=s.replace('bar.addView(newTab, lp(43,39));',
+                      'newTab.setPadding(dp(13),0,dp(13),0);\n        bar.addView(newTab, lp(-2,39));')
+          p.write_text(s)
+          PY
+          grep -q 'showTopOptions' app/src/main/java/com/kitefiles/android/MainActivity.java
+          grep -q 'FileItemIcon' app/src/main/java/com/kitefiles/android/MainActivity.java
           grep -qi 'drawer' app/src/main/java/com/kitefiles/android/MainActivity.java
           grep -Eq 'Swipe|swipe|translationX' app/src/main/java/com/kitefiles/android/MainActivity.java
-          grep -q "versionName '2.1.0'" app/build.gradle
+          grep -q "versionName '2.2.0'" app/build.gradle
           grep -q 'MANAGE_EXTERNAL_STORAGE' app/src/main/AndroidManifest.xml
           grep -q 'jcifs-ng:2.1.10' app/build.gradle
 
@@ -137,13 +155,13 @@ jobs:
       - name: Upload installable Android APK
         uses: actions/upload-artifact@v4
         with:
-          name: KiteFiles-ES-Next-debug-apk
+          name: KiteFiles-v2.2-ES-style-debug-apk
           path: kitefiles/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 14
 
   ui-smoke:
-    name: Android emulator drawer and animated tab swipe
+    name: Android emulator drawer, swipe, overflow and folder rows
     needs: build
     runs-on: ubuntu-latest
     timeout-minutes: 35
@@ -167,12 +185,14 @@ jobs:
           profile: pixel_5
           emulator-options: -no-snapshot -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim
           disable-animations: true
-          script: bash kitefiles/tests/android-ui-smoke.sh apk/app-debug.apk
+          script: bash kitefiles/tests/android-ui-smoke.sh apk/app-debug.apk && bash kitefiles/tests/v22-ui-smoke.sh
       - name: Upload test screenshot
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: KiteFiles-Android-UI-screenshot
-          path: kitefiles-ui-smoke.png
+          name: KiteFiles-v2.2-Android-UI-screenshots
+          path: |
+            kitefiles-ui-smoke.png
+            kitefiles-options-menu.png
           if-no-files-found: ignore
           retention-days: 7
