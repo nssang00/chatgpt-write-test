@@ -50,4 +50,9 @@ await patch('our-renderer/integration/DirectFeatureWebGLPipeline.js',
 await patch('tests/round14_gpu_compare/round14_m5.html',
  'binding.bridge.pipeline.tileScissorEnabled=true;',
  'binding.bridge.pipeline.tileScissorEnabled=false;binding.bridge.pipeline.tileFragmentClipEnabled=true;');
+// The original simple vertex shader declares shared u_pointSize as mediump.
+// GLSL ES 1.00 requires matching uniform precision across shader stages.
+await patch('our-renderer/renderers/SimpleRenderer.js',
+ 'uniform float u_pointSize; uniform bool u_premultiplyAlpha;',
+ 'uniform mediump float u_pointSize; uniform bool u_premultiplyAlpha;');
 console.log('ROUND21_PER_FRAGMENT_EXTENT_CLIP_APPLIED');
