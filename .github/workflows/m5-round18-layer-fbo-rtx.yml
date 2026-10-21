@@ -3,6 +3,7 @@ on:
   push:
     paths:
       - .github/workflows/m5-round18-layer-fbo-rtx.yml
+      - m5-gpu/apply_round18_layer_fbo.mjs
   workflow_dispatch:
 permissions:
   contents: read
