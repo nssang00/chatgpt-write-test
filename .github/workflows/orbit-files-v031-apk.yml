@@ -1,0 +1,102 @@
+name: Orbit Files ES-inspired 0.3.1 APK
+on:
+  push:
+    branches: [feat/orbit-files-apk]
+    paths:
+      - 'android/orbit-files-v031/**'
+      - '.github/workflows/orbit-files-v031-apk.yml'
+  pull_request:
+    paths:
+      - 'android/orbit-files-v031/**'
+      - '.github/workflows/orbit-files-v03-apk.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build-apk:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Restore verified 0.1 + 0.2 + 0.3 source
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat android/orbit-files-source/part-*.b64 | base64 --decode > /tmp/base.tar.xz
+          echo "b60b69d8949d4b5209109fac740cba971db4f117d92653a56775e943b1bd3254  /tmp/base.tar.xz" | sha256sum -c -
+          tar -xJf /tmp/base.tar.xz
+          base64 --decode android/orbit-files-v02/delta.b64 > /tmp/v02.tar.xz
+          echo "595dc56b2f19e423fa3876527ca78d0c55200702a16ab743d15cd41230968bdd  /tmp/v02.tar.xz" | sha256sum -c -
+          tar -xJf /tmp/v02.tar.xz
+          base64 --decode android/orbit-files-v03/delta.b64 > /tmp/v03.tar.xz
+          echo "e12a3dbe760095ca0039f778d581538c04cf284a856f2da6e3c07db6e0dea98e  /tmp/v03.tar.xz" | sha256sum -c -
+          tar -xJf /tmp/v03.tar.xz
+          base64 --decode android/orbit-files-v031/delta.b64 > /tmp/v031.tar.xz
+          echo "4ec2438191c5af6c56fec7346008722e901fa12377c867eac409bc7866cf79d5  /tmp/v031.tar.xz" | sha256sum -c -
+          tar -xJf /tmp/v031.tar.xz
+          grep -q "versionName '0.3.1'" OrbitFiles/app/build.gradle
+          test -f OrbitFiles/docs/ES_APK_AUDIT.md
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools platforms;android-35 build-tools;35.0.0'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - name: JVM regression and permission static checks
+        working-directory: OrbitFiles
+        run: bash scripts/check-all.sh
+      - name: Assemble debug APK
+        working-directory: OrbitFiles
+        run: gradle --no-daemon --stacktrace :app:assembleDebug
+      - name: APK fingerprint and size
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK=OrbitFiles/app/build/outputs/apk/debug/app-debug.apk
+          test -s "$APK"
+          sha256sum "$APK"
+          ls -lh "$APK"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: OrbitExplorer-0.3.1-debug-apk
+          path: OrbitFiles/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 30
+  emulator-smoke:
+    needs: build-apk
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: OrbitExplorer-0.3.1-debug-apk
+          path: orbit-apk
+      - name: Enable KVM when available
+        run: |
+          if [ -e /dev/kvm ]; then sudo chmod 666 /dev/kvm; fi
+      - uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_4
+          ram-size: 2048M
+          heap-size: 256M
+          disk-size: 2048M
+          disable-animations: true
+          script: bash .github/scripts/orbit-emulator-smoke.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: OrbitExplorer-0.3.1-emulator-smoke
+          path: |
+            orbit-ui.xml
+            orbit-home.png
+            orbit-android-errors.log
+          if-no-files-found: ignore
+          retention-days: 30
