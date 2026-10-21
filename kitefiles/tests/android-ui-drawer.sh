@@ -57,7 +57,9 @@ wait_for_text '문서'
 wait_for_text '사진'
 wait_for_text 'SMB (Windows / NAS)'
 wait_for_text '탭 및 기타'
-tap_text '홈 화면'
+$ADB exec-out screencap -p > "$PWD/kitefiles-drawer-open.png"
+$ADB shell input keyevent KEYCODE_BACK
+sleep 2
 wait_for_text '내부 저장소'
 tap_text '내부 저장소'
 wait_for_text 'A_KiteFilesProbe'

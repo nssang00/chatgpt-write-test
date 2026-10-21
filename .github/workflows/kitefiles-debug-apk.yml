@@ -166,12 +166,14 @@ jobs:
           profile: pixel_5
           emulator-options: -no-snapshot -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim
           disable-animations: true
-          script: bash kitefiles/tests/android-ui-smoke.sh apk/app-debug.apk
+          script: bash kitefiles/tests/android-ui-drawer.sh apk/app-debug.apk
       - name: Upload test screenshot
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: KiteFiles-Android-UI-screenshot
-          path: kitefiles-ui-smoke.png
+          path: |
+            kitefiles-ui-smoke.png
+            kitefiles-drawer-open.png
           if-no-files-found: ignore
           retention-days: 7
