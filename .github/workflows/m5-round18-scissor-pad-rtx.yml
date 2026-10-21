@@ -1,0 +1,74 @@
+name: Round18 Tile Boundary Pixel Inclusion RTX
+on:
+  push:
+    paths:
+      - .github/workflows/m5-round18-scissor-pad-rtx.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  tile-inclusion:
+    runs-on: self-hosted
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Set up pixel-edge variants independently
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $source='C:\Users\user\Downloads\M5_GPU_COMPARE_UNPACKED\M5_Round14_OL_GPU_Compare'
+          if(-not (Test-Path (Join-Path $source 'tests\round14_gpu_compare\oneclick.mjs'))){throw 'Round14 source missing'}
+          foreach($mode in @('right','all')){
+            $dest=Join-Path $env:GITHUB_WORKSPACE ('r18-seam-'+$mode)
+            New-Item -ItemType Directory -Path $dest -Force|Out-Null
+            Copy-Item (Join-Path $source '*') $dest -Recurse -Force
+            if(Test-Path (Join-Path $dest 'RESULTS')){Remove-Item (Join-Path $dest 'RESULTS') -Recurse -Force}
+            foreach($patch in @('round14_apply_capture_fix.mjs','apply_backend_msaa_optin.mjs','apply_ol_stroke_defaults_variant.mjs','apply_no_line_discard_variant.mjs','apply_round18_tile_scissor.mjs','apply_round18_layer_fbo.mjs','apply_round18_polygon_stroke_noclip.mjs','apply_round18_closed_ring_join.mjs','apply_round18_scissor_pad.mjs')){
+              $p=Join-Path $env:GITHUB_WORKSPACE ('m5-gpu\'+$patch)
+              node --check $p
+              if($LASTEXITCODE -ne 0){throw "Syntax failed $patch"}
+              if($patch -eq 'apply_round18_scissor_pad.mjs'){node $p $dest $mode}
+              else{node $p $dest}
+              if($LASTEXITCODE -ne 0){throw "Variant preparation failed $mode $patch"}
+            }
+            Push-Location $dest
+            node tests/verify_round14_loop_and_style.mjs
+            if($LASTEXITCODE -ne 0){throw "$mode 68 parity regression"}
+            Pop-Location
+          }
+      - name: RTX one-pixel right-top tile seam A/B
+        shell: powershell
+        run: |
+          Set-Location (Join-Path $env:GITHUB_WORKSPACE 'r18-seam-right')
+          node tests/round14_gpu_compare/oneclick.mjs --rounds=1 --headless
+          if($LASTEXITCODE -ne 0){throw 'Right/top candidate did not complete'}
+      - name: RTX one-pixel all-edges tile seam A/B
+        shell: powershell
+        run: |
+          Set-Location (Join-Path $env:GITHUB_WORKSPACE 'r18-seam-all')
+          node tests/round14_gpu_compare/oneclick.mjs --rounds=1 --headless
+          if($LASTEXITCODE -ne 0){throw 'All-edges candidate did not complete'}
+      - name: Upload pixels and perf on failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: round18-tile-seam-inclusion-rtx
+          if-no-files-found: warn
+          retention-days: 30
+          path: |
+            r18-seam-right/RESULTS/**
+            r18-seam-all/RESULTS/**
+      - name: Exact RGBA8 requirement
+        shell: powershell
+        run: |
+          foreach($mode in @('right','all')){
+            $f=Get-ChildItem (Join-Path $env:GITHUB_WORKSPACE ('r18-seam-'+$mode+'\RESULTS')) -Recurse -Filter manifest.json|Select-Object -First 1
+            if(-not $f){throw "Missing $mode GPU report"}
+            $m=Get-Content $f.FullName -Raw|ConvertFrom-Json
+            Write-Host "=== $mode ===";$m.rows|Format-Table scene,pixelDiffRuns,pixelExact
+            if($m.pixelParityAll){Write-Host "PASS $mode";exit 0}
+          }
+          throw 'Neither seam padding variant reached pixel equality'
