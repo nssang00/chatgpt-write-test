@@ -130,3 +130,38 @@ jobs:
           path: kitefiles/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 14
+
+  ui-smoke:
+    name: Android emulator folders and swipe tabs
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: KiteFiles-ES-Next-debug-apk
+          path: apk
+      - name: Enable KVM accelerator
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kinsmod"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm || true
+      - name: Launch Android 35 emulator and test UI
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_5
+          emulator-options: -no-snapshot -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim
+          disable-animations: true
+          script: bash kitefiles/tests/android-ui-smoke.sh apk/app-debug.apk
+      - name: Upload test screenshot
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: KiteFiles-Android-UI-screenshot
+          path: kitefiles-ui-smoke.png
+          if-no-files-found: ignore
+          retention-days: 7
