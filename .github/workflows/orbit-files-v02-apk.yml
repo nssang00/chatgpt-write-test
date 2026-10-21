@@ -30,7 +30,7 @@ jobs:
         run: |
           set -euo pipefail
           base64 --decode android/orbit-files-v02/delta.b64 > /tmp/orbit-delta.tar.xz
-          echo "49b0fffb6923760691214aaefb7191edbab65341a0beee9caf6373e58c5bb735  /tmp/orbit-delta.tar.xz" | sha256sum -c -
+          echo "595dc56b2f19e423fa3876527ca78d0c55200702a16ab743d15cd41230968bdd  /tmp/orbit-delta.tar.xz" | sha256sum -c -
           tar -xJf /tmp/orbit-delta.tar.xz
           grep -q "versionName '0.2.0'" OrbitFiles/app/build.gradle
           test -f OrbitFiles/app/src/main/java/dev/orbit/files/SmbStorage.java
