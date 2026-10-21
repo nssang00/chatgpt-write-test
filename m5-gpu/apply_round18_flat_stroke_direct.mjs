@@ -27,7 +27,7 @@ const helper=`  // Opt-in: read polygon stroke rings directly from flat feature 
       lineWriter.push8Reserved(readX(prev),readY(prev),ax,ay,bx,by,readX(next),readY(next));
     }
     counters.lineSegments+=instances;
-    return {first,count:instances,gpuJoin:true};
+    return [{first,count:instances,gpuJoin:true}];
   };
 `;
 s=s.replace(anchor,helper+anchor);
