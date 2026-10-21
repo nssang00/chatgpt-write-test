@@ -5,8 +5,6 @@ APK="${1:-apk/app-debug.apk}"
 $ADB wait-for-device
 $ADB install -r "$APK"
 $ADB shell appops set --uid com.kitefiles.android MANAGE_EXTERNAL_STORAGE allow
-$ADB shell mkdir -p /sdcard/A_KiteFilesProbe
-$ADB shell 'echo proof-data > /sdcard/A_KiteFilesProbe/probe.txt'
 $ADB shell am start -n com.kitefiles.android/.MainActivity
 sleep 5
 TMP_DIR="${RUNNER_TEMP:-/tmp}"
@@ -52,13 +50,13 @@ tap_text() {
 trap '$ADB exec-out screencap -p > "$PWD/kitefiles-ui-smoke.png" || true' EXIT
 wait_for_text '내부 저장소'
 tap_text '내부 저장소'
-wait_for_text 'A_KiteFilesProbe'
-tap_text 'A_KiteFilesProbe'
-wait_for_text 'probe.txt'
+wait_for_text 'Download'
+tap_text 'Download'
+wait_for_text '/storage/emulated/0/Download'
 tap_text '+ 새 창'
-wait_for_text 'A_KiteFilesProbe'
+wait_for_text 'Download'
 read -r WIDTH HEIGHT <<< "$($ADB shell wm size | grep -o '[0-9]*x[0-9]*' | head -1 | tr x ' ')"
 Y=$((HEIGHT*65/100))
 $ADB shell input swipe $((WIDTH*20/100)) "$Y" $((WIDTH*80/100)) "$Y" 400
-wait_for_text 'probe.txt'
+wait_for_text '/storage/emulated/0/Download'
 echo 'ANDROID UI SMOKE RESULT: storage, folders, new tab, swipe PASS'
