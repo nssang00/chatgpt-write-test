@@ -1,0 +1,87 @@
+name: Round19 Line Shader Precision RTX
+on:
+  push:
+    paths:
+      - .github/workflows/m5-round19-shader-precision-rtx.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  r19-shader:
+    runs-on: self-hosted
+    timeout-minutes: 55
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Stage exact R18 and three OL arithmetic variants
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $src='C:\Users\user\Downloads\M5_GPU_COMPARE_UNPACKED\M5_Round14_OL_GPU_Compare'
+          if(-not (Test-Path (Join-Path $src 'tests\round14_gpu_compare\oneclick.mjs'))){throw 'Missing Round14 source'}
+          $gpu=Get-CimInstance Win32_VideoController | Where-Object {$_.Name -match 'NVIDIA.*RTX'}
+          if(-not $gpu){throw 'Physical RTX not found'}
+          $gpu | Format-Table Name,DriverVersion
+          $base=@('round14_apply_capture_fix.mjs','apply_backend_msaa_optin.mjs','apply_ol_stroke_defaults_variant.mjs','apply_no_line_discard_variant.mjs','apply_round18_tile_scissor.mjs','apply_round18_layer_fbo.mjs','apply_round18_polygon_stroke_noclip.mjs','apply_round18_flat_stroke_direct.mjs')
+          foreach($variant in @('vertex','fragment','both')){
+            $dest=Join-Path $env:GITHUB_WORKSPACE ('r19-'+$variant)
+            New-Item -Type Directory -Path $dest -Force | Out-Null
+            Copy-Item (Join-Path $src '*') $dest -Recurse -Force
+            if(Test-Path (Join-Path $dest 'RESULTS')){Remove-Item (Join-Path $dest 'RESULTS') -Recurse -Force}
+            foreach($patch in $base){
+              $file=Join-Path $env:GITHUB_WORKSPACE ('m5-gpu\'+$patch)
+              node --check $file
+              if($LASTEXITCODE -ne 0){throw "Bad patch syntax $patch"}
+              node $file $dest
+              if($LASTEXITCODE -ne 0){throw "Patch failed $patch"}
+            }
+            node m5-gpu/apply_round19_shader_math.mjs $dest $variant
+            if($LASTEXITCODE -ne 0){throw "Shader math candidate $variant failed preparation"}
+            Push-Location $dest
+            node tests/verify_round14_loop_and_style.mjs
+            if($LASTEXITCODE -ne 0){throw "$variant 68 parity failure"}
+            node tests/verify_direct_feature_gpu_draw.mjs
+            if($LASTEXITCODE -ne 0){throw "$variant shader FakeGL regression failure"}
+            node tests/round14_gpu_compare/oneclick.mjs --self-test
+            if($LASTEXITCODE -ne 0){throw "$variant self-test failure"}
+            Pop-Location
+          }
+      - name: Real RTX measured pixel and time A/B
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          foreach($variant in @('vertex','fragment','both')){
+            Push-Location (Join-Path $env:GITHUB_WORKSPACE ('r19-'+$variant))
+            node tests/round14_gpu_compare/oneclick.mjs --rounds=2 --headless
+            $code=$LASTEXITCODE
+            Pop-Location
+            if($code -ne 0){throw "$variant RTX failed"}
+          }
+      - name: Keep all raw evidence before strict gate
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: r19-ol-line-arithmetic-rtx
+          retention-days: 30
+          if-no-files-found: warn
+          path: |
+            r19-vertex/RESULTS/**
+            r19-fragment/RESULTS/**
+            r19-both/RESULTS/**
+      - name: Evaluate strict exact RGBA8 parity
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $passed=$false
+          foreach($variant in @('vertex','fragment','both')){
+            $path=Join-Path $env:GITHUB_WORKSPACE ('r19-'+$variant+'\RESULTS')
+            $file=Get-ChildItem $path -Filter manifest.json -File -Recurse | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+            if(-not $file){throw "No manifest $variant"}
+            $m=Get-Content $file.FullName -Raw | ConvertFrom-Json
+            Write-Host "=== OL shader candidate $variant ==="
+            $m.rows | Format-Table scene,pixelDiffRuns,pixelExact,olMedianMs,m5MedianMs,m5ChangePercent
+            if($m.pixelParityAll -and $m.withinRendererStable){$passed=$true}
+          }
+          if(-not $passed){throw 'STRICT_RGBA8_PARITY_NOT_YET_ZERO'}
