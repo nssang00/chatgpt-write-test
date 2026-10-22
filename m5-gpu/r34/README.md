@@ -31,3 +31,31 @@ re-run #39750095083 returned `startup_failure` before job creation.
 
 **No claim of OpenLayers-relative stable 50% GPU wall-frame improvement.
 Release blocked; main unchanged.**
+
+## 2026-10-22 RTX Actions infrastructure blocker — verified by API
+
+GitHub Actions cannot currently create a job in this repository. A new one-step
+NVIDIA RTX probe [run #39777179108](https://github.com/nssang00/chatgpt-write-test/actions/runs/39777179108)
+was routed to synthetic `BuildFailed`, `workflow_id=392700471`,
+`conclusion=startup_failure`, **0 jobs and 0 artifacts**. Re-running a prior
+working R30 RTX job was blocked before job creation as well.
+
+**NEW DISTINCT ACCOUNT-LEVEL SIGNAL:** Attempt to create a tracking GitHub Issue
+via the linked account returned HTTP **422**, GitHub API message:
+`at least one email address must be verified to do that`.
+GitHub's official account documentation states that without a verified account
+email, both **issues and GitHub Actions** are restricted:
+https://docs.github.com/en/account-and-profile/reference/email-addresses-reference
+
+### Required account-owner action
+1. Sign in as the repository-owning `nssang00` account.
+2. Visit https://github.com/settings/emails and confirm at least one verified
+   address. If not verified, use **Resend verification email** and complete its link.
+3. Re-run the minimum `m5-r34-nvidia-rtx-probe.yml` workflow before any GPU A/B.
+4. If the same `startup_failure` persists despite verified email, inspect
+   Actions billing/payment authorization and GitHub Support's workflow registry
+   status for synthetic workflow ID `392700471`.
+
+This is a *strong and actionable lead*, but the root cause of the synthetic
+startup failure is not proven until an actual job starts. CPU byte-equality and
+regression checks still pass; **R34 RTX wall-frame performance remains unverified**.
