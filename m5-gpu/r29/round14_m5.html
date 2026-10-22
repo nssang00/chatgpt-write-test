@@ -1,0 +1,210 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Round14 M5 Direct WebGL1 Cold GPU RTX Comparison</title>
+<script type="importmap">{"imports":{
+ "pbf":"/vendor/openlayers-10.10.0-runtime/node_modules/pbf/index.js",
+ "earcut":"/vendor/openlayers-10.10.0-runtime/node_modules/earcut/src/earcut.js",
+ "rbush":"/vendor/openlayers-10.10.0-runtime/node_modules/rbush/index.js",
+ "quickselect":"/vendor/openlayers-10.10.0-runtime/node_modules/quickselect/index.js"
+}}</script>
+<style>html,body{margin:0;background:#171a20;color:#e0e0e0;font:13px monospace}canvas{image-rendering:auto}#map{width:512px;height:512px;position:absolute;top:0;left:540px}#status{white-space:pre-wrap;position:absolute;top:535px;padding:9px}#m5{position:absolute;top:0;left:0}</style>
+</head><body><canvas id="m5" width="512" height="512"></canvas><div id="map"></div><pre id="status">Round7 style-pass real MVT loading...</pre>
+<script>
+// Lightweight diagnostics independent of the benchmark's ES-module imports.
+// If Chrome fails before it can send result.json, progress.json identifies the stage.
+window.__m5R6Progress=(stage,scene='',iteration=null,info='')=>{
+ try{fetch('/__m5_round6_progress',{method:'POST',headers:{'Content-Type':'application/json'},
+  body:JSON.stringify({stage,scene,iteration,info})}).catch(()=>{});}catch{}
+};
+window.__m5R6Progress('html-loaded');
+window.addEventListener('error',async e=>{
+ if(window.__m5Round6Result||window.__m5Round6OLResult||window.__m5Round6ErrorSent)return;
+ window.__m5Round6ErrorSent=true;
+ window.__m5R6Progress('browser-error','','',String(e.message||e.error||'unknown'));
+ const result={pass:false,scenes:[],error:'Browser module failed: '+String(e.message||e.error),stack:e.error?.stack};
+ document.getElementById('status').textContent=JSON.stringify(result,null,2);
+ try{await fetch('/__m5_round6_report',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({result,images:[]})})}catch{}
+});
+window.addEventListener('unhandledrejection',e=>{window.__m5R6Progress('unhandled-rejection','','',String(e.reason||'unknown'));});
+</script>
+<script type="module">
+import MVT from '../../vendor/openlayers-10.10.0-runtime/node_modules/ol/format/MVT.js';
+import {decodeSceneFeatures} from '../round11/shared_mvt_decode.mjs';
+import {WebGL1Backend} from '../../our-renderer/backend/WebGL1Backend.js';
+import {OpenLayersRendererBinding} from '../../our-renderer/OpenLayersRendererBinding.js';
+
+window.__m5R6Progress('module-started');
+globalThis.__m5R18ClosedRingJoin=true;
+const validationQuery=new URL(location.href).searchParams;
+const tileUploadBatch=validationQuery.get('tileUploadBatch')==='1';
+globalThis.__m5R29EarcutPartial=validationQuery.get('partialEarcut')==='1';
+const validationClipMode=validationQuery.get('clipMode')||'legacy-unclipped';
+if(!['legacy-unclipped','bounded'].includes(validationClipMode))throw Error('Invalid clipMode');
+globalThis.__m5R18FlatUnclippedStroke=validationClipMode==='legacy-unclipped';
+globalThis.__m5R18PolygonStrokeUnclipped=validationClipMode==='legacy-unclipped';
+const keys=[[3492,1586],[3493,1586],[3492,1587],[3493,1587]];
+const SCENES={
+ 'building-1l':[{layer:'building',style:{'fill-color':'rgba(210,194,169,0.52)','stroke-color':'#766655','stroke-width':1}}],
+ 'road-1l':[{layer:'road',style:{'stroke-color':'rgba(220,65,55,0.92)','stroke-width':3}}],
+ 'mixed-4l':[
+  {layer:'water',style:{'fill-color':'rgba(90,154,227,0.75)'}},
+  {layer:'building',style:{'fill-color':'rgba(210,194,169,0.52)','stroke-color':'#766655','stroke-width':1}},
+  {layer:'road',style:{'stroke-color':'rgba(220,65,55,0.92)','stroke-width':3}},
+  {layer:'railway',style:{'stroke-color':'rgba(70,70,70,0.9)','stroke-width':2}}
+ ]
+};
+const clampRounds=v=>Math.max(1,Math.min(20,Number.isFinite(v)?Math.floor(v):7));
+const rounds=clampRounds(Number(new URL(location.href).searchParams.get('rounds')));
+const warmup=1;
+const parityCapture=new URL(location.href).searchParams.get('captureMode')==='canvas';
+const round10Variant=new URL(location.href).searchParams.get('round10');
+const optimized=round10Variant==='optimized';
+const round11Shared=new URL(location.href).searchParams.get('round11Shared')==='1';
+const round11Profile=new URL(location.href).searchParams.get('round11Profile')==='1';
+const baseline=round10Variant==='baseline';
+const round12Variant=new URL(location.href).searchParams.get('round12');
+const round12Baseline=round12Variant==='baseline';
+const drawMode=new URL(location.href).searchParams.get('drawMode')==='painter'?'painter':'style-pass';
+const results={pass:false,tileUploadBatch,validationConfig:{clipMode:validationClipMode,fringe:Number(validationQuery.get('polygonStrokeFringePx')||0),closedJoins:validationQuery.get('closedLineJoins')==='1'},drawMode,round10Variant,round11Shared,round12Variant,suite:'Round7 Real Seoul MVT 4 tiles - style-pass batch smoke',input:'Seoul zoom12 x3492-3493 y1586-1587',
+ viewport:[512,512],dpr:1,rounds,warmup,stableStyleIdentityCache:true,sharedCompletion:'GPU gl.finish + 2 RAF + canvas RGBA8 readback',textureFetch:'excluded from cold timings',scenes:[],
+ comparison:{olWorker:'separate shared-completion A/B runner',note:'Round14 opt-in stableStyleIdentityCache=true; only stable style objects are used.'}};
+const ms=()=>performance.now();const afterFrame=()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));
+const median=a=>{const v=[...a].sort((a,b)=>a-b);return v[Math.floor(v.length/2)]};
+const pad=(x)=>Number(x.toFixed(3));
+const TILE=4096;
+const extent=(x,y)=>[(x-3492)*TILE,(1587-y)*TILE,(x-3491)*TILE,(1588-y)*TILE];
+const frame={size:[512,512],pixelRatio:1,extent:[0,0,8192,8192],viewState:{center:[4096,4096],resolution:16,rotation:0,projection:null}};
+class Events{constructor(){this.listeners=new Map()}on(name,fn){if(!this.listeners.has(name))this.listeners.set(name,new Set());this.listeners.get(name).add(fn);return{unlisten:()=>this.un(name,fn)}}un(name,fn){this.listeners.get(name)?.delete(fn)}emit(name,event){for(const fn of [...(this.listeners.get(name)||[])])fn(event)}}
+class Source extends Events{
+ getTile(){} getOverlaps(){return true}getProjection(){return null}getWrapX(){return false}
+ getTileGrid(){return {getTileCoordExtent:([,x,y])=>extent(x,y),getZForResolution:()=>12,
+  getTileRangeForExtentAndZ:()=>({minX:3492,maxX:3493,minY:1586,maxY:1587}),getFullTileRange:()=>null}}
+}
+class Layer extends Events{constructor(source,style,z){super();this.source=source;this.style=()=>style;this.z=z}
+ getSource(){return this.source}getVisible(){return true}getOpacity(){return 1}getZIndex(){return this.z}getStyleFunction(){return this.style}}
+class Group extends Events{constructor(layers){super();this.collection=new Events();this.collection.getArray=()=>layers}getLayers(){return this.collection}}
+class MapMock extends Events{constructor(layers){super();this.group=new Group(layers)}getLayerGroup(){return this.group}getView(){return{getProjection:()=>null,getResolution:()=>16}}render(){}renderSync(){}}
+function pngFromRGBA(image){const c=document.createElement('canvas');c.width=c.height=512;const ctx=c.getContext('2d');const out=ctx.createImageData(512,512);for(let y=0;y<512;y++)out.data.set(image.subarray((511-y)*2048,(512-y)*2048),y*2048);ctx.putImageData(out,0,0);return c.toDataURL('image/png').split(',')[1]}
+function rgbaFromCanvas(canvas){const c=document.createElement('canvas');c.width=c.height=512;const ctx=c.getContext('2d');ctx.clearRect(0,0,512,512);ctx.drawImage(canvas,0,0);const top=ctx.getImageData(0,0,512,512).data;const bottom=new Uint8Array(top.length);for(let y=0;y<512;y++)bottom.set(top.subarray((511-y)*2048,(512-y)*2048),y*2048);return bottom}
+function rgbaFromBackend(gl){const bytes=new Uint8Array(512*512*4);gl.readPixels(0,0,512,512,gl.RGBA,gl.UNSIGNED_BYTE,bytes);return bytes}
+async function imageStats(bytes){let painted=0;for(let i=3;i<bytes.length;i+=4)if(bytes[i]!==0)painted++;const digest=await crypto.subtle.digest('SHA-256',bytes);return {paintedPixels:painted,rgba8Sha256:[...new Uint8Array(digest)].map(x=>x.toString(16).padStart(2,'0')).join(''),centerRGBA:[...bytes.slice((256*512+256)*4,(256*512+256)*4+4)]}}
+function createScene(spec,canvas){const sources=spec.map(()=>new Source()),layers=spec.map((part,i)=>new Layer(sources[i],part.style,i)),map=new MapMock(layers);return {sources,map}}
+let bytesByTile=new Map(),images=[];
+async function runOne(sceneName,spec){
+ const samples=[],firstGpuImage=null;
+ let renderer=null,firstImg=null,firstSummary=null;
+ window.__m5R6Progress('scene-started',sceneName);
+ for(let iter=-warmup;iter<rounds;iter++){
+  // Fresh context+backend+scene each run: no previously allocated tile VBOs or scene resources.
+  window.__m5R6Progress('iteration-started',sceneName,iter);
+  const t0=ms();
+  const canvas=document.createElement('canvas');canvas.width=canvas.height=512;canvas.style.cssText='position:absolute;top:0;left:0;width:512px;height:512px;z-index:2';document.body.appendChild(canvas);
+  let disposing=false,contextLost=false;
+  canvas.addEventListener('webglcontextlost',e=>{
+   if(!disposing){contextLost=true;window.__m5R6Progress('webgl-context-lost',sceneName,iter);}
+  });
+  const backend=new WebGL1Backend(canvas,{contextAntialias:false,gpuCompletionMode:'blocking',cacheBindings:!baseline,profileTiming:round11Profile});
+  const oldUpload=backend.uploadBufferResource?.bind(backend);let uploadCalls=0,uploadBytes=0,uploadApiMs=0;
+  if(oldUpload)backend.uploadBufferResource=function(target,buffer,offset,data){
+    uploadCalls++;uploadBytes+=data?.byteLength??0;
+    if(!round11Profile)return oldUpload(target,buffer,offset,data);
+    const start=ms();try{return oldUpload(target,buffer,offset,data)}finally{uploadApiMs+=ms()-start}
+  };
+  const {sources,map}=createScene(spec,canvas);
+  let binding;
+  try{
+   binding=await OpenLayersRendererBinding.createDirectScene({map,backend,vectorTileOptions:{drawMode,stableStyleIdentityCache:true,cacheSceneSchedule:optimized,gpuArenaHeadroomFactor:optimized?2:1,profileCPU:round11Profile,olLayerFboComposition:true,polygonInsideSegmentFastPath:!round12Baseline,polygonEarBBoxPrecheck:!round12Baseline,polygonStrokeFringePx:Number(new URL(location.href).searchParams.get('polygonStrokeFringePx')||0),closedLineJoins:new URL(location.href).searchParams.get('closedLineJoins')==='1' }});binding.bridge.pipeline.tileScissorEnabled=true;binding.start({renderSync:false});
+   const setupMs=ms()-t0,tDecode=ms();
+   const {perLayer,featureCount,decodeCalls,shared:sharedDecode}=decodeSceneFeatures({
+     MVT,keys,spec,bytesByTile,extent,shared:round11Shared});
+   const decodeMs=ms()-tDecode,tEncode=ms();
+   window.__m5R6Progress('decoded',sceneName,iter,featureCount);
+   // R28 opt-in: one GPU arena upload transaction across the four freshly
+   // encoded MVT tiles. No tile decode, cache, geometry, style or draw changes.
+   // Batching prevents re-uploading existing tile buffers after each arena growth.
+   const tileStreams=[['vertices','ARRAY_BUFFER',8],['indices','ELEMENT_ARRAY_BUFFER',4],['lineInstances','ARRAY_BUFFER',32]];
+   const arena=binding.resourceManager;
+   if(tileUploadBatch)for(const [kind,target,alignment] of tileStreams)
+     arena.beginStreamUploadBatch('direct.feature.'+kind,{target,alignment,gpuCapacityHeadroomFactor:optimized?2:1});
+   try{
+     for(let li=0;li<spec.length;li++)for(const {x,y,features} of perLayer[li]){
+       sources[li].emit('tileloadend',{tile:{getTileCoord:()=>[12,x,y],getFeatures:()=>features}});
+     }
+   }finally{
+     if(tileUploadBatch)for(const [kind] of tileStreams)
+       arena.endStreamUploadBatch('direct.feature.'+kind);
+   }
+   const encodeUploadMs=ms()-tEncode,tDraw=ms();
+   window.__m5R6Progress('uploaded',sceneName,iter,uploadBytes);
+   const stats=binding.renderFrame(frame);
+   // renderFrame() invokes WebGL1Backend.endFrame(), which already calls
+   // gl.finish() when gpuCompletionMode is 'blocking'. Do not block twice.
+   if(contextLost || backend.gl.isContextLost())throw Error('WebGL context lost during '+sceneName+' iteration '+iter);
+   const drawGpuFinishMs=ms()-tDraw;
+   window.__m5R6Progress('draw-finished',sceneName,iter,stats?.drawCalls);
+   // Shared OL/M5 metric: backend GPU finished, 2 RAFs, and fully readable non-empty canvas pixels.
+   // Capture the just-finished WebGL drawing buffer synchronously BEFORE RAF.
+   // Browser canvases normally use preserveDrawingBuffer=false, so capture
+   // after two RAFs can be transparent even when GPU rendering succeeded.
+   // Stock OL captures at its postrender callback for the same reason.
+   const canvasPixels=rgbaFromCanvas(canvas);
+   const tPresent=ms();await afterFrame();const framePresentMs=ms()-tPresent;
+   let visiblePixels=0;for(let i=3;i<canvasPixels.length;i+=4)if(canvasPixels[i])visiblePixels++;
+   if(!visiblePixels)throw Error('M5 visual-readback is empty');
+   const coldToCapturedFrameMs=ms()-t0;
+   const coldTotalMs=ms()-t0; // legacy diagnostic only; shared metric above is authoritative.
+   const img=iter===0?canvasPixels:null;
+   const snapshot=binding.snapshot();
+   const totalEncodingCpuMs=round11Profile?(snapshot.tileProfiles||[]).reduce((s,p)=>s+p.encodeCpuMs,0):null;
+   const arenaAndWebglApiMs=round11Profile?(snapshot.tileProfiles||[]).reduce((s,p)=>s+p.arenaAndWebglApiMs,0):null;
+   const arenaCapacity=binding.resourceManager.bufferGpuCapacityBytes();
+   const s={setupMs:pad(setupMs),decodeMs:pad(decodeMs),encodeUploadMs:pad(encodeUploadMs),drawGpuFinishMs:pad(drawGpuFinishMs),coldGpuCompleteMs:pad(setupMs+decodeMs+encodeUploadMs+drawGpuFinishMs),
+    coldToNextPaintMs:iter===0?pad(coldTotalMs):null,framePresentMs:pad(framePresentMs),coldToCapturedFrameMs:pad(coldToCapturedFrameMs),visiblePixels,
+    uploadCalls,uploadBytes,arenaCapacity,featureCount,decodeCalls,sharedDecode,
+    ...(round11Profile?{geometryCpuMs:pad(totalEncodingCpuMs),arenaAndWebglApiMs:pad(arenaAndWebglApiMs),
+      uploadApiMs:pad(uploadApiMs),scheduleMs:pad(stats?.scheduleMs||0),drawSubmitCpuMs:pad(stats?.drawSubmitCpuMs||0),
+      gpuFinishWaitMs:pad(stats?.gpuFinishWaitMs||0)}:{}),registeredTiles:snapshot.tileCount,drawPackets:snapshot.drawPackets,
+    glError:stats?.glError,drawCalls:stats?.drawCalls,renderer:backend.gl.getParameter(backend.gl.RENDERER)};
+   if(iter===0){renderer=s.renderer;const debug=backend.gl.getExtension('WEBGL_debug_renderer_info');
+     if(debug)renderer=backend.gl.getParameter(debug.UNMASKED_RENDERER_WEBGL);
+     firstSummary=await imageStats(img);firstImg=pngFromRGBA(img);}
+   if(iter>=0)samples.push(s);
+  }finally{
+    disposing=true;binding?.destroy?.();backend.gl.getExtension('WEBGL_lose_context')?.loseContext();canvas.remove();
+    // Let Chrome's GPU process retire this WebGL context before opening the
+    // next fresh cold context (excluded from measured timings).
+    await new Promise(resolve=>setTimeout(resolve,30));
+  }
+ }
+ const pass=samples.every(s=>s.glError===0&&s.registeredTiles===spec.length*4&&s.featureCount>0&&s.drawCalls>0)&&firstSummary?.paintedPixels>0;
+ const timings=['setupMs','decodeMs','encodeUploadMs','drawGpuFinishMs','coldGpuCompleteMs','coldToCapturedFrameMs'];
+ const medians=Object.fromEntries(timings.map(k=>[k,pad(median(samples.map(s=>s[k])))]));
+ images.push({filename:sceneName+'.png',pngBase64:firstImg});
+ window.__m5R6Progress('scene-finished',sceneName,null,JSON.stringify(medians));
+ return {name:sceneName,pass,layerCount:spec.length,sourceLayers:spec.map(s=>s.layer),tileCount:4,
+  realFeatureCount:samples[0]?.featureCount,renderer,image:firstSummary,medians,samples};
+}
+try{
+ window.__m5R6Progress('fixture-fetch-started');
+ const prefetch=ms();
+ for(const [x,y] of keys){const path=`/tests/fixtures/seoul/12/${x}/${y}.pbf`;
+  const rsp=await fetch(path,{cache:'no-store'});if(!rsp.ok)throw Error('Cannot load PBF '+path+': '+rsp.status);
+  bytesByTile.set(`${x}/${y}`,await rsp.arrayBuffer());}
+ window.__m5R6Progress('fixture-fetched','',null,bytesByTile.size);
+ results.fixtureFetchMs=pad(ms()-prefetch);results.fixtureBytes=[...bytesByTile.values()].reduce((s,b)=>s+b.byteLength,0);
+ for(const [name,spec] of Object.entries(SCENES)){
+  document.getElementById('status').textContent='Round6: '+name;
+  const scene=await runOne(name,spec);results.scenes.push(scene);
+ }
+ results.pass=results.scenes.every(s=>s.pass);
+}catch(error){results.pass=false;results.error=String(error);results.stack=error?.stack;
+ window.__m5R6Progress('benchmark-error','',null,String(error));}
+finally{
+ // Do not allocate and force-lose a NEW GPU context solely to read renderer
+ // details. The measured scenes record the real renderer already.
+ results.browserRenderer=results.scenes[0]?.renderer||null;
+ window.__m5R6Progress('result-post-started');
+ window.__m5Round6Result=results;
+ try{const response=await fetch('/__m5_round6_report',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({result:results,images})});if(!response.ok)throw Error('HTTP '+response.status);window.__m5R6Progress('result-post-completed')}catch(error){results.reportError=String(error);window.__m5R6Progress('result-post-failed','',null,String(error))}
+ document.getElementById('status').textContent='M5_ROUND6_JSON:'+JSON.stringify({pass:results.pass,scenes:results.scenes.map(s=>({name:s.name,pass:s.pass,medians:s.medians})),error:results.error});
+}
+</script></body></html>
