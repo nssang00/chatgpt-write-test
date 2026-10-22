@@ -1,0 +1,23 @@
+name: M5 R31 Workflow Startup Probe
+on:
+  push:
+    branches:
+      - m5/r31-rtx-frame-pacing-20261022
+    paths:
+      - .github/workflows/m5-r31-startup-probe.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: self-hosted
+    timeout-minutes: 3
+    steps:
+      - name: RTX environment probe
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          Write-Host "M5_R31_ACTIONS_WORKFLOW_EXECUTED"
+          $gpu=Get-CimInstance Win32_VideoController
+          $gpu|Select-Object Name,DriverVersion|Format-Table
+          if(-not ($gpu|Where-Object {$_.Name -match 'NVIDIA.*RTX'})){throw 'RTX unavailable'}
