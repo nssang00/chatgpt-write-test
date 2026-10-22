@@ -1,0 +1,20 @@
+name: UI Studio Runner Availability Probe
+on:
+  push:
+    branches:
+      - ci/ui-studio-v012-playwright-20261022
+    paths:
+      - ".github/workflows/ui-studio-runner-probe.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  runner-probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Confirm hosted runner execution
+        run: |
+          echo "GitHub Actions hosted runner allocated"
+          uname -a
+          echo "UI-STUDIO-RUNNER-PROBE-PASS"

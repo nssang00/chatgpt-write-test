@@ -1,0 +1,76 @@
+name: UI Studio v0.12 — Chromium E2E
+
+on:
+  push:
+    branches:
+      - ci/ui-studio-v012-playwright-20261022
+    paths:
+      - "experiments/ui-studio-v0.12/**"
+      - ".github/workflows/ui-studio-v012-e2e.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  browser-e2e:
+    name: Core + Build + Chromium
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v4
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Verify exact v0.12 archive and expand source
+        shell: bash
+        run: |
+          echo "4585173e7af37fe51540da782d4cc83c4f98cc7992ffc29df9266c9206ba2027  experiments/ui-studio-v0.12/ui-studio-source.zip" | sha256sum -c -
+          mkdir -p experiments/ui-studio-v0.12/app
+          unzip -q experiments/ui-studio-v0.12/ui-studio-source.zip -d experiments/ui-studio-v0.12/app
+          test -f experiments/ui-studio-v0.12/app/package.json
+      - name: Install dependencies
+        working-directory: experiments/ui-studio-v0.12/app
+        run: npm install --no-audit --no-fund
+      - name: Core regression tests
+        working-directory: experiments/ui-studio-v0.12/app
+        run: npm test
+      - name: Source syntax and Runtime tests
+        working-directory: experiments/ui-studio-v0.12/app
+        run: |
+          node tools/verify-syntax.mjs
+          npm run verify:runtime
+      - name: Production Vite build
+        working-directory: experiments/ui-studio-v0.12/app
+        run: npm run build
+      - name: Export component and install in isolated React package
+        working-directory: experiments/ui-studio-v0.12/app
+        shell: bash
+        run: |
+          npm run export:dynamic
+          mkdir -p "${RUNNER_TEMP}/itemlist-component"
+          unzip -q examples/ItemList-react-component-v0.12.zip -d "${RUNNER_TEMP}/itemlist-component"
+          cd "${RUNNER_TEMP}/itemlist-component"
+          npm install --no-audit --no-fund
+          npm run build
+          test -s dist/index.js
+      - name: Install Chromium
+        working-directory: experiments/ui-studio-v0.12/app
+        run: npx playwright install --with-deps chromium
+      - name: Playwright actual-browser E2E
+        working-directory: experiments/ui-studio-v0.12/app
+        env:
+          CI: "true"
+        run: npm run test:e2e
+      - name: Upload E2E evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ui-studio-v012-browser-evidence
+          path: |
+            experiments/ui-studio-v0.12/app/test-results/
+            experiments/ui-studio-v0.12/app/playwright-report/
+          if-no-files-found: ignore
+          retention-days: 14
