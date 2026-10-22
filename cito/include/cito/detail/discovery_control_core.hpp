@@ -39,6 +39,7 @@ private:
         DemandSummaryStamp stamp{};
         std::vector<InterestKey> keys;
         std::uint32_t next_offset{};
+        std::uint64_t last_request_ms{};
     };
 
     using RequestedRoutes =
@@ -99,11 +100,36 @@ public:
                 message.coordinator);
             requested_routes_.erase(
                 message.coordinator);
+            last_route_retry_ms_.erase(
+                message.coordinator);
         }
 
         if (!host_.needs_remote_snapshot(
                 message.coordinator,
                 message.stamp)) {
+            // A route request/response is UDP and may have been dropped.
+            // The requested_routes_ map records intent, not an ACK.
+            // Retry only unresolved, still-demanded coordinator routes.
+            const auto last =
+                last_route_retry_ms_.find(message.coordinator);
+            if (last == last_route_retry_ms_.end() ||
+                (now_ms >= last->second &&
+                 now_ms - last->second >= 500)) {
+                last_route_retry_ms_[message.coordinator] = now_ms;
+                const auto it = requested_routes_.find(
+                    message.coordinator);
+                if (it != requested_routes_.end()) {
+                    for (const auto& [key, requested_incarnation] : it->second) {
+                        if (requested_incarnation == message.stamp.incarnation &&
+                            desired_routes_.contains(key) &&
+                            host_.candidate_hosts(key).contains(message.coordinator) &&
+                            host_.remote_destinations(message.coordinator,key).empty()) {
+                            actions.push_back(route_request_action(
+                                message.coordinator, requested_incarnation, key));
+                        }
+                    }
+                }
+            }
             return actions;
         }
 
@@ -115,6 +141,13 @@ public:
             pending_it != pending_.end() &&
             pending_it->second.stamp ==
                 message.stamp) {
+            auto& pending = pending_it->second;
+            if (now_ms >= pending.last_request_ms &&
+                now_ms - pending.last_request_ms >= 500) {
+                pending.last_request_ms = now_ms;
+                actions.push_back(snapshot_request_action(
+                    message.coordinator, message.stamp, pending.next_offset));
+            }
             return actions;
         }
 
@@ -123,7 +156,8 @@ public:
             PendingSnapshot{
                 message.stamp,
                 {},
-                0});
+                0,
+                now_ms});
 
         actions.push_back(
             snapshot_request_action(
@@ -403,6 +437,8 @@ public:
                 coordinator);
             requested_routes_.erase(
                 coordinator);
+            last_route_retry_ms_.erase(
+                coordinator);
         }
 
         stats_.expired_coordinators +=
@@ -600,6 +636,8 @@ private:
     std::unordered_set<
         InterestKey,
         InterestKeyHash> desired_routes_;
+
+    std::unordered_map<CoordinatorId,std::uint64_t> last_route_retry_ms_;
 
     DiscoveryControlStats stats_;
 };
