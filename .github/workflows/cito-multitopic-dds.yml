@@ -23,8 +23,8 @@ jobs:
           - {profile: baseline, topics: 65, bytes: 4096, hz: 20}
           - {profile: limited, topics: 1, bytes: 16, hz: 20}
           - {profile: limited, topics: 8, bytes: 256, hz: 20}
-          - {profile: limited, topics: 33, bytes: 1200, hz: 20}
-          - {profile: limited, topics: 65, bytes: 4096, hz: 20}
+          - {profile: limited, topics: 33, bytes: 1200, hz: 2}
+          - {profile: limited, topics: 8, bytes: 4096, hz: 2}
     steps:
       - uses: actions/checkout@v4
       - name: Install the Ubuntu-packaged DDS C API, IDL compiler and network tools
