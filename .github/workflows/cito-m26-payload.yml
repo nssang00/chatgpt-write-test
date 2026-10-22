@@ -1,0 +1,55 @@
+name: Cito M26 Payload-Size Selectivity
+on:
+  push:
+    branches: [cito-m26-selective-efficiency]
+    paths:
+      - '.github/workflows/cito-m26-payload.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  payload:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 23
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix:
+        include:
+          - {nodes: 10, topics: 8, percent: 10, bytes: 64}
+          - {nodes: 10, topics: 8, percent: 10, bytes: 1200}
+          - {nodes: 10, topics: 8, percent: 10, bytes: 4096}
+          - {nodes: 10, topics: 8, percent: 100, bytes: 1200}
+          - {nodes: 10, topics: 8, percent: 100, bytes: 4096}
+          - {nodes: 30, topics: 33, percent: 10, bytes: 1200}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          run-id: 39859684030
+          name: m26-runtime
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: m26-bundle
+      - name: Setup prebuilt DDS/Cito clients
+        run: |
+          chmod +x m26-bundle/cito_multi_topic_node m26-bundle/dds_multi_topic_node
+          python3 -m py_compile cito/tools/m26_efficiency.py
+      - name: Compare payload sizes in identical netns topology
+        env:
+          M26_BUNDLE_LIB: ${{ github.workspace }}/m26-bundle
+        run: |
+          python3 cito/tools/m26_efficiency.py \
+            --cito m26-bundle/cito_multi_topic_node \
+            --dds m26-bundle/dds_multi_topic_node \
+            --nodes ${{ matrix.nodes }} --topics ${{ matrix.topics }} --percent ${{ matrix.percent }} \
+            --profile baseline --bytes ${{ matrix.bytes }} \
+            --samples 8 --hz 10 --repeats 5 --lifetime-ms 18000 \
+            --output m26-payload-results
+      - name: Persist per-packet and process evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: m26-size-${{ matrix.nodes }}-${{ matrix.topics }}-${{ matrix.percent }}-${{ matrix.bytes }}
+          path: m26-payload-results/
+          if-no-files-found: warn
