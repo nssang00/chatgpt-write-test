@@ -212,7 +212,7 @@ def main():
     p.add_argument('--output',type=Path,default=Path('m26-results'))
     args=p.parse_args()
     if not (3<=args.nodes<=120 and 1<=args.topics<=256 and 1<=args.percent<=100
-            and 12<=args.bytes<=1400 and 1<=args.repeats<=10 and args.samples>=1
+            and 12<=args.bytes<=60000 and 1<=args.repeats<=10 and args.samples>=1
             and args.hz>=1 and args.cito.is_file() and args.dds.is_file()):
         p.error('invalid shape, paylod size, repeat, or binary')
     args.output.mkdir(parents=True,exist_ok=True)
