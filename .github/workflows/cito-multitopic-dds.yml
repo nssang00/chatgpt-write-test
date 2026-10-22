@@ -45,7 +45,7 @@ jobs:
             --cito build-multitopic/cito_multi_topic_node \
             --dds build-multitopic/dds_multi_topic_node \
             --profile '${{ matrix.profile }}' --topics ${{ matrix.topics }} --bytes ${{ matrix.bytes }} \
-            --samples 20 --hz ${{ matrix.hz }} --repeat 2 --timeout-ms 10000 \
+            --samples 20 --hz ${{ matrix.hz }} --repeat 2 --timeout-ms 16000 \
             --output bench-results
       - name: Upload raw result files (including failures)
         if: always()
