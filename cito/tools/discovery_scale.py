@@ -24,6 +24,7 @@ def trial(binary,n,rep,out,timeout,lifetime,stagger):
     start=time.monotonic()
     pub=None
     try:
+        sudo('ip','link','del',BR,check=False)
         sudo('ip','link','add',BR,'type','bridge')
         sudo('ip','addr','add','10.201.0.1/22','dev',BR)
         sudo('ip','link','set',BR,'up')
@@ -137,7 +138,8 @@ def main():
             print('::endgroup::',flush=True)
             if not row['passed']: break
         if not rows[-1]['passed']: break
-    summary={'last_passing_count':max((r['nodes'] for r in rows if r['passed']),default=0),
+    fully_passing=[n for n in counts if len([r for r in rows if r['nodes']==n and r['passed']])==a.repeats]
+    summary={'last_fully_passing_count':max(fully_passing,default=0),
              'first_failed_count':next((r['nodes'] for r in rows if not r['passed']),None),
              'rows':rows,'environment':'one Linux GitHub runner; no physical-network inference'}
     (a.output/'summary.json').write_text(json.dumps(summary,indent=2)+'\n')
