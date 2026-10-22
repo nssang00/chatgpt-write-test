@@ -1,0 +1,80 @@
+name: UI Studio v0.13 — Full Component IDE E2E
+on:
+  push:
+    branches: [ci/ui-studio-v013-component-first-20261023]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  core-build-real-chrome:
+    name: Core + Editor + Exported React Consumer E2E
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify original source and extract
+        run: |
+          echo '9999d896fe4378a87c611724ce469cda98cd54f61ce53addbd2a3ae93ba408de  experiments/ui-studio-v0.13/ui-studio-source.zip' | sha256sum -c -
+          mkdir -p experiments/ui-studio-v0.13/app
+          unzip -q experiments/ui-studio-v0.13/ui-studio-source.zip -d experiments/ui-studio-v0.13/app
+          test -f experiments/ui-studio-v0.13/app/package.json
+      - name: Install project dependencies
+        working-directory: experiments/ui-studio-v0.13/app
+        run: npm install --no-audit --no-fund
+      - name: Headless Core regression tests
+        working-directory: experiments/ui-studio-v0.13/app
+        run: npm test
+      - name: Source syntax verification
+        working-directory: experiments/ui-studio-v0.13/app
+        run: node tools/verify-syntax.mjs
+      - name: React Runtime integration
+        working-directory: experiments/ui-studio-v0.13/app
+        run: npm run verify:runtime
+      - name: Studio production build
+        working-directory: experiments/ui-studio-v0.13/app
+        run: npm run build
+      - name: Build independently exported composite package
+        working-directory: experiments/ui-studio-v0.13/app
+        run: |
+          npm run export:v013
+          mkdir -p tests/component-v013
+          unzip -q examples/CustomerBrowser-react-component-v0.13.zip -d tests/component-v013
+          (cd tests/component-v013 && npm install --no-audit --no-fund && npm run build && test -s dist/index.js)
+      - name: Install and build consumer app separately
+        working-directory: experiments/ui-studio-v0.13/app
+        run: |
+          (cd tests/consumer-v013 && npm install --no-audit --no-fund && npm run build && test -f dist/index.html)
+          test -f tests/consumer-v013/node_modules/ui-studio-customer-browser/dist/index.js
+      - name: Check installed system Chrome
+        run: |
+          (command -v google-chrome || command -v google-chrome-stable)
+          (google-chrome --version || google-chrome-stable --version)
+      - name: Real Chrome E2E — studio authoring and composition
+        working-directory: experiments/ui-studio-v0.13/app
+        env:
+          CI: 'true'
+          UI_STUDIO_USE_SYSTEM_CHROME: '1'
+        run: npm run test:e2e
+      - name: Real Chrome E2E — independent React consumer
+        working-directory: experiments/ui-studio-v0.13/app
+        env:
+          CI: 'true'
+          UI_STUDIO_USE_SYSTEM_CHROME: '1'
+        run: npx playwright test --config=e2e/consumer-v013.config.js
+      - name: Upload E2E screenshots, traces and HTML reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ui-studio-v013-chrome-evidence
+          path: |
+            experiments/ui-studio-v0.13/app/test-results/
+            experiments/ui-studio-v0.13/app/playwright-report/
+            experiments/ui-studio-v0.13/app/playwright-report-consumer/
+          if-no-files-found: ignore
+          retention-days: 14
