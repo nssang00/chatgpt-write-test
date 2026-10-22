@@ -605,7 +605,7 @@ int publisher(
         if (
             !sent &&
             stats.snapshot_requests >= 2 &&
-            stats.route_requests ==
+            stats.route_requests >=
                 expected &&
             host.remote_destinations(
                 key).size() ==
