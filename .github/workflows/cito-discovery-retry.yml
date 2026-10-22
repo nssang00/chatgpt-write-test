@@ -1,0 +1,58 @@
+name: Cito Discovery UDP Retry Under Netem
+on:
+  push:
+    branches: [cito-discovery-retry]
+    paths:
+      - 'cito/include/cito/detail/discovery_control_core.hpp'
+      - 'cito/tests/discovery_retransmit_test.cpp'
+      - '.github/workflows/cito-discovery-retry.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  retry-under-loss:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 22
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {profile: baseline, counts: '3,10,30'}
+          - {profile: bandwidth_1m, counts: '3,10,30'}
+          - {profile: loss_1pct, counts: '3,10,30'}
+          - {profile: congested, counts: '3,10,30'}
+          - {profile: degraded, counts: '3,10,30'}
+          - {profile: extreme, counts: '3,10,30'}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq iproute2 ninja-build
+          python3 -m unittest discover -s cito/tools/tests -p test_discovery_scale.py -v
+      - name: Build runtime and deterministic retry test
+        run: |
+          cmake -S cito -B build-scale -G Ninja -DCMAKE_BUILD_TYPE=Release
+          cmake --build build-scale --target cito_runtime_udp_node -j2
+          c++ -std=c++20 -O2 -I cito/include cito/tests/discovery_retransmit_test.cpp -o build-scale/discovery_retransmit_test
+          ./build-scale/discovery_retransmit_test
+          c++ -std=c++20 -O2 -I cito/include cito/tests/discovery_control_core_test.cpp -o build-scale/discovery_control_core_test
+          ./build-scale/discovery_control_core_test
+          c++ -std=c++20 -O2 -I cito/include cito/tests/discovery_control_core_smoke.cpp -o build-scale/discovery_control_core_smoke
+          ./build-scale/discovery_control_core_smoke
+      - name: Retry-enabled network scale test
+        run: |
+          python3 cito/tools/discovery_scale.py \
+            --binary build-scale/cito_runtime_udp_node \
+            --profile '${{ matrix.profile }}' --counts '${{ matrix.counts }}' \
+            --repeats 2 --timeout 65 --lifetime-ms 45000 \
+            --output retry-netem-results/${{ matrix.profile }}
+      - name: Upload raw logs, tc and metrics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cito-discovery-retry-${{ matrix.profile }}
+          path: retry-netem-results/
+          if-no-files-found: warn
