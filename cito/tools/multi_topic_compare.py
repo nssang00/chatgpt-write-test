@@ -11,7 +11,7 @@ def sudo(*cmd,check=True):
     return p
 def setup(profile):
     rate,delay,loss=PROFILES[profile]
-    sudo('ip','link','del',BR,check=False)
+    cleanup()
     sudo('ip','link','add',BR,'type','bridge')
     sudo('ip','link','set','dev',BR,'type','bridge','mcast_snooping','0')
     sudo('ip','addr','add','10.201.0.1/24','dev',BR)
@@ -43,6 +43,7 @@ def cleanup():
         name=f'cb-{i}'
         for pid in sudo('ip','netns','pids',name,check=False).stdout.split():sudo('kill','-TERM',pid,check=False)
         sudo('ip','netns','del',name,check=False)
+        sudo('ip','link','del',f'cbh-{i}',check=False)
     sudo('ip','link','del',BR,check=False)
 def case(engine,exe,topics,size,samples,hz,profile,repeat,out,timeout_ms):
     base=out/f'{profile}-{engine}-t{topics}-b{size}-r{repeat}'
