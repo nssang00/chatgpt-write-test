@@ -33,7 +33,7 @@ jobs:
               --dds build-m26/dds_multi_topic_node \
               --nodes 30 --publishers "$publishers" \
               --topics 8 --percent 10 \
-              --bytes 256 --samples 8 --hz 10 --repeats 3 \
+              --bytes 256 --samples 8 --hz 10 --repeats 5 \
               --lifetime-ms 22000 --output "m26-results/publishers-$publishers"
             echo "CASE_EXIT=$? - interpret per-row valid flag"
             echo "::endgroup::"
