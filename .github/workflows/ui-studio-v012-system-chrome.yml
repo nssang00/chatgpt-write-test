@@ -1,0 +1,65 @@
+name: UI Studio v0.12 — Preinstalled Chrome E2E
+on:
+  push:
+    branches: [ci/ui-studio-v012-playwright-20261022]
+    paths: ['.github/workflows/ui-studio-v012-system-chrome.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  browser-e2e:
+    name: Vite + System Chrome + Playwright
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Unpack verified v0.12 source and restore fixtures
+        shell: bash
+        run: |
+          echo '4585173e7af37fe51540da782d4cc83c4f98cc7992ffc29df9266c9206ba2027  experiments/ui-studio-v0.12/ui-studio-source.zip' | sha256sum -c -
+          mkdir -p experiments/ui-studio-v0.12/app/examples
+          unzip -q experiments/ui-studio-v0.12/ui-studio-source.zip -d experiments/ui-studio-v0.12/app
+          cp experiments/ui-studio-v0.12/fixtures/* experiments/ui-studio-v0.12/app/examples/
+      - name: Install npm dependencies
+        working-directory: experiments/ui-studio-v0.12/app
+        run: npm install --no-audit --no-fund
+      - name: Build actual production app
+        working-directory: experiments/ui-studio-v0.12/app
+        run: npm run build
+      - name: Confirm preinstalled Chrome
+        shell: bash
+        run: |
+          (command -v google-chrome || command -v google-chrome-stable)
+          (google-chrome --version || google-chrome-stable --version)
+      - name: Use system Chrome in existing Playwright tests
+        working-directory: experiments/ui-studio-v0.12/app
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('playwright.config.js')
+          s=p.read_text()
+          old="...devices['Desktop Chrome'], viewport:"
+          assert old in s
+          p.write_text(s.replace(old,"...devices['Desktop Chrome'], channel: 'chrome', viewport:"))
+          PY
+      - name: Playwright actual Chromium engine E2E
+        working-directory: experiments/ui-studio-v0.12/app
+        env:
+          CI: 'true'
+        run: npm run test:e2e
+      - name: Upload screenshots, videos, traces and report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ui-studio-v012-system-chrome-evidence
+          path: |
+            experiments/ui-studio-v0.12/app/test-results/
+            experiments/ui-studio-v0.12/app/playwright-report/
+          if-no-files-found: ignore
+          retention-days: 14
