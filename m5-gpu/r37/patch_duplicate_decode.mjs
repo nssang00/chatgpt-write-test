@@ -20,5 +20,5 @@ await patch('tests/round14_gpu_compare/round14_m5.html',[
  ["const tasks=keys.map(([x,y])=>({tileKey:`12/${x}/${y}`,","const tasks=keys.map(([x,y])=>({allowDuplicateLayers:validationQuery.get('r37DuplicateDecode')==='1',tileKey:`12/${x}/${y}`,"],
 ]);
 await patch('tests/round14_gpu_compare/run_one.mjs',[
- ["&workerSharedDecode=${flags.workerSharedDecode||0}&scissorFill=","&workerSharedDecode=${flags.workerSharedDecode||0}&r37DuplicateDecode=${flags.r37DuplicateDecode||0}&scissorFill="],
+ ["&workerSharedDecode=${flags.workerSharedDecode||0}&scissorFill=","&workerSharedDecode=${flags.workerSharedDecode||0}&r37DuplicateDecode=${flags.r37DuplicateDecode||1}&scissorFill="],
 ]);
