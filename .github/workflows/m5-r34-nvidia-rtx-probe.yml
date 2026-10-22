@@ -1,4 +1,5 @@
 name: M5 R34 NVIDIA RTX Probe
+# R36 second minimal connectivity probe after user restarted self-hosted runner (2026-10-22).
 # R36: 2026-10-22 retest Actions startup on existing RTX self-hosted probe.
 on:
   push:
