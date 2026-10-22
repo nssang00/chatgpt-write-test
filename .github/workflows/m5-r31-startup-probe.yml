@@ -17,7 +17,7 @@ jobs:
         shell: powershell
         run: |
           $ErrorActionPreference='Stop'
-          Write-Host "M5_R31_ACTIONS_WORKFLOW_EXECUTED"
+          Write-Host "M5_R31_ACTIONS_WORKFLOW_RETEST"
           $gpu=Get-CimInstance Win32_VideoController
           $gpu|Select-Object Name,DriverVersion|Format-Table
           if(-not ($gpu|Where-Object {$_.Name -match 'NVIDIA.*RTX'})){throw 'RTX unavailable'}
