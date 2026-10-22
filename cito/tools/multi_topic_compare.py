@@ -57,6 +57,8 @@ def case(engine,exe,topics,size,samples,hz,profile,repeat,out,timeout_ms):
         def launch(role,index):
             log=(base/f'{role}.log').open('w');handles.append(log)
             cmd=['sudo','-n','ip','netns','exec',f'cb-{index}',str(exe.resolve()),role,str(topics),str(size),str(samples),str(hz),'10.201.0.255',str(timeout_ms)]
+            # sudo normally drops CYCLONEDDS_URI; pass it after entering the namespace.
+            if engine=='dds':cmd[6:6]=['env','CYCLONEDDS_URI='+env['CYCLONEDDS_URI']]
             p=subprocess.Popen(cmd,stdout=log,stderr=subprocess.STDOUT,env=env);procs.append((role,p));return p
         launch('subscriber',1)
         launch('negative',2)
