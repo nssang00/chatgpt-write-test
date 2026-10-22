@@ -33,6 +33,17 @@ At 10%, 50%, and 100% selectivity, both implementations have expected delivery f
 
 100-node default-SPDP trial from the initial matrix: Cito discovered and delivered all 784 expected matching messages **3/3 runs**, but Cyclone DDS did not reach matching readiness within 28s (0 sent). This is an observation with that DDS configuration and duration, not a general claim that Cyclone DDS cannot run 100 nodes. A tuned SPDP-interval, longer-duration retest is isolated in the separate `cito-m26-dds-100-tuning` branch.
 
+## 100-node convergence gate (3 repetitions)
+
+[Prebuilt runtime matrix #39859684030](https://github.com/nssang00/chatgpt-write-test/actions/runs/39859684030) completed the two 100-node cases with a 30,000 ms publisher lifetime and 8 topics. Cito: 3/3 successful complete-route matches, publishes and full subscriber deliveries in **both** percent settings. Cyclone DDS: all three trial publishers failed to reach 98 matching readers on every active topic within this 30-second budget. No DDS application data was sent. These cases do **not** establish matched-load throughput or DDS's absolute node capacity; the DDS's bytes and RSS in this case are its ongoing discovery efforts, not an application-data delivery comparison.
+
+| Topic-interest percentage | Cito delivery per repetition | Cyclone DDS ready/published | Cito mean veth RX bytes | DDS mean veth RX bytes (discovery only) |
+| --- | --- | --- | ---: | ---: |
+| 10% (1/8) | 784/784 on 3/3 | 0/3, no publish | 309,457 | 15,699,993 |
+| 100% (8/8) | 6,272/6,272 on 3/3 | 0/3, no publish | 1,216,609 | 22,675,673 |
+
+A separate experiment changes Cyclone SPDP interval to 2s, lengthens the publisher lifetime to 60s and staggers participant launch by 30ms. It is not mixed into the default-setting dataset.
+
 ## Remaining limits
 
 Only 1 publisher is present in this report; 1/5/10 publisher A/B results are on a separate `cito-m26-multipublisher` experiment branch. Uniform *prefix* topic selection is tested; heterogeneous rotating subscription sets, dynamic subscribe/unsubscribe, shared-airtime radio networks, DDS RELIABLE, PSS/true physical memory, sustained 30-60min operation, and the shipping integrated API are **not** proven by this benchmark. Do not infer field-radio performance from these GitHub namespace results.
