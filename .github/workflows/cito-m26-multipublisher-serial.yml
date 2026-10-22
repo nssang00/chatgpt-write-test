@@ -1,0 +1,47 @@
+name: Cito M26 Multipublisher Serial A/B
+on:
+  push:
+    branches: [cito-m26-multipublisher]
+    paths:
+      - '.github/workflows/cito-m26-multipublisher-serial.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  two-multis:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 32
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install once, with long mirror retry
+        run: |
+          sudo timeout 90 apt-get update -qq || echo 'use cached indexes'
+          sudo timeout 480 apt-get -o Acquire::Retries=5 install -y -qq cmake ninja-build iproute2 time cyclonedds-dev cyclonedds-tools
+          python3 -m py_compile cito/tools/m26_efficiency.py
+      - name: Build once
+        run: |
+          cmake -S cito/tests/bench -B build-m26 -G Ninja -DCMAKE_BUILD_TYPE=Release
+          cmake --build build-m26 -j2
+      - name: Execute five and ten publisher topologies
+        shell: bash
+        run: |
+          set +e
+          for publishers in 5 10; do
+            echo "::group::publishers=$publishers"
+            python3 cito/tools/m26_efficiency.py \
+              --cito build-m26/cito_multi_topic_node \
+              --dds build-m26/dds_multi_topic_node \
+              --nodes 30 --publishers "$publishers" \
+              --topics 8 --percent 10 \
+              --bytes 256 --samples 8 --hz 10 --repeats 3 \
+              --lifetime-ms 22000 --output "m26-results/publishers-$publishers"
+            echo "CASE_EXIT=$? - interpret per-row valid flag"
+            echo "::endgroup::"
+          done
+      - name: Preserve all raw logs and metrics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: m26-five-ten-publishers
+          path: m26-results/
+          if-no-files-found: warn
