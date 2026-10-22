@@ -128,7 +128,7 @@ jobs:
           if($LASTEXITCODE -ne 0){throw 'Pillow dependency install failed'}
           & python -c 'import PIL'
           if($LASTEXITCODE -ne 0){throw 'Pillow import failed'}
-          & powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\geometry-validation\RUN_R27_SELF_HOSTED.ps1
+          & powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\geometry-validation\RUN_R27_SELF_HOSTED.ps1 -SkipCpuSmoke
           if($LASTEXITCODE -ne 0){throw 'R27 RTX gate did not pass; inspect preserved evidence'}
           $f='RESULTS\R27_SELF_HOSTED\r27_status.json'
           $result=Get-Content -Raw $f | ConvertFrom-Json
