@@ -50,6 +50,10 @@ jobs:
           assert "video: 'retain-on-failure'" in s
           p.write_text(s.replace("video: 'retain-on-failure'", "video: 'off'"))
           PY
+      - name: Assert dragged control by stable ID (not list order)
+        working-directory: experiments/ui-studio-v0.12/app
+        shell: bash
+        run: python3 ../ci-patches/fix-drag-assertion.py
       - name: Playwright actual Chromium engine E2E
         working-directory: experiments/ui-studio-v0.12/app
         env:
