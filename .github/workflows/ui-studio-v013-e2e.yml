@@ -24,6 +24,7 @@ jobs:
           mkdir -p experiments/ui-studio-v0.13/app
           unzip -q experiments/ui-studio-v0.13/ui-studio-source.zip -d experiments/ui-studio-v0.13/app
           test -f experiments/ui-studio-v0.13/app/package.json
+          python3 experiments/ui-studio-v0.13/ci-patches/fix-v013-tests.py experiments/ui-studio-v0.13/app
       - name: Install project dependencies
         working-directory: experiments/ui-studio-v0.13/app
         run: npm install --no-audit --no-fund
