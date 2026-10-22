@@ -30,12 +30,12 @@ int main(int argc,char**argv){
  Bench_Msg*sample=Bench_Msg__alloc();void*storage[1]={sample};dds_sample_info_t info[1];
  while((ns()-start)/1000000ull<(uint64_t)life){
   if(pub){
-   if(!ready){ready=true;for(int t=0;t<topics;++t){dds_publication_matched_status_t matched={0};dds_return_t rc=dds_get_publication_matched_status(ends[t],&matched);if(rc<0)fail("match",rc);if(matched.current_count<1){ready=false;break;}}if(ready)first=ns();}
-   if(ready&&sent<(uint64_t)topics*samples&&ns()-first>=sent*1000000000ull/(uint64_t)(hz*topics)){
+   if(!ready){ready=true;for(int t=0;t<topics;++t){dds_publication_matched_status_t matched={0};dds_return_t rc=dds_get_publication_matched_status(ends[t],&matched);if(rc<0)fail("match",rc);if(matched.current_count<1){ready=false;break;}}if(ready)first=ns()+500000000ull;}
+   if(ready&&sent<(uint64_t)topics*samples&&ns()>=first&&ns()-first>=sent*1000000000ull/(uint64_t)(hz*topics)){
     int t=sent%topics;Bench_Msg m={0};m.seq=sent/topics;m.sent_ns=ns();memset(payload,65+t%23,size-12);m.payload=payload;
     dds_return_t rc=dds_write(ends[t],&m);if(rc<0)fail("write",rc);sent++;
    }
-   if(ready&&sent==(uint64_t)topics*samples&&ns()-first>(uint64_t)samples*1000000000ull/hz+500000000ull)break;
+   if(ready&&sent==(uint64_t)topics*samples&&ns()>=first&&ns()-first>(uint64_t)samples*1000000000ull/hz+500000000ull)break;
   }else{
    for(int t=0;t<active;++t){dds_return_t count=dds_take(ends[t],storage,info,1,1);if(count<0)fail("take",count);if(count==1&&info[0].valid_data){
      Bench_Msg*m=storage[0];if(negative||m->seq>=(uint32_t)samples||!m->payload||strlen(m->payload)!=(size_t)size-12||m->sent_ns>ns()){bad++;continue;}
