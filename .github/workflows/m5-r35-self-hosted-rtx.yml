@@ -1,0 +1,82 @@
+name: M5 R35 Physical RTX Gate (self-hosted)
+on:
+  push:
+    branches:
+      - m5/r34-shared-decode-workerpool-20261022
+    paths:
+      - .github/workflows/m5-r35-self-hosted-rtx.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  r35-rtx:
+    name: R35 physical NVIDIA RTX 5060 Ti eight-campaign acceptance
+    runs-on: [self-hosted, windows, x64, gpu-rtx]
+    timeout-minutes: 180
+    env:
+      CHROME_HEADLESS: "0"
+      M5_SWIFTSHADER: "0"
+      R35_ZIP_PATH: 'C:\M5_R35\M5_R35_RTX_READY_SELF_CONTAINED_2026-10-22.zip'
+    steps:
+      - name: Preflight Windows NVIDIA RTX 5060 Ti
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $proof = Join-Path $env:GITHUB_WORKSPACE 'preflight'
+          New-Item -ItemType Directory -Path $proof -Force | Out-Null
+          if ($env:OS -ne 'Windows_NT') { throw 'Windows GPU runner required' }
+          $gpu = @(Get-CimInstance Win32_VideoController | Select-Object Name,DriverVersion)
+          $gpu | ConvertTo-Json -Depth 5 | Set-Content -Encoding utf8 (Join-Path $proof 'gpu.json')
+          if (-not ($gpu | Where-Object { $_.Name -match 'NVIDIA.*RTX 5060 Ti' })) { throw 'Physical RTX 5060 Ti not found' }
+          & nvidia-smi --query-gpu=name,driver_version --format=csv,noheader |
+            Out-File -Encoding utf8 (Join-Path $proof 'nvidia-smi.txt')
+          if ($LASTEXITCODE -ne 0) { throw 'nvidia-smi unavailable' }
+      - name: Verify pinned R35 source archive and extract
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $zip = $env:R35_ZIP_PATH
+          if (-not (Test-Path -LiteralPath $zip -PathType Leaf)) {
+            throw "R35 ZIP not staged on self-hosted runner: $zip"
+          }
+          $actual = (Get-FileHash -Algorithm SHA256 -LiteralPath $zip).Hash.ToLowerInvariant()
+          $expected = '3e5d3cb5d525b818a3b560731dac0ae17ce734ab5a96057c67c546c4b7cb2776'
+          if ($actual -ne $expected) { throw "R35 SHA256 mismatch: $actual" }
+          $dest = Join-Path $env:GITHUB_WORKSPACE 'r35'
+          if (Test-Path -LiteralPath $dest) { Remove-Item -LiteralPath $dest -Force -Recurse }
+          New-Item -ItemType Directory -Force -Path $dest | Out-Null
+          Expand-Archive -LiteralPath $zip -DestinationPath $dest -Force
+          foreach ($required in @('RUN_R35_RTX_SELF_HOSTED.ps1', 'vendor\openlayers-10.10.0-runtime\node_modules\ol\format\MVT.worker.js', 'tests\r35_rtx_acceptance.mjs')) {
+            if (-not (Test-Path (Join-Path $dest $required))) { throw "R35 package incomplete: $required" }
+          }
+          $expected | Set-Content -Encoding ascii (Join-Path $env:GITHUB_WORKSPACE 'preflight\source_sha256.txt')
+      - name: Select Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Verify R35 CPU distribution and worker byte parity
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Set-Location (Join-Path $env:GITHUB_WORKSPACE 'r35')
+          & node tests/verify_r35_distribution.mjs
+          if ($LASTEXITCODE -ne 0) { throw 'R35 distribution test failed' }
+          & node tests/verify_r34_shared_worker_pool.mjs
+          if ($LASTEXITCODE -ne 0) { throw 'R34 shared worker parity test failed' }
+      - name: Run eight physical RTX campaigns and independent acceptance
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Set-Location (Join-Path $env:GITHUB_WORKSPACE 'r35')
+          & powershell -NoProfile -ExecutionPolicy Bypass -File .\RUN_R35_RTX_SELF_HOSTED.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'R35 physical RTX acceptance failed, see RESULTS' }
+      - name: Upload all raw GPU evidence including failures
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: m5-r35-rtx-${{ github.run_id }}
+          retention-days: 30
+          if-no-files-found: warn
+          path: |
+            preflight/**
+            r35/RESULTS/R35_RTX/**
