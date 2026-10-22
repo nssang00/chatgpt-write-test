@@ -76,8 +76,10 @@ jobs:
           for($i=0;$i -lt $manifest.chunks;$i++){
             $chunkPath=Join-Path $overlayFiles ('chunk_{0:D2}.b64' -f $i)
             $chunk=(Get-Content -Raw -Path $chunkPath).Trim()
-            $digest=[Security.Cryptography.SHA256]::HashData([Text.Encoding]::ASCII.GetBytes($chunk))
-            $partHash=[Convert]::ToHexString($digest).ToLowerInvariant()
+            $sha=[Security.Cryptography.SHA256]::Create()
+            try {$digest=$sha.ComputeHash([Text.Encoding]::ASCII.GetBytes($chunk))}
+            finally {$sha.Dispose()}
+            $partHash=[BitConverter]::ToString($digest).Replace('-','').ToLowerInvariant()
             if($partHash -ne $manifest.parts_sha256[$i]){throw "Overlay chunk corrupted: $i"}
             $b64+=$chunk
           }
