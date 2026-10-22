@@ -1,0 +1,92 @@
+name: Cito Discovery Scale
+
+on:
+  push:
+    branches: [cito-discovery-scale-ci]
+    paths:
+      - ".github/workflows/cito-discovery-scale.yml"
+      - "cito/tests/net/runtime_udp_node.cpp"
+      - "cito/include/cito/detail/udp_runtime_adapter.hpp"
+      - "cito/include/cito/detail/host_runtime_core.hpp"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  scale:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile runtime UDP PubSub test
+        shell: bash
+        run: |
+          set -euo pipefail
+          cmake -S cito -B build-scale -G Ninja -DCMAKE_BUILD_TYPE=Release
+          cmake --build build-scale --target cito_runtime_udp_node -j2
+      - name: Scale test 8 16 32 64 total nodes
+        shell: bash
+        run: |
+          set -euo pipefail
+          BIN="$GITHUB_WORKSPACE/build-scale/cito_runtime_udp_node"
+          cleanup() {
+            for ns in $(ip netns list | awk '{print $1}' | grep '^cs-' || true); do
+              sudo ip netns del "$ns" 2>/dev/null || true
+            done
+            sudo ip link del csbr 2>/dev/null || true
+          }
+          trap cleanup EXIT
+          for total in 8 16 32 64; do
+            echo "===== BEGIN SCALE total_nodes=$total ====="
+            cleanup
+            sudo ip link add csbr type bridge
+            sudo ip link set csbr up
+            add_node() {
+              local i="$1" ns="cs-$1" host="cs-h$1" peer="cs-p$1"
+              sudo ip netns add "$ns"
+              sudo ip link add "$host" type veth peer name "$peer"
+              sudo ip link set "$host" master csbr
+              sudo ip link set "$host" up
+              sudo ip link set "$peer" netns "$ns"
+              sudo ip netns exec "$ns" ip link set lo up
+              sudo ip netns exec "$ns" ip link set "$peer" name eth0
+              sudo ip netns exec "$ns" ip addr add "10.220.0.$((i+10))/24" dev eth0
+              sudo ip netns exec "$ns" ip link set eth0 up
+            }
+            for ((i=0;i<total;i++)); do add_node "$i"; done
+            expected=$((total-1))
+            mkdir -p "scale-$total"
+            sudo ip netns exec cs-0 "$BIN" publisher 100 47000 "$expected" 12000 \
+              >"scale-$total/publisher.log" 2>&1 &
+            pub_pid=$!
+            sleep 0.3
+            pids=()
+            for ((i=1;i<total;i++)); do
+              node=$((100+i))
+              sudo ip netns exec "cs-$i" "$BIN" subscriber "$node" 100 \
+                "$((49000+i))" "$((50000+i))" 47000 10.220.0.255 1 9500 \
+                >"scale-$total/sub-$i.log" 2>&1 &
+              pids+=("$!")
+            done
+            failed=0
+            wait "$pub_pid" || failed=1
+            for pid in "${pids[@]}"; do wait "$pid" || failed=1; done
+            cat "scale-$total/publisher.log"
+            received=0
+            for ((i=1;i<total;i++)); do
+              if grep -q 'received=1 route_requests=1' "scale-$total/sub-$i.log"; then
+                received=$((received+1))
+              else
+                echo "FAIL node=$i: $(cat "scale-$total/sub-$i.log")"
+              fi
+            done
+            actual_discovered=$(sed -n 's/.*discovered=\([0-9]*\).*/\1/p' "scale-$total/publisher.log" | tail -1)
+            actual_sent=$(sed -n 's/.*sent=\([0-9]*\).*/\1/p' "scale-$total/publisher.log" | tail -1)
+            echo "SCALE_RESULT total_nodes=$total expected_subscribers=$expected discovered=${actual_discovered:-NA} delivered=${actual_sent:-NA} received=$received process_error=$failed"
+            test "$failed" -eq 0
+            test "$actual_discovered" = "$expected"
+            test "$actual_sent" = "$expected"
+            test "$received" -eq "$expected"
+            echo "SCALE_PASS total_nodes=$total"
+          done
