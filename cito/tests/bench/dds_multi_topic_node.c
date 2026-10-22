@@ -24,6 +24,8 @@ int main(int argc,char**argv){
    ends[t]=pub?dds_create_writer(p,topic,qos,NULL):dds_create_reader(p,topic,qos,NULL);if(ends[t]<0)fail("reader_or_writer",ends[t]);
  }
  dds_delete_qos(qos);
+ dds_entity_t waitset=-1;
+ if(!pub){waitset=dds_create_waitset(p);if(waitset<0)fail("waitset",waitset);for(int t=0;t<active;++t){dds_entity_t cond=dds_create_readcondition(ends[t],DDS_ANY_STATE);if(cond<0)fail("readcondition",cond);dds_return_t rc=dds_waitset_attach(waitset,cond,(dds_attach_t)t);if(rc<0)fail("attach",rc);}}
  uint8_t *seen=calloc((size_t)topics*samples,1);uint64_t *lat=calloc((size_t)topics*samples,sizeof(uint64_t));uint64_t recv=0,bad=0,dup=0,sent=0;bool ready=false;
  uint64_t start=ns(),first=0;
  char* payload=malloc(size);memset(payload,'A',size-12);payload[size-12]=0;
@@ -37,14 +39,15 @@ int main(int argc,char**argv){
    }
    if(ready&&sent==(uint64_t)topics*samples&&ns()>=first&&ns()-first>(uint64_t)samples*1000000000ull/hz+500000000ull)break;
   }else{
-   for(int t=0;t<active;++t){dds_return_t count=dds_take(ends[t],storage,info,1,1);if(count<0)fail("take",count);if(count==1&&info[0].valid_data){
+   dds_attach_t triggered[256];dds_return_t wake=dds_waitset_wait(waitset,triggered,(size_t)active,DDS_MSECS(8));if(wake<0)fail("wait",wake);
+   for(int t=0;t<active;++t){for(;;){dds_return_t count=dds_take(ends[t],storage,info,1,1);if(count<0)fail("take",count);if(count==0)break;if(count==1&&info[0].valid_data){
      Bench_Msg*m=storage[0];if(negative||m->seq>=(uint32_t)samples||!m->payload||strlen(m->payload)!=(size_t)size-12||m->sent_ns>ns()){bad++;continue;}
      char expected=65+t%23;bool valid=true;for(int j=0;j<size-12;++j)if(m->payload[j]!=expected){valid=false;break;}if(!valid){bad++;continue;}
      size_t index=(size_t)t*samples+m->seq;if(seen[index]++)dup++;else{lat[recv++]=(ns()-m->sent_ns)/1000;}
-   }}
+   }}}
    if(!negative&&recv==(uint64_t)topics*samples)break;
   }
-  usleep(200);
+  if(pub)usleep(200);
  }
  qsort(lat,recv,sizeof(uint64_t),cmp);
  uint64_t p95=recv?lat[(95*recv+99)/100-1]:0;
