@@ -59,9 +59,29 @@ jobs:
           npm install --no-audit --no-fund
           npm run build
           test -s dist/index.js
-      - name: Install Chromium
+      - name: Confirm preinstalled system Chrome
+        shell: bash
+        run: |
+          (command -v google-chrome || command -v google-chrome-stable)
+          (google-chrome --version || google-chrome-stable --version)
+      - name: Use system Chrome without Playwright video FFmpeg
         working-directory: experiments/ui-studio-v0.12/app
-        run: npx playwright install --with-deps chromium
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('playwright.config.js')
+          s=p.read_text()
+          old="...devices['Desktop Chrome'], viewport:"
+          assert old in s
+          assert "video: 'retain-on-failure'" in s
+          s=s.replace(old,"...devices['Desktop Chrome'], channel: 'chrome', viewport:")
+          p.write_text(s.replace("video: 'retain-on-failure'", "video: 'off'"))
+          PY
+      - name: Validate native drag by newly added stable node ID
+        working-directory: experiments/ui-studio-v0.12/app
+        shell: bash
+        run: python3 ../ci-patches/fix-drag-assertion.py
       - name: Playwright actual-browser E2E
         working-directory: experiments/ui-studio-v0.12/app
         env:
