@@ -35,7 +35,7 @@ int main(int argc,char**argv){
     int t=sent%topics;Bench_Msg m={0};m.seq=sent/topics;m.sent_ns=ns();memset(payload,65+t%23,size-12);m.payload=payload;
     dds_return_t rc=dds_write(ends[t],&m);if(rc<0)fail("write",rc);sent++;
    }
-   if(ready&&sent==(uint64_t)topics*samples&&ns()-first>uint64_t(samples)*1000000000ull/hz+500000000ull)break;
+   if(ready&&sent==(uint64_t)topics*samples&&ns()-first>(uint64_t)samples*1000000000ull/hz+500000000ull)break;
   }else{
    for(int t=0;t<active;++t){dds_return_t count=dds_take(ends[t],storage,info,1,1);if(count<0)fail("take",count);if(count==1&&info[0].valid_data){
      Bench_Msg*m=storage[0];if(negative||m->seq>=(uint32_t)samples||!m->payload||strlen(m->payload)!=(size_t)size-12||m->sent_ns>ns()){bad++;continue;}
