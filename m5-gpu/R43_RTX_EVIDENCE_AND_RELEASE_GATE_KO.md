@@ -1,4 +1,4 @@
-# M5 R35–R43 RTX 실측 검증 / 2026-10-23 KST
+# M5 R35–R44 RTX 실측 검증 / 2026-10-23 KST
 
 ## 최종 판정
 
@@ -26,6 +26,7 @@
 | R41 PBF no-copy | [39808865031](https://github.com/nssang00/chatgpt-write-test/actions/runs/39808865031) | FAIL (성능) | Road 캠페인 B 48.455% |
 | R42 빠른 PBF 리더+no-copy+deferred 2W | [39809390711](https://github.com/nssang00/chatgpt-write-test/actions/runs/39809390711) | **3회 연속 PASS (대안)** | 동일 커밋 3회 독립 실행, 18개 장면×캠페인 비교 전부 ≥50%. Worker 후속 리렌더 90/90 exact RGBA8 |
 | R43 팬·줌·회전 상태 검증 | [39810943247](https://github.com/nssang00/chatgpt-write-test/actions/runs/39810943247) | PASS (대안) | 첫 화면 6개 비교 전부 ≥50%, 후속 Worker 재렌더 30/30 exact, 팬·줌·회전·복합 4개 뷰×30샘플=120/120 exact RGBA8 |
+| R44 동적 픽셀 민감도 | [39811621425](https://github.com/nssang00/chatgpt-write-test/actions/runs/39811621425) | PASS (대안) | 4개 변환 상태마다 비어 있지 않은 화면 및 원래 화면과 실제 픽셀 변화 증명. 그 조건하 CPU/Worker 비교 120/120 exact RGBA8, 6개 최초 프레임 50% 개선. [원시 아티팩트](https://github.com/nssang00/chatgpt-write-test/actions/runs/39811621425/artifacts/12440053331) |
 
 모든 파일은 실행별 GitHub Actions artifact에 보존된다. 특히 [R42 artifact 목록](https://github.com/nssang00/chatgpt-write-test/actions/runs/39809390711), [R43 artifact](https://github.com/nssang00/chatgpt-write-test/actions/runs/39810943247/artifacts/12439468539)를 참조.
 
@@ -38,6 +39,8 @@
 | Attempt 3 | 56.190% / 56.903% | 53.054% / 52.262% | 52.465% / 56.609% | 30/30 exact |
 
 **R43** 같은 구조에서 Building 56.452%/55.948%, Road 52.494%/60.998%, Mixed 59.860%/58.601%, Worker 후속 재렌더 exact 30/30, 팬·줌·회전·복합 변환 후 exact 120/120.
+
+**R44** 추가 검증에서 Building 55.900%/53.459%, Road 58.503%/51.587%, Mixed 55.937%/55.116%, 후속 Worker 재렌더 30/30 exact. 네 가지 상태의 CPU GPU 대조 이미지가 모두 비어 있지 않고 원래 화면과 실제로 달라지는 것을 체크한 다음 Worker GPU 결과와 120/120 RGBA8 exact 일치함을 확인했다.
 
 ## 반영 범위 / 안전 게이트
 
