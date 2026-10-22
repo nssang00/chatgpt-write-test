@@ -1,4 +1,5 @@
 name: M5 R35 Physical RTX Gate (self-hosted)
+# R35 rerun: pinned source staged at C:\M5_R35\ on verified RTX 5060 Ti runner.
 on:
   push:
     branches:
