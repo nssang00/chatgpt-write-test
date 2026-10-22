@@ -104,6 +104,16 @@ jobs:
           foreach($f in $needed){
             if(-not (Test-Path (Join-Path $target $f))){throw "M5 R27 file missing: $f"}
           }
+          $probe=Join-Path $target 'geometry-validation\RUN_R27_SELF_HOSTED.ps1'
+          $lines=Get-Content $probe
+          $fixed=@($lines | ForEach-Object {
+            if($_.Contains('from PIL import Image; print')) { "  & python -c 'import PIL'" }
+            else { $_ }
+          })
+          if(@($fixed | Where-Object {$_ -match "python -c 'import PIL'"}).Count -ne 1){
+            throw 'R27 Python PowerShell compatibility patch failed'
+          }
+          $fixed | Set-Content -Encoding utf8 -Path $probe
           $archiveHash | Out-File -Encoding ascii (Join-Path $proof 'overlay_sha256.txt')
           ('R27_PROJECT='+$target) | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
           Write-Host "R27 reconstructed on RTX. Overlay SHA256: $archiveHash"
