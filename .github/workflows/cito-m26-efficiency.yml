@@ -1,0 +1,41 @@
+name: Cito M26 Selective Efficiency
+on:
+  push:
+    branches: [cito-m26-selective-efficiency]
+    paths:
+      - 'cito/tests/bench/**'
+      - 'cito/tools/m26_efficiency.py'
+      - '.github/workflows/cito-m26-efficiency.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  smoke:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 16
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install benchmarking packages
+        run: |
+          sudo timeout 120 apt-get update -qq || echo 'index refresh timeout'
+          sudo timeout 180 apt-get install -y -qq cmake ninja-build iproute2 time cyclonedds-dev cyclonedds-tools
+          python3 -m py_compile cito/tools/m26_efficiency.py
+      - name: Build Cito and Cyclone DDS
+        run: |
+          cmake -S cito/tests/bench -B build-m26 -G Ninja -DCMAKE_BUILD_TYPE=Release
+          cmake --build build-m26 -j2
+      - name: Run selective subscriber smoke on isolated namespaces
+        run: |
+          python3 cito/tools/m26_efficiency.py \
+            --cito build-m26/cito_multi_topic_node \
+            --dds build-m26/dds_multi_topic_node \
+            --nodes 10 --topics 8 --percent 10 \
+            --bytes 256 --samples 8 --hz 10 --repeats 1 \
+            --lifetime-ms 14000 --output m26-smoke
+      - name: Archive logs and metrics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: m26-selectivity-smoke
+          path: m26-smoke/
+          if-no-files-found: warn
