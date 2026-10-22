@@ -1,0 +1,27 @@
+name: M5 R34 NVIDIA RTX Probe
+on:
+  push:
+    branches:
+      - m5/r34-shared-decode-workerpool-20261022
+    paths:
+      - .github/workflows/m5-r34-nvidia-rtx-probe.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  rtx-probe:
+    runs-on: self-hosted
+    timeout-minutes: 10
+    steps:
+      - name: Check Windows Nvidia RTX hardware
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          if($env:OS -ne 'Windows_NT') { throw 'Not Windows' }
+          $cards=@(Get-CimInstance Win32_VideoController | Select-Object Name,DriverVersion)
+          $cards | Format-Table
+          $cards | ConvertTo-Json -Depth 3
+          if(-not ($cards | Where-Object { $_.Name -match 'NVIDIA.*RTX 5060 Ti' })) { throw 'RTX 5060 Ti unavailable' }
+          nvidia-smi --query-gpu=name,driver_version --format=csv,noheader
+          if($LASTEXITCODE -ne 0) { throw 'nvidia-smi failed' }
+          Write-Output 'R34_GPU_RUNNER_READY'
