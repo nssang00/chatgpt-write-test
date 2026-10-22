@@ -1,0 +1,19 @@
+name: M5 R31 Fresh Branch Runner Health
+on:
+  push:
+    branches:
+      - m5/r31-clean-action-probe-20261022
+    paths:
+      - .github/workflows/m5-r31-clean-runner-probe.yml
+permissions:
+  contents: read
+jobs:
+  health:
+    runs-on: self-hosted
+    timeout-minutes: 3
+    steps:
+      - name: Self hosted Windows physical GPU
+        shell: powershell
+        run: |
+          Write-Host 'RUNNER_HEALTH_R31'
+          Get-CimInstance Win32_VideoController | Select-Object Name,DriverVersion | Format-Table
