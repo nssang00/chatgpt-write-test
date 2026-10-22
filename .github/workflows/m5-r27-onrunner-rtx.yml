@@ -124,6 +124,10 @@ jobs:
         run: |
           $ErrorActionPreference='Stop'
           Set-Location $env:R27_PROJECT
+          & python -m pip install --disable-pip-version-check pillow
+          if($LASTEXITCODE -ne 0){throw 'Pillow dependency install failed'}
+          & python -c 'import PIL'
+          if($LASTEXITCODE -ne 0){throw 'Pillow import failed'}
           & powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\geometry-validation\RUN_R27_SELF_HOSTED.ps1
           if($LASTEXITCODE -ne 0){throw 'R27 RTX gate did not pass; inspect preserved evidence'}
           $f='RESULTS\R27_SELF_HOSTED\r27_status.json'
