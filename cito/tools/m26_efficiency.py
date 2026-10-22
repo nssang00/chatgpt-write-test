@@ -106,6 +106,7 @@ def trial(args,engine,repeat):
     seen={}
     before=discovery=after=None
     ready_ms=None
+    ready_by_publisher={}
     reason=''
     started=time.monotonic()
     try:
@@ -115,7 +116,7 @@ def trial(args,engine,repeat):
         config='<CycloneDDS><Domain id="any"><General><Interfaces><NetworkInterface name="eth0"/></Interfaces><AllowMulticast>spdp</AllowMulticast></General></Domain></CycloneDDS>'
         exe=(args.cito if engine=='cito' else args.dds).resolve()
         def launch(i):
-            role='publisher' if i==0 else ('negative' if i==n-1 else 'subscriber')
+            role='publisher' if i<args.publishers else ('negative' if i==n-1 else 'subscriber')
             log=folder/f'node-{i:03d}-{role}.log'
             file=log.open('w')
             files.append(file)
@@ -124,23 +125,29 @@ def trial(args,engine,repeat):
             if engine=='dds':call+=['env','CYCLONEDDS_URI='+config]
             call+=['/usr/bin/time','-f','user_s=%U system_s=%S max_rss_kb=%M','-o',str(resource.resolve()),str(exe),
                    role,str(args.topics),str(args.bytes),str(args.samples),str(args.hz),'10.202.0.255',
-                   str(args.lifetime_ms),str(i),str(n),str(args.percent)]
+                   str(args.lifetime_ms),str(i),str(n),str(args.percent),str(args.publishers)]
             p=subprocess.Popen(call,stdout=file,stderr=subprocess.STDOUT,env=env)
             p_by_index[i]=p
-        for i in range(1,n):
+        for i in range(args.publishers,n):
             launch(i)
             if args.stagger_ms:time.sleep(args.stagger_ms/1000)
         time.sleep(.4)
         publisher_start=time.monotonic()
-        launch(0)
+        for i in range(args.publishers):
+            launch(i)
+            if args.stagger_ms:time.sleep(args.stagger_ms/1000)
         deadline=time.monotonic()+args.lifetime_ms/1000+12
-        publisher_log=folder/'node-000-publisher.log'
         while time.monotonic()<deadline:
-            if ready_ms is None and publisher_log.exists():
-                txt=publisher_log.read_text(errors='replace')
-                match=re.search(r'BENCH_DISCOVERY_READY elapsed_ms=(\d+)',txt)
-                if match:
-                    ready_ms=int(match[1])
+            if ready_ms is None:
+                for i in range(args.publishers):
+                    if i in ready_by_publisher:continue
+                    pub_log=folder/f'node-{i:03d}-publisher.log'
+                    if not pub_log.exists():continue
+                    txt=pub_log.read_text(errors='replace')
+                    match=re.search(r'BENCH_DISCOVERY_READY elapsed_ms=(\d+)',txt)
+                    if match:ready_by_publisher[i]=int(match[1])
+                if len(ready_by_publisher)==args.publishers:
+                    ready_ms=max(ready_by_publisher.values())
                     discovery=interface_stats(n)
             if all(p.poll() is not None for p in p_by_index.values()):break
             time.sleep(.05)
@@ -160,19 +167,19 @@ def trial(args,engine,repeat):
         for f in files:f.close()
         cleanup(n)
 
-    publisher=parse_metrics(folder/'node-000-publisher.log') or {}
-    positives=[parse_metrics(folder/f'node-{i:03d}-subscriber.log') or {} for i in range(1,n-1)]
+    publishers=[parse_metrics(folder/f'node-{i:03d}-publisher.log') or {} for i in range(args.publishers)]
+    positives=[parse_metrics(folder/f'node-{i:03d}-subscriber.log') or {} for i in range(args.publishers,n-1)]
     negative=parse_metrics(folder/f'node-{n-1:03d}-negative.log') or {}
-    metrics=[parse_resource(folder/f"node-{i:03d}-{'publisher' if i==0 else ('negative' if i==n-1 else 'subscriber')}.resource") for i in range(n)]
-    expected=active*args.samples*(n-2)
+    metrics=[parse_resource(folder/f"node-{i:03d}-{'publisher' if i<args.publishers else ('negative' if i==n-1 else 'subscriber')}.resource") for i in range(n)]
+    expected=active*args.samples*args.publishers*(n-args.publishers-1)
     received=sum(x.get('received',0) for x in positives)
-    sends=publisher.get('sent',0)
+    sends=sum(v.get('sent',0) for v in publishers)
     counts=[x.get('received',0) for x in positives]
     bad=sum(x.get('bad',0)+x.get('duplicate',0) for x in positives)
     all_exited=len(p_by_index)==n and all(p.returncode==0 for p in p_by_index.values())
-    truth=all_exited and sends==args.topics*args.samples and bad==0 and negative.get('received',-1)==0 and negative.get('bad',-1)==0 and received<=expected and ready_ms is not None and not reason
+    truth=all_exited and sends==args.publishers*args.topics*args.samples and bad==0 and negative.get('received',-1)==0 and negative.get('bad',-1)==0 and received<=expected and ready_ms is not None and not reason
     if engine=='cito' and negative.get('data_datagrams',-1)!=0:truth=False
-    row=dict(engine=engine,repeat=repeat,profile=args.profile,nodes=n,topics=args.topics,percent=args.percent,
+    row=dict(engine=engine,repeat=repeat,profile=args.profile,nodes=n,publishers=args.publishers,topics=args.topics,percent=args.percent,
              subscribed_topics=active,bytes=args.bytes,hz=args.hz,samples=args.samples,
              publisher_sent=sends,expected=expected,received=received,delivery_rate=round(received/expected,6),
              all_received=received==expected,valid=truth,reason=reason,discovery_ready_ms=ready_ms,
@@ -189,7 +196,7 @@ def trial(args,engine,repeat):
         if discovery:
             pre=delta(discovery,before)
             row.update({f'prepublish_{k}':v for k,v in pre.items()})
-    (folder/'result.json').write_text(json.dumps(dict(row=row,publisher=publisher,negative=negative,subscribers=positives,
+    (folder/'result.json').write_text(json.dumps(dict(row=row,publishers=publishers,negative=negative,subscribers=positives,
                     resource_stats=metrics,interface_before=before,interface_prepublish=discovery,interface_after=after),indent=2)+'\n')
     return row
 
@@ -197,6 +204,7 @@ def main():
     p=argparse.ArgumentParser()
     for name in ('cito','dds'):p.add_argument('--'+name,required=True,type=Path)
     p.add_argument('--nodes',type=int,default=10)
+    p.add_argument('--publishers',type=int,default=1)
     p.add_argument('--topics',type=int,default=33)
     p.add_argument('--percent',type=int,default=10)
     p.add_argument('--bytes',type=int,default=256)
@@ -208,7 +216,7 @@ def main():
     p.add_argument('--stagger-ms',type=int,default=4)
     p.add_argument('--output',type=Path,default=Path('m26-results'))
     args=p.parse_args()
-    if not (3<=args.nodes<=120 and 1<=args.topics<=256 and 1<=args.percent<=100
+    if not (3<=args.nodes<=120 and 1<=args.publishers<=10 and args.nodes-args.publishers>=2 and 1<=args.topics<=256 and 1<=args.percent<=100
             and 12<=args.bytes<=1400 and 1<=args.repeats<=10 and args.samples>=1
             and args.hz>=1 and args.cito.is_file() and args.dds.is_file()):
         p.error('invalid shape, paylod size, repeat, or binary')
