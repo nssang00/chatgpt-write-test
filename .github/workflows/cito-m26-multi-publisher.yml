@@ -1,0 +1,49 @@
+name: Cito M26 Multi-publisher A/B
+on:
+  push:
+    branches: [cito-m26-multipublisher]
+    paths:
+      - 'cito/tests/bench/**'
+      - 'cito/tools/m26_efficiency.py'
+      - '.github/workflows/cito-m26-multi-publisher.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  multi-publisher:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      max-parallel: 3
+      matrix:
+        include:
+          - {nodes: 30, publishers: 1, topics: 8, percent: 10, repeats: 3}
+          - {nodes: 30, publishers: 5, topics: 8, percent: 10, repeats: 3}
+          - {nodes: 30, publishers: 10, topics: 8, percent: 10, repeats: 3}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prerequisites
+        run: |
+          sudo timeout 120 apt-get update -qq || echo 'cached'
+          sudo timeout 180 apt-get install -y -qq cmake ninja-build iproute2 time cyclonedds-dev cyclonedds-tools
+          python3 -m py_compile cito/tools/m26_efficiency.py
+      - name: Build clients
+        run: |
+          cmake -S cito/tests/bench -B build-m26 -G Ninja -DCMAKE_BUILD_TYPE=Release
+          cmake --build build-m26 -j2
+      - name: Test independent publisher fanout
+        run: |
+          python3 cito/tools/m26_efficiency.py \
+            --cito build-m26/cito_multi_topic_node \
+            --dds build-m26/dds_multi_topic_node \
+            --nodes ${{ matrix.nodes }} --publishers ${{ matrix.publishers }} --topics ${{ matrix.topics }} --percent ${{ matrix.percent }} \
+            --bytes 256 --samples 8 --hz 10 --repeats ${{ matrix.repeats }} \
+            --lifetime-ms 22000 --output m26-multipublisher-results
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: m26-publishers-${{ matrix.publishers }}
+          path: m26-multipublisher-results/
+          if-no-files-found: warn
