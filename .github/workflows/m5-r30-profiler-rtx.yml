@@ -1,4 +1,4 @@
-name: M5 R30 RTX CPU Geometry Profiler
+name: M5 R32 RTX Shared Decode Check
 on:
   push:
     branches:
@@ -13,7 +13,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   r27-rtx:
-    name: R30 observed frame path decomposition on RTX
+    name: R32 R31 shared MVT decoder RTX evidence
     runs-on: self-hosted
     timeout-minutes: 130
     env:
@@ -130,36 +130,48 @@ jobs:
           [IO.File]::WriteAllText($runner,$src,[Text.Encoding]::UTF8)
           & node --check $runner
           if($LASTEXITCODE -ne 0){throw 'Profiler runner syntax failure'}
+          $runnerPath=Join-Path $target 'tests\\round14_gpu_compare\\run_one.mjs'
+          $code=Get-Content -Raw $runnerPath
+          $search='&partialEarcut=${flags.partialEarcut||0}'
+          $replace='&round11Shared=${flags.sharedDecode||0}&partialEarcut=${flags.partialEarcut||0}'
+          if(-not $code.Contains($search)){throw 'Missing runner shared decode anchor'}
+          [IO.File]::WriteAllText($runnerPath,$code.Replace($search,$replace),[Text.Encoding]::UTF8)
+          & node --check $runnerPath
+          if($LASTEXITCODE -ne 0){throw 'Shared URL option syntax failure'}
           $archiveHash | Out-File -Encoding ascii (Join-Path $proof 'overlay_sha256.txt')
           ('R27_PROJECT='+$target) | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
           Write-Host "R27 reconstructed on RTX. Overlay SHA256: $archiveHash"
           $global:LASTEXITCODE=0
           exit 0
-      - name: Profile NVIDIA RTX OL and M5 cold-frame subphases
+      - name: RTX R32 shared MVT decode crossed reference campaigns
         shell: powershell
         run: |
           $ErrorActionPreference='Stop'
           Set-Location $env:R27_PROJECT
-          $out=Join-Path $env:R27_PROJECT 'RESULTS\\R30_PROFILE'
+          $out=Join-Path $env:R27_PROJECT 'RESULTS\\R32_SHARED_DECODE'
           New-Item -ItemType Directory -Path $out -Force | Out-Null
-          foreach($name in @('ol_before','m5_r29_1','m5_r29_2','ol_after')){
-            $mode=if($name.StartsWith('ol')){'ol'}else{'m5'}
-            $args=@("--mode=$mode","--id=$name","--rounds=5",
+          foreach($item in @('ol_a:ol:0','control_a:m5:0','shared_a:m5:1','shared_b:m5:1','control_b:m5:0','ol_b:ol:0')){
+            $parts=$item.Split(':')
+            $label=$parts[0]
+            $mode=$parts[1]
+            $shared=$parts[2]
+            Write-Host "R32 real RTX campaign $label shared=$shared"
+            $args=@("--mode=$mode","--id=$label","--rounds=5",
               "--fringe=1","--closedJoins=1","--clipMode=legacy-unclipped",
-              "--tileUploadBatch=1","--partialEarcut=1","--out=$out")
+              "--tileUploadBatch=1","--partialEarcut=1","--sharedDecode=$shared","--out=$out")
             & node 'tests/round14_gpu_compare/run_one.mjs' @args
-            if($LASTEXITCODE -ne 0){throw "Profiling campaign failed $name"}
+            if($LASTEXITCODE -ne 0){throw "R32 RTX capture failure: $label"}
           }
-          Write-Host 'R30 20 cold samples per scene plus OL baseline captured'
+          Write-Host 'R32 six real RTX campaign files captured; independent fail-closed gate pending'
           $global:LASTEXITCODE=0
           exit 0
       - name: Preserve NVIDIA info, OL/M5 PNG, browser logs, and acceptance
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: m5-r30-profile-${{ github.run_id }}
+          name: m5-r32-shared-${{ github.run_id }}
           retention-days: 30
           if-no-files-found: warn
           path: |
             r27-preflight/**
-            r27-project/RESULTS/R30_PROFILE/**
+            r27-project/RESULTS/R32_SHARED_DECODE/**
