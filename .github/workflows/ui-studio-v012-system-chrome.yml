@@ -46,7 +46,9 @@ jobs:
           s=p.read_text()
           old="...devices['Desktop Chrome'], viewport:"
           assert old in s
-          p.write_text(s.replace(old,"...devices['Desktop Chrome'], channel: 'chrome', viewport:"))
+          s=s.replace(old,"...devices['Desktop Chrome'], channel: 'chrome', viewport:")
+          assert "video: 'retain-on-failure'" in s
+          p.write_text(s.replace("video: 'retain-on-failure'", "video: 'off'"))
           PY
       - name: Playwright actual Chromium engine E2E
         working-directory: experiments/ui-studio-v0.12/app
