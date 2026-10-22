@@ -112,7 +112,9 @@ def trial(args,engine,repeat):
         setup(n,args.profile)
         before=interface_stats(n)
         env=dict(os.environ)
-        config='<CycloneDDS><Domain id="any"><General><Interfaces><NetworkInterface name="eth0"/></Interfaces><AllowMulticast>spdp</AllowMulticast></General></Domain></CycloneDDS>'
+        spdp=os.environ.get('M26_DDS_SPDP_INTERVAL')
+        discovery=f'<Discovery><SPDPInterval>{spdp}</SPDPInterval></Discovery>' if spdp else ''
+        config=f'<CycloneDDS><Domain id="any"><General><Interfaces><NetworkInterface name="eth0"/></Interfaces><AllowMulticast>spdp</AllowMulticast></General>{discovery}</Domain></CycloneDDS>'
         exe=(args.cito if engine=='cito' else args.dds).resolve()
         def launch(i):
             role='publisher' if i==0 else ('negative' if i==n-1 else 'subscriber')
