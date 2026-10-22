@@ -425,6 +425,10 @@ int subscriber(
                         << route_requests
                         << " control_packets="
                         << control_packets
+                        << " receive_elapsed_ms="
+                        << std::chrono::duration_cast<
+                               std::chrono::milliseconds>(
+                               Clock::now() - start).count()
                         << "\n";
                     return 0;
                 }
@@ -535,6 +539,7 @@ int publisher(
         Clock::now();
     bool sent = false;
     std::size_t sends = 0;
+    std::size_t peak_discovered = 0;
 
     while (
         Clock::now() - start <
@@ -593,6 +598,9 @@ int publisher(
 
         const auto& stats =
             udp.control().stats();
+        peak_discovered = std::max(
+            peak_discovered,
+            host.remote_destinations(key).size());
 
         if (
             !sent &&
@@ -648,23 +656,30 @@ int publisher(
     const auto& stats =
         udp.control().stats();
 
-    if (!sent) {
-        std::cerr
-            << "publisher did not reach route state\n";
-        return 45;
-    }
-
     std::cout
         << "snapshot_requests="
         << stats.snapshot_requests
         << " route_requests="
         << stats.route_requests
         << " discovered="
-        << host.remote_destinations(
-               key).size()
+        << host.remote_destinations(key).size()
         << " sent="
         << sends
+        << " peak_discovered="
+        << peak_discovered
+        << " publish_succeeded="
+        << (sent ? 1 : 0)
+        << " discovery_elapsed_ms="
+        << std::chrono::duration_cast<
+               std::chrono::milliseconds>(
+               Clock::now() - start).count()
         << "\n";
+
+    if (!sent) {
+        std::cerr
+            << "publisher did not reach route state\n";
+        return 45;
+    }
 
     return 0;
 }
