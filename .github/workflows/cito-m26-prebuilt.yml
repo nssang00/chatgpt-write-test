@@ -1,0 +1,85 @@
+name: Cito M26 Prebuilt Runtime A/B
+on:
+  push:
+    branches: [cito-m26-selective-efficiency]
+    paths:
+      - '.github/workflows/cito-m26-prebuilt.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  bundle:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 17
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install developer packages only once
+        run: |
+          sudo timeout 90 apt-get update -qq || echo 'using cached apt lists'
+          sudo timeout 480 apt-get -o Acquire::Retries=5 install -y -qq cmake ninja-build cyclonedds-dev cyclonedds-tools
+      - name: Build and collect dynamic library SONAMEs
+        run: |
+          cmake -S cito/tests/bench -B build-m26 -G Ninja -DCMAKE_BUILD_TYPE=Release
+          cmake --build build-m26 -j2
+          mkdir -p m26-bundle
+          cp build-m26/cito_multi_topic_node build-m26/dds_multi_topic_node m26-bundle/
+          python3 - <<'PY'
+          import pathlib,re,shutil,subprocess
+          root=pathlib.Path('m26-bundle')
+          for binary in ('cito_multi_topic_node','dds_multi_topic_node'):
+              out=subprocess.check_output(['ldd',str(root/binary)],text=True)
+              print(out)
+              for name,path in re.findall(r'(?m)^\s*(\S+)\s+=>\s+(/\S+)',out):
+                  shutil.copyfile(path,root/name)
+          PY
+          ls -lh m26-bundle
+      - uses: actions/upload-artifact@v4
+        with:
+          name: m26-runtime
+          path: m26-bundle/
+          retention-days: 7
+  matrix:
+    needs: bundle
+    runs-on: ubuntu-24.04
+    timeout-minutes: 37
+    strategy:
+      fail-fast: false
+      max-parallel: 3
+      matrix:
+        include:
+          - {nodes: 10, topics: 8, percent: 10, repeats: 5, life: 16000, bytes: 256}
+          - {nodes: 10, topics: 128, percent: 10, repeats: 5, life: 22000, bytes: 256}
+          - {nodes: 30, topics: 33, percent: 50, repeats: 5, life: 22000, bytes: 256}
+          - {nodes: 100, topics: 8, percent: 10, repeats: 3, life: 30000, bytes: 64}
+          - {nodes: 100, topics: 8, percent: 100, repeats: 3, life: 30000, bytes: 64}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: m26-runtime
+          path: m26-bundle
+      - name: Check executable files and namespace tools without apt
+        run: |
+          ls -l m26-bundle
+          chmod +x m26-bundle/cito_multi_topic_node m26-bundle/dds_multi_topic_node
+          command -v ip
+          command -v tc
+          test -x /usr/bin/time
+          python3 -m py_compile cito/tools/m26_efficiency.py
+      - name: Compare without apt mirror network dependency
+        env:
+          M26_BUNDLE_LIB: ${{ github.workspace }}/m26-bundle
+        run: |
+          python3 cito/tools/m26_efficiency.py \
+            --cito m26-bundle/cito_multi_topic_node \
+            --dds m26-bundle/dds_multi_topic_node \
+            --nodes ${{ matrix.nodes }} --topics ${{ matrix.topics }} --percent ${{ matrix.percent }} \
+            --bytes ${{ matrix.bytes }} --samples 8 --hz 10 --repeats ${{ matrix.repeats }} \
+            --lifetime-ms ${{ matrix.life }} --output m26-prebuilt-results
+      - name: Archive logs / veth counters / RSS
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: m26-prebuilt-n${{ matrix.nodes }}-t${{ matrix.topics }}-p${{ matrix.percent }}
+          path: m26-prebuilt-results/
+          if-no-files-found: warn
