@@ -1,0 +1,47 @@
+name: Cito M26 Hundred-Participant DDS Full Multicast
+on:
+  push:
+    branches: [cito-m26-dds-multicast100]
+    paths:
+      - '.github/workflows/cito-m26-dds100-multicast.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  full-multicast:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 22
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          run-id: 39859684030
+          name: m26-runtime
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: m26-bundle
+      - name: Prepare tested clients
+        run: |
+          chmod +x m26-bundle/cito_multi_topic_node m26-bundle/dds_multi_topic_node
+          python3 -m py_compile cito/tools/m26_efficiency.py
+          command -v ip
+      - name: Equal topology; Cyclone full multicast enabled
+        env:
+          M26_BUNDLE_LIB: ${{ github.workspace }}/m26-bundle
+          M26_DDS_SPDP_INTERVAL: 2s
+          M26_DDS_MULTICAST: "true"
+        run: |
+          python3 cito/tools/m26_efficiency.py \
+            --cito m26-bundle/cito_multi_topic_node \
+            --dds m26-bundle/dds_multi_topic_node \
+            --nodes 100 --topics 8 --percent 10 \
+            --bytes 64 --samples 8 --hz 10 \
+            --repeats 2 --stagger-ms 30 \
+            --lifetime-ms 60000 --output m26-multicast-100-results
+      - name: Raw outcomes
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: m26-cyclone-100-full-multicast
+          path: m26-multicast-100-results/
+          if-no-files-found: warn
