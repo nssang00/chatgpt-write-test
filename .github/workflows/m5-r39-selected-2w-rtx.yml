@@ -1,4 +1,5 @@
 name: M5 R39 RTX Selected 2W Candidate Gate
+# R39 2W verification retry after fixing selection syntax.
 on:
   push:
     branches:
