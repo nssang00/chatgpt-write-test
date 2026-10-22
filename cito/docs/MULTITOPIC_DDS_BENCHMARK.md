@@ -16,7 +16,7 @@ Experimental branch based on `cito-discovery-retry` (the GitHub development stac
 
 ## Critical comparability limitations
 
-These experiments have an *equal nominal application payload budget* but **not identical serialization or wire-byte overhead**. Cito transmits a 32B transport header plus binary payload; the DDS IDL encodes unsigned integer fields and an IDL string with CDR/RTPS overhead. The DDS C reader polls via dds_take and a 200us sleep; the Cito reader uses UDP poll. Thus latency numbers reflect *these client harnesses* too. Do not infer universal middleware superiority.
+These experiments have an *equal nominal application payload budget* but **not identical serialization or wire-byte overhead**. Cito transmits a 32B transport header plus binary payload; the DDS IDL encodes unsigned integer fields and an IDL string with CDR/RTPS overhead. The DDS C reader uses a WaitSet and ReadCondition event wakeup before dds_take; the Cito reader uses UDP poll. Scheduling and internal processing still differ. Thus latency numbers reflect *these client harnesses* too. Do not infer universal middleware superiority.
 
 Cyclone DDS reliability is BEST_EFFORT to approximate Cito's one-shot UDP data semantics. Neither side has an app-level ACK. One dropped sample in a 1%-loss experiment does **not** constitute a Discovery failure.
 
@@ -44,7 +44,9 @@ Requires CAP_NET_ADMIN for veth/netns/tc. GitHub's `.github/workflows/cito-multi
 ## Evidence
 
 - Initial baseline independent CI showing 1/16B and 33/1200B 2x delivery success: https://github.com/nssang00/chatgpt-write-test/actions/runs/39852816102
-- Updated corrected burst-paced and warm-up comparison: https://github.com/nssang00/chatgpt-write-test/actions/runs/39853629298
+- Corrected burst-paced and warm-up comparison (DDS 200us poll): https://github.com/nssang00/chatgpt-write-test/actions/runs/39853629298
+- Event-driven Cyclone WaitSet comparison: https://github.com/nssang00/chatgpt-write-test/actions/runs/39854435409
+- Focused follow-up on stalled environment installers: https://github.com/nssang00/chatgpt-write-test/actions/runs/39855017123
 - Final revised low-Hz timeout and network-feasible workload comparison: see the latest run on `cito-multitopic-dds-benchmark` Actions branch.
 - Validation of 1, 8, 33 and 65 topics with Cito was also performed locally using a v25 source ZIP and a loopback network; those local trials are **not** Cyclone DDS/namespace evidence.
 
