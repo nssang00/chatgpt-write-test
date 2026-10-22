@@ -121,7 +121,10 @@ def trial(args,engine,repeat):
             files.append(file)
             resource=folder/f'node-{i:03d}-{role}.resource'
             call=['sudo','-n','ip','netns','exec',f'{NS_PREFIX}{i:03d}']
-            if engine=='dds':call+=['env','CYCLONEDDS_URI='+config]
+            if engine=='dds':
+                call+=['env','CYCLONEDDS_URI='+config]
+                if os.environ.get('M26_BUNDLE_LIB'):
+                    call.append('LD_LIBRARY_PATH='+os.environ['M26_BUNDLE_LIB'])
             call+=['/usr/bin/time','-f','user_s=%U system_s=%S max_rss_kb=%M','-o',str(resource.resolve()),str(exe),
                    role,str(args.topics),str(args.bytes),str(args.samples),str(args.hz),'10.202.0.255',
                    str(args.lifetime_ms),str(i),str(n),str(args.percent)]
