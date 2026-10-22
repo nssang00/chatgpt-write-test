@@ -1,0 +1,207 @@
+name: M5 R31 RTX Shared MVT Decode A/B
+on:
+  push:
+    branches:
+      - m5/r31-rtx-frame-pacing-20261022
+    paths:
+      - .github/workflows/m5-r31-shared-decode-rtx.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: m5-r31-shared-decode-gpu
+  cancel-in-progress: false
+jobs:
+  r27-rtx:
+    name: R31 shared MVT decode source-layer match performance A/B
+    runs-on: self-hosted
+    timeout-minutes: 130
+    env:
+      M5_GPU_COMPARE_TIMEOUT_MS: "600000"
+      CHROME_HEADLESS: "0"
+      M5_SWIFTSHADER: "0"
+    steps:
+      - name: Checkout dedicated experiment branch
+        uses: actions/checkout@v4
+      - name: Select Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Preflight physical Windows RTX and stage exact R27 overlay
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $root=$env:GITHUB_WORKSPACE
+          $proof=Join-Path $root 'r27-preflight'
+          New-Item -ItemType Directory -Path $proof -Force | Out-Null
+          if($env:OS -ne 'Windows_NT'){throw 'Physical Windows RTX runner required'}
+          $gpu=@(Get-CimInstance Win32_VideoController | Select-Object Name,DriverVersion,PNPDeviceID)
+          $gpu | ConvertTo-Json -Depth 5 | Set-Content -Encoding utf8 (Join-Path $proof 'video_controller.json')
+          if(-not ($gpu | Where-Object {$_.Name -match 'NVIDIA.*RTX'})){throw 'RTX GPU missing'}
+          $smi=Get-Command nvidia-smi -ErrorAction SilentlyContinue
+          if($smi){ & $smi.Source --query-gpu=name,driver_version,pci.bus_id --format=csv,noheader |
+             Out-File -Encoding utf8 (Join-Path $proof 'nvidia_smi.txt') }
+          if(-not (Test-Path (Join-Path $proof 'nvidia_smi.txt'))){throw 'nvidia-smi missing'}
+          $source='C:\Users\user\Downloads\M5_GPU_COMPARE_UNPACKED\M5_Round14_OL_GPU_Compare'
+          if(-not (Test-Path (Join-Path $source 'tests\round14_gpu_compare\oneclick.mjs'))){
+            throw "Round14 original fixture missing: $source"
+          }
+          $target=Join-Path $root 'r27-project'
+          New-Item -ItemType Directory -Force -Path $target | Out-Null
+          Copy-Item (Join-Path $source '*') $target -Recurse -Force
+          if(Test-Path (Join-Path $target 'RESULTS')){
+            Remove-Item (Join-Path $target 'RESULTS') -Recurse -Force
+          }
+          $patches=@(
+            'round14_apply_capture_fix.mjs',
+            'apply_backend_msaa_optin.mjs',
+            'apply_ol_stroke_defaults_variant.mjs',
+            'apply_no_line_discard_variant.mjs',
+            'apply_round18_tile_scissor.mjs',
+            'apply_round18_layer_fbo.mjs',
+            'apply_round18_polygon_stroke_noclip.mjs',
+            'apply_round18_flat_stroke_direct.mjs'
+          )
+          foreach($name in $patches){
+            $p=Join-Path $root ('m5-gpu\'+$name)
+            & node --check $p
+            if($LASTEXITCODE -ne 0){throw "Node syntax failed: $name"}
+            & node $p $target
+            if($LASTEXITCODE -ne 0){throw "Round18 reconstruction failed: $name"}
+          }
+          $overlayFiles=Join-Path $root 'm5-gpu\r27-overlay'
+          $manifest=Get-Content (Join-Path $overlayFiles 'manifest.json') -Raw | ConvertFrom-Json
+          if($manifest.chunks -ne 8){throw 'Unexpected chunk count'}
+          $b64=''
+          for($i=0;$i -lt $manifest.chunks;$i++){
+            $chunkPath=Join-Path $overlayFiles ('chunk_{0:D2}.b64' -f $i)
+            $chunk=(Get-Content -Raw -Path $chunkPath).Trim()
+            $sha=[Security.Cryptography.SHA256]::Create()
+            try {$digest=$sha.ComputeHash([Text.Encoding]::ASCII.GetBytes($chunk))}
+            finally {$sha.Dispose()}
+            $partHash=[BitConverter]::ToString($digest).Replace('-','').ToLowerInvariant()
+            if($partHash -ne $manifest.parts_sha256[$i]){throw "Overlay chunk corrupted: $i"}
+            $b64+=$chunk
+          }
+          $data=[Convert]::FromBase64String($b64)
+          $archive=Join-Path $env:RUNNER_TEMP 'm5-r27-verified-overlay.zip'
+          [IO.File]::WriteAllBytes($archive,$data)
+          $archiveHash=(Get-FileHash -Algorithm SHA256 $archive).Hash.ToLowerInvariant()
+          if($archiveHash -ne $manifest.sha256 -or $data.Length -ne $manifest.size){
+            throw 'Pinned R27 overlay SHA-256/length mismatch'
+          }
+          $expand=Join-Path $env:RUNNER_TEMP 'm5-r27-overlay-expanded'
+          New-Item -ItemType Directory -Path $expand -Force | Out-Null
+          Expand-Archive -LiteralPath $archive -DestinationPath $expand -Force
+          & robocopy $expand $target /E /NFL /NDL /NJH /NJS /NP
+          if($LASTEXITCODE -ge 8){throw "Overlay file merge failed: $LASTEXITCODE"}
+          $needed=@(
+            'our-renderer\integration\DirectFeatureWebGLPipeline.js',
+            'geometry-validation\RUN_R27_SELF_HOSTED.ps1',
+            'geometry-validation\r24_masks\oracle_mixed_core.png',
+            'tests\round14_gpu_compare\run_one.mjs'
+          )
+          foreach($f in $needed){
+            if(-not (Test-Path (Join-Path $target $f))){throw "M5 R27 file missing: $f"}
+          }
+          $probe=Join-Path $target 'geometry-validation\RUN_R27_SELF_HOSTED.ps1'
+          $lines=Get-Content $probe
+          $fixed=@($lines | ForEach-Object {
+            if($_.Contains('from PIL import Image; print')) { "  & python -c 'import PIL'" }
+            else { $_ }
+          })
+          if(@($fixed | Where-Object {$_ -match "python -c 'import PIL'"}).Count -ne 1){
+            throw 'R27 Python PowerShell compatibility patch failed'
+          }
+          $fixed | Set-Content -Encoding utf8 -Path $probe
+          Copy-Item (Join-Path $root 'm5-gpu\\r28\\round14_m5.html') (Join-Path $target 'tests\\round14_gpu_compare\\round14_m5.html') -Force
+          Copy-Item (Join-Path $root 'm5-gpu\\r28\\run_one.mjs') (Join-Path $target 'tests\\round14_gpu_compare\\run_one.mjs') -Force
+          & node --check (Join-Path $target 'tests\\round14_gpu_compare\\run_one.mjs')
+          if($LASTEXITCODE -ne 0){throw 'R28 runner syntax failed'}
+          Copy-Item (Join-Path $root 'm5-gpu\\r29\\round14_m5.html') (Join-Path $target 'tests\\round14_gpu_compare\\round14_m5.html') -Force
+          Copy-Item (Join-Path $root 'm5-gpu\\r29\\run_one.mjs') (Join-Path $target 'tests\\round14_gpu_compare\\run_one.mjs') -Force
+          Copy-Item (Join-Path $root 'm5-gpu\\r29\\DirectFeatureFlatTriangulation.js') (Join-Path $target 'our-renderer\\integration\\DirectFeatureFlatTriangulation.js') -Force
+          & node --check (Join-Path $target 'our-renderer\\integration\\DirectFeatureFlatTriangulation.js')
+          if($LASTEXITCODE -ne 0){throw 'R29 JS syntax failed'}
+          $runnerPath=Join-Path $target 'tests\\round14_gpu_compare\\run_one.mjs'
+          $runnerJs=Get-Content -Raw $runnerPath
+          $search='&partialEarcut=${flags.partialEarcut||0}'
+          $replace='&round11Shared=${flags.sharedDecode||0}&partialEarcut=${flags.partialEarcut||0}'
+          if(-not $runnerJs.Contains($search)){throw 'R31 shared decode URL anchor missing'}
+          $runnerJs=$runnerJs.Replace($search,$replace)
+          [IO.File]::WriteAllText($runnerPath,$runnerJs,[Text.Encoding]::UTF8)
+          & node --check $runnerPath
+          if($LASTEXITCODE -ne 0){throw 'R31 shared-decode URL patch syntax failed'}
+          $archiveHash | Out-File -Encoding ascii (Join-Path $proof 'overlay_sha256.txt')
+          ('R27_PROJECT='+$target) | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
+          Write-Host "R27 reconstructed on RTX. Overlay SHA256: $archiveHash"
+          $global:LASTEXITCODE=0
+          exit 0
+      - name: OL Worker versus M5 independent and shared decode full RTX campaigns
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          Set-Location $env:R27_PROJECT
+          $out=Join-Path $env:R27_PROJECT 'RESULTS\\R31_SHARED_DECODE_AB'
+          New-Item -ItemType Directory -Path $out -Force | Out-Null
+          $campaigns=@(
+            @{name='ol_a';mode='ol';shared=0},
+            @{name='m5_control_a';mode='m5';shared=0},
+            @{name='m5_shared_a';mode='m5';shared=1},
+            @{name='m5_shared_b';mode='m5';shared=1},
+            @{name='m5_control_b';mode='m5';shared=0},
+            @{name='ol_b';mode='ol';shared=0}
+          )
+          foreach($c in $campaigns){
+            Write-Host "R31 physical RTX $($c.name)"
+            $args=@("--mode=$($c.mode)","--id=$($c.name)","--rounds=5",
+              "--fringe=1","--closedJoins=1","--clipMode=legacy-unclipped",
+              "--tileUploadBatch=1","--partialEarcut=1","--sharedDecode=$($c.shared)","--out=$out")
+            & node 'tests/round14_gpu_compare/run_one.mjs' @args
+            if($LASTEXITCODE -ne 0){throw "R31 actual browser campaign failed $($c.name)"}
+          }
+          $profiles=@()
+          foreach($c in $campaigns){
+            $json=Get-Content -Raw (Join-Path $out ($c.name+'\\result.json'))|ConvertFrom-Json
+            foreach($scene in @('building-1l','road-1l','mixed-4l')){
+              $s=@($json.scenes|Where-Object{$_.name -eq $scene})[0]
+              $cold=@($s.samples|ForEach-Object{[double]$_.coldToCapturedFrameMs}|Sort-Object)
+              $decode=if($c.mode -eq 'm5'){@($s.samples|ForEach-Object{[double]$_.decodeMs}|Sort-Object)[2]}else{$null}
+              $profiles+=@{name=$c.name;mode=$c.mode;scene=$scene;
+                shared=$c.shared;coldMedianMs=$cold[2];decodeMedianMs=$decode;
+                sharedDecodeCalls=if($c.mode -eq 'm5'){$s.samples[0].decodeCalls}else{$null};
+                rgba8=if($c.mode -eq 'm5'){$s.image.rgba8Sha256}else{$null};
+                renderer=$s.renderer;pass=$json.pass}
+            }
+          }
+          $m5=@($profiles|Where-Object{$_.mode -eq 'm5'})
+          $issues=@()
+          foreach($scene in @('building-1l','road-1l','mixed-4l')){
+            $matches=@($m5|Where-Object{$_.scene -eq $scene})
+            $hashes=@($matches|ForEach-Object{$_.rgba8}|Sort-Object -Unique)
+            if($hashes.Count -ne 1){$issues+=('rgba8:'+ $scene)}
+            foreach($item in $matches){
+              if($scene -eq 'mixed-4l'){
+                $expect=if($item.shared -eq 1){4}else{16}
+                if($item.sharedDecodeCalls -ne $expect){$issues+=('decodeCalls:'+$item.name)}
+              }
+            }
+          }
+          $pass=$issues.Count -eq 0
+          @{schema='r31-shared-decode-rtx-v1';pixelInvariant=$pass;issues=$issues;profiles=$profiles;
+            note='RTX performance diagnostic only, not a release approval'}|
+            ConvertTo-Json -Depth 8|Set-Content -Encoding utf8 (Join-Path $out 'shared_decode_summary.json')
+          if(-not $pass){throw ('R31 shared decode regression: '+($issues -join ','))}
+          Write-Host 'R31 shared decoder RGBA identity and call reduction PASS'
+          $global:LASTEXITCODE=0
+          exit 0
+      - name: Preserve NVIDIA info, OL/M5 PNG, browser logs, and acceptance
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: m5-r31-shared-decode-${{ github.run_id }}
+          retention-days: 30
+          if-no-files-found: warn
+          path: |
+            r27-preflight/**
+            r27-project/RESULTS/R31_SHARED_DECODE_AB/**
