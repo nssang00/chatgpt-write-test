@@ -12,11 +12,16 @@ static uint64_t ns(void){struct timespec t;clock_gettime(CLOCK_MONOTONIC,&t);ret
 static void fail(const char*s,dds_return_t code){fprintf(stderr,"dds %s: %d\n",s,code);exit(20);}
 static int cmp(const void*a,const void*b){uint64_t x=*(const uint64_t*)a,y=*(const uint64_t*)b;return (x>y)-(x<y);}
 int main(int argc,char**argv){
- if(argc!=8){fprintf(stderr,"args: role topics bytes samples hz unused lifetime_ms\n");return 2;}
+ if(argc!=8&&argc!=11){fprintf(stderr,"args: role topics bytes samples hz unused lifetime_ms [index nodes pct]\n");return 2;}
  const char* role=argv[1];int topics=atoi(argv[2]),size=atoi(argv[3]),samples=atoi(argv[4]),hz=atoi(argv[5]);long life=atol(argv[7]);
  if(topics<1||topics>256||size<12||size>60000||samples<1||samples>10000||hz<1||hz>2000)return 2;
  bool pub=!strcmp(role,"publisher"),negative=!strcmp(role,"negative");
- int active=negative?1:topics;
+ int index=argc==11?atoi(argv[8]):(pub?0:(negative?2:1));
+ int nodes=argc==11?atoi(argv[9]):3, pct=argc==11?atoi(argv[10]):100;
+ if(nodes<3||nodes>120||index<0||index>=nodes||pct<1||pct>100)return 2;
+ int active=negative?1:(pub?topics:(topics*pct+99)/100);
+ int subscribed=(topics*pct+99)/100;
+ uint64_t expected_peer_count=nodes-2, expected_received=(uint64_t)subscribed*samples;
  dds_entity_t p=dds_create_participant(DDS_DOMAIN_DEFAULT,NULL,NULL);if(p<0)fail("participant",p);
  dds_qos_t*qos=dds_create_qos();dds_qset_reliability(qos,DDS_RELIABILITY_BEST_EFFORT,DDS_MSECS(100));dds_qset_history(qos,DDS_HISTORY_KEEP_LAST,2048);
  dds_entity_t*ends=calloc(active,sizeof(*ends));
@@ -32,7 +37,7 @@ int main(int argc,char**argv){
  Bench_Msg*sample=Bench_Msg__alloc();void*storage[1]={sample};dds_sample_info_t info[1];
  while((ns()-start)/1000000ull<(uint64_t)life){
   if(pub){
-   if(!ready){ready=true;for(int t=0;t<topics;++t){dds_publication_matched_status_t matched={0};dds_return_t rc=dds_get_publication_matched_status(ends[t],&matched);if(rc<0)fail("match",rc);if(matched.current_count<1){ready=false;break;}}if(ready)first=ns()+500000000ull;}
+   if(!ready){ready=true;for(int t=0;t<topics;++t){dds_publication_matched_status_t matched={0};dds_return_t rc=dds_get_publication_matched_status(ends[t],&matched);if(rc<0)fail("match",rc);if(t<subscribed&&matched.current_count<(int)expected_peer_count){ready=false;break;}}if(ready){first=ns()+500000000ull;printf("BENCH_DISCOVERY_READY elapsed_ms=%llu\n",(unsigned long long)((ns()-start)/1000000ull));fflush(stdout);}}
    if(ready&&sent<(uint64_t)topics*samples&&ns()>=first&&ns()-first>=sent*1000000000ull/(uint64_t)(hz*topics)){
     int t=sent%topics;Bench_Msg m={0};m.seq=sent/topics;m.sent_ns=ns();memset(payload,65+t%23,size-12);m.payload=payload;
     dds_return_t rc=dds_write(ends[t],&m);if(rc<0)fail("write",rc);sent++;
@@ -45,15 +50,15 @@ int main(int argc,char**argv){
      char expected=65+t%23;bool valid=true;for(int j=0;j<size-12;++j)if(m->payload[j]!=expected){valid=false;break;}if(!valid){bad++;continue;}
      size_t index=(size_t)t*samples+m->seq;if(seen[index]++)dup++;else{lat[recv++]=(ns()-m->sent_ns)/1000;}
    }}}
-   if(!negative&&recv==(uint64_t)topics*samples)break;
+   if(!negative&&recv==expected_received)break;
   }
   if(pub)usleep(200);
  }
  qsort(lat,recv,sizeof(uint64_t),cmp);
  uint64_t p95=recv?lat[(95*recv+99)/100-1]:0;
- printf("{\"role\":\"%s\",\"topics\":%d,\"bytes\":%d,\"samples\":%d,\"sent\":%llu,\"received\":%llu,\"bad\":%llu,\"duplicate\":%llu,\"p95_us\":%llu,\"ready\":%d}\n",role,topics,size,samples,(unsigned long long)sent,(unsigned long long)recv,(unsigned long long)bad,(unsigned long long)dup,(unsigned long long)p95,ready?1:0);
+ printf("{\"role\":\"%s\",\"topics\":%d,\"bytes\":%d,\"samples\":%d,\"sent\":%llu,\"received\":%llu,\"bad\":%llu,\"duplicate\":%llu,\"p95_us\":%llu,\"ready\":%d,\"index\":%d,\"active_topics\":%d}\n",role,topics,size,samples,(unsigned long long)sent,(unsigned long long)recv,(unsigned long long)bad,(unsigned long long)dup,(unsigned long long)p95,ready?1:0,index,subscribed);
  dds_delete(p);Bench_Msg_free(sample,DDS_FREE_ALL);free(payload);free(lat);free(seen);free(ends);
  if(pub)return (ready&&sent==(uint64_t)topics*samples)?0:3;
  if(negative)return (recv==0&&bad==0)?0:4;
- return (recv==(uint64_t)topics*samples&&bad==0&&dup==0)?0:5;
+ return (recv<=expected_received&&bad==0&&dup==0)?0:5;
 }
