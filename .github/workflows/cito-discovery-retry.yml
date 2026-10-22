@@ -5,6 +5,8 @@ on:
     paths:
       - 'cito/include/cito/detail/discovery_control_core.hpp'
       - 'cito/tests/discovery_retransmit_test.cpp'
+      - 'cito/tests/net/runtime_udp_node.cpp'
+      - 'cito/tools/discovery_scale.py'
       - '.github/workflows/cito-discovery-retry.yml'
   workflow_dispatch:
 
