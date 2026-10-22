@@ -1,0 +1,81 @@
+name: M5 R36 RTX Layer Scale
+on:
+  push:
+    branches:
+      - m5/r34-shared-decode-workerpool-20261022
+    paths:
+      - .github/workflows/m5-r36-layer-scale-rtx.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: m5-r36-rtx-layer-scale
+  cancel-in-progress: false
+jobs:
+  scale:
+    name: NVIDIA RTX 5060 Ti 1/2/4/8/16 layer Worker startup experiment
+    runs-on: self-hosted
+    timeout-minutes: 180
+    env:
+      R35_ZIP_PATH: 'C:\M5_R35\M5_R35_RTX_READY_SELF_CONTAINED_2026-10-22.zip'
+      M5_SWIFTSHADER: '0'
+      R36_ROUNDS: '3'
+    steps:
+      - name: Checkout R36 benchmark driver only
+        uses: actions/checkout@v4
+      - name: Verify pinned R35 ZIP and physical RTX
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $proof=Join-Path $env:GITHUB_WORKSPACE 'r36-preflight'
+          New-Item -ItemType Directory -Force -Path $proof | Out-Null
+          if($env:OS -ne 'Windows_NT'){throw 'Expected Windows physical GPU runner'}
+          $gpu=@(Get-CimInstance Win32_VideoController | Select-Object Name,DriverVersion)
+          $gpu | ConvertTo-Json -Depth 5 | Set-Content -Encoding utf8 (Join-Path $proof 'gpu.json')
+          if(-not ($gpu | Where-Object {$_.Name -match 'NVIDIA.*RTX 5060 Ti'})){throw 'RTX 5060 Ti missing'}
+          & nvidia-smi --query-gpu=name,driver_version --format=csv,noheader | Out-File -Encoding utf8 (Join-Path $proof 'nvidia-smi.txt')
+          if($LASTEXITCODE -ne 0){throw 'NVIDIA SMI failed'}
+          $zip=$env:R35_ZIP_PATH
+          if(-not (Test-Path -LiteralPath $zip -PathType Leaf)){throw "Missing staged ZIP $zip"}
+          $actual=(Get-FileHash -Algorithm SHA256 -LiteralPath $zip).Hash.ToLowerInvariant()
+          $expected='3e5d3cb5d525b818a3b560731dac0ae17ce734ab5a96057c67c546c4b7cb2776'
+          if($actual -ne $expected){throw "R35 ZIP hash mismatch $actual"}
+          $actual | Set-Content -Encoding ascii (Join-Path $proof 'source_sha256.txt')
+      - name: Extract R35 into isolated workspace
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $dest=Join-Path $env:GITHUB_WORKSPACE 'r35'
+          if(Test-Path $dest){Remove-Item $dest -Recurse -Force}
+          New-Item -ItemType Directory -Force -Path $dest | Out-Null
+          Expand-Archive -LiteralPath $env:R35_ZIP_PATH -DestinationPath $dest -Force
+          foreach($f in @('tests\round14_gpu_compare\run_one.mjs','tests\round14_gpu_compare\round14_m5.html','tests\round14_gpu_compare\ol_stock.html','tests\round14_gpu_compare\png_compare.mjs')){
+            if(-not (Test-Path (Join-Path $dest $f))){throw "Incomplete pinned R35 source: $f"}
+          }
+          Copy-Item -LiteralPath (Join-Path $env:GITHUB_WORKSPACE 'm5-gpu\r36\run_scale.mjs') -Destination (Join-Path $dest 'r36_scale.mjs')
+      - name: Select Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Validate R36 test driver syntax
+        shell: powershell
+        run: |
+          & node --check .\r35\r36_scale.mjs
+          if($LASTEXITCODE -ne 0){throw 'R36 driver syntax invalid'}
+      - name: Measure RTX layer-instance scaling and pixel parity
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          Set-Location (Join-Path $env:GITHUB_WORKSPACE 'r35')
+          & node .\r36_scale.mjs . .\RESULTS\R36_LAYER_SCALE
+          if($LASTEXITCODE -ne 0){throw 'R36 layer-scale incomplete or failed; inspect artifact'}
+      - name: Upload full R36 evidence even when gate fails
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: m5-r36-layers-${{ github.run_id }}
+          retention-days: 30
+          if-no-files-found: warn
+          path: |
+            r36-preflight/**
+            r35/RESULTS/R36_LAYER_SCALE/**
