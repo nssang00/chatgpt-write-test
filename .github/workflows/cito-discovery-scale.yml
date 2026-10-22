@@ -4,14 +4,30 @@ on:
     branches: [cito-discovery-scale]
     paths:
       - 'cito/tools/discovery_scale.py'
+      - 'cito/tools/tests/test_discovery_scale.py'
+      - 'cito/tests/net/runtime_udp_node.cpp'
+      - 'cito/docs/DISCOVERY_NETEM_SCALE.md'
       - '.github/workflows/cito-discovery-scale.yml'
   workflow_dispatch:
+
 permissions:
   contents: read
+
 jobs:
-  scale:
+  shape-and-discover:
     runs-on: ubuntu-24.04
     timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {profile: baseline, counts: '3,10,30,50,100,200'}
+          - {profile: bandwidth_1m, counts: '3,10,30,50,100'}
+          - {profile: latency_100ms, counts: '3,10,30,50,100'}
+          - {profile: loss_1pct, counts: '3,10,30,50,100'}
+          - {profile: congested, counts: '3,10,30,50,100'}
+          - {profile: degraded, counts: '3,10,30,50'}
+          - {profile: extreme, counts: '3,10,30'}
     steps:
       - uses: actions/checkout@v4
       - name: Prepare network tools
@@ -19,22 +35,33 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y -qq iproute2 ninja-build
           python3 -m py_compile cito/tools/discovery_scale.py
-          sudo -n ip netns list
+          python3 -m unittest discover -s cito/tools/tests -p test_discovery_scale.py -v
+          sudo -n ip -V
+          sudo -n tc -V
       - name: Build runtime UDP node
         run: |
           cmake -S cito -B build-scale -G Ninja -DCMAKE_BUILD_TYPE=Release
           cmake --build build-scale --target cito_runtime_udp_node -j2
-      - name: Run scale
+      - name: Shape network and measure Discovery
         run: |
           python3 cito/tools/discovery_scale.py \
             --binary build-scale/cito_runtime_udp_node \
-            --counts 3,10,30,50,100,200,300,400 \
-            --repeats 2 --timeout 35 --lifetime-ms 22000 \
-            --output discovery-scale-results
-      - name: Upload logs
+            --profile '${{ matrix.profile }}' \
+            --counts '${{ matrix.counts }}' --repeats 2 \
+            --timeout 65 --lifetime-ms 45000 \
+            --queue-packets 200 --output discovery-netem-results/${{ matrix.profile }}
+      - name: Summarize outcomes
+        if: always()
+        run: |
+          if [[ -f 'discovery-netem-results/${{ matrix.profile }}/summary.json' ]]; then
+            cat 'discovery-netem-results/${{ matrix.profile }}/summary.json' >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo 'No test results produced. Inspect startup/build logs.' >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - name: Preserve per-node logs and raw qdisc counters
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: cito-discovery-scale
-          path: discovery-scale-results/
+          name: cito-netem-${{ matrix.profile }}
+          path: discovery-netem-results/
           if-no-files-found: warn
