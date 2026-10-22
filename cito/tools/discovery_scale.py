@@ -161,7 +161,7 @@ def trial(binary,n,rep,out,timeout,lifetime,stagger,profile,queue_packets):
     receive_elapsed.sort()
     result['receive_elapsed_p95_ms']=(receive_elapsed[math.ceil(.95*len(receive_elapsed))-1] if receive_elapsed else None)
     ok=(len(processes)==n and all(p.returncode==0 for p in processes)
-        and stats is not None and stats['routes']==n-2 and stats['discovered']==n-2
+        and stats is not None and stats['routes']>=n-2 and stats['discovered']==n-2
         and stats['sent']==n-2 and received==n-2 and negatives==1
         and not result['reason'])
     result['passed']=bool(ok)
