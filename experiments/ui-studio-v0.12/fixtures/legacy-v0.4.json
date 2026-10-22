@@ -1,0 +1,189 @@
+{
+  "format": "ui-studio",
+  "schemaVersion": 3,
+  "data": {
+    "root": {},
+    "content": [
+      {
+        "type": "Heading",
+        "props": {
+          "id": "heading-1",
+          "text": "고객 관리"
+        }
+      },
+      {
+        "type": "Paragraph",
+        "props": {
+          "id": "intro",
+          "text": "왼쪽에서 컴포넌트를 추가하고 오른쪽에서 속성을 설정하세요. 실행 버튼으로 실제 동작을 확인할 수 있습니다."
+        }
+      },
+      {
+        "type": "Panel",
+        "props": {
+          "id": "search-panel",
+          "title": "검색 조건",
+          "content": [
+            {
+              "type": "ModuleBlock",
+              "props": {
+                "id": "reusable-search",
+                "moduleId": "searchPanel"
+              }
+            }
+          ]
+        }
+      },
+      {
+        "type": "Panel",
+        "props": {
+          "id": "list-panel",
+          "title": "고객 목록",
+          "content": [
+            {
+              "type": "DataTable",
+              "props": {
+                "id": "table-1",
+                "sourceKey": "customers",
+                "filterKey": "customerName",
+                "filterColumns": "name,email",
+                "columns": "id,name,email,status",
+                "pageSize": 5
+              }
+            }
+          ]
+        }
+      },
+      {
+        "type": "Grid",
+        "props": {
+          "id": "example-grid",
+          "radName": "ExampleGrid",
+          "columns": "2",
+          "gap": 12,
+          "content": [
+            {
+              "type": "Stack",
+              "props": {
+                "id": "example-stack",
+                "radName": "ExampleStack",
+                "direction": "vertical",
+                "gap": 8,
+                "align": "stretch",
+                "content": [
+                  {
+                    "type": "Paragraph",
+                    "props": {
+                      "id": "example-note",
+                      "text": "레이아웃 연습: 청록색 컨테이너 내부의 순서와 너비를 바꿔 보세요."
+                    }
+                  },
+                  {
+                    "type": "SelectInput",
+                    "props": {
+                      "id": "example-select",
+                      "label": "상태 선택",
+                      "options": "전체,활성,대기",
+                      "bindKey": ""
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "type": "Panel",
+              "props": {
+                "id": "example-panel",
+                "title": "드롭 연습 영역",
+                "content": [
+                  {
+                    "type": "ActionButton",
+                    "props": {
+                      "id": "example-action",
+                      "text": "테스트",
+                      "variant": "default",
+                      "event": {
+                        "type": "message",
+                        "message": "미리보기에서 실행됩니다."
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      }
+    ]
+  },
+  "model": {
+    "initialState": {
+      "customerName": ""
+    },
+    "sources": {
+      "customers": {
+        "kind": "mock",
+        "rows": [
+          {
+            "id": "C001",
+            "name": "김민수",
+            "email": "minsu@example.com",
+            "status": "활성"
+          },
+          {
+            "id": "C002",
+            "name": "이지은",
+            "email": "jieun@example.com",
+            "status": "활성"
+          },
+          {
+            "id": "C003",
+            "name": "박서준",
+            "email": "seojun@example.com",
+            "status": "대기"
+          }
+        ]
+      }
+    },
+    "modules": {
+      "searchPanel": {
+        "name": "SearchPanel",
+        "version": 1,
+        "content": [
+          {
+            "type": "Stack",
+            "props": {
+              "id": "search-stack",
+              "direction": "horizontal",
+              "gap": 12,
+              "align": "end",
+              "content": [
+                {
+                  "type": "TextInput",
+                  "props": {
+                    "id": "search-input",
+                    "label": "고객 검색",
+                    "placeholder": "이름 또는 이메일",
+                    "bindKey": "customerName"
+                  }
+                },
+                {
+                  "type": "ActionButton",
+                  "props": {
+                    "id": "search-reset",
+                    "text": "초기화",
+                    "variant": "default",
+                    "event": {
+                      "type": "clearValue",
+                      "target": "customerName"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      }
+    }
+  }
+}

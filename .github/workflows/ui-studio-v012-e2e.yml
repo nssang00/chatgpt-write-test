@@ -31,6 +31,9 @@ jobs:
           mkdir -p experiments/ui-studio-v0.12/app
           unzip -q experiments/ui-studio-v0.12/ui-studio-source.zip -d experiments/ui-studio-v0.12/app
           test -f experiments/ui-studio-v0.12/app/package.json
+          mkdir -p experiments/ui-studio-v0.12/app/examples
+          cp experiments/ui-studio-v0.12/fixtures/quick-start.dsl.jsx experiments/ui-studio-v0.12/app/examples/
+          cp experiments/ui-studio-v0.12/fixtures/legacy-v0.4.json experiments/ui-studio-v0.12/app/examples/
       - name: Install dependencies
         working-directory: experiments/ui-studio-v0.12/app
         run: npm install --no-audit --no-fund
