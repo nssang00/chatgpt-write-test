@@ -1,0 +1,50 @@
+name: Cito vs Cyclone DDS Focused Follow-up
+on:
+  push:
+    branches: [cito-multitopic-dds-benchmark]
+    paths:
+      - ".github/workflows/cito-multitopic-dds-followup.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  focused:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 22
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install DDS once with bounded mirror timeouts
+        run: |
+          sudo timeout 120 apt-get update -qq || echo "apt index refresh timeout; trying cached lists"
+          sudo timeout 180 apt-get install -y -qq ninja-build cmake iproute2 cyclonedds-dev cyclonedds-tools
+          dpkg-query -W cyclonedds-dev cyclonedds-tools
+      - name: Build once
+        run: |
+          cmake -S cito/tests/bench -B build-multitopic -G Ninja -DCMAKE_BUILD_TYPE=Release
+          cmake --build build-multitopic -j2
+      - name: Run remaining event-driven A/B cases on one runner
+        shell: bash
+        run: |
+          set +e
+          overall=0
+          for item in "baseline 65 4096 20" "limited 1 16 20" "limited 8 256 20"; do
+            read -r profile topics bytes hz <<< "$item"
+            echo "::group::$profile topics=$topics bytes=$bytes hz=$hz"
+            python3 cito/tools/multi_topic_compare.py \
+              --cito build-multitopic/cito_multi_topic_node \
+              --dds build-multitopic/dds_multi_topic_node \
+              --profile "$profile" --topics "$topics" --bytes "$bytes" \
+              --samples 20 --hz "$hz" --repeat 2 --timeout-ms 16000 \
+              --output "focus-results/$profile-t$topics-b$bytes"
+            rc=$?
+            echo "CASE_EXIT=$rc" 
+            echo "::endgroup::"
+          done
+          echo "Cases complete. Results include individual failure flags and packet delivery fractions."
+      - name: Upload trace evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cito-cyclone-focused-followup
+          path: focus-results/
+          if-no-files-found: warn
