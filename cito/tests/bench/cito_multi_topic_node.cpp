@@ -64,7 +64,7 @@ while(std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now()-started
  if(fds[0].revents&POLLIN){cito::detail::UdpEndpoint source{};auto b=recvmsg(fd,&source);if(!b.empty())sends(fd,udp.process_control(b,source,nsecs()/1000000));}
  if(data>=0&&(fds[1].revents&POLLIN)){auto b=recvmsg(data);if(!b.empty())udp.receive_data(b,"bench");}
  if(role=="publisher"){
-  if(!ready){ready=true;for(int i=0;i<topics;++i)if(host.remote_destinations(key(i)).size()!=1){ready=false;break;}if(ready)last=Clock::now();}
+  if(!ready){ready=true;for(int i=0;i<topics;++i)if(host.remote_destinations(key(i)).size()!=1){ready=false;break;}if(ready)last=Clock::now()+std::chrono::milliseconds(500);}
   if(ready&&sent<uint64_t(topics)*samples){auto seq=sent/topics;int t=sent%topics;auto when=last+std::chrono::microseconds(uint64_t(sent)*1000000/(uint64_t(hz)*topics));
    if(Clock::now()>=when){std::vector<uint8_t> payload(size,uint8_t(65+t%23));put32(payload,seq);put64(payload,nsecs());auto result=udp.publish(key(t),"bench",payload,[&](auto to,auto packet){return send(fd,to,packet);});if(result.remote_sent!=1)throw std::runtime_error("lost route");++sent;}}
   if(ready&&sent==uint64_t(topics)*samples&&Clock::now()-last>std::chrono::milliseconds((1000ull*samples/hz)+500))break;
