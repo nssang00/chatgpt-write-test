@@ -11,7 +11,7 @@ permissions:
 jobs:
   r35-rtx:
     name: R35 physical NVIDIA RTX 5060 Ti eight-campaign acceptance
-    runs-on: [self-hosted, windows, x64, gpu-rtx]
+    runs-on: self-hosted
     timeout-minutes: 180
     env:
       CHROME_HEADLESS: "0"
