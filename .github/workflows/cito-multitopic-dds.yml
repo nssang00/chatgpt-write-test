@@ -1,0 +1,56 @@
+name: Cito vs Cyclone DDS Multi-topic A/B
+on:
+  push:
+    branches: [cito-multitopic-dds-benchmark]
+    paths:
+      - "cito/tests/bench/**"
+      - "cito/tools/multi_topic_compare.py"
+      - ".github/workflows/cito-multitopic-dds.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  compare:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {profile: baseline, topics: 1, bytes: 16, hz: 20}
+          - {profile: baseline, topics: 8, bytes: 256, hz: 20}
+          - {profile: baseline, topics: 33, bytes: 1200, hz: 20}
+          - {profile: baseline, topics: 65, bytes: 4096, hz: 20}
+          - {profile: limited, topics: 1, bytes: 16, hz: 20}
+          - {profile: limited, topics: 8, bytes: 256, hz: 20}
+          - {profile: limited, topics: 33, bytes: 1200, hz: 20}
+          - {profile: limited, topics: 65, bytes: 4096, hz: 20}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install the Ubuntu-packaged DDS C API, IDL compiler and network tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ninja-build cmake iproute2 cyclonedds-dev cyclonedds-tools
+          dpkg-query -W cyclonedds-dev cyclonedds-tools
+          python3 -m py_compile cito/tools/multi_topic_compare.py
+      - name: Build identical workload generators
+        run: |
+          cmake -S cito/tests/bench -B build-multitopic -G Ninja -DCMAKE_BUILD_TYPE=Release
+          cmake --build build-multitopic -j2
+          test -x build-multitopic/cito_multi_topic_node
+          test -x build-multitopic/dds_multi_topic_node
+      - name: Run namespace and netem A/B
+        run: |
+          python3 cito/tools/multi_topic_compare.py \
+            --cito build-multitopic/cito_multi_topic_node \
+            --dds build-multitopic/dds_multi_topic_node \
+            --profile '${{ matrix.profile }}' --topics ${{ matrix.topics }} --bytes ${{ matrix.bytes }} \
+            --samples 20 --hz ${{ matrix.hz }} --repeat 2 --timeout-ms 10000 \
+            --output bench-results
+      - name: Upload raw result files (including failures)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: multitopic-${{ matrix.profile }}-t${{ matrix.topics }}-b${{ matrix.bytes }}
+          path: bench-results/
+          if-no-files-found: warn
