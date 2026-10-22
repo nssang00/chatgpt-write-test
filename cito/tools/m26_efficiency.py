@@ -163,7 +163,7 @@ def trial(args,engine,repeat):
     publisher=parse_metrics(folder/'node-000-publisher.log') or {}
     positives=[parse_metrics(folder/f'node-{i:03d}-subscriber.log') or {} for i in range(1,n-1)]
     negative=parse_metrics(folder/f'node-{n-1:03d}-negative.log') or {}
-    metrics=[parse_resource(folder/f'node-{i:03d}-'+('publisher' if i==0 else ('negative' if i==n-1 else 'subscriber'))+'.resource') for i in range(n)]
+    metrics=[parse_resource(folder/f"node-{i:03d}-{'publisher' if i==0 else ('negative' if i==n-1 else 'subscriber')}.resource") for i in range(n)]
     expected=active*args.samples*(n-2)
     received=sum(x.get('received',0) for x in positives)
     sends=publisher.get('sent',0)
