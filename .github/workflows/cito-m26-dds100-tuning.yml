@@ -4,6 +4,7 @@ on:
     branches: [cito-m26-dds-100-tuning]
     paths:
       - '.github/workflows/cito-m26-dds100-tuning.yml'
+      - 'cito/tools/m26_efficiency.py'
   workflow_dispatch:
 permissions:
   contents: read
