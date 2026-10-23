@@ -40,6 +40,12 @@ jobs:
         run: |
           python v104-rewrite-test.py
           if ($LASTEXITCODE -ne 0) { throw 'Failed to apply v10.4 diagnostic test modifications' }
+      - name: Add read-only NTFS runlist diagnostic executable
+        shell: pwsh
+        run: |
+          Copy-Item -LiteralPath v104-diag-runs.cpp -Destination rw-v103/src/diag_runs.cpp
+          Add-Content -LiteralPath rw-v103/CMakeLists.txt -Value 'add_executable(ntfs_diag_runs src/diag_runs.cpp)'
+          Add-Content -LiteralPath rw-v103/CMakeLists.txt -Value 'target_link_libraries(ntfs_diag_runs PRIVATE ntfs_recovery)'
       - name: MSVC x64 CMake configure
         shell: pwsh
         run: cmake -S rw-v103 -B rw-v103/build-ci -A x64 -DBUILD_TESTING=OFF
