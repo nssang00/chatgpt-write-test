@@ -1,0 +1,180 @@
+--- a/our-renderer/integration/workers/DirectTileEncodeTask.js
++++ b/our-renderer/integration/workers/DirectTileEncodeTask.js
+@@ -46,14 +46,15 @@
+ 
+ /** R34: Decode PBF once per unique tile, then encode each source layer in
+  * requested painter order. The original single-layer task stays available.
+- * Reject duplicated source layers: their independent feature instances may
+- * be intentionally mutated by later style handlers.
++ * Duplicate layer names are opt-in only for cloneable constant styles;
++ * features are read-only to the encoder and reused in painter order.
+  */
+ export function encodeTileLayerGroupTask(task){
+   const {tileKey,layers,bytes,extent,options={}}=task||{};
+   if(typeof tileKey!=='string'||!tileKey||!Array.isArray(layers)||!layers.length)
+     throw Error('R34 group requires tileKey and nonempty layers array');
+-  if(new Set(layers.map(x=>x.layer)).size!==layers.length)
++  const uniqueLayers=[...new Set(layers.map(x=>x.layer))];
++  if(uniqueLayers.length!==layers.length && task.allowDuplicateLayers!==true)
+     throw Error('R34 group requires unique source layers; use independent tasks for duplicates');
+   if(!(bytes instanceof ArrayBuffer||ArrayBuffer.isView(bytes)))throw Error('R34 group requires PBF bytes');
+   if(!Array.isArray(extent)||extent.length!==4||!extent.every(Number.isFinite))throw Error('Invalid tile extent');
+@@ -63,17 +64,17 @@
+   }
+   configureEncoder(options);
+   const t0=performance.now();
+-  const features=formatForLayers(layers.map(x=>x.layer)).readFeatures(bytes,{extent});
++  const features=formatForLayers(uniqueLayers).readFeatures(bytes,{extent});
+   const decodeMs=performance.now()-t0;
+-  const wanted=new Map(layers.map(({layer},index)=>[layer,index]));
+-  const buckets=layers.map(()=>[]);
++  const wanted=new Map(uniqueLayers.map((layer,index)=>[layer,index]));
++  const buckets=uniqueLayers.map(()=>[]);
+   for(const feature of features){
+     const index=wanted.get(feature.getProperties()?.layer);
+     if(index!==undefined)buckets[index].push(feature);
+   }
+   const rows=[];const transfer=[];
+   for(let i=0;i<layers.length;i++){
+-    const {encoded,featureCount,encodeMs}=encodeFeatures(buckets[i],layers[i].style,extent,options);
++    const {encoded,featureCount,encodeMs}=encodeFeatures(buckets[wanted.get(layers[i].layer)],layers[i].style,extent,options);
+     rows.push({tileKey,layer:layers[i].layer,encoded,featureCount,
+       cpu:{decodeMs:0,encodeMs,bytes:encoded.byteLength}});
+     transfer.push(encoded.vertices.buffer,encoded.indices.buffer,encoded.lineInstances.buffer);
+--- a/our-renderer/adapters/openlayers/OlVectorTileSourceAdapter.js
++++ b/our-renderer/adapters/openlayers/OlVectorTileSourceAdapter.js
+@@ -16,9 +16,9 @@
+ 
+ /** Tile-oriented lifecycle adapter for OL VectorTileSource source tiles. */
+ export class OlVectorTileSourceAdapter {
+-  constructor({source,sink,featureAdapter=new OlVectorTileFeatureAdapter(),styleLike=null,sourceLayerStyles=null,sourceLayerFilter=null,sourceLayerStyleResolver=null,resolutionProvider=null,layerProperty='layer',maxInactiveTiles=128,maxInactiveBytes=8*1024*1024,estimateTileBytes=null,targetProjectionProvider=null,coordinateTransform=null,styleArrayMode='parts',directLineBuffer=true,gpuJoinSolidLine=false,flatCoordinatesGpuLine=false,singleStyleLinePack=false,directFeatureGpuJoin=false,fusedGpuJoinPacking=false,polygonOlRingGrouping=false,disableWorkerFeatureBuffers=false,transferGpuBuffers=false,drawMode='painter',polygonInsideSegmentFastPath=true,polygonEarBBoxPrecheck=true,stableStyleIdentityCache=false,polygonStrokeFringePx=0,closedLineJoins=false}={}){
++  constructor({source,sink,featureAdapter=new OlVectorTileFeatureAdapter(),styleLike=null,sourceLayerStyles=null,sourceLayerFilter=null,sourceLayerStyleResolver=null,resolutionProvider=null,layerProperty='layer',maxInactiveTiles=128,maxInactiveBytes=8*1024*1024,estimateTileBytes=null,targetProjectionProvider=null,coordinateTransform=null,styleArrayMode='parts',directLineBuffer=true,gpuJoinSolidLine=false,flatCoordinatesGpuLine=false,singleStyleLinePack=false,directFeatureGpuJoin=false,fusedGpuJoinPacking=false,polygonOlRingGrouping=false,disableWorkerFeatureBuffers=false,transferGpuBuffers=false,drawMode='painter',polygonInsideSegmentFastPath=true,polygonEarBBoxPrecheck=true,stableStyleIdentityCache=false,polygonStrokeFringePx=0,closedLineJoins=false,onCpuTile=null}={}){
+     if(!source)throw new Error('OlVectorTileSourceAdapter requires source');if(!sink)throw new Error('OlVectorTileSourceAdapter requires sink');
+-    this.source=source;this.sink=sink;this.featureAdapter=featureAdapter;this.styleLike=styleLike;this.sourceLayerStyles=sourceLayerStyles;this.sourceLayerFilter=typeof sourceLayerFilter==='function'?sourceLayerFilter:null;this.sourceLayerStyleResolver=typeof sourceLayerStyleResolver==='function'?sourceLayerStyleResolver:null;this.resolutionProvider=resolutionProvider;this.layerProperty=layerProperty;this.maxInactiveTiles=Math.max(0,Math.floor(Number(maxInactiveTiles)||0));this.maxInactiveBytes=Math.max(0,Math.floor(Number(maxInactiveBytes)||0));this.estimateTileBytes=typeof estimateTileBytes==='function'?estimateTileBytes:null;this.targetProjectionProvider=typeof targetProjectionProvider==='function'?targetProjectionProvider:null;this.coordinateTransform=typeof coordinateTransform==='function'?coordinateTransform:null;this.directLineBuffer=directLineBuffer!==false;this.gpuJoinSolidLine=gpuJoinSolidLine===true;this.flatCoordinatesGpuLine=flatCoordinatesGpuLine==='auto'?'auto':flatCoordinatesGpuLine===true;this.singleStyleLinePack=singleStyleLinePack===true;this.directFeatureGpuJoin=directFeatureGpuJoin===true;this.fusedGpuJoinPacking=fusedGpuJoinPacking===true;this.polygonOlRingGrouping=polygonOlRingGrouping===true;this.disableWorkerFeatureBuffers=disableWorkerFeatureBuffers===true;this.transferGpuBuffers=transferGpuBuffers===true;this.drawMode=drawMode==='style-pass'?'style-pass':'painter';this.polygonInsideSegmentFastPath=polygonInsideSegmentFastPath!==false;this.polygonEarBBoxPrecheck=polygonEarBBoxPrecheck!==false;this.stableStyleIdentityCache=stableStyleIdentityCache===true;this.polygonStrokeFringePx=polygonStrokeFringePx;this.closedLineJoins=closedLineJoins===true;this.styleArrayMode=styleArrayMode==='stack'?'stack':'parts';this.disposers=[];this.tiles=new Map();this.inactiveTiles=new Map();this.inactiveBytes=0;this.peakInactiveBytes=0;this.inactiveEvictions=0;this.started=false;this.reactivations=0;this.deactivations=0;this.restoredCompiledTiles=0;this.recompiledTiles=0;
++    this.source=source;this.sink=sink;this.featureAdapter=featureAdapter;this.styleLike=styleLike;this.sourceLayerStyles=sourceLayerStyles;this.sourceLayerFilter=typeof sourceLayerFilter==='function'?sourceLayerFilter:null;this.sourceLayerStyleResolver=typeof sourceLayerStyleResolver==='function'?sourceLayerStyleResolver:null;this.resolutionProvider=resolutionProvider;this.layerProperty=layerProperty;this.maxInactiveTiles=Math.max(0,Math.floor(Number(maxInactiveTiles)||0));this.maxInactiveBytes=Math.max(0,Math.floor(Number(maxInactiveBytes)||0));this.estimateTileBytes=typeof estimateTileBytes==='function'?estimateTileBytes:null;this.targetProjectionProvider=typeof targetProjectionProvider==='function'?targetProjectionProvider:null;this.coordinateTransform=typeof coordinateTransform==='function'?coordinateTransform:null;this.directLineBuffer=directLineBuffer!==false;this.gpuJoinSolidLine=gpuJoinSolidLine===true;this.flatCoordinatesGpuLine=flatCoordinatesGpuLine==='auto'?'auto':flatCoordinatesGpuLine===true;this.singleStyleLinePack=singleStyleLinePack===true;this.directFeatureGpuJoin=directFeatureGpuJoin===true;this.fusedGpuJoinPacking=fusedGpuJoinPacking===true;this.polygonOlRingGrouping=polygonOlRingGrouping===true;this.disableWorkerFeatureBuffers=disableWorkerFeatureBuffers===true;this.transferGpuBuffers=transferGpuBuffers===true;this.drawMode=drawMode==='style-pass'?'style-pass':'painter';this.polygonInsideSegmentFastPath=polygonInsideSegmentFastPath!==false;this.polygonEarBBoxPrecheck=polygonEarBBoxPrecheck!==false;this.stableStyleIdentityCache=stableStyleIdentityCache===true;this.polygonStrokeFringePx=polygonStrokeFringePx;this.closedLineJoins=closedLineJoins===true;this.styleArrayMode=styleArrayMode==='stack'?'stack':'parts';this.onCpuTile=typeof onCpuTile==='function'?onCpuTile:null;this.disposers=[];this.tiles=new Map();this.inactiveTiles=new Map();this.inactiveBytes=0;this.peakInactiveBytes=0;this.inactiveEvictions=0;this.started=false;this.reactivations=0;this.deactivations=0;this.restoredCompiledTiles=0;this.recompiledTiles=0;
+   }
+   _sourceLayer(feature){return this.featureAdapter.sourceLayerOf?.(feature,{layerProperty:this.layerProperty})??null;}
+   _styleFor(feature,sourceLayer,resolution,tile){
+@@ -67,7 +67,7 @@
+         transferGpuBuffers:this.transferGpuBuffers,drawMode:this.drawMode,polygonInsideSegmentFastPath:this.polygonInsideSegmentFastPath,polygonEarBBoxPrecheck:this.polygonEarBBoxPrecheck,stableStyleIdentityCache:this.stableStyleIdentityCache,polygonStrokeFringePx:this.polygonStrokeFringePx,closedLineJoins:this.closedLineJoins,
+       });
+       this._inactiveDelete(tileKey);this.tiles.set(tileKey,tile);
+-      this.recompiledTiles++;return result;
++      this.recompiledTiles++;this.onCpuTile?.(tile,{tileKey,clipExtent});return result;
+     }
+     const snapshots=[];for(const f of features){const sourceLayer=this._sourceLayer(f);if(this.sourceLayerFilter&&this.sourceLayerFilter(sourceLayer,f,tile)===false)continue;const styleLike=this._styleFor(f,sourceLayer,resolution,tile);const snap=this.featureAdapter.adapt(f,{tileKey,styleLike,resolution,layerProperty:this.layerProperty,sourceProjection,targetProjection,coordinateTransform:this.coordinateTransform,clipExtent,styleMode:this.styleArrayMode,directLineBuffer:this.directLineBuffer,gpuJoinSolidLine:this.gpuJoinSolidLine,flatCoordinatesGpuLine:this.flatCoordinatesGpuLine,singleStyleLinePack:this.singleStyleLinePack,directFeatureGpuJoin:this.directFeatureGpuJoin,fusedGpuJoinPacking:this.fusedGpuJoinPacking,polygonOlRingGrouping:this.polygonOlRingGrouping,disableWorkerFeatureBuffers:this.disableWorkerFeatureBuffers});snap.key=`${sourceLayer??"unknown"}:${snap.key}`;if(snap.styles?.length||styleLike==null)snapshots.push(snap);}
+     this._inactiveDelete(tileKey);this.tiles.set(tileKey,tile);this.sink.replaceTile?.(tileKey,snapshots,{tile,coord:coordOf(tile),sourceProjection,targetProjection});this.recompiledTiles++;return snapshots;
+--- a/our-renderer/integration/DirectM5SceneBinding.js
++++ b/our-renderer/integration/DirectM5SceneBinding.js
+@@ -13,6 +13,7 @@
+ import {toNeutralFrame} from '../adapters/openlayers/OlFrameAdapter.js';
+ import {OLDisableWorkerM4Bridge} from './OLDisableWorkerM4Bridge.js';
+ import {ResourceManager} from '../core/ResourceManager.js';
++import {DeferredDirectTileHandover} from './workers/DeferredDirectTileHandover.js';
+ 
+ function subscribe(target,name,handler){
+   const key=target?.on?.(name,handler);
+@@ -23,6 +24,7 @@
+ const styleOf=layer=>layer?.getStyleFunction?.()??layer?.getStyle?.()??null;
+ const tileSource=source=>!!(source&&typeof source.getTileGrid==='function'&&typeof source.getTile==='function'&&typeof source.getOverlaps==='function');
+ const ordered=(a,b)=>a.state.zIndex-b.state.zIndex||a.sequence-b.sequence||String(a.key).localeCompare(String(b.key));
++export {exactEncodedTile as r45EqualEncodedTile} from './workers/EncodedTileExactGate.js';
+ function sameInstances(a,b){
+   if(a.size!==b.size)return false;
+   for(const [key,offsets] of b){const prior=a.get(key);if(!prior||prior.size!==offsets.size)return false;for(const value of offsets)if(!prior.has(value))return false;}
+@@ -31,7 +33,7 @@
+ 
+ export class DirectM5SceneBinding {
+   constructor({map,backend,resourceManager=null,canvas=null,canvasMode='external',canvasFactory=null,
+-    vectorTileOptions={},layerStyleResolver=null,onError=null,strictVectorTiles=true}={}){
++    vectorTileOptions={},layerStyleResolver=null,onError=null,strictVectorTiles=true,deferredWorker=null}={}){
+     if(!map||!backend)throw Error('DirectM5SceneBinding requires an OL map and M4 WebGL backend');
+     if(strictVectorTiles!==true)throw Error('Mixed legacy/direct scene composition is unsupported; use strictVectorTiles:true');
+     this.map=map;this.backend=backend;this.resourceManager=resourceManager||new ResourceManager({backend});
+@@ -39,7 +41,14 @@
+       gpuArenaHeadroomFactor:vectorTileOptions.gpuArenaHeadroomFactor??1});
+     this.canvasHost=new OlCanvasHost({map,canvas:canvas||backend.canvas,mode:canvasMode,canvasFactory});
+     this.vectorTileOptions=vectorTileOptions;this.layerStyleResolver=layerStyleResolver;
+-    this.onError=onError;this.layers=new Map();this.tree=null;this.disposeFrame=null;
++    this.onError=onError;this.layers=new Map();
++    // Disabled unless an application supplies a PBF-byte task resolver. A
++    // failed/unsupported task leaves the already-painted CPU tile intact.
++    this._deferredConfig=deferredWorker?.enabled===true?deferredWorker:null;
++    this._newDeferredWorker=()=>new DeferredDirectTileHandover({...this._deferredConfig,
++      getCpuEncoded:(state,key)=>this.bridge.tiles.get(this._key(state.key,key)),
++        onError:error=>this.onError?.({error,phase:'deferred-worker'})});
++    this.deferredWorker=this._deferredConfig?this._newDeferredWorker():null;this.tree=null;this.disposeFrame=null;
+     this.started=false;this.frames=0;this.lastFrameStats=null;this.lastSchedule=[];
+     this._tileProfiles=new Map();
+     this.cacheSceneSchedule=vectorTileOptions.cacheSceneSchedule===true;
+@@ -70,7 +79,7 @@
+         if(diagnostics)this._tileProfiles.set(fullKey,diagnostics);
+         this._scheduleDirty=true;this.map.render?.();return result;
+       },
+-      removeTile:tileKey=>{const key=this._key(state.key,tileKey);const result=this.bridge.removeTile(key);
++      removeTile:tileKey=>{this.deferredWorker?.invalidateTile(state,tileKey);const key=this._key(state.key,tileKey);const result=this.bridge.removeTile(key);
+         this._tileProfiles.delete(key);this._scheduleDirty=true;this.map.render?.();return result;},
+       setWorldInstances:instances=>{const next=new Map(instances);
+         if(!sameInstances(state.worldInstances,next)){state.worldInstances=next;this._scheduleDirty=true;}return true;},
+@@ -79,6 +88,7 @@
+     state.styleLike=style??styleOf(entry.layer);
+     const opts=this.vectorTileOptions;
+     const adapter=new OlVectorTileSourceAdapter({source,sink,
++      onCpuTile:(tile,context)=>this.deferredWorker?.enqueue({state,tile,...context}),
+       styleLike:state.styleLike,sourceLayerStyles:opts.sourceLayerStyles,
+       sourceLayerFilter:opts.sourceLayerFilter,sourceLayerStyleResolver:opts.sourceLayerStyleResolver,
+       targetProjectionProvider:()=>this.map.getView?.()?.getProjection?.()??null,
+@@ -97,7 +107,7 @@
+     return state;
+   }
+   _unbind(key){const state=this.layers.get(String(key));if(!state)return;
+-    state.adapter.stop();state.pruner.stop();this.layers.delete(String(key));
++    this.deferredWorker?.invalidateState(state);state.adapter.stop();state.pruner.stop();this.layers.delete(String(key));
+     for(const profileKey of this._tileProfiles.keys())if(profileKey.startsWith(state.key+'::'))this._tileProfiles.delete(profileKey);
+     this._scheduleDirty=true;}
+   _snapshot(entries){
+@@ -122,15 +132,19 @@
+           this._scheduleDirty=true;
+         // Opacity/style is baked into GPU packet uniforms, while geometry
+         // bytes remain identical and the shared arena avoids reupload.
+-        if(oldStyle!==nextStyle)state.adapter.styleLike=nextStyle;
+-        if(oldOpacity!==state.state.opacity||oldStyle!==nextStyle)
++        if(oldStyle!==nextStyle){state.adapter.styleLike=nextStyle;this.deferredWorker?.invalidateState(state);}
++        if(oldOpacity!==state.state.opacity||oldStyle!==nextStyle){
++          this.deferredWorker?.invalidateState(state);
+           for(const tile of [...state.adapter.tiles.values()])state.adapter.ingestTile(tile);
++        }
+       }
+     }
+     this.map.render?.();
+   }
+   start({renderSync=true}={}){
+     if(this.started)return this;
++    if(this._deferredConfig?.enabled===true&&this.deferredWorker?.closed)
++      this.deferredWorker=this._newDeferredWorker();
+     try{
+       this.canvasHost.attach();
+       this.tree=new OlLayerTreeAdapter({map:this.map,onSnapshot:s=>this._snapshot(s)});
+@@ -143,6 +157,7 @@
+   }
+   stop(){this.disposeFrame?.();this.disposeFrame=null;this.tree?.stop();this.tree=null;
+     for(const key of [...this.layers.keys()])this._unbind(key);
++    void this.deferredWorker?.close();
+     this.canvasHost.detach();this.started=false;this._scheduleDirty=true;this._cachedSchedule=null;return this;}
+   destroy(){this.stop();this.bridge.clear();this.canvasHost.destroy();return this;}
+   /** Call after WebGL1Backend.restoreContext() and ResourceManager.handleContextLost(). */
+@@ -267,6 +282,7 @@
+     }
+     const tEnd=timed?performance.now():0;
+     this.lastFrameStats=this.backend.endFrame();this.frames++;
++    this.deferredWorker?.afterDraw();
+     if(timed){this.lastFrameStats.scheduleMs=tDraw-tSchedule;
+       this.lastFrameStats.drawSubmitCpuMs=tEnd-tDraw;
+       this.lastFrameStats.endFrameElapsedMs=performance.now()-tEnd;}
+@@ -277,5 +293,5 @@
+     tileCount:this.bridge.tiles.size,
+     layers:[...this.layers.values()].map(s=>({key:s.key,visible:s.state.visible!==false,
+       opacity:s.state.opacity,zIndex:s.state.zIndex,sequence:s.sequence,tileCount:s.adapter.tiles.size})),
+-    frameStats:this.lastFrameStats,scheduleBuilds:this.scheduleBuilds,scheduleCacheHits:this.scheduleCacheHits};}
++    frameStats:this.lastFrameStats,deferredWorker:this.deferredWorker?.snapshot()??{enabled:false},scheduleBuilds:this.scheduleBuilds,scheduleCacheHits:this.scheduleCacheHits};}
+ }
