@@ -40,3 +40,38 @@ s = s.replace("Write-Host '[PASS] Windows mounted NTFS volume",
               "if ($e.large_original_sha256 -cne $e.large_recovered_sha256) { throw 'Nonresident SHA mismatch' }\nWrite-Host '[PASS] Windows mounted NTFS volume")
 a.write_text(s, encoding="utf-8")
 print("v10.4 fixed VHD test strict SHA256 assertion and diagnostic patch applied")
+
+# Isolate TRIM/Discard effect on this ephemeral, GitHub-hosted Windows machine.
+# Query existing host setting and restore it after the VHD test.
+query="""try {
+    Invoke-DiskPartScript $diskpartCreate"""
+replacement="""$trimOriginal = $null
+try {
+    $trimText = (& "$env:SystemRoot\System32\fsutil.exe" behavior query DisableDeleteNotify 2>&1) -join [Environment]::NewLine
+    if ($LASTEXITCODE -ne 0 -or $trimText -notmatch '(?im)NTFS\s+DisableDeleteNotify\s*=\s*([01])') {
+        throw "Cannot inspect NTFS DeleteNotify value: $trimText"
+    }
+    $trimOriginal = [int]$Matches[1]
+    $evidence.ntfs_delete_notify_original = $trimOriginal
+    & "$env:SystemRoot\System32\fsutil.exe" behavior set DisableDeleteNotify NTFS 1 | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw 'Unable to disable NTFS DeleteNotify on disposable runner' }
+    $evidence.ntfs_delete_notify_disabled_for_test = $true
+    Invoke-DiskPartScript $diskpartCreate"""
+assert s.count(query) == 1, "missing VHD try block"
+s=s.replace(query,replacement)
+query2="""} finally {
+    Save-Evidence
+    # Detach ONLY our uniquely named VHD."""
+replacement2="""} finally {
+    Save-Evidence
+    if ($null -ne $trimOriginal) {
+        & "$env:SystemRoot\System32\fsutil.exe" behavior set DisableDeleteNotify NTFS $trimOriginal | Out-Null
+        $evidence.ntfs_delete_notify_restored = ($LASTEXITCODE -eq 0)
+        Save-Evidence
+        if (-not $evidence.ntfs_delete_notify_restored) { Write-Error 'Unable to restore original NTFS DeleteNotify setting.' }
+    }
+    # Detach ONLY our uniquely named VHD."""
+assert s.count(query2) == 1, "missing final cleanup"
+s=s.replace(query2,replacement2)
+p.write_text(s,encoding="utf-8")
+print("Temporary NTFS DeleteNotify disabled for disposable runner; restore in finally")
