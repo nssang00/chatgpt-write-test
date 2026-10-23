@@ -108,3 +108,27 @@ assert s.count(needle)==1
 s=s.replace(needle,replacement)
 p.write_text(s,encoding="utf-8")
 print("Fixture FileStream.Flush(true) added before deletion")
+
+# Parametric nonresident fixture sizes: 58,368B, 1MiB, and 100MiB.
+s=p.read_text(encoding="utf-8")
+param="""    [string]$EvidenceDirectory = 'build-logs'
+)"""
+assert s.count(param)==1
+s=s.replace(param,"""    [string]$EvidenceDirectory = 'build-logs',
+    [ValidateRange(1024, 120000000)][int]$LargePayloadBytes = 58368
+)""")
+old="""    $largePayload = [Text.Encoding]::ASCII.GetBytes(('RW-NONRESIDENT-MFT-' * 3072))"""
+new="""    $patternBytes = [Text.Encoding]::ASCII.GetBytes('RW-NONRESIDENT-MFT-')
+    $largePayload = New-Object byte[] $LargePayloadBytes
+    [Array]::Copy($patternBytes, 0, $largePayload, 0, [Math]::Min($patternBytes.Length, $largePayload.Length))
+    $filled = [Math]::Min($patternBytes.Length, $largePayload.Length)
+    while ($filled -lt $largePayload.Length) {
+        $copyLen = [Math]::Min($filled, $largePayload.Length - $filled)
+        [Array]::Copy($largePayload, 0, $largePayload, $filled, $copyLen)
+        $filled += $copyLen
+    }
+    $evidence.nonresident_requested_bytes = $LargePayloadBytes"""
+assert s.count(old)==1
+s=s.replace(old,new)
+p.write_text(s,encoding="utf-8")
+print("Parameterized 58KiB, 1MiB and 100MiB Windows VHD test payload")
