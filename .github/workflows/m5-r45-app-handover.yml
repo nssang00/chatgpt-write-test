@@ -1,0 +1,68 @@
+name: M5 R45 App Handover CPU Verification
+on:
+  workflow_dispatch:
+  push:
+    branches: [m5/r45-app-handover-20261023]
+    paths:
+      - 'm5-gpu/r45/**'
+      - '.github/workflows/m5-r45-app-handover.yml'
+permissions:
+  contents: read
+concurrency:
+  group: m5-r45-app-handover
+  cancel-in-progress: false
+jobs:
+  integration:
+    runs-on: self-hosted
+    timeout-minutes: 60
+    env:
+      R35_ZIP_PATH: 'C:\M5_R35\M5_R35_RTX_READY_SELF_CONTAINED_2026-10-22.zip'
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check original R35 source and Node 22
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          if($env:OS -ne 'Windows_NT'){throw 'Windows self-hosted runner required'}
+          if(-not (Test-Path -LiteralPath $env:R35_ZIP_PATH)){throw 'Pinned R35 source ZIP is not staged'}
+          $hash=(Get-FileHash -Algorithm SHA256 -LiteralPath $env:R35_ZIP_PATH).Hash.ToLowerInvariant()
+          if($hash -ne '3e5d3cb5d525b818a3b560731dac0ae17ce734ab5a96057c67c546c4b7cb2776'){throw "R35 ZIP SHA256 changed: $hash"}
+          if(-not ((node --version) -match '^v22\.')){throw 'Expected Node.js 22'}
+          New-Item -ItemType Directory -Force -Path r45-evidence | Out-Null
+          "$hash" | Set-Content -Encoding ascii r45-evidence/r35_sha256.txt
+          node --version | Set-Content -Encoding ascii r45-evidence/node_version.txt
+      - name: Reconstruct pristine R35 and apply R45
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $dest=Join-Path $env:GITHUB_WORKSPACE 'r45-source'
+          New-Item -ItemType Directory -Force -Path $dest | Out-Null
+          Expand-Archive -LiteralPath $env:R35_ZIP_PATH -DestinationPath $dest -Force
+          node .\m5-gpu\r45\apply_r45.mjs $dest
+          if($LASTEXITCODE -ne 0){throw 'R45 patch application failed'}
+      - name: Verify CPU-versus-Worker parity and handover races
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          Set-Location (Join-Path $env:GITHUB_WORKSPACE 'r45-source')
+          $tests=@(
+            'tests/verify_r45_handover.mjs',
+            'tests/verify_r45_duplicate_cpu_equivalence.mjs',
+            'tests/verify_r34_shared_worker_pool.mjs',
+            'tests/verify_r33_worker_pool.mjs',
+            'tests/verify_ol_disable_worker_m4_bridge.mjs',
+            'tests/verify_direct_feature_edge_cases.mjs'
+          )
+          foreach($test in $tests){
+            $log=Join-Path $env:GITHUB_WORKSPACE ('r45-evidence/' + (Split-Path $test -Leaf) + '.log')
+            & node $test 2>&1 | Tee-Object -FilePath $log
+            if($LASTEXITCODE -ne 0){throw "CPU verification failed: $test"}
+          }
+      - name: Preserve evidence including failures
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: m5-r45-cpu-handover-${{ github.run_id }}
+          path: r45-evidence/**
+          retention-days: 30
+          if-no-files-found: warn
