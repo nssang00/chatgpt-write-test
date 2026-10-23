@@ -12,17 +12,29 @@ jobs:
     timeout-minutes: 35
     steps:
       - uses: actions/checkout@v4
-      - name: Verify and extract v10.3 C++ source snapshot
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Verify and extract v10.3 C++ source with Python xz reader
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $expected = '7a9ad8dcacc10028b9698c9d5e5a2d56be9826d173885915e4fbe71b63082170'
-          $actual = (Get-FileHash 'rw-v103-native.tar.xz' -Algorithm SHA256).Hash.ToLowerInvariant()
-          if ($actual -ne $expected) { throw "Source archive SHA256 mismatch: $actual" }
-          New-Item -ItemType Directory -Path 'rw-v103' -Force | Out-Null
-          tar -xf 'rw-v103-native.tar.xz' -C 'rw-v103'
-          if ($LASTEXITCODE -ne 0) { throw 'tar extraction failed' }
-          if (-not (Test-Path 'rw-v103/src/recovery.cpp')) { throw 'NTFS engine source not extracted' }
+          @'
+          import hashlib, pathlib, tarfile
+          src = pathlib.Path("rw-v103-native.tar.xz")
+          expected = "7a9ad8dcacc10028b9698c9d5e5a2d56be9826d173885915e4fbe71b63082170"
+          actual = hashlib.sha256(src.read_bytes()).hexdigest()
+          assert actual == expected, f"SHA256 mismatch {actual}"
+          dest = pathlib.Path("rw-v103")
+          dest.mkdir(exist_ok=True)
+          with tarfile.open(src, mode="r:xz") as archive:
+              files = archive.getmembers()
+              assert files and all(f.isfile() and not f.name.startswith("/") and ".." not in pathlib.PurePosixPath(f.name).parts for f in files)
+              archive.extractall(dest, filter="data")
+          assert (dest / "src/recovery.cpp").is_file()
+          print(f"Verified source payload and extracted {len(files)} C++ and test files")
+          '@ | python -
+          if ($LASTEXITCODE -ne 0) { throw "Python source extraction failed with exit code $LASTEXITCODE" }
       - name: MSVC x64 CMake configure
         shell: pwsh
         run: cmake -S rw-v103 -B rw-v103/build-ci -A x64 -DBUILD_TESTING=OFF
@@ -38,15 +50,15 @@ jobs:
             $null = [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $p).Path, [ref]$tokens, [ref]$errors)
             if ($errors.Count -gt 0) { $errors | ForEach-Object { Write-Error $_.Message }; exit 1 }
           }
-      - name: Mount throwaway NTFS VHD, delete files, raw volume scan, extract, SHA256
+      - name: Mount disposable NTFS VHD, delete files, raw-volume scan, extract, SHA256
         shell: pwsh
         working-directory: rw-v103
         run: ./scripts/windows-live-ntfs-vhd-test.ps1 -Engine 'build-ci/Release/ntfsrecover.exe'
-      - name: Assert search, extraction, same-disk refusal, VHD detach
+      - name: Assert search, extraction, source protection, VHD detach
         shell: pwsh
         working-directory: rw-v103
         run: ./scripts/assert-windows-live-evidence.ps1
-      - name: Upload Windows live scan evidence
+      - name: Upload live NTFS validation evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
