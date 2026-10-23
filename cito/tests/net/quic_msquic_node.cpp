@@ -155,6 +155,9 @@ QUIC_STATUS QUIC_API ClientConnectionCallback(HQUIC Connection, void* context, Q
             }
             break;
         case QUIC_CONNECTION_EVENT_SHUTDOWN_INITIATED_BY_TRANSPORT:
+            std::cerr << "quic_client_transport_shutdown status="
+                      << static_cast<long long>(event->SHUTDOWN_INITIATED_BY_TRANSPORT.Status)
+                      << "\n";
             fail(state);
             break;
         case QUIC_CONNECTION_EVENT_SHUTDOWN_COMPLETE:
@@ -171,7 +174,8 @@ bool open_api() {
     return QUIC_SUCCEEDED(Api->RegistrationOpen(&registration, &Registration));
 }
 
-bool open_configuration(bool server, const char* cert = nullptr, const char* key = nullptr) {
+bool open_configuration(bool server, const char* cert = nullptr, const char* key = nullptr,
+                        const char* client_cert = nullptr, const char* client_key = nullptr) {
     QUIC_SETTINGS settings{};
     settings.IdleTimeoutMs = 5000;
     settings.IsSet.IdleTimeoutMs = TRUE;
@@ -189,9 +193,19 @@ bool open_configuration(bool server, const char* cert = nullptr, const char* key
         credentials.CertificateFile = &files;
         credentials.Flags = QUIC_CREDENTIAL_FLAG_NONE;
     } else {
-        credentials.Type = QUIC_CREDENTIAL_TYPE_NONE;
+        if (!cert || !*cert) return false;
+        if ((client_cert == nullptr) != (client_key == nullptr)) return false;
+        if (client_cert && client_key) {
+            files.CertificateFile = client_cert;
+            files.PrivateKeyFile = client_key;
+            credentials.Type = QUIC_CREDENTIAL_TYPE_CERTIFICATE_FILE;
+            credentials.CertificateFile = &files;
+        } else {
+            credentials.Type = QUIC_CREDENTIAL_TYPE_NONE;
+        }
         credentials.Flags = static_cast<QUIC_CREDENTIAL_FLAGS>(
-            QUIC_CREDENTIAL_FLAG_CLIENT | QUIC_CREDENTIAL_FLAG_NO_CERTIFICATE_VALIDATION);
+            QUIC_CREDENTIAL_FLAG_CLIENT | QUIC_CREDENTIAL_FLAG_SET_CA_CERTIFICATE_FILE);
+        credentials.CaCertificateFile = cert;
     }
     return QUIC_SUCCEEDED(Api->ConfigurationLoadCredential(Configuration, &credentials));
 }
@@ -219,8 +233,9 @@ int run_server(std::uint16_t port, const char* cert, const char* key) {
     std::_Exit(0);
 }
 
-int run_client(const char* host, std::uint16_t port) {
-    if (!open_api() || !open_configuration(false)) return 20;
+int run_client(const char* host, std::uint16_t port, const char* ca,
+               const char* client_cert, const char* client_key) {
+    if (!open_api() || !open_configuration(false, ca, nullptr, client_cert, client_key)) return 20;
     State state;
     HQUIC connection = nullptr;
     if (QUIC_FAILED(Api->ConnectionOpen(Registration, ClientConnectionCallback, &state, &connection))) return 21;
@@ -257,8 +272,9 @@ int main(int argc, char** argv) {
         return run_server(static_cast<std::uint16_t>(std::stoul(argv[2])), argv[3], argv[4]);
     }
     if (argc >= 2 && std::strcmp(argv[1], "client") == 0) {
-        if (argc != 4) return 2;
-        return run_client(argv[2], static_cast<std::uint16_t>(std::stoul(argv[3])));
+        if (argc != 5 && argc != 7) return 2;
+        return run_client(argv[2], static_cast<std::uint16_t>(std::stoul(argv[3])), argv[4],
+                          argc == 7 ? argv[5] : nullptr, argc == 7 ? argv[6] : nullptr);
     }
     return 2;
 }

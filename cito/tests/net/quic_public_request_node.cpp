@@ -227,7 +227,8 @@ int run_server(
         announce_ip,
     std::uint16_t announce_port,
     const std::string& cert,
-    const std::string& key) {
+    const std::string& key,
+    const char* client_ca_file) {
     using namespace cito::detail;
 
     auto runtime =
@@ -258,6 +259,10 @@ int run_server(
         key;
     options.quic.registration_name =
         "cito-public-server";
+    if (client_ca_file) {
+        options.quic.require_client_certificate = true;
+        options.quic.trusted_client_ca_file = client_ca_file;
+    }
 
     auto driver =
         install_linux_request_runtime(
@@ -353,7 +358,10 @@ int run_server(
 }
 
 int run_client(
-    std::uint16_t control_port) {
+    std::uint16_t control_port,
+    const char* ca_file,
+    const char* client_cert,
+    const char* client_key) {
     using namespace cito::detail;
 
     auto runtime =
@@ -368,9 +376,11 @@ int run_client(
         control_port;
     options.quic.registration_name =
         "cito-public-client";
-    options.quic
-        .skip_server_certificate_validation =
-        true;
+    options.quic.ca_certificate_file = ca_file;
+    if (client_cert && client_key) {
+        options.quic.client_certificate_file = client_cert;
+        options.quic.client_private_key_file = client_key;
+    }
 
     auto driver =
         install_linux_request_runtime(
@@ -516,7 +526,7 @@ int main(
         std::strcmp(
             argv[1],
             "server") == 0) {
-        if (argc != 8) {
+        if (argc != 8 && argc != 9) {
             return 2;
         }
 
@@ -535,7 +545,8 @@ int main(
                 std::stoul(
                     argv[5])),
             argv[6],
-            argv[7]);
+            argv[7],
+            argc == 9 ? argv[8] : nullptr);
     }
 
     if (
@@ -543,7 +554,7 @@ int main(
         std::strcmp(
             argv[1],
             "client") == 0) {
-        if (argc != 3) {
+        if (argc != 4 && argc != 6) {
             return 2;
         }
 
@@ -551,7 +562,10 @@ int main(
             static_cast<
                 std::uint16_t>(
                 std::stoul(
-                    argv[2])));
+                    argv[2])),
+            argv[3],
+            argc == 6 ? argv[4] : nullptr,
+            argc == 6 ? argv[5] : nullptr);
     }
 
     return 2;

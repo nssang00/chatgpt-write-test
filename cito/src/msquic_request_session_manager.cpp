@@ -520,22 +520,32 @@ private:
             return false;
         }
 
-        QUIC_CREDENTIAL_CONFIG
-            credentials{};
-        credentials.Type =
-            QUIC_CREDENTIAL_TYPE_NONE;
-        credentials.Flags =
-            static_cast<
-                QUIC_CREDENTIAL_FLAGS>(
-                QUIC_CREDENTIAL_FLAG_CLIENT);
+        QUIC_CREDENTIAL_CONFIG credentials{};
+        QUIC_CERTIFICATE_FILE client_files{};
+        const bool has_cert = !options_.client_certificate_file.empty();
+        const bool has_key = !options_.client_private_key_file.empty();
+        if (has_cert != has_key) return false;
 
-        if (options_
-                .skip_server_certificate_validation) {
-            credentials.Flags =
-                static_cast<
-                    QUIC_CREDENTIAL_FLAGS>(
-                    credentials.Flags |
-                    QUIC_CREDENTIAL_FLAG_NO_CERTIFICATE_VALIDATION);
+        credentials.Type = has_cert
+            ? QUIC_CREDENTIAL_TYPE_CERTIFICATE_FILE
+            : QUIC_CREDENTIAL_TYPE_NONE;
+        if (has_cert) {
+            client_files.CertificateFile = options_.client_certificate_file.c_str();
+            client_files.PrivateKeyFile = options_.client_private_key_file.c_str();
+            credentials.CertificateFile = &client_files;
+        }
+        credentials.Flags = QUIC_CREDENTIAL_FLAG_CLIENT;
+
+        if (options_.skip_server_certificate_validation) {
+            // Fail closed on conflicting security options rather than silently
+            // accepting an unverified peer despite a configured CA.
+            if (!options_.ca_certificate_file.empty()) return false;
+            credentials.Flags = static_cast<QUIC_CREDENTIAL_FLAGS>(
+                credentials.Flags | QUIC_CREDENTIAL_FLAG_NO_CERTIFICATE_VALIDATION);
+        } else if (!options_.ca_certificate_file.empty()) {
+            credentials.Flags = static_cast<QUIC_CREDENTIAL_FLAGS>(
+                credentials.Flags | QUIC_CREDENTIAL_FLAG_SET_CA_CERTIFICATE_FILE);
+            credentials.CaCertificateFile = options_.ca_certificate_file.c_str();
         }
 
         return QUIC_SUCCEEDED(
@@ -592,8 +602,18 @@ private:
             QUIC_CREDENTIAL_TYPE_CERTIFICATE_FILE;
         credentials.CertificateFile =
             &files;
-        credentials.Flags =
-            QUIC_CREDENTIAL_FLAG_NONE;
+        credentials.Flags = QUIC_CREDENTIAL_FLAG_NONE;
+        if (options_.require_client_certificate) {
+            if (options_.trusted_client_ca_file.empty()) {
+                api_->ConfigurationClose(server_configuration_);
+                server_configuration_ = nullptr;
+                return false; // never require mTLS without a verifiable CA
+            }
+            credentials.Flags = static_cast<QUIC_CREDENTIAL_FLAGS>(
+                QUIC_CREDENTIAL_FLAG_REQUIRE_CLIENT_AUTHENTICATION |
+                QUIC_CREDENTIAL_FLAG_SET_CA_CERTIFICATE_FILE);
+            credentials.CaCertificateFile = options_.trusted_client_ca_file.c_str();
+        }
 
         if (QUIC_FAILED(
                 api_->
