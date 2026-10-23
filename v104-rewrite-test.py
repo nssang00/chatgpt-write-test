@@ -76,3 +76,20 @@ assert s.count(query2) == 1, "missing final cleanup"
 s=s.replace(query2,replacement2)
 p.write_text(s,encoding="utf-8")
 print("Temporary NTFS DeleteNotify disabled for disposable runner; restore in finally")
+
+# Record actual NTFS extents before deletion and inspect original runlist after.
+s=p.read_text(encoding="utf-8")
+needle="""    $evidence.large_original_bytes = $largePayload.Length"""
+insert="""    $evidence.large_original_bytes = $largePayload.Length
+    & fsutil.exe file queryextents $largeFile *> (Join-Path $evidenceDir 'live-extents-before-delete.txt')"""
+assert s.count(needle)==1
+s=s.replace(needle,insert)
+needle2="""    $evidence.large_candidate_status = $largeMatches[0].status"""
+insert2="""    $evidence.large_candidate_status = $largeMatches[0].status
+    $diagnosticExe = Join-Path (Split-Path $enginePath -Parent) 'ntfs_diag_runs.exe'
+    & $diagnosticExe $devicePath *> (Join-Path $evidenceDir 'live-ntfs-runs.txt')
+    if ($LASTEXITCODE -ne 0) { throw 'Read-only raw cluster diagnostic failed' }"""
+assert s.count(needle2)==1
+s=s.replace(needle2,insert2)
+p.write_text(s, encoding="utf-8")
+print("NTFS raw run diagnostic added")
