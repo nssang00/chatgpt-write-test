@@ -72,4 +72,21 @@ function addTile(t,x,y,states=2){
  await t.handover.close();addTile(t,...coord[1]);t.handover.afterDraw();
  assert.equal(t.commits.length,2,'closed handover cannot revive');
 }
-console.log(JSON.stringify({pass:true,assertions:['two tiles and duplicate shared PBF layers','two decoded tasks not four','exact GPU buffer and packet parity','all-or-none group rejection','worker failure keeps CPU','removed tile race','closed pool does not restart']},null,2));
+{
+ // Regression: CPU tile B arrives and is painted while Worker A is unresolved.
+ // A completed batch must schedule B without requiring a third unrelated frame.
+ const t=setup(),originalSubmit=t.pool.submit.bind(t.pool);
+ let releaseFirst;
+ t.pool.submit=task=>releaseFirst
+   ?originalSubmit(task)
+   :new Promise(resolve=>{releaseFirst=()=>resolve(encodeTileLayerGroupTask(task));});
+ addTile(t,...coord[0]);t.handover.afterDraw();
+ for(let i=0;i<60&&!releaseFirst;i++)await Promise.resolve();
+ assert.ok(releaseFirst,'first Worker batch must start');
+ addTile(t,...coord[1]);t.handover.afterDraw();
+ releaseFirst();await t.handover.whenIdle();
+ assert.equal(t.commits.length,4,'a newly painted CPU tile must not be stranded');
+ assert.equal(t.handover.metrics.workerRows,4);
+ await t.handover.close();
+}
+console.log(JSON.stringify({pass:true,assertions:['two tiles and duplicate shared PBF layers','two decoded tasks not four','exact GPU buffer and packet parity','all-or-none group rejection','worker failure keeps CPU','removed tile race','closed pool does not restart','CPU tile painted during in-flight Worker does not starve']},null,2));
