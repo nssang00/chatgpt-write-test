@@ -1,8 +1,8 @@
-name: Recovery Workbench v10.3 - real Windows NTFS scan
+name: Recovery Workbench v10.4 - strict nonresident NTFS recovery
 on:
   push:
     branches:
-      - ci/recovery-workbench-v10-3-live-ntfs
+      - ci/recovery-workbench-v10-4-nonresident
   workflow_dispatch:
 permissions:
   contents: read
@@ -35,6 +35,11 @@ jobs:
           print(f"Verified source payload and extracted {len(files)} C++ and test files")
           '@ | python -
           if ($LASTEXITCODE -ne 0) { throw "Python source extraction failed with exit code $LASTEXITCODE" }
+      - name: Apply fixed-VHD nonresident strict SHA regression
+        shell: pwsh
+        run: |
+          python v104-rewrite-test.py
+          if ($LASTEXITCODE -ne 0) { throw 'Failed to apply v10.4 diagnostic test modifications' }
       - name: MSVC x64 CMake configure
         shell: pwsh
         run: cmake -S rw-v103 -B rw-v103/build-ci -A x64 -DBUILD_TESTING=OFF
