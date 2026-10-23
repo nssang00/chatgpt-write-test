@@ -1,0 +1,110 @@
+name: CompanyWebView / Windows hosted build
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/companywebview-windows.yml'
+      - 'companywebview/**'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/companywebview-windows.yml'
+      - 'companywebview/**'
+  workflow_dispatch:
+    inputs:
+      build_product:
+        description: 'Build private CompanyWebView source kit (requires repository secret and pinned SDK URLs)'
+        required: true
+        type: boolean
+        default: true
+permissions:
+  contents: read
+concurrency:
+  group: cwv-hosted-windows-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  windows-toolchain:
+    runs-on: windows-2022
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Compile and execute MSVC C++17 smoke
+        shell: pwsh
+        run: ./companywebview/ci/Test-WindowsToolchain.ps1
+      - name: Publish non-sensitive runner evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cwv-hosted-windows-toolchain
+          if-no-files-found: warn
+          path: ${{ runner.temp }}/cwv-hosted-toolchain/toolchain.json
+  windows-product-source:
+    if: github.event_name == 'workflow_dispatch' && inputs.build_product == true && github.ref == 'refs/heads/main'
+    runs-on: windows-2022
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Retrieve private kit and enforce SHA256
+        shell: pwsh
+        env:
+          CWV_KIT_URL: ${{ secrets.CWV_KIT_URL }}
+          CWV_KIT_SHA256: ${{ vars.CWV_KIT_SHA256 }}
+        run: |
+          if (-not $env:CWV_KIT_URL -or -not $env:CWV_KIT_SHA256) { throw 'Private kit URL/SHA256 not configured; cannot mark product PASS' }
+          ./companywebview/ci/Fetch-VerifiedKit.ps1 -Url $env:CWV_KIT_URL -Sha256 $env:CWV_KIT_SHA256 -Destination "$env:RUNNER_TEMP/cwv-kit"
+      - name: Compile managed Unity facade with stubs (not Unity Editor)
+        shell: pwsh
+        run: |
+          Push-Location $env:CWV_KIT_ROOT
+          try {
+            dotnet build Validation/AutoBuildCompile.csproj --configuration Release
+            if ($LASTEXITCODE -ne 0) { throw 'Editor stub compilation failed' }
+            dotnet build Validation/ProductPanelCompile.csproj --configuration Release
+            if ($LASTEXITCODE -ne 0) { throw 'Facade stub compilation failed' }
+            node Validation/test_bridge_v2.js
+            if ($LASTEXITCODE -ne 0) { throw 'Bridge JS regression failed' }
+            node Validation/test_bridge_v5_multicontext.js
+            if ($LASTEXITCODE -ne 0) { throw 'Multi-context JS regression failed' }
+            python Validation/test_bridge_v6_multihandle.py
+            if ($LASTEXITCODE -ne 0) { throw 'CEF multi-handle contract failed' }
+          } finally { Pop-Location }
+      - name: Retrieve checksum-pinned CEF Windows SDK
+        shell: pwsh
+        env:
+          SDK_URL: ${{ vars.CWV_CEF_SDK_URL }}
+          SDK_SHA: ${{ vars.CWV_CEF_SDK_SHA256 }}
+        run: |
+          if (-not $env:SDK_URL -or -not $env:SDK_SHA) { throw 'CEF SDK URL/SHA256 missing; native build NOT PASSED' }
+          & "$env:CWV_KIT_ROOT/CI/Fetch-VerifiedSdk.ps1" -Url $env:SDK_URL -Sha256 $env:SDK_SHA -Destination "$env:RUNNER_TEMP/cef" -Kind CEF
+      - name: Retrieve checksum-pinned Unity native headers
+        shell: pwsh
+        env:
+          SDK_URL: ${{ vars.CWV_UNITY_API_URL }}
+          SDK_SHA: ${{ vars.CWV_UNITY_API_SHA256 }}
+        run: |
+          if (-not $env:SDK_URL -or -not $env:SDK_SHA) { throw 'Unity header URL/SHA256 missing; native build NOT PASSED' }
+          & "$env:CWV_KIT_ROOT/CI/Fetch-VerifiedSdk.ps1" -Url $env:SDK_URL -Sha256 $env:SDK_SHA -Destination "$env:RUNNER_TEMP/unity-api" -Kind UNITY_API
+      - name: Compile CompanyWebView CEF DLL and subprocess (no GPU)
+        shell: pwsh
+        run: |
+          & "$env:CWV_KIT_ROOT/Build-Native-Rpc.ps1" -CefRoot $env:CWV_CEF_ROOT -UnityPluginApi $env:CWV_UNITY_PLUGIN_API -OutputStage "$env:RUNNER_TEMP/cwv-native-stage" -BuildDir "$env:RUNNER_TEMP/cwv-native-build"
+          if (-not (Test-Path "$env:RUNNER_TEMP/cwv-native-stage/rpc-bridge-build.json")) { throw 'Native MSVC build proof missing' }
+      - name: Publish minimal build evidence, never private kit/binaries
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cwv-hosted-windows-native-proof
+          if-no-files-found: warn
+          path: ${{ runner.temp }}/cwv-native-stage/rpc-bridge-build.json
+          retention-days: 7
