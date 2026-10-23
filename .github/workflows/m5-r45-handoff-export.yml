@@ -40,3 +40,4 @@ jobs:
           path: HANDOFF_R35_R44/**
           retention-days: 30
           if-no-files-found: error
+          include-hidden-files: true
