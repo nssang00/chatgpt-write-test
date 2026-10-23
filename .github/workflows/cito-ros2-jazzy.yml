@@ -1,0 +1,48 @@
+name: Cito ROS 2 Jazzy prerequisite
+
+on:
+  push:
+    branches: [cito-g1g5-actions-20261024]
+    paths:
+      - '.github/workflows/cito-ros2-jazzy.yml'
+      - 'cito/ros2/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ros2-jazzy:
+    name: ROS 2 Jazzy toolchain (not rmw_cito acceptance)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 18
+    container:
+      image: ros:jazzy-ros-base
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install colcon
+        run: |
+          apt-get update
+          DEBIAN_FRONTEND=noninteractive apt-get install -y python3-colcon-common-extensions
+      - name: Verify ROS 2, colcon and Cito RMW presence
+        shell: bash
+        run: |
+          set -euo pipefail
+          source /opt/ros/jazzy/setup.bash
+          test "$ROS_DISTRO" = jazzy
+          command -v ros2
+          command -v colcon
+          ros2 pkg list > ros2-package-list.txt
+          echo 'ROS2_JAZZY_TOOLCHAIN=PASS' | tee -a "$GITHUB_STEP_SUMMARY"
+          if grep -qx 'rmw_cito' ros2-package-list.txt; then
+            echo 'RMW_CITO_PRESENT=TRUE (end-to-end tests still required)' | tee -a "$GITHUB_STEP_SUMMARY"
+          else
+            echo 'RMW_CITO_PRESENT=FALSE; G5 NOT IMPLEMENTED / NOT ACCEPTED' | tee -a "$GITHUB_STEP_SUMMARY"
+          fi
+      - name: Upload ROS 2 package manifest
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ros2-jazzy-packages
+          path: ros2-package-list.txt
+          if-no-files-found: warn
