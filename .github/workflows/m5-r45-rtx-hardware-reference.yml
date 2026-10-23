@@ -1,0 +1,120 @@
+# R44 RTX benchmark re-run as a HARDWARE REFERENCE only.
+# WARNING: this runs the R44 fixture, not the new R45 DirectM5SceneBinding.
+name: M5 R45 RTX Hardware Reference (R44 Benchmark)
+on:
+  push:
+    branches: [m5/r45-app-handover-20261023]
+    paths:
+      - '.github/workflows/m5-r45-rtx-hardware-reference.yml'
+      - '.github/workflows/m5-r45-app-handover.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: m5-r45-rtx-reference
+  cancel-in-progress: false
+jobs:
+  scale:
+    name: R44 fixture only - RTX 5060 Ti nonempty frame and worker pixel exact
+    runs-on: self-hosted
+    timeout-minutes: 180
+    env:
+      R35_ZIP_PATH: 'C:\M5_R35\M5_R35_RTX_READY_SELF_CONTAINED_2026-10-22.zip'
+      M5_SWIFTSHADER: '0'
+      R36_ROUNDS: '5'
+    steps:
+      - name: Checkout pinned R38 driver and isolated source patch
+        uses: actions/checkout@v4
+      - name: Verify pinned R35 ZIP and physical RTX
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $proof=Join-Path $env:GITHUB_WORKSPACE 'r44-preflight'
+          New-Item -ItemType Directory -Force -Path $proof | Out-Null
+          if($env:OS -ne 'Windows_NT'){throw 'Expected Windows physical GPU runner'}
+          $gpu=@(Get-CimInstance Win32_VideoController | Select-Object Name,DriverVersion)
+          $gpu | ConvertTo-Json -Depth 5 | Set-Content -Encoding utf8 (Join-Path $proof 'gpu.json')
+          if(-not ($gpu | Where-Object {$_.Name -match 'NVIDIA.*RTX 5060 Ti'})){throw 'RTX 5060 Ti missing'}
+          & nvidia-smi --query-gpu=name,driver_version --format=csv,noheader | Out-File -Encoding utf8 (Join-Path $proof 'nvidia-smi.txt')
+          if($LASTEXITCODE -ne 0){throw 'NVIDIA SMI failed'}
+          $zip=$env:R35_ZIP_PATH
+          if(-not (Test-Path -LiteralPath $zip -PathType Leaf)){throw "Missing staged ZIP $zip"}
+          $actual=(Get-FileHash -Algorithm SHA256 -LiteralPath $zip).Hash.ToLowerInvariant()
+          $expected='3e5d3cb5d525b818a3b560731dac0ae17ce734ab5a96057c67c546c4b7cb2776'
+          if($actual -ne $expected){throw "R35 ZIP hash mismatch $actual"}
+          $actual | Set-Content -Encoding ascii (Join-Path $proof 'source_sha256.txt')
+      - name: Extract R35 into isolated workspace
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $dest=Join-Path $env:GITHUB_WORKSPACE 'r35'
+          if(Test-Path $dest){Remove-Item $dest -Recurse -Force}
+          New-Item -ItemType Directory -Force -Path $dest | Out-Null
+          Expand-Archive -LiteralPath $env:R35_ZIP_PATH -DestinationPath $dest -Force
+          foreach($f in @('tests\round14_gpu_compare\run_one.mjs','tests\round14_gpu_compare\round14_m5.html','tests\round14_gpu_compare\ol_stock.html','tests\round14_gpu_compare\png_compare.mjs')){
+            if(-not (Test-Path (Join-Path $dest $f))){throw "Incomplete pinned R35 source: $f"}
+          }
+          Copy-Item -LiteralPath (Join-Path $env:GITHUB_WORKSPACE 'm5-gpu\r38\run_deferred.mjs') -Destination (Join-Path $dest 'r38_run.mjs')
+          Copy-Item -LiteralPath (Join-Path $env:GITHUB_WORKSPACE 'm5-gpu\r37\patch_duplicate_decode.mjs') -Destination (Join-Path $dest 'r37_patch.mjs')
+          Copy-Item -LiteralPath (Join-Path $env:GITHUB_WORKSPACE 'm5-gpu\r38\patch_deferred_worker.mjs') -Destination (Join-Path $dest 'r38_patch.mjs')
+          Copy-Item -LiteralPath (Join-Path $env:GITHUB_WORKSPACE 'm5-gpu\r39\patch_worker_repaint.mjs') -Destination (Join-Path $dest 'r39_patch.mjs')
+          Copy-Item -LiteralPath (Join-Path $env:GITHUB_WORKSPACE 'm5-gpu\r39\verify_worker_repaint.mjs') -Destination (Join-Path $dest 'r39_verify.mjs')
+          Copy-Item -LiteralPath (Join-Path $env:GITHUB_WORKSPACE 'm5-gpu\r39\select_2w_candidate.mjs') -Destination (Join-Path $dest 'r39_select.mjs')
+          Copy-Item -LiteralPath (Join-Path $env:GITHUB_WORKSPACE 'm5-gpu\r41\patch_zero_copy_mvt.mjs') -Destination (Join-Path $dest 'r41_patch.mjs')
+          Copy-Item -LiteralPath (Join-Path $env:GITHUB_WORKSPACE 'm5-gpu\r42\patch_main_mvt_worker_reader.mjs') -Destination (Join-Path $dest 'r42_patch.mjs')
+          Copy-Item -LiteralPath (Join-Path $env:GITHUB_WORKSPACE 'm5-gpu\r43\patch_dynamic_views.mjs') -Destination (Join-Path $dest 'r43_patch.mjs')
+          Copy-Item -LiteralPath (Join-Path $env:GITHUB_WORKSPACE 'm5-gpu\r43\enable_dynamic_gate.mjs') -Destination (Join-Path $dest 'r43_gate.mjs')
+          Copy-Item -LiteralPath (Join-Path $env:GITHUB_WORKSPACE 'm5-gpu\r44\patch_dynamic_nonempty.mjs') -Destination (Join-Path $dest 'r44_patch.mjs')
+          Copy-Item -LiteralPath (Join-Path $env:GITHUB_WORKSPACE 'm5-gpu\r37\verify_duplicate_decode.mjs') -Destination (Join-Path $dest 'tests\verify_r37_duplicate_decode.mjs')
+      - name: Select Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Apply R37 patch and verify exact CPU byte parity
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          Set-Location (Join-Path $env:GITHUB_WORKSPACE 'r35')
+          & node --check .\r37_patch.mjs
+          if($LASTEXITCODE -ne 0){throw 'R37 patch syntax failed'}
+          & node .\r37_patch.mjs .
+          if($LASTEXITCODE -ne 0){throw 'R37 opt-in patch failed'}
+          & node .\r38_patch.mjs .
+          if($LASTEXITCODE -ne 0){throw 'R38 deferred Worker patch failed'}
+          & node .\r39_patch.mjs .
+          if($LASTEXITCODE -ne 0){throw 'R39 Worker repaint patch failed'}
+          & node .\r39_select.mjs .
+          if($LASTEXITCODE -ne 0){throw 'R39 2-Worker selection invalid'}
+          & node .\r41_patch.mjs .
+          if($LASTEXITCODE -ne 0){throw 'R41 PBF no-copy patch failed'}
+          & node .\r42_patch.mjs .
+          if($LASTEXITCODE -ne 0){throw 'R42 worker-safe parser patch failed'}
+          & node .\r43_patch.mjs .
+          if($LASTEXITCODE -ne 0){throw 'R43 dynamic view harness failed'}
+          & node .\r43_gate.mjs .
+          if($LASTEXITCODE -ne 0){throw 'R43 dynamic gate setup failed'}
+          & node .\r44_patch.mjs .
+          if($LASTEXITCODE -ne 0){throw 'R44 nonempty dynamic controls patch failed'}
+          & node .\tests\verify_r37_duplicate_decode.mjs
+          if($LASTEXITCODE -ne 0){throw 'R37 exact bytes parity failed'}
+          & node --check .\r38_run.mjs
+          if($LASTEXITCODE -ne 0){throw 'R38 benchmark syntax invalid'}
+      - name: Verify OL A/B real first-pixel gate and deferred Worker correctness
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          Set-Location (Join-Path $env:GITHUB_WORKSPACE 'r35')
+          & node .\r38_run.mjs . .\RESULTS\R45_R44_REFERENCE
+          if($LASTEXITCODE -ne 0){throw 'R39 first-frame acceptance failed'}
+          & node .\r39_verify.mjs .\RESULTS\R45_R44_REFERENCE
+          if($LASTEXITCODE -ne 0){throw 'R39 Worker second-frame exact-pixel acceptance failed'}
+      - name: Upload R39 GPU evidence including failures
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: m5-r45-r44-rtx-reference-${{ github.run_id }}
+          retention-days: 30
+          if-no-files-found: warn
+          path: |
+            r36-preflight/**
+            r35/RESULTS/R45_R44_REFERENCE/**

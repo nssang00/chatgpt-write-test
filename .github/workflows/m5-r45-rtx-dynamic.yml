@@ -1,0 +1,95 @@
+name: M5 R45 RTX Actual Pan Zoom Rotate Parity
+on:
+  push:
+    branches: [m5/r45-app-handover-20261023]
+    paths:
+      - '.github/workflows/m5-r45-rtx-dynamic.yml'
+      - 'm5-gpu/r45/instrument_gpu_dynamic.mjs'
+      - 'm5-gpu/r45/app/**'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: m5-r45-dynamic-rtx
+  cancel-in-progress: false
+jobs:
+  gpu:
+    name: Real RTX DPR1/2 nonempty transformed CPU vs Worker RGBA8 exact
+    runs-on: self-hosted
+    timeout-minutes: 50
+    env:
+      R35_ZIP_PATH: 'C:\M5_R35\M5_R35_RTX_READY_SELF_CONTAINED_2026-10-22.zip'
+      M5_SWIFTSHADER: '0'
+      M5_GPU_COMPARE_TIMEOUT_MS: '240000'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: GPU driver and R35 source preflight
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          New-Item -ItemType Directory -Force r45-gpu-evidence | Out-Null
+          if($env:OS -ne 'Windows_NT'){throw 'Windows runner required'}
+          $g=@(Get-CimInstance Win32_VideoController | Select-Object Name,DriverVersion)
+          $g | ConvertTo-Json -Depth 4 | Set-Content -Encoding utf8 r45-gpu-evidence\gpu_wmi.json
+          if(-not ($g | Where-Object {$_.Name -match 'NVIDIA.*RTX 5060 Ti'})){throw 'RTX5060Ti WMI missing'}
+          & nvidia-smi --query-gpu=name,driver_version,memory.total --format=csv,noheader | Tee-Object -FilePath r45-gpu-evidence\nvidia.txt
+          if($LASTEXITCODE -ne 0){throw 'nvidia-smi failure'}
+          if(-not ((Get-Content r45-gpu-evidence\nvidia.txt -Raw) -match 'RTX 5060 Ti')){throw 'Physical RTX missing'}
+          $hash=(Get-FileHash -LiteralPath $env:R35_ZIP_PATH -Algorithm SHA256).Hash.ToLowerInvariant()
+          if($hash -ne '3e5d3cb5d525b818a3b560731dac0ae17ce734ab5a96057c67c546c4b7cb2776'){throw 'R35 ZIP mismatch'}
+          $hash | Set-Content -Encoding ascii r45-gpu-evidence\source_hash.txt
+          if(-not ((node --version) -match '^v22\.')){throw 'Need Node 22'}
+      - name: Apply R45 to pinned R35 and inject GPU instrumentation
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $dest=Join-Path $env:GITHUB_WORKSPACE 'r45-source'
+          New-Item -ItemType Directory -Force $dest | Out-Null
+          Expand-Archive -LiteralPath $env:R35_ZIP_PATH -DestinationPath $dest -Force
+          & git -C $dest init -q
+          if($LASTEXITCODE -ne 0){throw 'Isolated patch root failed'}
+          & node .\m5-gpu\r45\apply_r45.mjs $dest
+          if($LASTEXITCODE -ne 0){throw 'R45 patch failed'}
+          & node .\m5-gpu\r45\instrument_gpu.mjs $dest
+          if($LASTEXITCODE -ne 0){throw 'GPU instrumentation failed'}
+          & node .\m5-gpu\r45\instrument_gpu_dynamic.mjs $dest
+          if($LASTEXITCODE -ne 0){throw 'R45 dynamic GPU instrumentation failed'}
+      - name: R45 physical WebGL RGBA8 handover (DPR1 and DPR2)
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          Set-Location (Join-Path $env:GITHUB_WORKSPACE 'r45-source')
+          foreach($dpr in @(1,2)){
+            $id='r45_gpu_dpr'+$dpr
+            & node .\tests\round14_gpu_compare\run_one.mjs --mode=m5 --id=$id --rounds=2 --workerPool=off --partialEarcut=1 --closedJoins=1 --r45=1 --r45Dpr=$dpr --out=.\RESULTS\R45_GPU
+            if($LASTEXITCODE -ne 0){throw ('R45 actual RTX GPU pixel gate failed DPR '+$dpr)}
+            $folder=Join-Path $env:GITHUB_WORKSPACE ('r45-source\RESULTS\R45_GPU\'+$id)
+            $d=Get-Content (Join-Path $folder 'result.json') -Raw | ConvertFrom-Json
+            if(-not $d.pass){throw 'GPU browser report failed'}
+            foreach($scene in $d.scenes){
+              if(-not $scene.pass -or -not $scene.renderer -or $scene.renderer -notmatch 'NVIDIA|RTX 5060 Ti'){throw ('Non-hardware or failed '+$scene.name)}
+              foreach($sample in $scene.samples){
+                if(@($sample.r45.dynamicTests).Count -ne 4){throw ('Missing four dynamic controls '+$scene.name)}
+                foreach($view in $sample.r45.dynamicTests){
+                  if($view.workerChangedChannels -ne 0 -or $view.paintedPixels -le 0 -or $view.viewChangedChannels -le 0 -or $view.drawCalls -le 0){throw ('R45 pan zoom rotate GPU mismatch '+$scene.name+' '+$view.view)}
+                }
+                if($sample.r45.differentChannels -ne 0 -or $sample.r45.failures -ne 0 -or $sample.r45.parityRejects -ne 0 -or $sample.r45.workerRows -ne ($scene.layerCount*4)){
+                  throw ('R45 invalid stream/pixel '+$scene.name)
+                }
+              }
+            }
+            $d | Select-Object pass,scenes | ConvertTo-Json -Depth 8 | Set-Content -Encoding utf8 (Join-Path $env:GITHUB_WORKSPACE ('r45-gpu-evidence\'+$id+'.json'))
+          }
+      - name: Upload raw RTX proof including failures
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: m5-r45-dynamic-rtx-${{ github.run_id }}
+          path: |
+            r45-gpu-evidence/**
+            r45-source/RESULTS/R45_GPU/**
+          retention-days: 30
+          if-no-files-found: warn
