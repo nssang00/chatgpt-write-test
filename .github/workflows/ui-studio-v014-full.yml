@@ -32,6 +32,8 @@ jobs:
           base64 -d experiments/ui-studio-v0.14/ci/delta.patch.xz.b64 > /tmp/ui-studio-v014.patch.xz
           echo 'daa08bfbfda1b6ab9704ae40491adf281939d4f7682759dfba03134383d10739  /tmp/ui-studio-v014.patch.xz' | sha256sum -c -
           xz -dc /tmp/ui-studio-v014.patch.xz | (cd experiments/ui-studio-v0.14/app && patch --batch -p1)
+          python3 experiments/ui-studio-v0.14/ci/fix-v014-inspector.py experiments/ui-studio-v0.14/app/src/framework/UnifiedStudio.jsx
+          echo '2182d421bf77c080e02771e571e6798707b8857332528cc32024f80d11779982  experiments/ui-studio-v0.14/app/src/framework/UnifiedStudio.jsx' | sha256sum -c -
           cd experiments/ui-studio-v0.14/app
           echo '508c9b2f94e43a24c03d2944a3ffdc2b0721b89c9d07427a52aa459cf9fe4d32  package.json' | sha256sum -c -
           echo 'aed08c4a9dc9ec7b73f4cf8cbef6da96905cc2b5129f443196c2841c7bc23348  packages/core/visual.js' | sha256sum -c -
