@@ -2,7 +2,7 @@ name: Cito QUIC
 
 on:
   push:
-    branches: [cito-dev]
+    branches: [cito-dev, cito-g1g5-actions-20261024]
     paths:
       - "cito/CMakeLists.txt"
       - "cito/include/cito/data_packet.hpp"
