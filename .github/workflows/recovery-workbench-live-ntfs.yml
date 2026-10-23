@@ -95,5 +95,7 @@ jobs:
           name: rw-v103-windows-vhd-ntfs-results
           if-no-files-found: warn
           path: |
+            windows-live-fat-exfat-vhd-test.ps1
+            .github/workflows/recovery-workbench-live-ntfs.yml
             rw-v103/build-logs/
             rw-v103/build-ci/Testing/Temporary/
