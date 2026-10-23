@@ -25,6 +25,7 @@ jobs:
           unzip -q experiments/ui-studio-v0.13/ui-studio-source.zip -d experiments/ui-studio-v0.13/app
           test -f experiments/ui-studio-v0.13/app/package.json
           python3 experiments/ui-studio-v0.13/ci-patches/fix-v013-tests.py experiments/ui-studio-v0.13/app
+          python3 experiments/ui-studio-v0.13/ci-patches/fix-v013-events.py experiments/ui-studio-v0.13/app
       - name: Install project dependencies
         working-directory: experiments/ui-studio-v0.13/app
         run: npm install --no-audit --no-fund
@@ -63,6 +64,7 @@ jobs:
           UI_STUDIO_USE_SYSTEM_CHROME: '1'
         run: npm run test:e2e
       - name: Real Chrome E2E — independent React consumer
+        if: always()
         working-directory: experiments/ui-studio-v0.13/app
         env:
           CI: 'true'
