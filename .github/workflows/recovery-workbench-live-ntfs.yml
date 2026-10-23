@@ -1,0 +1,57 @@
+name: Recovery Workbench v10.3 - real Windows NTFS scan
+on:
+  push:
+    branches:
+      - ci/recovery-workbench-v10-3-live-ntfs
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  windows-live-ntfs:
+    runs-on: windows-2022
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify and extract v10.3 C++ source snapshot
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $expected = '7a9ad8dcacc10028b9698c9d5e5a2d56be9826d173885915e4fbe71b63082170'
+          $actual = (Get-FileHash 'rw-v103-native.tar.xz' -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($actual -ne $expected) { throw "Source archive SHA256 mismatch: $actual" }
+          New-Item -ItemType Directory -Path 'rw-v103' -Force | Out-Null
+          tar -xf 'rw-v103-native.tar.xz' -C 'rw-v103'
+          if ($LASTEXITCODE -ne 0) { throw 'tar extraction failed' }
+          if (-not (Test-Path 'rw-v103/src/recovery.cpp')) { throw 'NTFS engine source not extracted' }
+      - name: MSVC x64 CMake configure
+        shell: pwsh
+        run: cmake -S rw-v103 -B rw-v103/build-ci -A x64 -DBUILD_TESTING=OFF
+      - name: MSVC x64 Release compile with warning-as-error
+        shell: pwsh
+        run: cmake --build rw-v103/build-ci --config Release --parallel 2
+      - name: Check VHD test script syntax
+        shell: pwsh
+        run: |
+          foreach ($p in @('rw-v103/scripts/windows-live-ntfs-vhd-test.ps1','rw-v103/scripts/assert-windows-live-evidence.ps1')) {
+            $tokens = $null
+            $errors = $null
+            $null = [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $p).Path, [ref]$tokens, [ref]$errors)
+            if ($errors.Count -gt 0) { $errors | ForEach-Object { Write-Error $_.Message }; exit 1 }
+          }
+      - name: Mount throwaway NTFS VHD, delete files, raw volume scan, extract, SHA256
+        shell: pwsh
+        working-directory: rw-v103
+        run: ./scripts/windows-live-ntfs-vhd-test.ps1 -Engine 'build-ci/Release/ntfsrecover.exe'
+      - name: Assert search, extraction, same-disk refusal, VHD detach
+        shell: pwsh
+        working-directory: rw-v103
+        run: ./scripts/assert-windows-live-evidence.ps1
+      - name: Upload Windows live scan evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rw-v103-windows-vhd-ntfs-results
+          if-no-files-found: warn
+          path: |
+            rw-v103/build-logs/
+            rw-v103/build-ci/Testing/Temporary/
