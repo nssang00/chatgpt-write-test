@@ -17,6 +17,7 @@
 #include <typeindex>
 #include <unordered_map>
 #include <utility>
+#include <deque>
 #include <vector>
 
 namespace cito {
@@ -97,7 +98,8 @@ private:
         std::function<void(const void*)> invoke;
     };
 
-    using Bucket = std::vector<Handler>;
+    // Keep executing callbacks stable when subscriptions are added reentrantly.
+    using Bucket = std::deque<Handler>;
     using ResourceMap = std::unordered_map<
         std::string, Bucket, TransparentStringHash, std::equal_to<>>;
 
