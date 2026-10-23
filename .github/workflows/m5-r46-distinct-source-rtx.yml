@@ -1,0 +1,73 @@
+name: M5 R46 8 16 32 Genuine Distinct MVT Sources
+on:
+  push:
+    branches: [m5/r46-distinct-mvt-32-20261023]
+    paths:
+      - '.github/workflows/m5-r46-distinct-source-rtx.yml'
+      - 'm5-gpu/r46/download_unique_tiles.mjs'
+      - 'm5-gpu/r46/verify_distinct_sources.mjs'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: r46-distinct-pbf-identity
+  cancel-in-progress: false
+jobs:
+  verify:
+    name: Independently sourced 8, 16, 32 MVT CPU/Worker exact
+    runs-on: self-hosted
+    timeout-minutes: 45
+    env:
+      R35_ZIP_PATH: 'C:\M5_R35\M5_R35_RTX_READY_SELF_CONTAINED_2026-10-22.zip'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Windows real RTX preflight and pinned original SHA
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          New-Item -ItemType Directory -Force R46-EVIDENCE | Out-Null
+          if($env:OS -ne 'Windows_NT'){throw 'Expected Windows self-hosted'}
+          $g=@(Get-CimInstance Win32_VideoController | Select-Object Name,DriverVersion)
+          $g | ConvertTo-Json -Depth 4 | Set-Content -Encoding utf8 R46-EVIDENCE\gpu.json
+          if(-not ($g | Where-Object {$_.Name -match 'NVIDIA.*RTX 5060 Ti'})){throw 'No RTX 5060 Ti'}
+          nvidia-smi --query-gpu=name,driver_version,memory.total --format=csv,noheader | Tee-Object -FilePath R46-EVIDENCE\nvidia-smi.txt
+          if($LASTEXITCODE -ne 0){throw 'Driver preflight failed'}
+          $hash=(Get-FileHash -Algorithm SHA256 $env:R35_ZIP_PATH).Hash.ToLowerInvariant()
+          if($hash -ne '3e5d3cb5d525b818a3b560731dac0ae17ce734ab5a96057c67c546c4b7cb2776'){throw 'R35 ZIP checksum changed'}
+          $hash | Set-Content -Encoding ascii R46-EVIDENCE\r35-sha256.txt
+      - name: Extract pinned original and apply actual R45 application patch
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $dest=Join-Path $env:GITHUB_WORKSPACE 'R46-R35'
+          New-Item -ItemType Directory -Force $dest | Out-Null
+          Expand-Archive -LiteralPath $env:R35_ZIP_PATH -DestinationPath $dest -Force
+          git -C $dest init -q
+          if($LASTEXITCODE -ne 0){throw 'git init failed'}
+          node m5-gpu/r45/apply_r45.mjs $dest
+          if($LASTEXITCODE -ne 0){throw 'R45 patch failed'}
+          New-Item -ItemType Directory -Force (Join-Path $dest 'm5-gpu\r46') | Out-Null
+          Copy-Item m5-gpu\r46\download_unique_tiles.mjs,m5-gpu\r46\verify_distinct_sources.mjs (Join-Path $dest 'm5-gpu\r46\')
+      - name: Fetch and assert 32 unique nonempty MapLibre OpenMapTiles tile coordinates
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          node .\R46-R35\m5-gpu\r46\download_unique_tiles.mjs R46-EVIDENCE\data
+          if($LASTEXITCODE -ne 0){throw 'Cannot establish 32 independent source fixtures'}
+      - name: 8 16 32 Worker pool CPU encoded bytes and draw packet exact
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          node .\R46-R35\m5-gpu\r46\verify_distinct_sources.mjs R46-EVIDENCE\data R46-EVIDENCE\results
+          if($LASTEXITCODE -ne 0){throw 'R46 Worker CPU exact parity failed'}
+      - name: Preserve pinned source manifest, SHA and per-source GPU encoding (including failures)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: r46-independent-mvt-${{ github.run_id }}
+          path: R46-EVIDENCE/**
+          if-no-files-found: warn
+          retention-days: 30
