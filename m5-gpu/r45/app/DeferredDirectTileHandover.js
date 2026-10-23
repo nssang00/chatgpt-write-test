@@ -30,7 +30,7 @@ export class DeferredDirectTileHandover{
     this.resolveTask=resolveTask;this.createPool=createPool??(()=>createBrowserDirectTileWorkerPool({size:workerSize,maxCacheBytes:0}));
     this.afterPaint=afterPaint;this.maxPending=maxPending;this.onError=onError;this.getCpuEncoded=getCpuEncoded;
     this.pending=new Map();this.versions=new WeakMap();this.pool=null;
-    this.closed=false;this.failed=false;this.paintSeen=false;this.flushing=false;
+    this.closed=false;this.failed=false;this.paintSeen=false;this.flushing=false;this.paintSerial=0;
     this.metrics={cpuTiles:0,groups:0,decodeCalls:0,workerRows:0,staleDrops:0,parityRejects:0,skipped:0,failures:0};
     this.active=new Set();
   }
@@ -67,10 +67,13 @@ export class DeferredDirectTileHandover{
   }
   /** Called only once WebGL draw + endFrame completed; startup follows presentation. */
   afterDraw(){
-    if(this.closed||this.failed||!this.pendingCount)return;
+    if(this.closed||this.failed)return;
+    this.paintSerial++;
+    if(!this.pendingCount)return;
     this.paintSeen=true;
     if(this.flushing)return;
     this.flushing=true;
+    const startedAtPaint=this.paintSerial;
     const operation=(async()=>{
       await this.afterPaint();
       if(this.closed||this.failed)return;
@@ -85,7 +88,9 @@ export class DeferredDirectTileHandover{
       }
     })().catch(error=>this._fail(error)).finally(()=>{
       this.flushing=false;this.active.delete(operation);
-      // New CPU arrivals wait for the next actual GPU draw before dispatch.
+      // Drain CPU tiles which were painted during the previous Worker flight.
+      if(this.pendingCount&&this.paintSerial>startedAtPaint&&!this.closed&&!this.failed)
+        this.afterDraw();
     });
     this.active.add(operation);
   }
