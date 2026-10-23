@@ -43,6 +43,7 @@ print("v10.4 fixed VHD test strict SHA256 assertion and diagnostic patch applied
 
 # Isolate TRIM/Discard effect on this ephemeral, GitHub-hosted Windows machine.
 # Query existing host setting and restore it after the VHD test.
+s = p.read_text(encoding='utf-8')
 query="""try {
     Invoke-DiskPartScript $diskpartCreate"""
 replacement="""$trimOriginal = $null
