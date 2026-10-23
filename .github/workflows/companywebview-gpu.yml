@@ -1,0 +1,81 @@
+name: CompanyWebView / self-hosted GPU verification
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: cwv-physical-gpu-machine
+  cancel-in-progress: false
+jobs:
+  gpu-player:
+    if: github.repository == 'nssang00/chatgpt-write-test' && github.ref == 'refs/heads/main'
+    runs-on: [self-hosted, Windows, X64, cwv-gpu]
+    environment: cwv-gpu
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@v4
+      - name: Retrieve private source kit with pinned checksum
+        shell: pwsh
+        env:
+          CWV_KIT_URL: ${{ secrets.CWV_KIT_URL }}
+          CWV_KIT_SHA256: ${{ vars.CWV_KIT_SHA256 }}
+        run: |
+          if (-not $env:CWV_KIT_URL -or -not $env:CWV_KIT_SHA256) { throw 'Missing private CompanyWebView kit URL or SHA256' }
+          ./companywebview/ci/Fetch-VerifiedKit.ps1 -Url $env:CWV_KIT_URL -Sha256 $env:CWV_KIT_SHA256 -Destination "$env:RUNNER_TEMP/cwv-kit"
+      - name: Require local Unity, pinned CEF SDK and Unity native headers
+        shell: pwsh
+        env:
+          CEF_ROOT: ${{ vars.CWV_GPU_CEF_ROOT }}
+          UNITY_API: ${{ vars.CWV_GPU_UNITY_API }}
+          UNITY_EDITOR: ${{ vars.CWV_GPU_UNITY_EDITOR }}
+        run: |
+          if (-not $env:CEF_ROOT -or -not (Test-Path "$env:CEF_ROOT/include/cef_app.h")) { throw 'CEF SDK unavailable on GPU runner' }
+          if (-not $env:UNITY_API -or -not (Test-Path "$env:UNITY_API/IUnityInterface.h")) { throw 'Unity C API headers unavailable' }
+          if (-not $env:UNITY_EDITOR -or -not (Test-Path $env:UNITY_EDITOR -PathType Leaf)) { throw 'Unity Editor unavailable on GPU runner' }
+          "CWV_CEF_ROOT=$env:CEF_ROOT" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+          "CWV_UNITY_PLUGIN_API=$env:UNITY_API" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+          "UNITY_EDITOR_PATH=$env:UNITY_EDITOR" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+      - name: Build new CEF DLL and Unity Windows Player
+        shell: pwsh
+        run: |
+          Push-Location $env:CWV_KIT_ROOT
+          try {
+            ./Run-Auto.ps1 -CefRoot $env:CWV_CEF_ROOT -UnityPluginApi $env:CWV_UNITY_PLUGIN_API
+            $result = Get-Content './AutoResults/product-auto-summary.json' -Raw | ConvertFrom-Json
+            if ($result.status -ne 'AUTO_BUILD_PASS' -or -not (Test-Path -LiteralPath $result.player -PathType Leaf)) { throw 'Unity Player product build failed' }
+            "CWV_PLAYER_PATH=$($result.player)" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+          } finally { Pop-Location }
+      - name: Short real Player RPC smoke (not 5-minute benchmark)
+        shell: pwsh
+        run: |
+          & "$env:CWV_KIT_ROOT/Test-Bridge-PlayerSmoke.ps1" -PlayerPath $env:CWV_PLAYER_PATH -Seconds 60 -ReportDirectory "$env:RUNNER_TEMP/cwv-gpu-evidence"
+      - name: Require actual GPU accelerated frame counters
+        shell: pwsh
+        run: |
+          & "$env:CWV_KIT_ROOT/CI/Test-GpuEvidence.ps1" -PlayerLog "$env:RUNNER_TEMP/cwv-gpu-evidence/PlayerBridgeV2.log" -OutputJson "$env:RUNNER_TEMP/cwv-gpu-evidence/gpu-evidence.json"
+      - name: Produce safe evidence summary without local paths/log contents
+        if: always()
+        shell: pwsh
+        run: |
+          $folder = Join-Path $env:RUNNER_TEMP 'cwv-gpu-evidence'
+          New-Item -ItemType Directory -Force -Path $folder | Out-Null
+          $bridgePath = Join-Path $folder 'player-bridge-v2-smoke.json'
+          $gpuPath = Join-Path $folder 'gpu-evidence.json'
+          $bridge = if (Test-Path $bridgePath) { Get-Content $bridgePath -Raw | ConvertFrom-Json } else { $null }
+          $gpu = if (Test-Path $gpuPath) { Get-Content $gpuPath -Raw | ConvertFrom-Json } else { $null }
+          $summary = [ordered]@{
+            playerSmokeStatus=if($bridge){$bridge.status}else{'NOT_RUN'}
+            gpuStatus=if($gpu){$gpu.status}else{'NOT_RUN'}
+            acceleratedFrames=if($gpu){$gpu.acceleratedFrames}else{$null}
+            softwareFrames=if($gpu){$gpu.softwareFrames}else{$null}
+            evidenceKind='Real Win64 Unity Player and measured GPU frame counters; no source or raw logs published'
+          }
+          $summary | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $folder 'safe-summary.json') -Encoding utf8
+      - name: Upload safe summary only (public repository)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cwv-gpu-safe-evidence
+          path: ${{ runner.temp }}/cwv-gpu-evidence/safe-summary.json
+          if-no-files-found: error
+          retention-days: 7
