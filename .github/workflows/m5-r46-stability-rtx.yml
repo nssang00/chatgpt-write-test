@@ -19,8 +19,8 @@ jobs:
     env:
       R35_ZIP_PATH: 'C:\M5_R35\M5_R35_RTX_READY_SELF_CONTAINED_2026-10-22.zip'
       M5_SWIFTSHADER: '0'
-      M5_GPU_COMPARE_TIMEOUT_MS: '240000'
-      R46_STABILITY_SECONDS: '75'
+      M5_GPU_COMPARE_TIMEOUT_MS: '2400000'
+      R46_STABILITY_SECONDS: '1800'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
