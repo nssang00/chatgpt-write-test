@@ -1,0 +1,47 @@
+name: Cito Handoff Source Export
+on:
+  push:
+    branches: [cito-m26-selective-efficiency]
+    paths:
+      - '.github/workflows/cito-handoff-export.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  export:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Export exact Git branch snapshots and SHA manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p export
+          branches=(
+            cito-m26-selective-efficiency
+            cito-m26-multipublisher
+            cito-m26-dds-100-tuning
+            cito-multitopic-dds-benchmark
+            cito-discovery-retry
+            cito-discovery-scale
+          )
+          for branch in "${branches[@]}"; do
+            git fetch --no-tags origin "refs/heads/$branch:refs/remotes/origin/$branch"
+            sha="$(git rev-parse "refs/remotes/origin/$branch")"
+            printf '%s %s\n' "$branch" "$sha" | tee -a export/BRANCH_COMMIT_MANIFEST.txt
+            git archive --format=zip --output="export/$branch.zip" "refs/remotes/origin/$branch"
+            unzip -t "export/$branch.zip" | tail -1
+          done
+          printf 'ZIP files exported exactly from Git refs.\n' > export/SOURCE_NOTE.txt
+          sha256sum export/*.zip > export/ARCHIVE_SHA256.txt
+          cat export/ARCHIVE_SHA256.txt
+      - name: Upload exact source archives
+        uses: actions/upload-artifact@v4
+        with:
+          name: cito-handoff-all-branches
+          path: export/
+          if-no-files-found: error
+          retention-days: 14
