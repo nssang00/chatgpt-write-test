@@ -19,6 +19,24 @@ jobs:
       R35_ZIP_PATH: 'C:\M5_R35\M5_R35_RTX_READY_SELF_CONTAINED_2026-10-22.zip'
     steps:
       - uses: actions/checkout@v4
+      - name: Setup pinned Node.js 22 (avoid runner system version)
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify Windows RTX 5060 Ti hardware identity
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          New-Item -ItemType Directory -Force -Path r45-evidence | Out-Null
+          if($env:OS -ne 'Windows_NT'){throw 'Windows self-hosted runner required'}
+          $gpu=@(Get-CimInstance Win32_VideoController | Select-Object Name,DriverVersion)
+          $gpu | ConvertTo-Json -Depth 6 | Set-Content -Encoding utf8 r45-evidence/gpu_wmi.json
+          if(-not ($gpu | Where-Object {$_.Name -match 'NVIDIA.*RTX 5060 Ti'})){throw 'Physical RTX 5060 Ti missing'}
+          & nvidia-smi --query-gpu=name,driver_version,memory.total --format=csv,noheader | Tee-Object -FilePath r45-evidence/nvidia_smi.txt
+          if($LASTEXITCODE -ne 0){throw 'NVIDIA driver query failed'}
+          $sm=(Get-Content r45-evidence/nvidia_smi.txt -Raw)
+          if($sm -notmatch 'RTX 5060 Ti'){throw 'NVIDIA-SMI does not confirm RTX 5060 Ti'}
+          if($env:M5_SWIFTSHADER -eq '1'){throw 'Software rasterizer not permitted'}
       - name: Check original R35 source and Node 22
         shell: powershell
         run: |
