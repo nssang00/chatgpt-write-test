@@ -19,8 +19,8 @@ replace("if(!reps.every(x=>x.ready>=4&&x.total>=4))return;",
  "if(!reps.every(x=>x.ready>=1&&x.total>=1))return;");
 replace("tileUrlFunction:([,x,y])=>x>=0&&x<=1&&y>=0&&y<=1?",
  "tileUrlFunction:([,x,y])=>x===part.slotX&&y===part.slotY?");
-replace("3492+x","x");
-replace("1586+y","y");
+replace("3492+x","part.x");
+replace("1586+y","part.y");
 replace("center:[4096,4096],resolution:16,constrainResolution:true",
  "center:[16384,8192],resolution:64,constrainResolution:true");
 s=s.replaceAll("parts.length*4","parts.length");
