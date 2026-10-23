@@ -27,6 +27,7 @@ jobs:
           python3 experiments/ui-studio-v0.13/ci-patches/fix-v013-tests.py experiments/ui-studio-v0.13/app
           python3 experiments/ui-studio-v0.13/ci-patches/fix-v013-events.py experiments/ui-studio-v0.13/app
           python3 experiments/ui-studio-v0.13/ci-patches/fix-v013-public-props.py experiments/ui-studio-v0.13/app
+          python3 experiments/ui-studio-v0.13/ci-patches/fix-v013-packed.py experiments/ui-studio-v0.13/app
       - name: Install project dependencies
         working-directory: experiments/ui-studio-v0.13/app
         run: npm install --no-audit --no-fund
@@ -48,7 +49,7 @@ jobs:
           npm run export:v013
           mkdir -p tests/component-v013
           unzip -q examples/CustomerBrowser-react-component-v0.13.zip -d tests/component-v013
-          (cd tests/component-v013 && npm install --no-audit --no-fund && npm run build && test -s dist/index.js)
+          (cd tests/component-v013 && npm install --no-audit --no-fund && npm run build && test -s dist/index.js && npm pack --pack-destination ../consumer-v013)
       - name: Install and build consumer app separately
         working-directory: experiments/ui-studio-v0.13/app
         run: |
