@@ -40,7 +40,7 @@ $diskpartDetach = Join-Path $testDir 'detach.txt'
     "format fs=$FileSystem quick label=$label"
     "assign letter=$letter"
 ) | Set-Content -LiteralPath $diskpartCreate -Encoding ascii
-@('select vdisk file="' + $vhd + '"','detach vdisk') | Set-Content -LiteralPath $diskpartDetach -Encoding ascii
+@("select vdisk file=`"$vhd`"", 'detach vdisk') | Set-Content -LiteralPath $diskpartDetach -Encoding ascii
 $e = [ordered]@{
     schema=1; case='windows-live-fat-deleted-file-sha256'; filesystem=$FileSystem;
     result='not-run'; device=$devicePath; image_file_input=$false;
