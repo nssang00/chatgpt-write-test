@@ -56,6 +56,9 @@ jobs:
           $dest=Join-Path $env:GITHUB_WORKSPACE 'r45-source'
           New-Item -ItemType Directory -Force -Path $dest | Out-Null
           Expand-Archive -LiteralPath $env:R35_ZIP_PATH -DestinationPath $dest -Force
+          # git apply anchors paths at the worktree root; isolate the extracted R35.
+          & git -C $dest init -q
+          if($LASTEXITCODE -ne 0){throw 'Failed to isolate R35 git patch root'}
           node .\m5-gpu\r45\apply_r45.mjs $dest
           if($LASTEXITCODE -ne 0){throw 'R45 patch application failed'}
       - name: Verify CPU-versus-Worker parity and handover races
