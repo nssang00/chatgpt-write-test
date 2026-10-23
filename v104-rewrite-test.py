@@ -93,3 +93,18 @@ assert s.count(needle2)==1
 s=s.replace(needle2,insert2)
 p.write_text(s, encoding="utf-8")
 print("NTFS raw run diagnostic added")
+
+# Ensure nonresident fixture reached persistent VHD-backed sectors before
+# deletion; ordinary WriteAllBytes + cached Get-FileHash is not a disk flush.
+s=p.read_text(encoding="utf-8")
+needle="""    [IO.File]::WriteAllBytes($largeFile, $largePayload)"""
+replacement="""    [IO.File]::WriteAllBytes($largeFile, $largePayload)
+    $flushFile = [IO.File]::Open($largeFile, [IO.FileMode]::Open,
+        [IO.FileAccess]::ReadWrite, [IO.FileShare]::Read)
+    try { $flushFile.Flush($true) }
+    finally { $flushFile.Dispose() }
+    $evidence.nonresident_payload_flush_to_disk_called = $true"""
+assert s.count(needle)==1
+s=s.replace(needle,replacement)
+p.write_text(s,encoding="utf-8")
+print("Fixture FileStream.Flush(true) added before deletion")
