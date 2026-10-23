@@ -61,14 +61,21 @@ jobs:
             $null = [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $p).Path, [ref]$tokens, [ref]$errors)
             if ($errors.Count -gt 0) { $errors | ForEach-Object { Write-Error $_.Message }; exit 1 }
           }
-      - name: Mount disposable NTFS VHD, delete files, raw-volume scan, extract, SHA256
+      - name: NTFS VHD live recovery matrix - 58KB, 1MiB, 100MiB
         shell: pwsh
         working-directory: rw-v103
-        run: ./scripts/windows-live-ntfs-vhd-test.ps1 -Engine 'build-ci/Release/ntfsrecover.exe'
-      - name: Assert search, extraction, source protection, VHD detach
+        run: |
+          foreach ($case in @(@{name='58k';bytes=58368}, @{name='1m';bytes=1048576}, @{name='100m';bytes=104857600})) {
+            Write-Host "Testing nonresident raw-volume recovery: $($case.name)"
+            ./scripts/windows-live-ntfs-vhd-test.ps1 -Engine 'build-ci/Release/ntfsrecover.exe' -LargePayloadBytes $case.bytes -EvidenceDirectory "build-logs/$($case.name)"
+          }
+      - name: Assert all sizes SHA256, source protection and VHD detach
         shell: pwsh
         working-directory: rw-v103
-        run: ./scripts/assert-windows-live-evidence.ps1
+        run: |
+          foreach ($name in @('58k','1m','100m')) {
+            ./scripts/assert-windows-live-evidence.ps1 -Evidence "build-logs/$name/windows-live-ntfs-vhd-evidence.json"
+          }
       - name: Upload live NTFS validation evidence
         if: always()
         uses: actions/upload-artifact@v4
