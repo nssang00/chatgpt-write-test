@@ -27,7 +27,8 @@ execFileSync('git',['-c','core.autocrlf=false','apply','--ignore-whitespace',pat
 for(const [from,to] of [
  ['app/DeferredDirectTileHandover.js','our-renderer/integration/workers/DeferredDirectTileHandover.js'],
  ['app/EncodedTileExactGate.js','our-renderer/integration/workers/EncodedTileExactGate.js'],
- ['tests/verify_r45_handover.mjs','tests/verify_r45_handover.mjs']]){
+ ['tests/verify_r45_handover.mjs','tests/verify_r45_handover.mjs'],
+ ['tests/verify_r45_duplicate_cpu_equivalence.mjs','tests/verify_r45_duplicate_cpu_equivalence.mjs']]){
  await mkdir(dirname(join(root,to)),{recursive:true});await copyFile(join(here,from),join(root,to));
 }
 console.log('R45 source applied; use: node tests/verify_r45_handover.mjs');
