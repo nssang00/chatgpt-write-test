@@ -1,0 +1,55 @@
+name: M5 R45 Handoff Export
+on:
+  push:
+    branches: [m5/r34-shared-decode-workerpool-20261022]
+    paths: [.github/workflows/m5-r45-handoff-export.yml]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  export:
+    runs-on: self-hosted
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Export precise tested M5 experiment sources and workflows
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $base=Join-Path $env:GITHUB_WORKSPACE 'HANDOFF_R35_R44'
+          New-Item -ItemType Directory -Force -Path $base | Out-Null
+          foreach($round in 36..44) {
+            $from=Join-Path $env:GITHUB_WORKSPACE ("m5-gpu\r"+$round)
+            if(-not(Test-Path $from)) { throw "Missing experiment code $from" }
+            $dest=Join-Path $base ("source\m5-gpu\r"+$round)
+            New-Item -ItemType Directory -Force -Path $dest | Out-Null
+            Copy-Item (Join-Path $from '*') $dest -Recurse -Force
+          }
+          $report='m5-gpu\R43_RTX_EVIDENCE_AND_RELEASE_GATE_KO.md'
+          $reportDest=Join-Path $base 'source\m5-gpu'
+          New-Item -ItemType Directory -Force -Path $reportDest | Out-Null
+          Copy-Item (Join-Path $env:GITHUB_WORKSPACE $report) $reportDest
+          $wfDest=Join-Path $base 'source\.github\workflows'
+          New-Item -ItemType Directory -Force -Path $wfDest | Out-Null
+          Get-ChildItem (Join-Path $env:GITHUB_WORKSPACE '.github\workflows') -Filter '*.yml' |
+            Where-Object { $_.Name -match '^(m5-|self-hosted)' } |
+            ForEach-Object { Copy-Item $_.FullName $wfDest }
+          $rev=(git rev-parse HEAD).Trim()
+          "repo=nssang00/chatgpt-write-test" | Set-Content (Join-Path $base 'CHECKOUT.txt')
+          "branch=m5/r34-shared-decode-workerpool-20261022" | Add-Content (Join-Path $base 'CHECKOUT.txt')
+          "commit=$rev" | Add-Content (Join-Path $base 'CHECKOUT.txt')
+          Get-ChildItem -LiteralPath (Join-Path $base 'source') -File -Recurse |
+            Sort-Object FullName | ForEach-Object {
+              $relative=$_.FullName.Substring($base.Length+1)
+              $hash=(Get-FileHash -Algorithm SHA256 -LiteralPath $_.FullName).Hash.ToLowerInvariant()
+              "$hash *$relative"
+            } | Set-Content -Encoding ascii (Join-Path $base 'SOURCE_SHA256.txt')
+          $filecount=(Get-ChildItem (Join-Path $base 'source') -File -Recurse | Measure-Object).Count
+          Write-Output "M5_HANDOFF_EXPORT_READY commit=$rev files=$filecount"
+      - name: Upload M5 source report and workflows
+        uses: actions/upload-artifact@v4
+        with:
+          name: m5-r45-handoff-source-${{ github.run_id }}
+          path: HANDOFF_R35_R44/**
+          retention-days: 30
+          if-no-files-found: error
