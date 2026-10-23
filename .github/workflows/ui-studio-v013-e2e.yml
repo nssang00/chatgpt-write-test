@@ -29,6 +29,7 @@ jobs:
           python3 experiments/ui-studio-v0.13/ci-patches/fix-v013-public-props.py experiments/ui-studio-v0.13/app
           python3 experiments/ui-studio-v0.13/ci-patches/fix-v013-packed.py experiments/ui-studio-v0.13/app
           python3 experiments/ui-studio-v0.13/ci-patches/fix-v013-blank.py experiments/ui-studio-v0.13/app
+          python3 experiments/ui-studio-v0.13/ci-patches/fix-v013-preview-selector.py experiments/ui-studio-v0.13/app
       - name: Install project dependencies
         working-directory: experiments/ui-studio-v0.13/app
         run: npm install --no-audit --no-fund
