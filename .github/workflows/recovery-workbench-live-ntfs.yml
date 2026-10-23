@@ -1,8 +1,8 @@
-name: Recovery Workbench v10.4 - strict nonresident NTFS recovery
+name: Recovery Workbench v10.5 - Windows NTFS FAT32 exFAT real volume recovery
 on:
   push:
     branches:
-      - ci/recovery-workbench-v10-4-nonresident
+      - ci/recovery-workbench-v10-5-fat-exfat
   workflow_dispatch:
 permissions:
   contents: read
@@ -76,6 +76,18 @@ jobs:
           foreach ($name in @('58k','1m','100m')) {
             ./scripts/assert-windows-live-evidence.ps1 -Evidence "build-logs/$name/windows-live-ntfs-vhd-evidence.json"
           }
+      - name: Parse FAT32/exFAT VHD test script
+        shell: pwsh
+        run: |
+          $tokens = $null; $errors = $null
+          $null = [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path ./windows-live-fat-exfat-vhd-test.ps1).Path,[ref]$tokens,[ref]$errors)
+          if ($errors.Count -gt 0) { $errors | ForEach-Object { Write-Error $_.Message }; exit 1 }
+      - name: FAT32 disposable VHD live deletion, scan, preview and SHA256 extraction
+        shell: pwsh
+        run: ./windows-live-fat-exfat-vhd-test.ps1 -Engine 'rw-v103/build-ci/Release/ntfsrecover.exe' -FileSystem FAT32 -EvidenceDirectory 'rw-v103/build-logs/fat32-live'
+      - name: exFAT disposable VHD live deletion, scan, preview and SHA256 extraction
+        shell: pwsh
+        run: ./windows-live-fat-exfat-vhd-test.ps1 -Engine 'rw-v103/build-ci/Release/ntfsrecover.exe' -FileSystem exFAT -EvidenceDirectory 'rw-v103/build-logs/exfat-live'
       - name: Upload live NTFS validation evidence
         if: always()
         uses: actions/upload-artifact@v4
