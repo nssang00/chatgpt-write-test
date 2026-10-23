@@ -1,0 +1,32 @@
+name: M5 R46 Distinct Real MVT Source Probe
+on:
+  push:
+    branches: [m5/r46-distinct-mvt-32-20261023]
+    paths:
+      - 'm5-gpu/r46/probe.mjs'
+      - '.github/workflows/m5-r46-source-probe.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: self-hosted
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Confirm real RTX 5060 Ti and probe independently sourced MVT bytes
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          if(-not (Get-CimInstance Win32_VideoController | Where-Object {$_.Name -match 'NVIDIA.*RTX 5060 Ti'})){throw 'Wrong runner GPU'}
+          node m5-gpu/r46/probe.mjs R46-PROBE
+          if($LASTEXITCODE -ne 0){throw 'Source probe failed'}
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: r46-source-probe-${{ github.run_id }}
+          path: R46-PROBE/**
+          retention-days: 30
