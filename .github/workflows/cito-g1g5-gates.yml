@@ -1,0 +1,76 @@
+name: Cito G1-G5 evidence gates
+
+on:
+  push:
+    branches:
+      - cito-g1g5-actions-20261024
+  pull_request:
+    branches:
+      - cito-dev
+    paths:
+      - 'cito/**'
+      - '.github/workflows/cito-g1g5-gates.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  native-regression:
+    name: G2-G4 native regression
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install test prerequisites
+        run: sudo apt-get update && sudo apt-get install -y ninja-build cmake python3
+      - name: Configure
+        run: cmake -S cito -B build-gates -G Ninja -DCMAKE_BUILD_TYPE=Debug -DBUILD_TESTING=ON
+      - name: Build entire Cito test suite
+        run: cmake --build build-gates --parallel 3
+      - name: Run entire CTest suite and preserve result
+        shell: bash
+        run: |
+          mkdir -p evidence
+          set -o pipefail
+          ctest --test-dir build-gates --output-on-failure --parallel 3 --output-junit "$GITHUB_WORKSPACE/evidence/ctest.xml" 2>&1 | tee evidence/ctest.log
+      - name: Upload test evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cito-full-ctest
+          path: evidence/
+          if-no-files-found: warn
+
+  sanitizer-reentrancy:
+    name: G2 reentrancy ASan and UBSan
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure Sanitizers
+        run: |
+          cmake -S cito -B build-san -G Ninja \
+            -DCMAKE_BUILD_TYPE=Debug -DBUILD_TESTING=ON \
+            '-DCMAKE_CXX_FLAGS=-fsanitize=address,undefined -fno-omit-frame-pointer' \
+            '-DCMAKE_C_FLAGS=-fsanitize=address,undefined -fno-omit-frame-pointer' \
+            '-DCMAKE_SHARED_LINKER_FLAGS=-fsanitize=address,undefined' \
+            '-DCMAKE_EXE_LINKER_FLAGS=-fsanitize=address,undefined'
+      - name: Build targeted regression
+        run: cmake --build build-san --target cito_reentrant_subscription_growth_tests --parallel 2
+      - name: Run real sanitizer binary
+        shell: bash
+        env:
+          ASAN_OPTIONS: detect_leaks=1:halt_on_error=1
+          UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
+        run: |
+          mkdir -p evidence
+          set -o pipefail
+          ctest --test-dir build-san -R '^cito_reentrant_subscription_growth_tests$' --output-on-failure --output-junit "$GITHUB_WORKSPACE/evidence/sanitizer.xml" 2>&1 | tee evidence/sanitizer.log
+      - name: Upload sanitizer evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cito-sanitizer
+          path: evidence/
+          if-no-files-found: warn
