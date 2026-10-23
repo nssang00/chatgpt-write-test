@@ -8,44 +8,31 @@ permissions:
   contents: read
 jobs:
   export:
-    runs-on: self-hosted
-    timeout-minutes: 30
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - name: Export precise tested M5 experiment sources and workflows
-        shell: powershell
+        shell: bash
         run: |
-          $ErrorActionPreference='Stop'
-          $base=Join-Path $env:GITHUB_WORKSPACE 'HANDOFF_R35_R44'
-          New-Item -ItemType Directory -Force -Path $base | Out-Null
-          foreach($round in 36..44) {
-            $from=Join-Path $env:GITHUB_WORKSPACE ("m5-gpu\r"+$round)
-            if(-not(Test-Path $from)) { throw "Missing experiment code $from" }
-            $dest=Join-Path $base ("source\m5-gpu\r"+$round)
-            New-Item -ItemType Directory -Force -Path $dest | Out-Null
-            Copy-Item (Join-Path $from '*') $dest -Recurse -Force
-          }
-          $report='m5-gpu\R43_RTX_EVIDENCE_AND_RELEASE_GATE_KO.md'
-          $reportDest=Join-Path $base 'source\m5-gpu'
-          New-Item -ItemType Directory -Force -Path $reportDest | Out-Null
-          Copy-Item (Join-Path $env:GITHUB_WORKSPACE $report) $reportDest
-          $wfDest=Join-Path $base 'source\.github\workflows'
-          New-Item -ItemType Directory -Force -Path $wfDest | Out-Null
-          Get-ChildItem (Join-Path $env:GITHUB_WORKSPACE '.github\workflows') -Filter '*.yml' |
-            Where-Object { $_.Name -match '^(m5-|self-hosted)' } |
-            ForEach-Object { Copy-Item $_.FullName $wfDest }
-          $rev=(git rev-parse HEAD).Trim()
-          "repo=nssang00/chatgpt-write-test" | Set-Content (Join-Path $base 'CHECKOUT.txt')
-          "branch=m5/r34-shared-decode-workerpool-20261022" | Add-Content (Join-Path $base 'CHECKOUT.txt')
-          "commit=$rev" | Add-Content (Join-Path $base 'CHECKOUT.txt')
-          Get-ChildItem -LiteralPath (Join-Path $base 'source') -File -Recurse |
-            Sort-Object FullName | ForEach-Object {
-              $relative=$_.FullName.Substring($base.Length+1)
-              $hash=(Get-FileHash -Algorithm SHA256 -LiteralPath $_.FullName).Hash.ToLowerInvariant()
-              "$hash *$relative"
-            } | Set-Content -Encoding ascii (Join-Path $base 'SOURCE_SHA256.txt')
-          $filecount=(Get-ChildItem (Join-Path $base 'source') -File -Recurse | Measure-Object).Count
-          Write-Output "M5_HANDOFF_EXPORT_READY commit=$rev files=$filecount"
+          set -euo pipefail
+          base=HANDOFF_R35_R44
+          mkdir -p "$base/source/m5-gpu" "$base/source/.github/workflows"
+          for r in {36..44}; do
+            test -d "m5-gpu/r$r"
+            cp -a "m5-gpu/r$r" "$base/source/m5-gpu/"
+          done
+          cp m5-gpu/R43_RTX_EVIDENCE_AND_RELEASE_GATE_KO.md "$base/source/m5-gpu/"
+          find .github/workflows -maxdepth 1 -type f -name '*.yml' |
+            grep -E '/(m5-|self-hosted)' |
+            while read -r f; do cp "$f" "$base/source/.github/workflows/"; done
+          {
+            echo 'repo=nssang00/chatgpt-write-test'
+            echo 'branch=m5/r34-shared-decode-workerpool-20261022'
+            echo "commit=$(git rev-parse HEAD)"
+          } > "$base/CHECKOUT.txt"
+          (cd "$base"; find source -type f -print0 | sort -z | xargs -0 sha256sum) > "$base/SOURCE_SHA256.txt"
+          echo "M5_HANDOFF_EXPORT_READY commit=$(git rev-parse HEAD) files=$(find "$base/source" -type f | wc -l)"
       - name: Upload M5 source report and workflows
         uses: actions/upload-artifact@v4
         with:
