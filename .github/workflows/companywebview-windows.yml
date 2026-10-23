@@ -33,6 +33,16 @@ jobs:
       - name: Compile and execute MSVC C++17 smoke
         shell: pwsh
         run: ./companywebview/ci/Test-WindowsToolchain.ps1
+      - name: Compile real WebView2 SDK message source and frame COM interfaces
+        shell: pwsh
+        run: ./companywebview/ci/Test-WebView2SdkToolchain.ps1
+      - name: Publish WebView2 SDK compile proof
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cwv-hosted-webview2-sdk-proof
+          if-no-files-found: warn
+          path: ${{ runner.temp }}/cwv-webview2-headers-smoke/evidence.json
       - name: Publish non-sensitive runner evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -79,6 +89,11 @@ jobs:
             python Validation/test_bridge_v6_multihandle.py
             if ($LASTEXITCODE -ne 0) { throw 'CEF multi-handle contract failed' }
           } finally { Pop-Location }
+      - name: Compile real C++17 per-view security registry and run CTest (verified private kit)
+        shell: pwsh
+        run: |
+          & "$env:CWV_KIT_ROOT/CI/Run-V7HostedCompileGates.ps1" -OutputJson "$env:RUNNER_TEMP/cwv-v7-hosted-compile.json"
+          if ($LASTEXITCODE -and $LASTEXITCODE -ne 0) { throw 'Private kit v7 C# / C++ compile failed' }
       - name: Retrieve checksum-pinned CEF Windows SDK
         shell: pwsh
         env:
