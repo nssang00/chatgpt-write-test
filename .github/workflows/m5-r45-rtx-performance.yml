@@ -1,0 +1,73 @@
+name: M5 R45 RTX Actual Application Performance ABBA
+on:
+  push:
+    branches: [m5/r45-app-handover-20261023]
+    paths:
+      - '.github/workflows/m5-r45-rtx-performance.yml'
+      - 'm5-gpu/r45/run_r45_perf_gate.mjs'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: m5-r45-performance-abba
+  cancel-in-progress: false
+jobs:
+  benchmark:
+    name: Real R45 CPU-first frame vs stock OL 10.10.0 on RTX 5060 Ti
+    runs-on: self-hosted
+    timeout-minutes: 60
+    env:
+      R35_ZIP_PATH: 'C:\M5_R35\M5_R35_RTX_READY_SELF_CONTAINED_2026-10-22.zip'
+      M5_SWIFTSHADER: '0'
+      M5_GPU_COMPARE_TIMEOUT_MS: '240000'
+      R45_PERF_ROUNDS: '5'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Require real NVIDIA RTX 5060 Ti and pinned source
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          New-Item -ItemType Directory -Force r45-perf-preflight | Out-Null
+          if($env:OS -ne 'Windows_NT'){throw 'Require Windows self hosted'}
+          $g=@(Get-CimInstance Win32_VideoController | Select-Object Name,DriverVersion)
+          $g | ConvertTo-Json -Depth 4 | Set-Content -Encoding utf8 r45-perf-preflight\gpu.json
+          if(-not ($g | Where-Object {$_.Name -match 'NVIDIA.*RTX 5060 Ti'})){throw 'RTX 5060 Ti missing'}
+          & nvidia-smi --query-gpu=name,driver_version,memory.total --format=csv,noheader | Tee-Object -FilePath r45-perf-preflight\nvidia.txt
+          if($LASTEXITCODE -ne 0){throw 'NVIDIA driver query failed'}
+          $srcHash=(Get-FileHash -Algorithm SHA256 -LiteralPath $env:R35_ZIP_PATH).Hash.ToLowerInvariant()
+          if($srcHash -ne '3e5d3cb5d525b818a3b560731dac0ae17ce734ab5a96057c67c546c4b7cb2776'){throw 'R35 ZIP hash mismatch'}
+          $srcHash | Set-Content -Encoding ascii r45-perf-preflight\sha256.txt
+      - name: Reconstruct exact R35 and apply R45 app instrument
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $dest=Join-Path $env:GITHUB_WORKSPACE 'r45-source'
+          New-Item -ItemType Directory -Force $dest | Out-Null
+          Expand-Archive -LiteralPath $env:R35_ZIP_PATH -DestinationPath $dest -Force
+          & git -C $dest init -q
+          if($LASTEXITCODE -ne 0){throw 'git patch root init failed'}
+          & node .\m5-gpu\r45\apply_r45.mjs $dest
+          if($LASTEXITCODE -ne 0){throw 'R45 patch failed'}
+          & node .\m5-gpu\r45\instrument_gpu.mjs $dest
+          if($LASTEXITCODE -ne 0){throw 'R45 GPU instrument failed'}
+      - name: Paired OL - R45 - R45 - OL 50-percent first-frame gate
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $dest=Join-Path $env:GITHUB_WORKSPACE 'r45-source'
+          $result=Join-Path $dest 'RESULTS\R45_PERF'
+          & node .\m5-gpu\r45\run_r45_perf_gate.mjs $dest $result
+          if($LASTEXITCODE -ne 0){throw 'R45 physical RTX performance gate NO-GO; examine evidence'}
+      - name: Preserve all raw benchmark evidence even on failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: m5-r45-actual-perf-${{ github.run_id }}
+          path: |
+            r45-perf-preflight/**
+            r45-source/RESULTS/R45_PERF/**
+          retention-days: 30
+          if-no-files-found: warn
