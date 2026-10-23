@@ -27,8 +27,10 @@ jobs:
       - name: Verify ROS 2, colcon and Cito RMW presence
         shell: bash
         run: |
-          set -euo pipefail
+          set -eo pipefail
+          # ROS 2 setup.bash references unset environment variables.
           source /opt/ros/jazzy/setup.bash
+          set -u
           test "$ROS_DISTRO" = jazzy
           command -v ros2
           command -v colcon
