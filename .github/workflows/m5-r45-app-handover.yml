@@ -69,6 +69,7 @@ jobs:
           $tests=@(
             'tests/verify_r45_handover.mjs',
             'tests/verify_r45_duplicate_cpu_equivalence.mjs',
+            'tests/verify_r45_duplicate_cpu_equivalence.mjs',
             'tests/verify_r34_shared_worker_pool.mjs',
             'tests/verify_r33_worker_pool.mjs',
             'tests/verify_ol_disable_worker_m4_bridge.mjs',
