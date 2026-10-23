@@ -48,13 +48,13 @@ query="""try {
     Invoke-DiskPartScript $diskpartCreate"""
 replacement="""$trimOriginal = $null
 try {
-    $trimText = (& "$env:SystemRoot\System32\fsutil.exe" behavior query DisableDeleteNotify 2>&1) -join [Environment]::NewLine
+    $trimText = (& fsutil.exe behavior query DisableDeleteNotify 2>&1) -join [Environment]::NewLine
     if ($LASTEXITCODE -ne 0 -or $trimText -notmatch '(?im)NTFS\s+DisableDeleteNotify\s*=\s*([01])') {
         throw "Cannot inspect NTFS DeleteNotify value: $trimText"
     }
     $trimOriginal = [int]$Matches[1]
     $evidence.ntfs_delete_notify_original = $trimOriginal
-    & "$env:SystemRoot\System32\fsutil.exe" behavior set DisableDeleteNotify NTFS 1 | Out-Null
+    & fsutil.exe behavior set DisableDeleteNotify NTFS 1 | Out-Null
     if ($LASTEXITCODE -ne 0) { throw 'Unable to disable NTFS DeleteNotify on disposable runner' }
     $evidence.ntfs_delete_notify_disabled_for_test = $true
     Invoke-DiskPartScript $diskpartCreate"""
@@ -66,7 +66,7 @@ query2="""} finally {
 replacement2="""} finally {
     Save-Evidence
     if ($null -ne $trimOriginal) {
-        & "$env:SystemRoot\System32\fsutil.exe" behavior set DisableDeleteNotify NTFS $trimOriginal | Out-Null
+        & fsutil.exe behavior set DisableDeleteNotify NTFS $trimOriginal | Out-Null
         $evidence.ntfs_delete_notify_restored = ($LASTEXITCODE -eq 0)
         Save-Evidence
         if (-not $evidence.ntfs_delete_notify_restored) { Write-Error 'Unable to restore original NTFS DeleteNotify setting.' }
