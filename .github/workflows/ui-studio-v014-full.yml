@@ -39,7 +39,7 @@ jobs:
           echo '508c9b2f94e43a24c03d2944a3ffdc2b0721b89c9d07427a52aa459cf9fe4d32  package.json' | sha256sum -c -
           echo 'aed08c4a9dc9ec7b73f4cf8cbef6da96905cc2b5129f443196c2841c7bc23348  packages/core/visual.js' | sha256sum -c -
           echo 'c246ea532550d76594d378810dfac734492a3126cc607054d0f2a871dd5f80e9  tests/visual-v014.test.js' | sha256sum -c -
-          echo 'dc6b3cde4165607577c880eca8422c6e3135efc9ff50929de1ebd8630146f836  e2e/visual-authoring-v014.spec.js' | sha256sum -c -
+          echo '6a5f1e0e98cbb2589fe50fe150cf0a30635af23998f711c3afba4772bf813140  e2e/visual-authoring-v014.spec.js' | sha256sum -c -
           test -f tests/consumer-v013/package.json
           node --version
           npm --version
