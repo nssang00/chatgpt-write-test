@@ -216,6 +216,10 @@ public:
         wait_hook_ = {};
     }
 
+    void discover_request_handler(const RequestKey& key) {
+        if (wait_hook_) wait_hook_(key);
+    }
+
     bool waiting_enabled()
         const noexcept {
         return

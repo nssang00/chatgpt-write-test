@@ -120,6 +120,14 @@ _lib.cito_handler_destroy.argtypes = [
     ctypes.c_void_p,
 ]
 
+_lib.cito_context_discover_handler.argtypes = [
+    ctypes.c_void_p,
+    ctypes.c_uint64,
+    _CHARP,
+    ctypes.c_size_t,
+]
+_lib.cito_context_discover_handler.restype = ctypes.c_int
+
 _lib.cito_context_has_handler.argtypes = [
     ctypes.c_void_p,
     ctypes.c_uint64,
@@ -634,6 +642,12 @@ class Context:
                 len(raw),
                 ctypes.byref(result)))
 
+        if not result.value:
+            # Reading a remote handler is also a demand/route discovery
+            # intent; merely checking can_send would never connect.
+            _check(_lib.cito_context_discover_handler(
+                self._handle, int(type_id),
+                ctypes.cast(buffer, _CHARP), len(raw)))
         return bool(result.value)
 
     def _reply_raw(

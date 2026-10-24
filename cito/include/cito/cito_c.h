@@ -76,6 +76,9 @@ CITO_C_API cito_status_t cito_context_handle(
     cito_handler_t** out_handler);
 CITO_C_API void cito_handler_destroy(cito_handler_t* handler);
 
+CITO_C_API cito_status_t cito_context_discover_handler(
+    cito_context_t* context, uint64_t request_type_id,
+    const char* resource, size_t resource_size);
 CITO_C_API cito_status_t cito_context_has_handler(
     cito_context_t* context,
     uint64_t request_type_id,

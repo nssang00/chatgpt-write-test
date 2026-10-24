@@ -613,6 +613,20 @@ void cito_handler_destroy(
     delete handler;
 }
 
+cito_status_t cito_context_discover_handler(
+    cito_context_t* context, uint64_t request_type_id,
+    const char* resource, size_t resource_size) {
+    if (!context || !valid_bytes(resource, resource_size))
+        return CITO_STATUS_INVALID_ARGUMENT;
+    try {
+        const auto view = resource_size == 0 ? std::string_view{} :
+            std::string_view(resource, resource_size);
+        context->state->request_network().discover_request_handler(
+            context->state->request_key(request_type_id, view));
+        return CITO_STATUS_OK;
+    } catch (...) { return CITO_STATUS_INTERNAL_ERROR; }
+}
+
 cito_status_t cito_context_has_handler(
     cito_context_t* context,
     uint64_t request_type_id,
