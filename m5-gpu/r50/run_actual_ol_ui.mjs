@@ -34,7 +34,7 @@ try{
  let init=await snapshot();
  if(!init?.ready||init.errors?.length)throw Error('Map initialization failed '+JSON.stringify(init));
  trace.snapshots.afterReady=init;
- try{await page.waitForFunction(()=>{const s=window.__r50Snapshot?.();return s?.tiles>0&&s?.painted>0&&s?.frames>0},null,{timeout:45000});}
+ try{await page.waitForFunction(()=>{const s=window.__r50Snapshot?.();return s?.tiles>0&&s?.painted>0&&s?.frames>0},null,{timeout:10000});}
  catch(e){trace.snapshots.afterTimeout=await snapshot();throw e;}
  init=await snapshot();trace.snapshots.initial=init;
  if(!/NVIDIA.*RTX 5060 Ti/i.test(init.renderer||''))throw Error('Hardware renderer wrong '+init.renderer);
