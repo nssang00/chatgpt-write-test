@@ -1,0 +1,51 @@
+name: M5 R49 Worker Churn and Failure Recovery
+on:
+  push:
+    branches: [m5/r46-distinct-mvt-32-20261023]
+    paths:
+      - 'm5-gpu/r49/verify_worker_churn_restart.mjs'
+      - '.github/workflows/m5-r49-worker-fault-race.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: r49-worker-churn-fault
+  cancel-in-progress: true
+jobs:
+  verify:
+    runs-on: self-hosted
+    timeout-minutes: 30
+    env:
+      R35_ZIP_PATH: 'C:\M5_R35\M5_R35_RTX_READY_SELF_CONTAINED_2026-10-22.zip'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify exact R35 seed
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          if($env:OS -ne 'Windows_NT'){throw 'Windows required'}
+          $hash=(Get-FileHash -Algorithm SHA256 $env:R35_ZIP_PATH).Hash.ToLowerInvariant()
+          if($hash -ne '3e5d3cb5d525b818a3b560731dac0ae17ce734ab5a96057c67c546c4b7cb2776'){throw 'R35 seed hash mismatch'}
+      - name: Reconstruct tested R48 candidate and run deterministic Worker fault/race gates
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $dest=Join-Path $env:GITHUB_WORKSPACE 'R49-SOURCE'
+          New-Item -ItemType Directory -Force $dest | Out-Null
+          Expand-Archive -LiteralPath $env:R35_ZIP_PATH -DestinationPath $dest -Force
+          git -C $dest init -q
+          if($LASTEXITCODE -ne 0){throw 'git initialization failed'}
+          node m5-gpu/r45/apply_r45.mjs $dest
+          if($LASTEXITCODE -ne 0){throw 'R45 reconstruct failed'}
+          node m5-gpu/r48/apply_cpu_join_fallback.mjs $dest
+          if($LASTEXITCODE -ne 0){throw 'R48 fallback failed'}
+          New-Item -ItemType Directory -Force (Join-Path $dest 'm5-gpu\r49') | Out-Null
+          Copy-Item .\m5-gpu\r49\verify_worker_churn_restart.mjs (Join-Path $dest 'm5-gpu\r49\verify_worker_churn_restart.mjs')
+          node (Join-Path $dest 'tests\verify_r45_handover.mjs')
+          if($LASTEXITCODE -ne 0){throw 'R45 invariant regression failed'}
+          node (Join-Path $dest 'm5-gpu\r49\verify_worker_churn_restart.mjs')
+          if($LASTEXITCODE -ne 0){throw 'R49 in-flight Worker failure/race gate FAILED'}
+          Write-Host 'R49_WORKER_CHURN_FAULT_RESTART_PASS'

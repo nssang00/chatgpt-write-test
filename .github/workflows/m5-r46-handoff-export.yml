@@ -1,0 +1,36 @@
+name: M5 R46 Handoff Source Snapshot
+on:
+  push:
+    branches: [m5/r46-distinct-mvt-32-20261023]
+    paths:
+      - '.github/workflows/m5-r46-handoff-export.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  source_snapshot:
+    runs-on: self-hosted
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Export source inventory
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          New-Item -ItemType Directory -Force handoff-revision | Out-Null
+          git rev-parse HEAD | Set-Content -Encoding ascii handoff-revision/head_sha.txt
+          git status --porcelain=v1 | Set-Content -Encoding ascii handoff-revision/git_status.txt
+          git ls-files m5-gpu/r45 m5-gpu/r46 .github/workflows/m5-r45* .github/workflows/m5-r46* | Set-Content -Encoding utf8 handoff-revision/file_inventory.txt
+          if((Get-Content handoff-revision/head_sha.txt).Length -ne 40){throw 'Missing commit fingerprint'}
+      - name: Upload pinned R45 and R46 source with workflows
+        uses: actions/upload-artifact@v4
+        with:
+          name: m5-r46-handoff-source-${{ github.run_id }}
+          path: |
+            handoff-revision/**
+            m5-gpu/r45/**
+            m5-gpu/r46/**
+            .github/workflows/m5-r45*.yml
+            .github/workflows/m5-r46*.yml
+          retention-days: 30
+          if-no-files-found: error

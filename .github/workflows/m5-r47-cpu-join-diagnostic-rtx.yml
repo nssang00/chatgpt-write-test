@@ -1,0 +1,95 @@
+name: M5 R47 RTX CPU Join Pixel Diagnostic
+on:
+  push:
+    branches: [m5/r46-distinct-mvt-32-20261023]
+    paths:
+      - '.github/workflows/m5-r47-cpu-join-diagnostic-rtx.yml'
+      - 'm5-gpu/r47/patch_cpu_line_join.mjs'
+      - 'm5-gpu/r47/compare_ol_r45.mjs'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: r47-cpu-line-pixel-diagnostic
+  cancel-in-progress: true
+jobs:
+  abba:
+    name: Stock OL 10.10.0 vs R45 actual app with 8/16/32 unique MVT feeds
+    runs-on: self-hosted
+    timeout-minutes: 80
+    env:
+      R35_ZIP_PATH: 'C:\M5_R35\M5_R35_RTX_READY_SELF_CONTAINED_2026-10-22.zip'
+      M5_SWIFTSHADER: '0'
+      M5_GPU_COMPARE_TIMEOUT_MS: '240000'
+      R45_PERF_ROUNDS: '3'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Enforce pinned original and physical RTX
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          New-Item -ItemType Directory -Force R46-PERF-EVIDENCE | Out-Null
+          if($env:OS -ne 'Windows_NT'){throw 'Windows required'}
+          $g=@(Get-CimInstance Win32_VideoController | Select-Object Name,DriverVersion)
+          if(-not ($g | Where-Object {$_.Name -match 'NVIDIA.*RTX 5060 Ti'})){throw 'RTX 5060 Ti required'}
+          $g | ConvertTo-Json -Depth 4 | Set-Content -Encoding utf8 R46-PERF-EVIDENCE\gpu.json
+          nvidia-smi --query-gpu=name,driver_version,memory.total --format=csv,noheader | Tee-Object -FilePath R46-PERF-EVIDENCE\nvidia.txt
+          if($LASTEXITCODE -ne 0){throw 'nvidia-smi failed'}
+          $hash=(Get-FileHash -Algorithm SHA256 $env:R35_ZIP_PATH).Hash.ToLowerInvariant()
+          if($hash -ne '3e5d3cb5d525b818a3b560731dac0ae17ce734ab5a96057c67c546c4b7cb2776'){throw 'R35 SHA mismatch'}
+          $hash | Set-Content -Encoding ascii R46-PERF-EVIDENCE\r35.txt
+      - name: Reconstruct R45 and both actual M5/OL independent-data browsers
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $dest=Join-Path $env:GITHUB_WORKSPACE 'R47-ABBA-R35'
+          New-Item -ItemType Directory -Force $dest | Out-Null
+          Expand-Archive -LiteralPath $env:R35_ZIP_PATH -DestinationPath $dest -Force
+          git -C $dest init -q
+          if($LASTEXITCODE -ne 0){throw 'Git root failed'}
+          node m5-gpu/r45/apply_r45.mjs $dest
+          if($LASTEXITCODE -ne 0){throw 'R45 source patch failed'}
+          node m5-gpu/r45/instrument_gpu.mjs $dest
+          if($LASTEXITCODE -ne 0){throw 'R45 app WebGL instrument failed'}
+          node m5-gpu/r46/patch_browser_sources.mjs $dest
+          if($LASTEXITCODE -ne 0){throw 'R46 M5 browser patch failed'}
+          node m5-gpu/r46/patch_ol_sources.mjs $dest
+          if($LASTEXITCODE -ne 0){throw 'R46 stock OL browser patch failed'}
+          node m5-gpu/r47/patch_cpu_line_join.mjs $dest
+          if($LASTEXITCODE -ne 0){throw 'R47 CPU join controlled patch failed'}
+          New-Item -ItemType Directory -Force (Join-Path $dest 'm5-gpu\r46') | Out-Null
+          Copy-Item .\m5-gpu\r46\download_unique_tiles.mjs,.\m5-gpu\r46\run_distinct_abba.mjs (Join-Path $dest 'm5-gpu\r46\')
+          New-Item -ItemType Directory -Force (Join-Path $dest 'm5-gpu\r47') | Out-Null
+          Copy-Item .\m5-gpu\r47\compare_ol_r45.mjs (Join-Path $dest 'm5-gpu\r47\compare_ol_r45.mjs')
+      - name: Use 32 real independent MapLibre OpenMapTiles inputs
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $dest=Join-Path $env:GITHUB_WORKSPACE 'R47-ABBA-R35'
+          node (Join-Path $dest 'm5-gpu\r46\download_unique_tiles.mjs') (Join-Path $dest 'tests\fixtures\r46-data')
+          if($LASTEXITCODE -ne 0){throw '32 real independent MVT source validation failed'}
+      - name: Paired RTX stock OL R45 R45 stock OL acceptance at 8 16 32
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $dest=Join-Path $env:GITHUB_WORKSPACE 'R47-ABBA-R35'
+          $out=Join-Path $dest 'RESULTS\R46_DISTINCT_ABBA'
+          node (Join-Path $dest 'm5-gpu\r46\run_distinct_abba.mjs') $dest $out
+          if($LASTEXITCODE -ne 0){Write-Warning 'R47 diagnostic ABBA under performance threshold'}
+          node (Join-Path $dest 'm5-gpu\r47\compare_ol_r45.mjs') $out
+          if($LASTEXITCODE -ne 0){throw 'R47 strict OL-to-M5 PNG audit did not execute'}
+          Write-Host 'R47_DIAGNOSTIC_COMPLETED_COMPARE_ARTIFACT'
+      - name: Preserve real raw OL/R45 samples and failure traces
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: r47-cpu-join-diagnostic-${{ github.run_id }}
+          path: |
+            R46-PERF-EVIDENCE/**
+            R47-ABBA-R35/tests/fixtures/r46-data/manifest.json
+            R47-ABBA-R35/RESULTS/R46_DISTINCT_ABBA/**
+          retention-days: 30
+          if-no-files-found: warn
