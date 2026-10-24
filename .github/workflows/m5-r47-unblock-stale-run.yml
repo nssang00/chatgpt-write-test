@@ -20,6 +20,6 @@ jobs:
           status=$(gh api "repos/${GH_REPO}/actions/runs/40078886201" --jq '.status')
           echo "Stalled R47 run: $status"
           if [ "$status" = "in_progress" ]; then
-            gh api -X POST "repos/${GH_REPO}/actions/runs/40078886201/cancel"
-            echo 'R47 stale diagnostic cancellation requested'
+            gh api -X POST "repos/${GH_REPO}/actions/runs/40078886201/force-cancel"
+            echo 'R47 stale diagnostic force-cancellation requested'
           fi
