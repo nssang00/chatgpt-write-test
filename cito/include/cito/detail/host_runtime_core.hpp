@@ -4,6 +4,7 @@
 #include <cito/data_packet.hpp>
 #include <cito/demand_summary.hpp>
 #include <cito/interest.hpp>
+#include <cito/identity.hpp>
 #include <cito/remote_routes.hpp>
 
 #include <cstddef>
