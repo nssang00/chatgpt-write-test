@@ -351,7 +351,7 @@ if(BUILD_TESTING)
       add_executable(cito_quic_public_request_node
         tests/net/quic_public_request_node.cpp)
       target_include_directories(cito_quic_public_request_node PRIVATE ${MSQUIC_INCLUDE_DIR})
-      target_link_libraries(cito_quic_public_request_node PRIVATE cito cito_msquic cito_posix_runtime)
+      target_link_libraries(cito_quic_public_request_node PRIVATE cito cito_c cito_msquic cito_posix_runtime)
       target_compile_options(cito_quic_public_request_node PRIVATE -Wall -Wextra -Wpedantic)
     endif()
   endif()
