@@ -16,7 +16,9 @@
 #include <string_view>
 #include <typeindex>
 #include <unordered_map>
+#include <unordered_set>
 #include <utility>
+#include <deque>
 #include <vector>
 
 namespace cito {
@@ -97,7 +99,8 @@ private:
         std::function<void(const void*)> invoke;
     };
 
-    using Bucket = std::vector<Handler>;
+    // Keep executing callbacks stable when subscriptions are added reentrantly.
+    using Bucket = std::deque<Handler>;
     using ResourceMap = std::unordered_map<
         std::string, Bucket, TransparentStringHash, std::equal_to<>>;
 
@@ -143,6 +146,8 @@ private:
         }
 
         ~State() {
+            for (const auto& key : published_keys_)
+                runtime_->request_network().release_data_interest(key);
             runtime_->request_network()
                 .cancel_requests(
                     app_id_);
@@ -153,6 +158,11 @@ private:
                 .unregister_app(
                     app_id_);
 
+            for (const auto& [id, locator] : locators) {
+                (void)id;
+                if (locator.wire_enabled)
+                    runtime_->host().unregister_resource_name(locator.wire_key);
+            }
             if (registered_) {
                 runtime_->host()
                     .unregister_app(
@@ -208,10 +218,30 @@ private:
         }
 
         template <class T>
+        void advertise(std::string_view resource) {
+            if constexpr (StaticCodec<T>::direct) {
+                auto key = make_key(static_type_ref<T>().type_id(), resource);
+                auto& network = runtime_->request_network();
+                if (published_keys_.contains(key) || !network.data_interest_enabled())
+                    return;
+                if (published_keys_.size() >= 256)
+                    throw std::length_error("Cito: maximum published topics exceeded");
+                if (!network.ensure_data_interest(key)) return;
+                try {
+                    published_keys_.insert(key);
+                } catch (...) {
+                    network.release_data_interest(key);
+                    throw;
+                }
+            }
+        }
+
+        template <class T>
         std::size_t publish(std::string_view resource, const T& value) {
             auto delivered = publish_local(resource, value);
 
             if constexpr (StaticCodec<T>::direct) {
+                advertise<T>(resource);
                 const auto key = make_key(
                     static_type_ref<T>().type_id(), resource);
                 auto& host = runtime_->host();
@@ -227,9 +257,10 @@ private:
                     resource,
                     std::span<const std::uint8_t>(
                         payload.data(), payload.size()),
-                    [](DestinationId, std::span<const std::uint8_t>) {
-                        // Public Context transport attachment is a later step.
-                        return false;
+                    [this](DestinationId destination,
+                           std::span<const std::uint8_t> packet) {
+                        return runtime_->request_network().send_data(
+                            destination, packet);
                     });
 
                 delivered += result.delivered();
@@ -660,6 +691,10 @@ private:
                     throw std::logic_error(
                         "Cito host interest registration failed");
                 }
+                if (!runtime_->host().register_resource_name(key, locator.resource)) {
+                    runtime_->host().remove_interest(app_id_, key);
+                    throw std::logic_error("Cito resource hash collision");
+                }
             } catch (...) {
                 if (--route.count == 0) resources.erase(route_it);
                 if (resources.empty()) wire_routes.erase(type_id);
@@ -674,6 +709,7 @@ private:
         void disable_wire(Locator& locator) {
             if (!locator.wire_enabled) return;
 
+            runtime_->host().unregister_resource_name(locator.wire_key);
             runtime_->host().remove_interest(app_id_, locator.wire_key);
 
             auto type_it = wire_routes.find(locator.wire_type);
@@ -822,6 +858,7 @@ private:
         std::unordered_map<TypeId, WireResourceMap> wire_routes;
         std::unordered_map<std::size_t, Locator> locators;
         std::vector<std::size_t> pending_removals;
+        std::unordered_set<InterestKey, InterestKeyHash> published_keys_;
     };
 
 public:
@@ -949,6 +986,11 @@ public:
                 resource,
                 value,
                 options);
+    }
+
+    template <class T>
+    void advertise(std::string_view resource = {}) {
+        state_->template advertise<T>(resource);
     }
 
     template <class T>

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cito/detail/request_transport.hpp>
+#include <cito/data_packet.hpp>
 
 #include <algorithm>
 #include <chrono>
@@ -39,6 +40,9 @@ public:
     using LazyPayload =
         std::function<
             std::vector<std::uint8_t>()>;
+
+    using DataInterestHook =
+        std::function<void(const InterestKey&)>;
 
     using WaitHook =
         std::function<void(
@@ -84,6 +88,27 @@ public:
             pending_status);
 
         return removed;
+    }
+
+    // A connected QUIC session transports CTD1 alongside request frames.
+    // Invalid and oversized data must never reach the async sender.
+    bool send_data(DestinationId destination,
+                   std::span<const std::uint8_t> bytes) {
+        constexpr std::size_t limit = 8 * 1024 * 1024;
+        auto it = sessions_.find(destination);
+        if (it == sessions_.end() || bytes.size() > limit) return false;
+        try {
+            (void)cito::decode_data_packet_view(bytes);
+            return it->second(bytes);
+        } catch (...) { return false; }
+    }
+
+    // Only the transport owner's authenticated QUIC event loop may call this.
+    std::size_t receive_data(std::span<const std::uint8_t> bytes) {
+        constexpr std::size_t limit = 8 * 1024 * 1024;
+        if (bytes.size() > limit) return 0;
+        try { return host_.deliver_data_packet(bytes); }
+        catch (...) { return 0; }
     }
 
     bool has_session(
@@ -137,6 +162,50 @@ public:
                 .has_value();
     }
 
+    // One registration per publishing Context; shared topics keep a single
+    // discovery intent until the final publisher releases it.
+    void set_data_interest_hooks(
+        DataInterestHook ensure, DataInterestHook release) {
+        data_ensure_ = std::move(ensure);
+        data_release_ = std::move(release);
+    }
+
+    void clear_data_interest_hooks() noexcept {
+        data_ensure_ = {};
+        data_release_ = {};
+        data_intents_.clear();
+    }
+
+    bool data_interest_enabled() const noexcept {
+        return static_cast<bool>(data_ensure_);
+    }
+
+    bool ensure_data_interest(const InterestKey& key) {
+        if (!data_ensure_) return false;
+        auto [it, added] = data_intents_.try_emplace(key, 0);
+        if (added) {
+            try {
+                data_ensure_(key);
+            } catch (...) {
+                data_intents_.erase(it);
+                throw;
+            }
+        }
+        ++it->second;
+        return true;
+    }
+
+    void release_data_interest(const InterestKey& key) noexcept {
+        const auto it = data_intents_.find(key);
+        if (it == data_intents_.end()) return;
+        if (--it->second == 0) {
+            if (data_release_) {
+                try { data_release_(key); } catch (...) {}
+            }
+            data_intents_.erase(it);
+        }
+    }
+
     void set_wait_hook(
         WaitHook hook) {
         wait_hook_ =
@@ -145,6 +214,10 @@ public:
 
     void clear_wait_hook() {
         wait_hook_ = {};
+    }
+
+    void discover_request_handler(const RequestKey& key) {
+        if (wait_hook_) wait_hook_(key);
     }
 
     bool waiting_enabled()
@@ -769,6 +842,11 @@ private:
     std::unordered_map<
         RequestWaitId,
         WaitingRequest> waits_;
+
+    DataInterestHook data_ensure_;
+    DataInterestHook data_release_;
+    std::unordered_map<InterestKey, std::size_t, InterestKeyHash>
+        data_intents_;
 
     WaitHook wait_hook_;
     RequestWaitId next_wait_id_{1};

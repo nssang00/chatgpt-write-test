@@ -76,6 +76,9 @@ CITO_C_API cito_status_t cito_context_handle(
     cito_handler_t** out_handler);
 CITO_C_API void cito_handler_destroy(cito_handler_t* handler);
 
+CITO_C_API cito_status_t cito_context_discover_handler(
+    cito_context_t* context, uint64_t request_type_id,
+    const char* resource, size_t resource_size);
 CITO_C_API cito_status_t cito_context_has_handler(
     cito_context_t* context,
     uint64_t request_type_id,
@@ -110,12 +113,16 @@ CITO_C_API cito_status_t cito_context_has_demand(
     cito_context_t* context, uint64_t type_id,
     const char* resource, size_t resource_size,
     int* out_has_demand);
+CITO_C_API cito_status_t cito_context_advertise(
+    cito_context_t* context, uint64_t type_id,
+    const char* resource, size_t resource_size);
 CITO_C_API cito_status_t cito_context_publish(
     cito_context_t* context, uint64_t type_id,
     const char* resource, size_t resource_size,
     const uint8_t* payload, size_t payload_size,
     size_t* out_delivered);
 CITO_C_API cito_status_t cito_context_run(cito_context_t* context);
+CITO_C_API void cito_context_stop(cito_context_t* context);
 CITO_C_API const char* cito_status_string(cito_status_t status);
 #ifdef __cplusplus
 }

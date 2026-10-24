@@ -1,0 +1,62 @@
+name: Cito ROS 2 Jazzy bridge integration
+
+on:
+  push:
+    branches: [cito-g1g5-actions-20261024]
+    paths:
+      - '.github/workflows/cito-ros2-bridge.yml'
+      - 'cito/ros2/**'
+      - 'cito/python/**'
+      - 'cito/src/c_api.cpp'
+  pull_request:
+    branches: [cito-dev]
+    paths:
+      - '.github/workflows/cito-ros2-bridge.yml'
+      - 'cito/ros2/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ros2-cito-bridge:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    container:
+      image: ros:jazzy-ros-base
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare native C ABI and colcon
+        shell: bash
+        run: |
+          set -eo pipefail
+          apt-get update
+          DEBIAN_FRONTEND=noninteractive apt-get install -y cmake ninja-build g++ python3-colcon-common-extensions ros-jazzy-std-msgs
+          cmake -S cito -B build-ros -G Ninja -DBUILD_TESTING=OFF -DCMAKE_BUILD_TYPE=Debug
+          cmake --build build-ros --target cito_c --parallel 2
+          test -s build-ros/libcito.so
+      - name: colcon build bridge
+        shell: bash
+        run: |
+          set -eo pipefail
+          source /opt/ros/jazzy/setup.bash
+          mkdir -p ros-ws/src
+          cp -a cito/ros2/cito_bridge ros-ws/src/
+          cd ros-ws
+          colcon build --packages-select cito_bridge --event-handlers console_direct+
+      - name: Real ROS 2 topic -> Cito -> ROS 2 topic smoke
+        shell: bash
+        run: |
+          set -eo pipefail
+          source /opt/ros/jazzy/setup.bash
+          source ros-ws/install/setup.bash
+          export CITO_LIBRARY="$GITHUB_WORKSPACE/build-ros/libcito.so"
+          export PYTHONPATH="$GITHUB_WORKSPACE/cito/python:$PYTHONPATH"
+          python3 cito/ros2/cito_bridge/test_bridge_smoke.py
+      - name: Record G5 limitation
+        shell: bash
+        run: |
+          set -eo pipefail
+          source /opt/ros/jazzy/setup.bash
+          echo 'ROS2_LOCAL_CITO_BRIDGE=TESTED (NOT RMW)' >> "$GITHUB_STEP_SUMMARY"
+          echo 'RMW_CITO=NOT_IMPLEMENTED' >> "$GITHUB_STEP_SUMMARY"

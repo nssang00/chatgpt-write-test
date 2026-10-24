@@ -10,6 +10,7 @@
 #include <string_view>
 #include <unordered_map>
 #include <utility>
+#include <deque>
 #include <vector>
 
 namespace cito::detail {
@@ -56,7 +57,8 @@ private:
         bool active{true};
         Callback callback;
     };
-    using Bucket = std::vector<Handler>;
+    // Keep executing callbacks stable when subscriptions are added reentrantly.
+    using Bucket = std::deque<Handler>;
     using ResourceMap = std::unordered_map<
         std::string, Bucket, TransparentStringHash, std::equal_to<>>;
     struct Locator {

@@ -212,13 +212,15 @@ bool open_configuration(
         credentials.Flags =
             QUIC_CREDENTIAL_FLAG_NONE;
     } else {
+        if (!cert || !*cert) return false;
         credentials.Type =
             QUIC_CREDENTIAL_TYPE_NONE;
         credentials.Flags =
             static_cast<
                 QUIC_CREDENTIAL_FLAGS>(
                 QUIC_CREDENTIAL_FLAG_CLIENT |
-                QUIC_CREDENTIAL_FLAG_NO_CERTIFICATE_VALIDATION);
+                QUIC_CREDENTIAL_FLAG_SET_CA_CERTIFICATE_FILE);
+        credentials.CaCertificateFile = cert;
     }
 
     return QUIC_SUCCEEDED(
@@ -760,10 +762,11 @@ int run_server(
 
 int run_client(
     const char* host,
-    std::uint16_t port) {
+    std::uint16_t port,
+    const char* ca) {
     if (
         !open_api() ||
-        !open_configuration(false)) {
+        !open_configuration(false, ca)) {
         return 20;
     }
 
@@ -930,7 +933,7 @@ int main(
         std::strcmp(
             argv[1],
             "client") == 0) {
-        if (argc != 4) {
+        if (argc != 5) {
             return 2;
         }
 
@@ -939,7 +942,8 @@ int main(
             static_cast<
                 std::uint16_t>(
                 std::stoul(
-                    argv[3])));
+                    argv[3])),
+            argv[4]);
     }
 
     return 2;

@@ -203,6 +203,14 @@ LinuxRequestRuntimeDriver::
     }
 }
 
+bool LinuxRequestRuntimeDriver::ensure_data(const InterestKey& key) {
+    return lifecycle_.ensure_data(key);
+}
+
+bool LinuxRequestRuntimeDriver::release_data(const InterestKey& key) {
+    return lifecycle_.release_data(key);
+}
+
 void
 LinuxRequestRuntimeDriver::run() {
     bool expected = false;

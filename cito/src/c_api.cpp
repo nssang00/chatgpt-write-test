@@ -11,6 +11,8 @@
 #include <string>
 #include <string_view>
 #include <utility>
+#include <unordered_map>
+#include <unordered_set>
 
 namespace {
 
@@ -115,6 +117,12 @@ struct ContextState {
     }
 
     ~ContextState() {
+        for (const auto& [key, count] : subscribed_names_) {
+            for (std::size_t i = 0; i < count; ++i)
+                runtime_->host().unregister_resource_name(key);
+        }
+        for (const auto& key : published_keys_)
+            runtime_->request_network().release_data_interest(key);
         // Raw C Context destruction suppresses requester callbacks. Remote
         // correlations are abandoned locally while CTX1 Cancel is sent
         // best-effort; handler-side work is failed by unregister_app.
@@ -129,6 +137,27 @@ struct ContextState {
         runtime_->host()
             .unregister_app(
                 app_id_);
+    }
+
+    bool advertise(cito::TypeId type_id, std::string_view resource) {
+        const auto intent = key(type_id, resource);
+        auto& network = request_network();
+        if (published_keys_.contains(intent) ||
+            !network.data_interest_enabled()) return true;
+        if (published_keys_.size() >= 256) return false;
+        if (!network.ensure_data_interest(intent)) return false;
+        try { published_keys_.insert(intent); }
+        catch (...) { network.release_data_interest(intent); throw; }
+        return true;
+    }
+
+    void subscription_closed(const cito::InterestKey& key) noexcept {
+        const auto it = subscribed_names_.find(key);
+        if (it != subscribed_names_.end()) {
+            host().unregister_resource_name(key);
+            if (--it->second == 0) subscribed_names_.erase(it);
+        }
+        host().remove_interest(app_id_, key);
     }
 
     cito::detail::HostRuntimeCore&
@@ -176,6 +205,10 @@ struct ContextState {
         runtime_;
     cito::detail::AppId app_id_{};
     cito::detail::RawContext local_;
+    std::unordered_map<cito::InterestKey, std::size_t, cito::InterestKeyHash>
+        subscribed_names_;
+    std::unordered_set<cito::InterestKey, cito::InterestKeyHash>
+        published_keys_;
 };
 
 struct RequestCallbackState {
@@ -226,10 +259,7 @@ struct cito_subscription {
 
         if (const auto locked =
                 state.lock()) {
-            locked->host()
-                .remove_interest(
-                    locked->app_id_,
-                    key);
+            locked->subscription_closed(key);
         }
     }
 
@@ -430,17 +460,21 @@ cito_status_t cito_context_subscribe(
                 CITO_STATUS_INTERNAL_ERROR;
         }
 
+        bool named = false;
         try {
+            if (!context->state->host().register_resource_name(key, text))
+                throw std::logic_error("Cito C resource hash collision");
+            named = true;
+            ++context->state->subscribed_names_[key];
             *out =
                 new cito_subscription(
                     std::move(local),
                     context->state,
                     key);
         } catch (...) {
-            context->state->host()
-                .remove_interest(
-                    context->state->app_id_,
-                    key);
+            if (named) context->state->subscription_closed(key);
+            else context->state->host().remove_interest(
+                context->state->app_id_, key);
             throw;
         }
 
@@ -577,6 +611,20 @@ cito_status_t cito_context_handle(
 void cito_handler_destroy(
     cito_handler_t* handler) {
     delete handler;
+}
+
+cito_status_t cito_context_discover_handler(
+    cito_context_t* context, uint64_t request_type_id,
+    const char* resource, size_t resource_size) {
+    if (!context || !valid_bytes(resource, resource_size))
+        return CITO_STATUS_INVALID_ARGUMENT;
+    try {
+        const auto view = resource_size == 0 ? std::string_view{} :
+            std::string_view(resource, resource_size);
+        context->state->request_network().discover_request_handler(
+            context->state->request_key(request_type_id, view));
+        return CITO_STATUS_OK;
+    } catch (...) { return CITO_STATUS_INTERNAL_ERROR; }
 }
 
 cito_status_t cito_context_has_handler(
@@ -909,6 +957,20 @@ cito_status_t cito_context_has_demand(
     }
 }
 
+cito_status_t cito_context_advertise(
+    cito_context_t* context, uint64_t type_id,
+    const char* resource, size_t resource_size) {
+    if (!context || !valid_bytes(resource, resource_size))
+        return CITO_STATUS_INVALID_ARGUMENT;
+    try {
+        const auto name = resource_size == 0 ? std::string_view{} :
+            std::string_view(resource, resource_size);
+        return context->state->advertise(type_id, name)
+            ? CITO_STATUS_OK : CITO_STATUS_INTERNAL_ERROR;
+    } catch (const std::bad_alloc&) { return CITO_STATUS_OUT_OF_MEMORY; }
+      catch (...) { return CITO_STATUS_INTERNAL_ERROR; }
+}
+
 cito_status_t cito_context_publish(
     cito_context_t* context,
     uint64_t type_id,
@@ -937,20 +999,18 @@ cito_status_t cito_context_publish(
                     resource,
                     resource_size);
 
+        if (!context->state->advertise(type_id, resource_view))
+            return CITO_STATUS_INTERNAL_ERROR;
+
         const auto result =
             context->state->host().publish(
-                context->state->key(
-                    type_id,
-                    resource_view),
+                context->state->key(type_id, resource_view),
                 resource_view,
-                payload_view(
-                    payload,
-                    payload_size),
-                [](
-                    cito::DestinationId,
-                    std::span<
-                        const std::uint8_t>) {
-                    return false;
+                payload_view(payload, payload_size),
+                [state = context->state](
+                    cito::DestinationId destination,
+                    std::span<const std::uint8_t> packet) {
+                    return state->request_network().send_data(destination, packet);
                 });
 
         if (out_delivered) {
@@ -972,8 +1032,14 @@ cito_status_t cito_context_run(
             CITO_STATUS_INVALID_ARGUMENT;
     }
 
-    context->state->local_.run();
-    return CITO_STATUS_OK;
+    try {
+        context->state->runtime_->run();
+        return CITO_STATUS_OK;
+    } catch (...) { return CITO_STATUS_INTERNAL_ERROR; }
+}
+
+void cito_context_stop(cito_context_t* context) {
+    if (context) context->state->runtime_->stop();
 }
 
 const char* cito_status_string(

@@ -57,6 +57,15 @@ if(CITO_ENABLE_MSQUIC)
 
   if(UNIX AND NOT APPLE)
     target_link_libraries(cito_msquic PUBLIC cito_posix_runtime)
+    # The native driver must be loaded dynamically by a Python process.
+    set_target_properties(cito_msquic cito_posix_runtime
+      PROPERTIES POSITION_INDEPENDENT_CODE ON)
+    add_library(cito_native SHARED src/native_runtime_c.cpp)
+    target_include_directories(cito_native PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
+    target_compile_features(cito_native PUBLIC cxx_std_20)
+    target_link_libraries(cito_native PRIVATE
+      cito_msquic cito_posix_runtime cito_core Threads::Threads)
+    target_compile_options(cito_native PRIVATE -Wall -Wextra -Wpedantic)
   endif()
 endif()
 
@@ -71,6 +80,8 @@ if(BUILD_TESTING)
   endfunction()
 
   cito_add_test(cito_context_tests tests/context_test.cpp "unit;regression")
+  cito_add_test(cito_reentrant_subscription_growth_tests tests/reentrant_subscription_growth_test.cpp "unit;G2;G4;regression")
+  cito_add_test(cito_public_data_transport_bridge_tests tests/public_data_transport_bridge_test.cpp "unit;G1;regression")
   cito_add_test(cito_shared_context_tests tests/shared_context_test.cpp "unit;latency;regression")
   cito_add_test(cito_context_runtime_driver_tests tests/context_runtime_driver_test.cpp "unit;regression")
   cito_add_test(cito_context_index_tests tests/context_index_test.cpp "unit;latency;regression")
@@ -349,7 +360,7 @@ if(BUILD_TESTING)
       add_executable(cito_quic_public_request_node
         tests/net/quic_public_request_node.cpp)
       target_include_directories(cito_quic_public_request_node PRIVATE ${MSQUIC_INCLUDE_DIR})
-      target_link_libraries(cito_quic_public_request_node PRIVATE cito cito_msquic cito_posix_runtime)
+      target_link_libraries(cito_quic_public_request_node PRIVATE cito cito_c cito_msquic cito_posix_runtime)
       target_compile_options(cito_quic_public_request_node PRIVATE -Wall -Wextra -Wpedantic)
     endif()
   endif()

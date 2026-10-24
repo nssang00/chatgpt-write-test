@@ -1,9 +1,12 @@
 #include <cito/cito.hpp>
+#include <cito/cito_c.h>
 #include <cito/detail/linux_request_runtime_driver.hpp>
 
+#include <array>
 #include <atomic>
 #include <chrono>
 #include <cstdint>
+#include <cstdlib>
 #include <cstdio>
 #include <cstring>
 #include <exception>
@@ -220,6 +223,43 @@ Detached await_and_stop(
     ctx.stop();
 }
 
+struct CDataCheck {
+    std::atomic<int>* seen_count{};
+    std::atomic<int>* rejected{};
+    std::vector<std::uint8_t>* seen_ids{};
+    int expected{};
+};
+
+void c_typed_callback(void* opaque, std::uint64_t,
+                      const char*, std::size_t,
+                      const std::uint8_t* bytes, std::size_t size) {
+    auto& s = *static_cast<CDataCheck*>(opaque);
+    if (!bytes || size != 4) {
+        s.rejected->fetch_add(1);
+        return;
+    }
+    const auto seq = static_cast<std::uint32_t>(bytes[0]) |
+        (static_cast<std::uint32_t>(bytes[1]) << 8) |
+        (static_cast<std::uint32_t>(bytes[2]) << 16) |
+        (static_cast<std::uint32_t>(bytes[3]) << 24);
+    if (seq == 0 || seq > static_cast<std::uint32_t>(s.expected) ||
+        (*s.seen_ids)[seq]++) {
+        s.rejected->fetch_add(1);
+        return;
+    }
+    s.seen_count->fetch_add(1);
+}
+
+int data_count() {
+    const char* value = std::getenv("CITO_PUBSUB_COUNT");
+    if (!value) return 10;
+    char* end = nullptr;
+    const long parsed = std::strtol(value, &end, 10);
+    if (end == value || *end || parsed < 1 || parsed > 1000)
+        throw std::invalid_argument("CITO_PUBSUB_COUNT must be 1..1000");
+    return static_cast<int>(parsed);
+}
+
 int run_server(
     std::uint16_t quic_port,
     std::uint16_t control_port,
@@ -227,7 +267,8 @@ int run_server(
         announce_ip,
     std::uint16_t announce_port,
     const std::string& cert,
-    const std::string& key) {
+    const std::string& key,
+    const char* client_ca_file) {
     using namespace cito::detail;
 
     auto runtime =
@@ -258,6 +299,10 @@ int run_server(
         key;
     options.quic.registration_name =
         "cito-public-server";
+    if (client_ca_file) {
+        options.quic.require_client_certificate = true;
+        options.quic.trusted_client_ca_file = client_ca_file;
+    }
 
     auto driver =
         install_linux_request_runtime(
@@ -281,6 +326,35 @@ int run_server(
                 ping.value + 1};
         });
 
+    const bool pubsub_mode = std::getenv("CITO_PUBSUB_SMOKE") != nullptr;
+    const int expected_data = pubsub_mode ? data_count() : 0;
+    const bool c_api_mode = std::getenv("CITO_C_API_DATA") != nullptr;
+    std::atomic<int> data_seen{0};
+    std::atomic<int> data_rejected{0};
+    std::vector<std::uint8_t> seen_sequences(static_cast<std::size_t>(expected_data)+1);
+    cito::Subscription data_subscription;
+    cito_context_t* c_subscriber = nullptr;
+    cito_subscription_t* c_subscription = nullptr;
+    CDataCheck c_check{&data_seen, &data_rejected, &seen_sequences, expected_data};
+    if (pubsub_mode && c_api_mode) {
+        if (cito_context_create("acme", 4, &c_subscriber) != CITO_STATUS_OK)
+            return 11;
+        if (cito_context_subscribe(c_subscriber,
+            cito::static_type_ref<NetPing>().type_id(),
+            "robot_1", 7, c_typed_callback, &c_check,
+            &c_subscription) != CITO_STATUS_OK) return 12;
+    } else if (pubsub_mode) {
+        data_subscription = provider.on<NetPing>(
+            "robot_1", [&](const NetPing& ping) {
+                if (ping.value == 0 || ping.value > static_cast<std::uint32_t>(expected_data) ||
+                    seen_sequences[ping.value]++) {
+                    data_rejected.fetch_add(1, std::memory_order_relaxed);
+                } else {
+                    data_seen.fetch_add(1, std::memory_order_relaxed);
+                }
+            });
+    }
+
     std::atomic<bool>
         completed{false};
 
@@ -290,7 +364,7 @@ int run_server(
                 std::chrono::
                     steady_clock::now() +
                 std::chrono::
-                    seconds(10);
+                    seconds(pubsub_mode ? 25 : 10);
 
             while (
                 std::chrono::
@@ -300,6 +374,8 @@ int run_server(
                     handler_calls.load(
                         std::memory_order_relaxed) ==
                         1 &&
+                    (!pubsub_mode ||
+                     data_seen.load(std::memory_order_relaxed) >= expected_data) &&
                     driver->
                         completed_send_count() >=
                         1 &&
@@ -333,10 +409,15 @@ int run_server(
         handler_calls.load(
             std::memory_order_relaxed) ==
             1 &&
+        (!pubsub_mode ||
+         (data_seen.load(std::memory_order_relaxed) == expected_data &&
+          data_rejected.load(std::memory_order_relaxed) == 0)) &&
         stats.datagrams_received >=
             2 &&
         stats.datagrams_sent >= 2;
 
+    if (c_subscription) cito_subscription_destroy(c_subscription);
+    if (c_subscriber) cito_context_destroy(c_subscriber);
     (void)runtime->clear_driver(
         driver.get());
     driver.reset();
@@ -347,13 +428,18 @@ int run_server(
 
     std::cout
         << "quic_public_request_server handler=1 reply=1 discovery=udp run=context"
+        << (pubsub_mode ? " pubsub_received=" + std::to_string(expected_data) : "")
+        << (c_api_mode ? " c_api=1" : "")
         << std::endl;
 
     return 0;
 }
 
 int run_client(
-    std::uint16_t control_port) {
+    std::uint16_t control_port,
+    const char* ca_file,
+    const char* client_cert,
+    const char* client_key) {
     using namespace cito::detail;
 
     auto runtime =
@@ -368,9 +454,11 @@ int run_client(
         control_port;
     options.quic.registration_name =
         "cito-public-client";
-    options.quic
-        .skip_server_certificate_validation =
-        true;
+    options.quic.ca_certificate_file = ca_file;
+    if (client_cert && client_key) {
+        options.quic.client_certificate_file = client_cert;
+        options.quic.client_private_key_file = client_key;
+    }
 
     auto driver =
         install_linux_request_runtime(
@@ -491,16 +579,84 @@ int run_client(
         runtime->requests()
             .pending_count() == 0;
 
+    const bool pubsub_mode = std::getenv("CITO_PUBSUB_SMOKE") != nullptr;
+    const int expected_data = pubsub_mode ? data_count() : 0;
+    const bool c_api_mode = std::getenv("CITO_C_API_DATA") != nullptr;
+    bool pubsub_ok = true;
+    if (pubsub_mode) {
+        const cito::InterestKey data_key{
+            cito::stable_name_id("acme"),
+            cito::stable_name_id("robot_1"),
+            cito::static_type_ref<NetPing>().type_id()};
+        cito_context_t* c_publisher = nullptr;
+        if (c_api_mode) {
+            if (cito_context_create("acme", 4, &c_publisher) != CITO_STATUS_OK)
+                return 25;
+            if (cito_context_advertise(c_publisher,
+                    cito::static_type_ref<NetPing>().type_id(),
+                    "robot_1", 7) != CITO_STATUS_OK)
+                return 26;
+        } else {
+            requester.advertise<NetPing>("robot_1");
+        }
+        bool routed = false;
+        for (int retry = 0; retry < 150; ++retry) {
+            driver->poll_once();
+            if (!runtime->host().remote_destinations(data_key).empty()) {
+                routed = true;
+                break;
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        }
+        pubsub_ok = routed;
+        if (routed) {
+            for (int i = 1; i <= expected_data; ++i) {
+                if (c_api_mode) {
+                    const std::array<std::uint8_t, 4> payload{
+                        static_cast<std::uint8_t>(i & 255),
+                        static_cast<std::uint8_t>((i >> 8) & 255),
+                        static_cast<std::uint8_t>((i >> 16) & 255),
+                        static_cast<std::uint8_t>((i >> 24) & 255)};
+                    std::size_t sent = 0;
+                    if (cito_context_publish(c_publisher,
+                            cito::static_type_ref<NetPing>().type_id(),
+                            "robot_1", 7, payload.data(), payload.size(),
+                            &sent) != CITO_STATUS_OK || sent < 1)
+                        pubsub_ok = false;
+                } else if (requester.publish("robot_1", NetPing{
+                        static_cast<std::uint32_t>(i)}) < 1) {
+                    pubsub_ok = false;
+                }
+                driver->poll_once();
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            }
+            for (int i = 0; i < 100; ++i) {
+                driver->poll_once();
+                std::this_thread::sleep_for(std::chrono::milliseconds(5));
+            }
+        }
+        if (!pubsub_ok)
+            std::cerr << "G1 data smoke: routed=" << routed
+                      << " remote_destinations="
+                      << runtime->host().remote_destinations(data_key).size()
+                      << " session_count=" << driver->session_count()
+                      << " send/route failed" << std::endl;
+        // Advertised intent is owned by the public Context.
+        if (c_publisher) cito_context_destroy(c_publisher);
+    }
+
     (void)runtime->clear_driver(
         driver.get());
     driver.reset();
 
-    if (!final_ok) {
+    if (!final_ok || !pubsub_ok) {
         return 23;
     }
 
     std::cout
         << "quic_public_request_client result=42 lazy=1 deadline=1 discovery=udp run=context"
+        << (pubsub_mode ? " pubsub_sent=" + std::to_string(expected_data) : "")
+        << (c_api_mode ? " c_api=1" : "")
         << std::endl;
 
     return 0;
@@ -511,12 +667,16 @@ int run_client(
 int main(
     int argc,
     char** argv) {
+    if (argc == 2 && std::strcmp(argv[1], "type-id") == 0) {
+        std::cout << cito::static_type_ref<NetPing>().type_id() << std::endl;
+        return 0;
+    }
     if (
         argc >= 2 &&
         std::strcmp(
             argv[1],
             "server") == 0) {
-        if (argc != 8) {
+        if (argc != 8 && argc != 9) {
             return 2;
         }
 
@@ -535,7 +695,8 @@ int main(
                 std::stoul(
                     argv[5])),
             argv[6],
-            argv[7]);
+            argv[7],
+            argc == 9 ? argv[8] : nullptr);
     }
 
     if (
@@ -543,7 +704,7 @@ int main(
         std::strcmp(
             argv[1],
             "client") == 0) {
-        if (argc != 3) {
+        if (argc != 4 && argc != 6) {
             return 2;
         }
 
@@ -551,7 +712,10 @@ int main(
             static_cast<
                 std::uint16_t>(
                 std::stoul(
-                    argv[2])));
+                    argv[2])),
+            argv[3],
+            argc == 6 ? argv[4] : nullptr,
+            argc == 6 ? argv[5] : nullptr);
     }
 
     return 2;

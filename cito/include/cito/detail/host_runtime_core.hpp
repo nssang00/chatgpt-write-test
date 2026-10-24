@@ -4,6 +4,7 @@
 #include <cito/data_packet.hpp>
 #include <cito/demand_summary.hpp>
 #include <cito/interest.hpp>
+#include <cito/identity.hpp>
 #include <cito/remote_routes.hpp>
 
 #include <cstddef>
@@ -12,6 +13,7 @@
 #include <optional>
 #include <span>
 #include <stdexcept>
+#include <string>
 #include <string_view>
 #include <unordered_map>
 #include <unordered_set>
@@ -163,6 +165,33 @@ public:
         return {
             true,
             summary_changed};
+    }
+
+    // CTD1 carries a resource hash rather than spelling. Retain names only
+    // for actively subscribed resources; reject hash collisions.
+    bool register_resource_name(const InterestKey& key, std::string_view name) {
+        if (stable_name_id(name) != key.resource) return false;
+        auto [it, inserted] = resource_names_.try_emplace(
+            key, ResourceName{std::string(name), 0});
+        if (!inserted && it->second.name != name) return false;
+        ++it->second.count;
+        return true;
+    }
+
+    void unregister_resource_name(const InterestKey& key) noexcept {
+        auto it = resource_names_.find(key);
+        if (it == resource_names_.end()) return;
+        if (--it->second.count == 0) resource_names_.erase(it);
+    }
+
+    std::size_t deliver_data_packet(std::span<const std::uint8_t> bytes) {
+        const auto packet = decode_data_packet_view(bytes);
+        const auto it = resource_names_.find(packet.key);
+        if (it == resource_names_.end()) return 0;
+        // A callback may close the last subscription; retain the spelling
+        // for the duration of dispatch instead of referencing erased storage.
+        const std::string resource = it->second.name;
+        return deliver_local(packet.key, resource, packet.payload);
     }
 
     bool has_local_demand(
@@ -629,6 +658,13 @@ private:
     std::size_t app_dispatch_depth_{0};
     std::vector<AppId>
         pending_app_removals_;
+
+    struct ResourceName {
+        std::string name;
+        std::size_t count{};
+    };
+    std::unordered_map<InterestKey, ResourceName, InterestKeyHash>
+        resource_names_;
 
     HostInterests host_interests_;
     InterestIndex local_apps_;

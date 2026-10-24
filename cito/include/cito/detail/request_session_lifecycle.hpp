@@ -83,6 +83,22 @@ public:
         return true;
     }
 
+    // Data producers need the same Discovery and connection lifecycle as RPC.
+    bool ensure_data(const InterestKey& key) {
+        if (!desired_data_.insert(key).second) return false;
+        auto sends = routes_.ensure_routes(key);
+        pending_control_.insert(pending_control_.end(),
+            std::make_move_iterator(sends.begin()),
+            std::make_move_iterator(sends.end()));
+        return true;
+    }
+
+    bool release_data(const InterestKey& key) {
+        if (desired_data_.erase(key) == 0) return false;
+        routes_.release_routes(key);
+        return true;
+    }
+
     std::vector<UdpSend>
     take_control_sends() {
         auto sends =
@@ -125,6 +141,14 @@ public:
                     .insert_or_assign(
                         destination,
                         *endpoint);
+            }
+        }
+
+        for (const auto& key : desired_data_) {
+            for (const auto destination : host_.remote_destinations(key)) {
+                const auto* endpoint = routes_.quic_endpoint(destination);
+                if (endpoint && endpoint->port != 0)
+                    desired_endpoints.insert_or_assign(destination, *endpoint);
             }
         }
 
@@ -273,6 +297,8 @@ private:
     std::unordered_set<
         RequestKey,
         RequestKeyHash> desired_;
+
+    std::unordered_set<InterestKey, InterestKeyHash> desired_data_;
 
     std::vector<UdpSend>
         pending_control_;
