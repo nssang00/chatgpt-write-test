@@ -29,11 +29,13 @@ try{
  page.on('console',m=>{if(m.type()==='error')trace.errors.push('console '+m.text())});
  const url='http://127.0.0.1:'+server.address().port+'/m5-gpu/r50/actual_ol_ui.html';
  await page.goto(url,{waitUntil:'domcontentloaded',timeout:30000});
- await page.waitForFunction(()=>window.__r50?.ready===true||window.__r50?.errors?.length>0,{timeout:45000});
+ await page.waitForFunction(()=>window.__r50?.ready===true||window.__r50?.errors?.length>0,null,{timeout:45000});
  let snapshot=()=>page.evaluate(()=>window.__r50Snapshot?.());
  let init=await snapshot();
  if(!init?.ready||init.errors?.length)throw Error('Map initialization failed '+JSON.stringify(init));
- await page.waitForFunction(()=>{const s=window.__r50Snapshot?.();return s?.tiles>0&&s?.painted>0&&s?.frames>0},{timeout:45000});
+ trace.snapshots.afterReady=init;
+ try{await page.waitForFunction(()=>{const s=window.__r50Snapshot?.();return s?.tiles>0&&s?.painted>0&&s?.frames>0},null,{timeout:45000});}
+ catch(e){trace.snapshots.afterTimeout=await snapshot();throw e;}
  init=await snapshot();trace.snapshots.initial=init;
  if(!/NVIDIA.*RTX 5060 Ti/i.test(init.renderer||''))throw Error('Hardware renderer wrong '+init.renderer);
  if(init.glError!==0||init.sourceErrors||init.errors.length||init.tiles<1||init.painted<=0)throw Error('initial rendering invalid '+JSON.stringify(init));
