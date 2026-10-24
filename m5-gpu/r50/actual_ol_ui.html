@@ -55,7 +55,11 @@ try{
   const v=map.getView();
   const details={ready:info.ready,frames:info.frames,sourceLoads:info.sourceLoads,sourceErrors:info.sourceErrors,
    view:{center:v.getCenter(),resolution:v.getResolution(),rotation:v.getRotation()},
-   tiles:binding.snapshot().tileCount,errors:[...info.errors]};
+   tiles:binding.snapshot().tileCount,drawPackets:binding.snapshot().drawPackets,
+   layerStates:binding.snapshot().layers,frameStats:binding.lastFrameStats,
+   activeKeys:[...binding.layers.values()].map(x=>[...x.pruner.lastActive]),
+   tilePackets:[...binding.bridge.tiles.entries()].map(([k,v])=>({key:k,packetCount:v.packets.length})),
+   frameExtent:lastFrame?.extent,frameSize:lastFrame?.size,errors:[...info.errors]};
   if(lastFrame){
    try{
     const stats=binding.renderFrame(lastFrame),gl=backend.gl,bytes=new Uint8Array(512*512*4);
