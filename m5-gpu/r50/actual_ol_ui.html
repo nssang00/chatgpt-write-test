@@ -41,13 +41,14 @@ try{
  const style={'stroke-color':'rgba(220,65,55,0.92)','stroke-width':3};
  const layer=new WebGLVectorTileLayer({source,style,disableHitDetection:true});
  const view=new View({projection:proj,center:[4096,4096],resolution:16,constrainResolution:false});
- const map=new OLMap({target:document.getElementById('olmap'),layers:[layer],view,controls:[]});
+ const map=new OLMap({target:null,layers:[layer],view,controls:[]});
  const canvas=document.getElementById('m5');
  const backend=new WebGL1Backend(canvas,{contextAntialias:false,gpuCompletionMode:'blocking',cacheBindings:true});
  const binding=await OpenLayersRendererBinding.createDirectScene({map,backend,canvas,
   vectorTileOptions:{drawMode:'style-pass',stableStyleIdentityCache:true,olLayerFboComposition:true,closedLineJoins:true,polygonInsideSegmentFastPath:true,polygonEarBBoxPrecheck:true},
   onError:d=>info.errors.push(String(d.error||d))});
  binding.bridge.pipeline.tileScissorEnabled=true;binding.start({renderSync:false});
+ map.setTarget(document.getElementById('olmap'));
  let lastFrame=null;
  map.on('postrender',e=>{info.frames++;lastFrame=e.frameState});
  globalThis.__r50Snapshot=()=>{
