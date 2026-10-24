@@ -28,7 +28,7 @@ try{
    const before='   tileLoadFunction:(tile,url)=>tile.setLoader((extent,resolution,projection)=>{';
    if(!html.includes(before))throw Error('R53 tile loader anchor changed');
    html=html.replace(before,`   tileLoadFunction:(tile,url)=>tile.setLoader((extent,resolution,projection)=>{
-    const key=url, seq=++globalThis.__r55.seq;
+    const key=url.split('?')[0], seq=++globalThis.__r55.seq;
     const generation=globalThis.__r55.generation;
     const attempt=(globalThis.__r55.attempts[key]||0)+1;
     globalThis.__r55.attempts[key]=attempt;
@@ -59,7 +59,7 @@ try{
    html=html.slice(0,start)+html.slice(end+6);
    html=html.replace('const layers=manifest.sources.map',`globalThis.__r55={seq:0,generation:0,attempts:{},retried:{},events:[]};
  const layers=manifest.sources.map`);
-   html=html.replace(' globalThis.__r53Snapshot=()=>{',` globalThis.__r55.advance=()=>{globalThis.__r55.generation++;globalThis.__r55.events.push({type:'cancel',generation:0});layers.forEach(layer=>layer.getSource().refresh());map.renderSync();};
+   html=html.replace(' globalThis.__r53Snapshot=()=>{',` globalThis.__r55.advance=()=>{globalThis.__r55.generation++;globalThis.__r55.events.push({type:'cancel',generation:0});manifest.sources.forEach((part,i)=>{const source=layers[i].getSource();source.setTileUrlFunction(([,x,y])=>x===i%8&&y===Math.floor(i/8)?part.x+'/'+part.y+'?r55='+globalThis.__r55.generation:undefined,'r55-'+globalThis.__r55.generation);source.refresh();});map.renderSync();};
  globalThis.__r53Snapshot=()=>{`);
    body=Buffer.from(html);
   }
@@ -77,11 +77,12 @@ try{
  await page.evaluate(()=>__r55.advance());
  await page.mouse.move(790,250);await page.mouse.down();await page.mouse.move(710,280,{steps:5});await page.mouse.up();
  await page.mouse.wheel(0,-120);
+ await page.waitForFunction(()=>window.__r55?.events.some(e=>e.type==='issued'&&e.generation===1)||window.__r53?.errors?.length>0,null,{timeout:15000});
  await page.waitForTimeout(1200);
  report.events=await page.evaluate(()=>__r55.events);
  report.snapshots.final=await page.evaluate(()=>__r53Snapshot());
  const count=t=>report.events.filter(e=>e.type===t).length;
- if(count('issued')<16||count('cancel')<1||count('late')<1||count('retry')<1)throw Error('race coverage insufficient '+JSON.stringify({issued:count('issued'),cancel:count('cancel'),late:count('late'),retry:count('retry')}));
+ if(count('issued')<16||count('cancel')<1||count('late')<1||count('retry')<1||!report.events.some(e=>e.type==='issued'&&e.generation===1))throw Error('race coverage insufficient '+JSON.stringify({issued:count('issued'),cancel:count('cancel'),late:count('late'),retry:count('retry')}));
  report.checks.push('actual OL UI async tile issue, generation cancellation, late response and retry observed');
  if(report.snapshots.final.glError!==0||report.snapshots.final.painted<=0||report.snapshots.final.sourceErrors||report.snapshots.final.errors.length)throw Error('invalid framebuffer '+JSON.stringify(report.snapshots.final));
  report.checks.push('physical GL nonempty and error-free after delayed tile race');
