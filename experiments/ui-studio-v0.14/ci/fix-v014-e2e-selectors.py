@@ -44,7 +44,7 @@ source=source.replace(needle,"""  // Verify authoring mutations before evaluatin
   expect(textDoc?.props.text).toMatchObject({kind:'binding',source:'state',path:['lastSearch']});
   await studio(page).getByRole('button',{name:'JSON 편집'}).click();
 """+needle)
-source=source.replace("  await input.fill('Alice');","  await input.fill('Alice');\n  await expect(studio(page).locator('.v6-state-line').filter({hasText:'keyword'})).toContainText('Alice');")
+source=source.replace("  await input.fill('Alice');","  await input.fill('Alice');\n  await expect(studio(page).locator('.v6-state-line').filter({hasText:/^keyword/})).toContainText('Alice');")
 
 path.write_text(source,encoding="utf-8")
 print(f"Updated v0.14 Chrome E2E Select helper: {path}")
