@@ -45,6 +45,7 @@ try{
  const canvas=document.getElementById('m5');
  const backend=new WebGL1Backend(canvas,{contextAntialias:false,gpuCompletionMode:'blocking',cacheBindings:true});
  const binding=await OpenLayersRendererBinding.createDirectScene({map,backend,canvas,
+  layerStyleResolver:()=>style,
   vectorTileOptions:{drawMode:'style-pass',stableStyleIdentityCache:true,olLayerFboComposition:true,closedLineJoins:true,polygonInsideSegmentFastPath:true,polygonEarBBoxPrecheck:true},
   onError:d=>info.errors.push(String(d.error||d))});
  binding.bridge.pipeline.tileScissorEnabled=true;binding.start({renderSync:false});
