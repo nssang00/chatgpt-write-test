@@ -2,6 +2,7 @@
 #include <cito/cito_c.h>
 #include <cito/detail/linux_request_runtime_driver.hpp>
 
+#include <array>
 #include <atomic>
 #include <chrono>
 #include <cstdint>
