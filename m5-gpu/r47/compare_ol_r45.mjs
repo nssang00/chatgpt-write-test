@@ -19,3 +19,4 @@ for(const scene of ['sources-8','sources-16','sources-32']){
 }
 await writeFile(join(dir,'r47-cpu-join-pixel-audit.json'),JSON.stringify(report,null,2)+'\n');
 console.log(report.exact?'R47_CPU_JOIN_STOCK_OL_EXACT_RGBA8_PASS':'R47_CPU_JOIN_STOCK_OL_EXACT_RGBA8_FAIL');
+if(!report.exact)process.exitCode=1; // Fail CI when any OL-vs-R45 pixel differs.
