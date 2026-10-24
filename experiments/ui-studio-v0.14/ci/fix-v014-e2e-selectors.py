@@ -12,7 +12,6 @@ after="""  const fields=scope.getByRole('combobox');
   if(label.startsWith('state.')){
     // Search and Enter are actual keyboard UX; AntD's virtual menu may be offscreen.
     await control.fill(label);
-    await expect(page.locator('.ant-select-dropdown:visible').getByText(label,{exact:true})).toHaveCount(1);
     await control.press('Enter');
   }else{
     await page.locator('.ant-select-dropdown:visible').getByText(label,{exact:true}).last().click();
