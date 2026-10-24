@@ -1,0 +1,60 @@
+<!doctype html><meta charset="utf-8"><title>R52 actual Chromium Worker termination</title><pre id="status">running</pre>
+<script type="module">
+import {DirectTileWorkerPool} from '../../our-renderer/integration/workers/DirectTileWorkerPool.js';
+import {encodeTileLayerGroupTask} from '../../our-renderer/integration/workers/DirectTileEncodeTask.js';
+const state={done:false,pass:false,errors:[],checks:[],metrics:{}};
+globalThis.__r52=state;
+function assert(ok,why){if(!ok)throw Error(why)}
+function exactArray(a,b){if(a.constructor!==b.constructor||a.length!==b.length)return false;for(let i=0;i<a.length;i++)if(a[i]!==b[i])return false;return true}
+const WORKER_URL=new URL('../../our-renderer/integration/workers/DirectTileEncodeWorker.browser.js',import.meta.url);
+const cfg={size:2,maxCacheBytes:0,taskTimeoutMs:220,bootTimeoutMs:6000};
+function makePool(){
+ const workers=[];
+ const pool=new DirectTileWorkerPool({...cfg,createWorker:()=>{const w=new Worker(WORKER_URL,{type:'module'});workers.push(w);return w}});
+ return {pool,workers};
+}
+try{
+ const coords=[[3492,1586],[3493,1586],[3492,1587],[3493,1587]];
+ const tasks=await Promise.all(coords.map(async ([x,y])=>{
+  const resp=await fetch('/tests/fixtures/seoul/12/'+x+'/'+y+'.pbf');
+  if(!resp.ok)throw Error('Real PBF fetch HTTP '+resp.status);
+  return {tileKey:'12/'+x+'/'+y,layers:[{layer:'road',style:{'stroke-color':'rgba(220,65,55,0.92)','stroke-width':3}}],
+   bytes:await resp.arrayBuffer(),extent:[(x-3492)*4096,(1587-y)*4096,(x-3491)*4096,(1588-y)*4096],
+   options:{partialEarcut:true,unclipped:true,drawMode:'style-pass',closedLineJoins:true,polygonInsideSegmentFastPath:true,polygonEarBBoxPrecheck:true}};
+ }));
+ const expected=tasks.map(t=>encodeTileLayerGroupTask(t));
+ state.metrics.sourceBytes=tasks.map(t=>t.bytes.byteLength);
+ const first=makePool();await first.pool.ready;assert(first.workers.length===2,'No two browser Worker threads');
+ const pending=first.pool.map(tasks);
+ first.workers[0].terminate();
+ let failure=null;try{await pending}catch(e){failure=e}
+ assert(failure&&/result deadline exceeded/.test(String(failure)),'actual Worker termination did not enforce task deadline: '+String(failure));
+ assert(first.pool.closed&&first.pool.stats.workerErrors>=1,'worker pool not fail-closed');
+ state.metrics.terminatedWorkerError=String(failure);state.metrics.failClosed=true;
+ state.checks.push('real Chromium module Worker forcibly terminated during in-flight work; deadline rejects and pool fails closed');
+ const second=makePool();await second.pool.ready;
+ const result=await second.pool.map(tasks);
+ assert(result.length===4&&second.pool.stats.completed===4,'recovered workers did not process all four tiles');
+ let streams=0,rows=0,packetCounts=0;
+ for(let i=0;i<result.length;i++){
+  const got=result[i],ref=expected[i];
+  assert(got.tileKey===ref.tileKey&&got.decodeCalls===1,'tile decode or output identity mismatch');
+  assert(got.rows.length===ref.rows.length,'row length mismatch');
+  for(let k=0;k<got.rows.length;k++){
+   rows++;
+   const a=got.rows[k].encoded,b=ref.rows[k].encoded;
+   for(const name of ['vertices','indices','lineInstances']){
+    streams++;assert(exactArray(a[name],b[name]),'recovered Worker GPU buffer mismatch '+i+' '+name);
+   }
+   assert(JSON.stringify(a.packets)===JSON.stringify(b.packets),'recovered Worker draw packets differ');
+   packetCounts+=a.packets.length;
+  }
+ }
+ state.metrics={...state.metrics,workerCount:2,tiles:4,rows,streamsExact:streams,packetsCompared:packetCounts,workerErrorsAfterRecovery:second.pool.stats.workerErrors,completed:second.pool.stats.completed};
+ assert(second.pool.stats.workerErrors===0,'healthy restarted Worker error');
+ await second.pool.close();await first.pool.close();
+ state.checks.push('two freshly started real Chromium Workers reencode four PBFs with 12 exact typed buffer comparisons and exact packet metadata');
+ state.pass=true;
+}catch(e){state.errors.push(String(e.stack||e))}
+finally{state.done=true;document.getElementById('status').textContent=JSON.stringify(state,null,2)}
+</script>
