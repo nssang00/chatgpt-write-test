@@ -89,11 +89,24 @@ jobs:
             python Validation/test_bridge_v6_multihandle.py
             if ($LASTEXITCODE -ne 0) { throw 'CEF multi-handle contract failed' }
           } finally { Pop-Location }
-      - name: Compile real C++17 per-view security registry and run CTest (verified private kit)
+      - name: Compile v8 C# facade and real WebView2 native DLL (verified private kit)
         shell: pwsh
+        env:
+          CWV_WEBVIEW2_SDK_URL: ${{ vars.CWV_WEBVIEW2_SDK_URL }}
+          CWV_WEBVIEW2_SDK_SHA256: ${{ vars.CWV_WEBVIEW2_SDK_SHA256 }}
         run: |
-          & "$env:CWV_KIT_ROOT/CI/Run-V7HostedCompileGates.ps1" -OutputJson "$env:RUNNER_TEMP/cwv-v7-hosted-compile.json"
-          if ($LASTEXITCODE -and $LASTEXITCODE -ne 0) { throw 'Private kit v7 C# / C++ compile failed' }
+          if (-not $env:CWV_WEBVIEW2_SDK_URL -or -not $env:CWV_WEBVIEW2_SDK_SHA256) { throw 'WebView2 SDK URL/SHA256 missing; actual adapter build NOT PASSED' }
+          & "$env:CWV_KIT_ROOT/CI/Run-V8HostedCompileGates.ps1" -OutputJson "$env:RUNNER_TEMP/cwv-v8-hosted-compile.json" -WebView2SdkUrl $env:CWV_WEBVIEW2_SDK_URL -WebView2SdkSha256 $env:CWV_WEBVIEW2_SDK_SHA256
+          $proof = Get-Content "$env:RUNNER_TEMP/cwv-v8-hosted-compile.json" -Raw | ConvertFrom-Json
+          if ($proof.status -ne 'PASS' -or -not $proof.webView2V8NativeCompiled) { throw 'Actual CompanyWebView2SecureV8 MSVC DLL did not compile' }
+      - name: Publish safe v8 compile evidence (no proprietary DLL or source)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cwv-private-v8-windows-compile-proof
+          if-no-files-found: warn
+          path: ${{ runner.temp }}/cwv-v8-hosted-compile.json
+          retention-days: 7
       - name: Retrieve checksum-pinned CEF Windows SDK
         shell: pwsh
         env:
