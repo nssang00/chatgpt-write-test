@@ -40,7 +40,7 @@ jobs:
         shell: bash
         run: |
           cmake -S cito -B build-py -G Ninja -DCMAKE_BUILD_TYPE=Debug -DCITO_ENABLE_MSQUIC=ON
-          cmake --build build-py --target cito_c cito_native --parallel 2
+          cmake --build build-py --target cito_c cito_native cito_quic_public_request_node --parallel 2
           test -s build-py/libcito.so
           test -s build-py/libcito_native.so
       - name: Generate one-day mTLS identities
@@ -103,6 +103,41 @@ jobs:
           test "$server_status" -eq 0
           grep -q 'python_pubsub_sent=100' evidence/client-python.log
           grep -q 'python_pubsub_received=100' evidence/server-python.log
+
+          # Python provider: actual C++ client RPC and 10 typed samples.
+          TYPE_ID="$("$GITHUB_WORKSPACE/build-py/cito_quic_public_request_node" type-id)"
+          C_CPP="$GITHUB_WORKSPACE/build-py/cito_quic_public_request_node"
+          CROSS="$GITHUB_WORKSPACE/cito/tests/net/python_cpp_native_pubsub.py"
+          sudo ip netns exec cito-py-s env CITO_LIBRARY="$C_API_LIB" CITO_NATIVE_LIBRARY="$RUNTIME_LIB" PYTHONPATH="$PYTHON_MODULES" LD_LIBRARY_PATH="$NATIVE_LD" python3 "$CROSS" server --type-id "$TYPE_ID" --control-port 47610 --quic-port 4466 --announce-ip 10.202.0.11 --announce-port 47466 --cert "$GITHUB_WORKSPACE/server.pem" --key "$GITHUB_WORKSPACE/server.key" --ca "$GITHUB_WORKSPACE/ca.pem" > evidence/python-server-cpp-client.log 2>&1 &
+          py_server_pid=$!
+          sleep 0.5
+          cpp_client_status=0
+          timeout 25s sudo ip netns exec cito-py-c env CITO_PUBSUB_SMOKE=1 "$C_CPP" client 47466 "$GITHUB_WORKSPACE/ca.pem" "$GITHUB_WORKSPACE/client.pem" "$GITHUB_WORKSPACE/client.key" > evidence/cpp-client-python-server.log 2>&1 || cpp_client_status=$?
+          py_server_status=0
+          wait "$py_server_pid" || py_server_status=$?
+          cat evidence/python-server-cpp-client.log
+          cat evidence/cpp-client-python-server.log
+          echo "G4_CPP_TO_PY_CLIENT=$cpp_client_status SERVER=$py_server_status"
+          test "$cpp_client_status" -eq 0
+          test "$py_server_status" -eq 0
+          grep -q 'python_cpp_server_rpc=1 pubsub_received=10' evidence/python-server-cpp-client.log
+          grep -q 'pubsub_sent=10' evidence/cpp-client-python-server.log
+
+          # C++ provider: actual Python client RPC and 10 typed samples.
+          sudo ip netns exec cito-py-s env CITO_PUBSUB_SMOKE=1 "$C_CPP" server 4467 47611 10.202.0.11 47467 "$GITHUB_WORKSPACE/server.pem" "$GITHUB_WORKSPACE/server.key" "$GITHUB_WORKSPACE/ca.pem" > evidence/cpp-server-python-client.log 2>&1 &
+          cpp_server_pid=$!
+          sleep 0.5
+          py_client_status=0
+          timeout 25s sudo ip netns exec cito-py-c env CITO_LIBRARY="$C_API_LIB" CITO_NATIVE_LIBRARY="$RUNTIME_LIB" PYTHONPATH="$PYTHON_MODULES" LD_LIBRARY_PATH="$NATIVE_LD" python3 "$CROSS" client --type-id "$TYPE_ID" --control-port 47467 --ca "$GITHUB_WORKSPACE/ca.pem" --client-cert "$GITHUB_WORKSPACE/client.pem" --client-key "$GITHUB_WORKSPACE/client.key" > evidence/python-client-cpp-server.log 2>&1 || py_client_status=$?
+          cpp_server_status=0
+          wait "$cpp_server_pid" || cpp_server_status=$?
+          cat evidence/python-client-cpp-server.log
+          cat evidence/cpp-server-python-client.log
+          echo "G4_PY_TO_CPP_CLIENT=$py_client_status SERVER=$cpp_server_status"
+          test "$py_client_status" -eq 0
+          test "$cpp_server_status" -eq 0
+          grep -q 'python_cpp_client_rpc=42 pubsub_sent=10' evidence/python-client-cpp-server.log
+          grep -q 'pubsub_received=10' evidence/cpp-server-python-client.log
       - name: Preserve actual execution logs
         if: always()
         uses: actions/upload-artifact@v4
