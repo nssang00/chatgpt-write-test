@@ -1,0 +1,517 @@
+diff --git a/.github/workflows/v015-verification.yml b/.github/workflows/v015-verification.yml
+new file mode 100644
+index 0000000..abf27a9
+--- /dev/null
++++ b/.github/workflows/v015-verification.yml
+@@ -0,0 +1,63 @@
++name: UI Studio v0.15 Candidate - Core and Real Chrome
++on:
++  workflow_dispatch:
++  push:
++    paths:
++      - 'packages/**'
++      - 'src/**'
++      - 'e2e/**'
++      - 'tests/**'
++      - 'tools/**'
++      - 'package.json'
++      - '.github/workflows/v015-verification.yml'
++permissions:
++  contents: read
++jobs:
++  candidate-verification:
++    runs-on: ubuntu-latest
++    timeout-minutes: 40
++    steps:
++      - uses: actions/checkout@v4
++      - uses: actions/setup-node@v4
++        with:
++          node-version: '22'
++      - run: npm install --no-audit --no-fund
++      - name: Core regression including v0.15 editing tests
++        run: npm test
++      - name: Source syntax
++        run: node tools/verify-syntax.mjs
++      - name: Runtime integration
++        run: npm run verify:runtime
++      - name: Production Vite build
++        run: npm run build
++      - name: Export and verify portable component
++        run: |
++          npm run export:v014
++          python3 tools/check-export-structure.py examples/CustomerBrowser-react-component-v0.13.zip
++          mkdir -p tests/component-v014
++          unzip -q -o examples/CustomerBrowser-react-component-v0.13.zip -d tests/component-v014
++          (cd tests/component-v014 && npm install --no-audit --no-fund && npm run build && npm pack --pack-destination ../consumer-v013)
++          (cd tests/consumer-v013 && npm install --no-audit --no-fund && npm run build)
++      - name: Chrome version
++        run: google-chrome --version
++      - name: Studio E2E (13 scenarios)
++        env:
++          CI: 'true'
++          UI_STUDIO_USE_SYSTEM_CHROME: '1'
++        run: npm run test:e2e
++      - name: Independent exported React Consumer E2E
++        env:
++          CI: 'true'
++          UI_STUDIO_USE_SYSTEM_CHROME: '1'
++        run: npx playwright test --config=e2e/consumer-v013.config.js
++      - name: Retain E2E evidence
++        if: always()
++        uses: actions/upload-artifact@v4
++        with:
++          name: ui-studio-v015-browser-evidence
++          path: |
++            test-results/
++            playwright-report/
++            playwright-report-consumer/
++          if-no-files-found: ignore
++          retention-days: 14
+diff --git a/README.md b/README.md
+index 28ce20b..eb56db3 100644
+--- a/README.md
++++ b/README.md
+@@ -1,3 +1,8 @@
++# UI Studio v0.15 — Visual-first editing UX
++
++> Scope: [V015-SCOPE.md](V015-SCOPE.md). Based on the v0.14 CI-verified baseline.
++> v0.15 Core/syntax/runtime status and browser-verification limits: [V015-VERIFICATION.md](V015-VERIFICATION.md).
++
+ # UI Studio v0.14 — Visual-First Component Builder
+ 
+ **Build visually, connect data and actions, reuse as a component, then run the same
+diff --git a/V015-SCOPE.md b/V015-SCOPE.md
+new file mode 100644
+index 0000000..f93084d
+--- /dev/null
++++ b/V015-SCOPE.md
+@@ -0,0 +1,14 @@
++# UI Studio v0.15 — Editing UX
++
++Derived from verified v0.14 baseline (GitHub Actions run 40063374176).
++
++Scope:
++- Selection breadcrumbs: page/definition root -> selected node, including nested frames and slot content.
++- One-click duplicate next to selected node: recursively fresh IDs and preserved values, bindings, events and instance slots. Root duplication is forbidden.
++- Editing shortcuts: Ctrl/Cmd+D duplicate in Design, Delete/Backspace remove, Ctrl/Cmd+Z Undo, Ctrl/Cmd+Shift+Z or Ctrl+Y Redo. Text inputs, contenteditable, Code/JSON and modals are protected.
++- Buttons for duplicate and delete in selection toolbar; Undo/Redo disabled when no entries.
++- No changes to canonical v6 representation, runtime bindings, React exporter semantics or untrusted code execution policy.
++
++Verification contract: existing 183 Core tests + new editing Core tests; existing 11 Studio Chrome scenarios + two new v0.15 scenarios; independent Consumer Chrome test, standalone component build, syntax & runtime integration.
++
++This is a bounded editing-UX milestone, not a comprehensive usability or security certification.
+diff --git a/V015-VERIFICATION.md b/V015-VERIFICATION.md
+new file mode 100644
+index 0000000..d085bb2
+--- /dev/null
++++ b/V015-VERIFICATION.md
+@@ -0,0 +1,60 @@
++# UI Studio v0.15 — verification record (2026-10-24)
++
++## Status: CORE VERIFIED / BROWSER E2E UNVERIFIED
++
++This archive is a **v0.15 candidate**, not a CI-verified release. The previous v0.14 baseline is verified by GitHub Actions [run 40063374176](https://github.com/nssang00/chatgpt-write-test/actions/runs/40063374176), commit `1687fc5ba36d97d95f00524adb32f4477125017d`. This candidate is derived from that standalone source archive.
++
++## Changes in scope
++
++- Selection breadcrumbs for root/parent/child navigation, including nested layout and slot nodes.
++- Duplicate selected component, nested frame or filled slot, retaining layout/props/bindings/events and remapping all descendant IDs; root duplication forbidden.
++- Shortcuts: Ctrl/Cmd+D duplicate, Delete/Backspace remove, Ctrl/Cmd+Z undo, Ctrl/Cmd+Shift+Z / Ctrl+Y redo. Disabled while editing text or inside modals; structural actions only in Design mode.
++- Action toolbar and Undo/Redo availability indicators.
++- No canonical document schema migration, runtime protocol, or exporter semantics changes.
++
++## Executed checks (same source, local Node.js 22)
++
++| Check | Observed result |
++|---|---|
++| `npm test` | **188 passed, 0 failed, 0 skipped** (183 baseline + 5 new v0.15 tests) |
++| `node tools/verify-syntax.mjs` | **53 source files + 3 generated TSX, zero syntax errors** |
++| `npm run verify:runtime` | **PASS**: JSX runtime, independent instances, state, public events, slots, dynamic repeat, nested components |
++| `npm run export:v014` | **PASS**: portable CustomerBrowser archive generated, 25 files |
++| `python tools/check-export-structure.py examples/CustomerBrowser-react-component-v0.13.zip` | **PASS**: ZIP CRC, 25 files, 46 local import paths resolvable |
++| Source diff reconstruction | **PASS**: v0.15 patch applied to unmodified v0.14 baseline, 188 Core tests passed |
++
++## Not verified here (release blockers)
++
++- `npm run build` (Vite production build), because the local container does not have project npm dependencies and its npm registry cannot be resolved.
++- Playwright Chrome Studio v0.15 scenarios (`e2e/editing-v015.spec.js`, 2 added) and the 11 prior Studio scenarios were **not run** on this v0.15 candidate.
++- Standalone React Consumer Vite build and real-Chrome E2E were **not run** on this v0.15 candidate.
++- The original v0.14 CI success cannot be generalized to these new v0.15 source changes.
++
++## Full verification to complete before calling v0.15 a verified baseline
++
++```bash
++npm install --no-audit --no-fund
++npm test
++node tools/verify-syntax.mjs
++npm run verify:runtime
++npm run build
++npm run export:v014
++python tools/check-export-structure.py examples/CustomerBrowser-react-component-v0.13.zip
++CI=true UI_STUDIO_USE_SYSTEM_CHROME=1 npm run test:e2e
++mkdir -p tests/component-v014
++unzip -q -o examples/CustomerBrowser-react-component-v0.13.zip -d tests/component-v014
++(cd tests/component-v014 && npm install --no-audit --no-fund && npm run build && npm pack --pack-destination ../consumer-v013)
++(cd tests/consumer-v013 && npm install --no-audit --no-fund && npm run build)
++CI=true UI_STUDIO_USE_SYSTEM_CHROME=1 npx playwright test --config=e2e/consumer-v013.config.js
++```
++
++A ready-to-run workflow for a repository that contains the standalone application at its root is included at `.github/workflows/v015-verification.yml`. It has **not** been run.
++
++Expected Studio suite count: 13 = 11 prior + 2 new; independent Consumer suite count: 1. Treat only an actual successful run as evidence, not this expectation.
++
++## Packaging / provenance
++
++- Original source: `ui-studio-v014-verified-baseline-20261024.zip`.
++- Standalone v0.15 ZIP: `ui-studio-v015-editing-candidate-20261024.zip`.
++- The companion patch `ui-studio-v015-editing-from-v014.patch` is a unified diff from the exact extracted v0.14 baseline to this candidate (source/UX/tests), excluding this verification note and manifest.
++- `SHA256SUMS.txt` contains digests for every file in the candidate ZIP except itself.
+diff --git a/e2e/editing-v015.spec.js b/e2e/editing-v015.spec.js
+new file mode 100644
+index 0000000..93fd4ff
+--- /dev/null
++++ b/e2e/editing-v015.spec.js
+@@ -0,0 +1,56 @@
++import {test,expect} from '@playwright/test';
++const studio=p=>p.locator('.v6-studio');
++const tree=p=>studio(p).locator('.v6-tree');
++const bar=p=>studio(p).getByTestId('selection-toolbar');
++async function insert(page,type){
++ await studio(page).getByRole('button',{name:/Insert/}).first().click();
++ await studio(page).locator('.v6-insert-items button').filter({hasText:type}).first().click();
++}
++test.beforeEach(async({page})=>{await page.goto('/');await expect(studio(page)).toBeVisible();});
++test('v0.15 breadcrumbs navigate nested frames; duplicating frames copies descendants and undo/redo works',async({page})=>{
++ await studio(page).getByRole('button',{name:'Preview Harness'}).click();
++ await insert(page,'row');
++ const frame=await tree(page).locator('[data-v6-tree-id]').last().getAttribute('data-v6-tree-id');
++ await insert(page,'Text');
++ const child=await tree(page).locator('[data-v6-tree-id]').last().getAttribute('data-v6-tree-id');
++ await expect(bar(page).getByRole('navigation',{name:'선택 경로'})).toContainText('Page');
++ await expect(bar(page).getByRole('navigation',{name:'선택 경로'})).toContainText('Text');
++ await bar(page).getByRole('button',{name:'복제'}).click();
++ const ids=await tree(page).locator('[data-v6-tree-id]').evaluateAll(nodes=>nodes.map(n=>n.dataset.v6TreeId));
++ expect(ids).toHaveLength(4);expect(new Set(ids).size).toBe(4);
++ await bar(page).getByRole('button',{name:'Row'}).click();
++ await expect(tree(page).locator(`[data-v6-tree-id="${frame}"]`)).toHaveClass(/is-selected/);
++ await page.keyboard.press('Control+d');
++ await expect(tree(page).locator('[data-v6-tree-id]')).toHaveCount(7);
++ await page.keyboard.press('Control+z');
++ await expect(tree(page).locator('[data-v6-tree-id]')).toHaveCount(4);
++ await page.keyboard.press('Control+Shift+z');
++ await expect(tree(page).locator('[data-v6-tree-id]')).toHaveCount(7);
++ await studio(page).getByRole('button',{name:'JSON 편집'}).click();
++ const data=JSON.parse(await studio(page).getByRole('textbox',{name:'v6 JSON 문서'}).inputValue());
++ const frames=data.pages.main.root.children.filter(n=>n.kind==='frame');
++ expect(frames).toHaveLength(2);
++ expect(frames[0].children).toHaveLength(2);expect(frames[1].children).toHaveLength(2);
++ const a=frames.flatMap(n=>[n.id,...n.children.map(c=>c.id)]);expect(new Set(a).size).toBe(6);
++ expect(frames[0].children[0].typeId).toBe('core/Text');
++ expect(frames[1].children[0].typeId).toBe('core/Text');
++ expect(child).toBeTruthy();
++});
++test('v0.15 Delete shortcut respects editable fields and root protections',async({page})=>{
++ await studio(page).getByRole('button',{name:'Preview Harness'}).click();
++ await insert(page,'Button');
++ await expect(tree(page).locator('[data-v6-tree-id]')).toHaveCount(2);
++ const nameField=studio(page).locator('.v6-inspector-content .v6-property-field input').first();
++ await nameField.fill('CTA');
++ await nameField.press('Control+d');
++ await expect(tree(page).locator('[data-v6-tree-id]')).toHaveCount(2);
++ await nameField.press('Backspace');
++ await expect(tree(page).locator('[data-v6-tree-id]')).toHaveCount(2);
++ await tree(page).locator('[data-v6-tree-id]').last().click();
++ await page.keyboard.press('Delete');
++ await expect(tree(page).locator('[data-v6-tree-id]')).toHaveCount(1);
++ await page.keyboard.press('Delete');
++ await expect(tree(page).locator('[data-v6-tree-id]')).toHaveCount(1);
++ await page.keyboard.press('Control+z');
++ await expect(tree(page).locator('[data-v6-tree-id]')).toHaveCount(2);
++});
+diff --git a/package.json b/package.json
+index f5bf0b0..6f0f641 100644
+--- a/package.json
++++ b/package.json
+@@ -1,7 +1,7 @@
+ {
+   "name": "ui-studio-design-code",
+   "private": true,
+-  "version": "0.14.0",
++  "version": "0.15.0",
+   "type": "module",
+   "scripts": {
+     "dev": "vite --host 127.0.0.1",
+@@ -29,5 +29,5 @@
+     "typescript": "^5.9.3",
+     "@playwright/test": "1.64.1"
+   },
+-  "description": "UI Studio v0.14 Visual-First Component Builder: schema-driven inspector, visual binding/actions/rules, static and dynamic rendering"
++  "description": "UI Studio v0.15 Editing UX Component Builder: schema-driven inspector, visual binding/actions/rules, static and dynamic rendering"
+ }
+diff --git a/packages/core/editor.js b/packages/core/editor.js
+index 2d22e26..24b4adc 100644
+--- a/packages/core/editor.js
++++ b/packages/core/editor.js
+@@ -56,6 +56,46 @@ export function removeEditorNode(doc,id,registry,pageId='main'){
+   (location.slotChildren||location.parent.children).splice(location.index,1);
+   touchDefinition(next,pageId);return validateDocument(next,registry);
+ }
++/** Return the chain from the editable root to an item, including nodes in instance slots. */
++export function editorSelectionPath(root,id){
++  function visit(node,trail){
++    const current=[...trail,{id:node.id,name:node.name,kind:node.kind}];
++    if(node.id===id)return current;
++    for(const child of node.children||[]) {const found=visit(child,current);if(found)return found;}
++    for(const children of Object.values(node.slots||{}))for(const child of children){const found=visit(child,current);if(found)return found;}
++    return null;
++  }
++  return visit(root,[])||[];
++}
++/** Duplicate beside the selected node, retaining values but allocating fresh IDs for all descendants.
++ * Works in pages, definitions, and instance slot arrays; the source remains unchanged.
++ */
++export function duplicateEditorNode(doc,id,registry,pageId='main'){
++  const next=structuredClone(doc),source=locateNode(pageRoot(next,pageId),id);
++  if(!source?.parent)throw Error('루트는 복제할 수 없습니다');
++  const used=new Set();
++  const collect=n=>{used.add(n.id);for(const c of n.children||[])collect(c);for(const items of Object.values(n.slots||{}))for(const c of items)collect(c);};
++  for(const page of Object.values(next.pages))collect(page.root);
++  for(const definition of Object.values(next.definitions))collect(definition.root);
++  let cursor=1;
++  const nextId=()=>{while(used.has(`node_${cursor}`))cursor++;const candidate=`node_${cursor++}`;used.add(candidate);return candidate;};
++  const copied=structuredClone(source.node),remapped=new Map();
++  const assignIds=n=>{const old=n.id;n.id=nextId();remapped.set(old,n.id);for(const c of n.children||[])assignIds(c);for(const items of Object.values(n.slots||{}))for(const c of items)assignIds(c);};
++  assignIds(copied);
++  // Only remap references to nodes that were duplicated (never external targets).
++  const rewriteReferences=value=>{
++    if(!value||typeof value!=='object')return;
++    if(!Array.isArray(value)&&typeof value.nodeId==='string'&&remapped.has(value.nodeId))value.nodeId=remapped.get(value.nodeId);
++    for(const child of Object.values(value))rewriteReferences(child);
++  };
++  rewriteReferences(copied);
++  const fallback=source.node.kind==='component'?registry.get(source.node.typeId)?.displayName:source.node.kind==='instance'?source.node.definitionId:source.node.kind==='frame'?source.node.layout.type:'Element';
++  copied.name=`${copied.name||fallback||'Element'} Copy`;
++  const siblings=source.slotChildren||source.parent.children;
++  siblings.splice(source.index+1,0,copied);
++  touchDefinition(next,pageId);
++  return {document:validateDocument(next,registry),id:copied.id};
++}
+ export function moveEditorNode(doc,id,parentId,index,registry,pageId='main'){
+   const next=structuredClone(doc),root=pageRoot(next,pageId);
+   const source=locateNode(root,id),target=locateNode(root,parentId);
+diff --git a/packages/core/shortcuts.js b/packages/core/shortcuts.js
+new file mode 100644
+index 0000000..db31a48
+--- /dev/null
++++ b/packages/core/shortcuts.js
+@@ -0,0 +1,10 @@
++/** Keyboard decisions are pure, so shortcuts can be tested separately from React. */
++export function editorShortcut({key='',ctrlKey=false,metaKey=false,altKey=false,shiftKey=false,repeat=false}={}, {design=true,modalOpen=false,editable=false,inside=true}={}){
++  if(!inside||editable||modalOpen||repeat||altKey)return null;
++  const command=ctrlKey||metaKey,normal=String(key).toLowerCase();
++  if(command&&normal==='z')return shiftKey?'redo':'undo';
++  if(command&&normal==='y'&&!shiftKey)return 'redo';
++  if(design&&command&&normal==='d'&&!shiftKey)return 'duplicate';
++  if(design&&!command&&!shiftKey&&(normal==='delete'||normal==='backspace'))return 'delete';
++  return null;
++}
+diff --git a/src/framework/UnifiedStudio.jsx b/src/framework/UnifiedStudio.jsx
+index d9a5966..e7dc45a 100644
+--- a/src/framework/UnifiedStudio.jsx
++++ b/src/framework/UnifiedStudio.jsx
+@@ -1,7 +1,8 @@
+ import React, {useEffect,useMemo,useRef,useState,useSyncExternalStore} from 'react';
+ import {Button,Input,InputNumber,Select,Segmented,Alert,Tag,Divider,Modal} from 'antd';
+ import {createSearchBoxDocument,literal,binding,serializeDocument,parseDocument,migrateV5ToV6,findNode,validateDocument} from '../../packages/schema/index.js';
+-import {createDefaultRegistry,RuntimeSession,patchDefinitionProperty,patchInstanceBinding,patchInstanceOverride,patchInstanceProp,FRAME_TYPES,createEditorNode,insertEditorNode,moveEditorNode,removeEditorNode,extractDefinition,exposeDefinitionProperty,exposeDefinitionEvent,allowInstanceOverride,patchEditorNode,setEditorProperty,setEditorLayout,pageRoot,locateNode,geometryInsertion,bindableFields,createComponentDefinition,createBlankComponentWorkspace,addComponentToPreview,componentUsage,createDefinitionPreviewDocument,createLegoExampleDocument,createSlotExampleDocument,createDynamicExampleDocument,addDefinitionProperty,inspectorSchema,visualDataChoices,compatibleChoices,providerForChoice,stateAction,configureStateField,instancePropertyProviders,exposeDefinitionSlot,insertSlotChild,removeSlotChildren,resetSlotChildren} from '../../packages/core/index.js';
++import {createDefaultRegistry,RuntimeSession,patchDefinitionProperty,patchInstanceBinding,patchInstanceOverride,patchInstanceProp,FRAME_TYPES,createEditorNode,insertEditorNode,moveEditorNode,removeEditorNode,extractDefinition,exposeDefinitionProperty,exposeDefinitionEvent,allowInstanceOverride,patchEditorNode,setEditorProperty,setEditorLayout,pageRoot,locateNode,geometryInsertion,bindableFields,createComponentDefinition,createBlankComponentWorkspace,addComponentToPreview,componentUsage,createDefinitionPreviewDocument,createLegoExampleDocument,createSlotExampleDocument,createDynamicExampleDocument,addDefinitionProperty,inspectorSchema,visualDataChoices,compatibleChoices,providerForChoice,stateAction,configureStateField,instancePropertyProviders,exposeDefinitionSlot,insertSlotChild,removeSlotChildren,resetSlotChildren,duplicateEditorNode,editorSelectionPath} from '../../packages/core/index.js';
++import {editorShortcut} from '../../packages/core/shortcuts.js';
+ import {RuntimeView,RuntimeNode} from '../../packages/runtime-react/Runtime.jsx';
+ import {createAntdRenderer} from '../../packages/renderer-antd/index.jsx';
+ import {frameStyle} from '../../packages/core/layout.js';
+@@ -218,6 +219,7 @@ export function UnifiedStudio({legacyProject}){
+   const matchesInsert=(label)=>`${label} ${ALIASES[label]||''}`.toLowerCase().includes(insertSearch.trim().toLowerCase());
+   session.document=doc;
+   const selectedId=node.id;
++  const trail=editorSelectionPath(treeRoot,selectedId);
+   const sync=(next,{resetState=false,record=true}={})=>{const checked=validateDocument(next,registry);if(record){history.current.past.push(doc);if(history.current.past.length>100)history.current.past.shift();history.current.future=[];}else history.current={past:[],future:[]};setDoc(checked);if(resetState)setSession(new RuntimeSession(checked));{const printed=printV6Dsl(editingDef&&checked.definitions[editingDef]?checked.definitions[editingDef].root:checked.pages.main.root);setCode(printed.text);codeRanges.current=printed.ranges;}setJsonDraft(serializeDocument(checked,registry));setError('');};
+   const mutate=(fn)=>{try{sync(fn(doc));}catch(e){setError(e.message);}};
+   const putNode=(updated)=>{if(editingDef){mutate(d=>{const next=structuredClone(d);const entry=locateNode(next.definitions[editingDef].root,selectedId);if(!entry)throw Error('Definition에서 노드 없음');if(entry.parent)(entry.slotChildren||entry.parent.children)[entry.index]=updated;else next.definitions[editingDef].root=updated;next.definitions[editingDef].revision++;return next;});}
+@@ -227,6 +229,7 @@ export function UnifiedStudio({legacyProject}){
+   const add=(typeId,ownerId=targetFrame(),index=undefined)=>{
+     try{const created=createEditorNode(doc,typeId,registry);sync(insertEditorNode(doc,ownerId,index??locateNode(treeRoot,ownerId).node.children.length,created,registry,activeScope));setSelected(created.id);setInsertOpen(false);}catch(e){setError(e.message);}};
+   const remove=()=>{if(node.id===treeRoot.id)return;mutate(d=>removeEditorNode(d,node.id,registry,activeScope));setSelected(location?.parent?.id||treeRoot.id);};
++  const duplicate=()=>{if(!location?.parent||view!=='design'||jsonOpen)return;try{const result=duplicateEditorNode(doc,selectedId,registry,activeScope);sync(result.document);setSelected(result.id);}catch(e){setError(`복제 실패: ${e.message}`);}};
+   const chooseDefinition=id=>{setEditingDef(id);setSelected(doc.definitions[id].root.id);{const printed=printV6Dsl(doc.definitions[id].root);setCode(printed.text);codeRanges.current=printed.ranges;}setView('design');};
+   const goPage=()=>{setEditingDef(null);setSelected(pageRoot(doc).id);{const printed=printV6Dsl(pageRoot(doc));setCode(printed.text);codeRanges.current=printed.ranges;}};
+   const extract=()=>{try{const result=extractDefinition(doc,node.id,registry,activeScope);sync(result.document);setSelected(result.instanceId);setError('');}catch(e){setError(e.message);}};
+@@ -328,9 +331,14 @@ export function UnifiedStudio({legacyProject}){
+   },[selected,view,editingDef]);
+   useEffect(()=>{
+     const keydown=e=>{
+-      if(!(e.ctrlKey||e.metaKey)||e.key.toLowerCase()!=='z'||e.altKey)return;
+-      if(['INPUT','TEXTAREA','SELECT'].includes(document.activeElement?.tagName)||document.activeElement?.isContentEditable)return;
+-      e.preventDefault();if(e.shiftKey)redo();else undo();
++      const element=e.target;
++      const inside=element===document.body||!!element?.closest?.('.v6-studio');
++      const editable=!!element?.closest?.('input,textarea,select,[contenteditable]:not([contenteditable="false"]),[role="textbox"],[role="combobox"]');
++      const action=editorShortcut(e,{inside,editable,design:view==='design'&&!jsonOpen,modalOpen:jsonOpen||createOpen||dataOpen});
++      if(!action)return;
++      if((action==='delete'||action==='duplicate')&&!location?.parent)return;
++      e.preventDefault();
++      if(action==='undo')undo();else if(action==='redo')redo();else if(action==='duplicate')duplicate();else if(action==='delete')remove();
+     };
+     window.addEventListener('keydown',keydown);return()=>window.removeEventListener('keydown',keydown);
+   });
+@@ -342,8 +350,8 @@ export function UnifiedStudio({legacyProject}){
+   }}):session.rootScope();
+   return <div className="v6-studio">
+     <input hidden type="file" accept="application/json,.json" ref={uploadRef} onChange={async e=>{const file=e.target.files?.[0];if(!file)return;try{const content=await file.text();const raw=JSON.parse(content);const next=raw.schemaVersion===5?migrateV5ToV6(raw):parseDocument(content,registry);sync(next,{resetState:true,record:false});setSelected(next.pages.main.root.id);setEditingDef(null);setView('design');setError('');}catch(err){setError(`파일 불러오기 실패: ${err.message}`);}finally{e.target.value='';}}}/>
+-    <div className="v6-header"><div><strong>UI Studio v0.14 · Visual-First Component Builder</strong><small>드래그 → 속성 · 데이터 · 동작 연결 → 재사용 → React·Dynamic 실행</small></div>
+-      <div className="v6-actions"><Button size="small" onClick={undo}>↶ Undo</Button><Button size="small" onClick={redo}>↷ Redo</Button><Button size="small" type="primary" onClick={()=>{setCreateName('MyComponent');setCreateOpen(true);}}>＋ New Component</Button><Button size="small" onClick={()=>{setDataOpen(true);setDataName("newField");setDataDefault("");}}>＋ 데이터 만들기</Button><Button size="small" onClick={previewAdd} disabled={!editingDef}>＋ Preview Instance</Button><Button size="small" onClick={reset}>SearchBox 예제</Button><Button size="small" onClick={legoExample}>🧱 LEGO 재사용 예제</Button><Button size="small" onClick={slotsExample}>▣ Slots 예제</Button><Button size="small" onClick={dynamicExample}>↻ Dynamic 예제</Button><Button size="small" onClick={importV5}>Legacy v5 가져오기</Button><Button size="small" onClick={()=>uploadRef.current?.click()}>JSON 불러오기</Button><Button size="small" onClick={()=>{setJsonOpen(v=>!v);setJsonDraft(serializeDocument(doc,registry));}}>JSON 편집</Button><Button size="small" onClick={()=>download(code,'ui-studio-v6.dsl.jsx')}>DSL 저장</Button><Button size="small" onClick={exportPackage}>📦 React Component ZIP</Button><Button size="small" onClick={()=>download(generateRuntimeTsx(doc,registry),'GeneratedPageV6.tsx','text/typescript')}>Page TSX (Legacy)</Button><Button size="small" type="primary" onClick={()=>download(serializeDocument(doc,registry),'ui-studio-v6.json','application/json')}>JSON 저장</Button></div>
++    <div className="v6-header"><div><strong>UI Studio v0.15 · Visual-First Component Builder</strong><small>드래그 → 속성 · 데이터 · 동작 연결 → 재사용 → React·Dynamic 실행</small></div>
++      <div className="v6-actions"><Button size="small" onClick={undo} disabled={!history.current.past.length}>↶ Undo</Button><Button size="small" onClick={redo} disabled={!history.current.future.length}>↷ Redo</Button><Button size="small" type="primary" onClick={()=>{setCreateName('MyComponent');setCreateOpen(true);}}>＋ New Component</Button><Button size="small" onClick={()=>{setDataOpen(true);setDataName("newField");setDataDefault("");}}>＋ 데이터 만들기</Button><Button size="small" onClick={previewAdd} disabled={!editingDef}>＋ Preview Instance</Button><Button size="small" onClick={reset}>SearchBox 예제</Button><Button size="small" onClick={legoExample}>🧱 LEGO 재사용 예제</Button><Button size="small" onClick={slotsExample}>▣ Slots 예제</Button><Button size="small" onClick={dynamicExample}>↻ Dynamic 예제</Button><Button size="small" onClick={importV5}>Legacy v5 가져오기</Button><Button size="small" onClick={()=>uploadRef.current?.click()}>JSON 불러오기</Button><Button size="small" onClick={()=>{setJsonOpen(v=>!v);setJsonDraft(serializeDocument(doc,registry));}}>JSON 편집</Button><Button size="small" onClick={()=>download(code,'ui-studio-v6.dsl.jsx')}>DSL 저장</Button><Button size="small" onClick={exportPackage}>📦 React Component ZIP</Button><Button size="small" onClick={()=>download(generateRuntimeTsx(doc,registry),'GeneratedPageV6.tsx','text/typescript')}>Page TSX (Legacy)</Button><Button size="small" type="primary" onClick={()=>download(serializeDocument(doc,registry),'ui-studio-v6.json','application/json')}>JSON 저장</Button></div>
+     </div>
+     {error&&<Alert className="v6-error" type="warning" showIcon message={error} closable onClose={()=>setError('')}/>}
+     {jsonOpen?<div className="v6-json"><div className="v6-inline"><strong>Canonical JSON v6</strong><span>정의·바인딩·Override 포함 · 유효한 문서만 적용</span><Button type="primary" onClick={applyJson}>JSON 검증 및 적용</Button></div><textarea aria-label="v6 JSON 문서" value={jsonDraft} onChange={e=>setJsonDraft(e.target.value)} spellCheck={false}/></div>:
+@@ -366,6 +374,10 @@ export function UnifiedStudio({legacyProject}){
+         <div className="v6-help">트리 항목을 끌어 순서·부모 변경 · Canvas 드롭도 같은 IR 명령을 사용합니다.</div>
+       </aside>
+       <main className="v6-center"><div className="v6-center-head"><Segmented size="small" options={[{label:'◫ Design',value:'design'},{label:'〈/〉 Code',value:'code'},{label:'▶ Preview',value:'preview'}]} value={view} onChange={v=>{if(v==='code'){const printed=printV6Dsl(treeRoot);setCode(printed.text);codeRanges.current=printed.ranges;}setView(v);}}/><span>Schema v6 · {editingDef?`Component: ${editingDef}`:'Preview / Page: main'}</span></div>
++        <div className="v15-selection-bar" data-testid="selection-toolbar">
++          <nav className="v15-breadcrumbs" aria-label="선택 경로">{trail.map((part,i)=><React.Fragment key={part.id}>{i>0&&<span aria-hidden="true">›</span>}<button type="button" aria-current={i===trail.length-1?'location':undefined} onClick={()=>setSelected(part.id)}>{part.name||part.id}</button></React.Fragment>)}</nav>
++          <div className="v15-selection-actions"><Button size="small" onClick={duplicate} disabled={!location?.parent||view!=='design'} title="Ctrl/Cmd+D">복제</Button><Button size="small" danger onClick={remove} disabled={!location?.parent||view!=='design'} title="Delete">삭제</Button></div>
++        </div>
+         <div className={'v6-design-code '+(view==='code'?'is-split':'')}>
+           <div className="v6-artboard-space"><div className="v6-stage-title">{view==='preview'?'Runtime Preview':'Design Canvas'} · 실제 React / AntD</div><div className="v6-artboard">
+             {view==='preview'?<RuntimeView document={previewRoot} session={session} registry={registry} renderer={renderer} onPublicEvent={(instanceId,event,payload)=>setLog(items=>[`${instanceId}.${event}: ${JSON.stringify(payload.value)}`,...items].slice(0,5))}/>:
+diff --git a/src/framework/unified.css b/src/framework/unified.css
+index 814767e..ba0a5aa 100644
+--- a/src/framework/unified.css
++++ b/src/framework/unified.css
+@@ -48,3 +48,12 @@
+ .v6-library-items{max-height:190px;overflow:auto;padding:4px 8px 10px}
+ .v6-library-row{display:flex;gap:7px;align-items:center;justify-content:space-between;margin:3px 0}
+ .v6-library-row .ant-btn{max-width:170px;text-overflow:ellipsis;overflow:hidden}
++
++/* v0.15: selection hierarchy and safe one-click editing. */
++.v15-selection-bar{display:flex;align-items:center;justify-content:space-between;gap:10px;min-width:0;padding:6px 13px;background:#f9fbff;border-bottom:1px solid #e1e7f0}
++.v15-breadcrumbs{display:flex;min-width:0;overflow:auto;align-items:center;gap:5px;white-space:nowrap}
++.v15-breadcrumbs>button{border:none;background:transparent;border-radius:4px;padding:5px 7px;color:#48678d;cursor:pointer;font-size:11px}
++.v15-breadcrumbs>button[aria-current="location"]{background:#e0ebff;color:#124aa8;font-weight:700}
++.v15-breadcrumbs>button:hover{background:#e9f1fe}
++.v15-breadcrumbs>span{color:#9daec3}.v15-selection-actions{display:flex;gap:6px;flex:none}
++@media(max-width:820px){.v15-selection-bar{flex-wrap:wrap}.v15-breadcrumbs{width:100%}}
+diff --git a/tests/editing-v015.test.js b/tests/editing-v015.test.js
+new file mode 100644
+index 0000000..f224be1
+--- /dev/null
++++ b/tests/editing-v015.test.js
+@@ -0,0 +1,76 @@
++import test from 'node:test';
++import assert from 'node:assert/strict';
++import {createDefaultRegistry,createEditorNode,insertEditorNode,duplicateEditorNode,editorSelectionPath,createComponentDefinition,exposeDefinitionSlot,insertSlotChild} from '../packages/core/index.js';
++import {editorShortcut} from '../packages/core/shortcuts.js';
++import {createSearchBoxDocument,findNode,serializeDocument,parseDocument,literal} from '../packages/schema/index.js';
++const r=createDefaultRegistry();
++const fresh=()=>createSearchBoxDocument();
++const ids=n=>[n.id,...(n.children||[]).flatMap(ids),...Object.values(n.slots||{}).flatMap(items=>items.flatMap(ids))];
++test('v0.15 duplicates a component adjacent to source with new ID and independent props',()=>{
++ const doc=fresh(),original=doc.pages.main.root.children[0];
++ const {document:copy,id}=duplicateEditorNode(doc,original.id,r);
++ assert.deepEqual(copy.pages.main.root.children.map(n=>n.id),[original.id,id,'customerSearch','productSearch']);
++ assert.notEqual(id,original.id);assert.equal(copy.pages.main.root.children[1].name,`${original.name||'Text'} Copy`);
++ copy.pages.main.root.children[1].props.text=literal('edited');
++ assert.notDeepEqual(copy.pages.main.root.children[1].props.text,copy.pages.main.root.children[0].props.text);
++ assert.equal(doc.pages.main.root.children.length,3);
++ assert.deepEqual(parseDocument(serializeDocument(copy,r),r),copy);
++});
++test('v0.15 duplicates a nested frame with recursively unique IDs and intact bindings',()=>{
++ let doc=fresh();const frame=createEditorNode(doc,'layout/row',r);
++ doc=insertEditorNode(doc,'pageRoot',3,frame,r);
++ const button=createEditorNode(doc,'core/Button',r);doc=insertEditorNode(doc,frame.id,0,button,r);
++ const childFrame=createEditorNode(doc,'layout/column',r);doc=insertEditorNode(doc,frame.id,1,childFrame,r);
++ const {document:copy,id}=duplicateEditorNode(doc,frame.id,r);
++ const source=findNode(copy.pages.main.root,frame.id),duplicate=findNode(copy.pages.main.root,id);
++ assert.equal(duplicate.children.length,2);
++ assert.equal(duplicate.children[0].typeId,'core/Button');
++ assert.equal(duplicate.children[1].layout.type,'column');
++ assert.equal(copy.pages.main.root.children.at(-1).id,id);
++ const all=ids(copy.pages.main.root);assert.equal(new Set(all).size,all.length);
++ assert.deepEqual(editorSelectionPath(copy.pages.main.root,duplicate.children[0].id).map(x=>x.id),['pageRoot',id,duplicate.children[0].id]);
++ assert.deepEqual(editorSelectionPath(copy.pages.main.root,'missing'),[]);
++ assert.equal(source.children[0].id,button.id);
++});
++test('v0.15 duplicates a filled slot and remaps nested nodes without changing its Definition',()=>{
++ let doc=fresh();doc=createComponentDefinition(doc,'Panel',r);
++ const frame=createEditorNode(doc,'layout/column',r);doc=insertEditorNode(doc,doc.definitions.Panel.root.id,0,frame,r,'definition:Panel');
++ doc=exposeDefinitionSlot(doc,'Panel',frame.id,'content',r);
++ const inst=createEditorNode(doc,'module/Panel',r);doc=insertEditorNode(doc,'pageRoot',0,inst,r);
++ const child=createEditorNode(doc,'layout/row',r);doc=insertSlotChild(doc,inst.id,'content',0,child,r);
++ const nested=createEditorNode(doc,'core/Text',r);doc=insertEditorNode(doc,child.id,0,nested,r);
++ const {document:copy,id}=duplicateEditorNode(doc,inst.id,r);
++ const orig=findNode(copy.pages.main.root,inst.id),dup=findNode(copy.pages.main.root,id);
++ assert.equal(dup.definitionId,'Panel');assert.equal(dup.slots.content[0].kind,'frame');
++ assert.notEqual(dup.slots.content[0].id,orig.slots.content[0].id);
++ assert.notEqual(dup.slots.content[0].children[0].id,orig.slots.content[0].children[0].id);
++ assert.deepEqual(editorSelectionPath(copy.pages.main.root,dup.slots.content[0].children[0].id).map(x=>x.id),['pageRoot',id,dup.slots.content[0].id,dup.slots.content[0].children[0].id]);
++ assert.deepEqual(copy.definitions.Panel,doc.definitions.Panel);
++});
++test('v0.15 works in Definition scope and never duplicates the root',()=>{
++ const doc=fresh(),def=doc.definitions.SearchBox;
++ const {document:copy,id}=duplicateEditorNode(doc,'searchButton',r,'definition:SearchBox');
++ assert.ok(findNode(copy.definitions.SearchBox.root,id));
++ assert.equal(copy.definitions.SearchBox.revision,def.revision+1);
++ assert.equal(copy.pages.main.root.children.length,doc.pages.main.root.children.length);
++ assert.throws(()=>duplicateEditorNode(doc,'pageRoot',r),/루트/);
++ assert.throws(()=>duplicateEditorNode(doc,'searchRoot',r,'definition:SearchBox'),/루트/);
++ assert.throws(()=>duplicateEditorNode(doc,'absent',r),/루트/);
++});
++test('v0.15 shortcut arbitration respects editors, modals and design-only operations',()=>{
++ const e=(key,extra={})=>({key,...extra});
++ assert.equal(editorShortcut(e('d',{metaKey:true})), 'duplicate');
++ assert.equal(editorShortcut(e('D',{ctrlKey:true})), 'duplicate');
++ assert.equal(editorShortcut(e('Delete')), 'delete');
++ assert.equal(editorShortcut(e('Backspace')), 'delete');
++ assert.equal(editorShortcut(e('z',{ctrlKey:true})), 'undo');
++ assert.equal(editorShortcut(e('z',{ctrlKey:true,shiftKey:true})), 'redo');
++ assert.equal(editorShortcut(e('y',{ctrlKey:true})), 'redo');
++ assert.equal(editorShortcut(e('z',{ctrlKey:true}),{editable:true}),null);
++ assert.equal(editorShortcut(e('d',{ctrlKey:true}),{modalOpen:true}),null);
++ assert.equal(editorShortcut(e('d',{ctrlKey:true}),{design:false}),null);
++ assert.equal(editorShortcut(e('Delete'),{design:false}),null);
++ assert.equal(editorShortcut(e('d',{ctrlKey:true}),{inside:false}),null);
++ assert.equal(editorShortcut(e('d',{ctrlKey:true,repeat:true})),null);
++ assert.equal(editorShortcut(e('z',{ctrlKey:true,altKey:true})),null);
++});
+diff --git a/tools/check-export-structure.py b/tools/check-export-structure.py
+new file mode 100644
+index 0000000..9b70420
+--- /dev/null
++++ b/tools/check-export-structure.py
+@@ -0,0 +1,25 @@
++import zipfile, pathlib, re, sys
++p=pathlib.Path(sys.argv[1])
++with zipfile.ZipFile(p) as z:
++    names={x.filename for x in z.infolist() if not x.is_dir()}
++    assert z.testzip() is None
++    assert any(x.endswith('src/runtime/core/editor.js') for x in names)
++    assert 'src/runtime/core/index.js' in names
++    assert 'src/CustomerBrowser.tsx' in names
++    internal=0
++    for name in names:
++        if not name.startswith('src/') or not name.endswith(('.js','.jsx','.ts','.tsx')):
++            continue
++        data=z.read(name).decode()
++        for match in re.finditer(r'''(?:from\s*|import\s*)["'](\.{1,2}/[^"']+)["']''', data):
++            rel=match.group(1)
++            target=(pathlib.PurePosixPath(name).parent / rel)
++            parts=[]
++            for segment in target.parts:
++                if segment=='..':
++                    if parts:parts.pop()
++                elif segment!='.':parts.append(segment)
++            resolved='/'.join(parts)
++            assert resolved in names or any(resolved+ext in names for ext in ('.js','.jsx','.ts','.tsx')), (name,rel,resolved)
++            internal+=1
++    print(f'PASS: archive contains {len(names)} files; {internal} relative source imports resolved; ZIP CRC OK')
