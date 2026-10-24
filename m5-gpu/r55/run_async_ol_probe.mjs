@@ -59,7 +59,7 @@ try{
    html=html.slice(0,start)+html.slice(end+6);
    html=html.replace('const layers=manifest.sources.map',`globalThis.__r55={seq:0,generation:0,attempts:{},retried:{},events:[]};
  const layers=manifest.sources.map`);
-   html=html.replace(' globalThis.__r53Snapshot=()=>{',` globalThis.__r55.advance=()=>{globalThis.__r55.generation++;globalThis.__r55.events.push({type:'cancel',generation:0});manifest.sources.forEach((part,i)=>{const source=layers[i].getSource();source.setTileUrlFunction(([,x,y])=>x===i%8&&y===Math.floor(i/8)?part.x+'/'+part.y+'?r55='+globalThis.__r55.generation:undefined,'r55-'+globalThis.__r55.generation);source.refresh();});map.renderSync();};
+   html=html.replace(' globalThis.__r53Snapshot=()=>{',` globalThis.__r55.advance=()=>{globalThis.__r55.generation++;globalThis.__r55.events.push({type:'cancel',generation:0});manifest.sources.forEach((part,i)=>{const source=layers[i].getSource();source.setTileUrlFunction(([,x,y])=>x===i%8&&y===Math.floor(i/8)?part.x+'/'+part.y+'?r55='+globalThis.__r55.generation:undefined,'r55-'+globalThis.__r55.generation);source.clear();source.refresh();layers[i].changed();});map.renderSync();map.render();};
  globalThis.__r53Snapshot=()=>{`);
    body=Buffer.from(html);
   }
@@ -77,7 +77,7 @@ try{
  await page.evaluate(()=>__r55.advance());
  await page.mouse.move(790,250);await page.mouse.down();await page.mouse.move(710,280,{steps:5});await page.mouse.up();
  await page.mouse.wheel(0,-120);
- await page.waitForFunction(()=>window.__r55?.events.some(e=>e.type==='issued'&&e.generation===1)||window.__r53?.errors?.length>0,null,{timeout:15000});
+ await page.waitForFunction(()=>window.__r55?.events.some(e=>e.type==='issued'&&e.generation===1)||window.__r53?.errors?.length>0,null,{timeout:15000}).catch(async e=>{report.events=await page.evaluate(()=>window.__r55?.events||[]);report.snapshots.timeout=await page.evaluate(()=>({generation:window.__r55?.generation,attempts:window.__r55?.attempts,ready:window.__r53?.ready,errors:window.__r53?.errors,frames:window.__r53?.frames}));throw e});
  await page.waitForTimeout(1200);
  report.events=await page.evaluate(()=>__r55.events);
  report.snapshots.final=await page.evaluate(()=>__r53Snapshot());
