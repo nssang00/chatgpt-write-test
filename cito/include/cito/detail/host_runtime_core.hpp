@@ -188,7 +188,10 @@ public:
         const auto packet = decode_data_packet_view(bytes);
         const auto it = resource_names_.find(packet.key);
         if (it == resource_names_.end()) return 0;
-        return deliver_local(packet.key, it->second.name, packet.payload);
+        // A callback may close the last subscription; retain the spelling
+        // for the duration of dispatch instead of referencing erased storage.
+        const std::string resource = it->second.name;
+        return deliver_local(packet.key, resource, packet.payload);
     }
 
     bool has_local_demand(

@@ -522,7 +522,7 @@ int run_client(
             cito::stable_name_id("acme"),
             cito::stable_name_id("robot_1"),
             cito::static_type_ref<NetPing>().type_id()};
-        (void)driver->ensure_data(data_key);
+        requester.advertise<NetPing>("robot_1");
         bool routed = false;
         for (int retry = 0; retry < 150; ++retry) {
             driver->poll_once();
@@ -550,7 +550,7 @@ int run_client(
                       << runtime->host().remote_destinations(data_key).size()
                       << " session_count=" << driver->session_count()
                       << " send/route failed" << std::endl;
-        (void)driver->release_data(data_key);
+        // Advertised intent is owned by the public Context.
     }
 
     (void)runtime->clear_driver(

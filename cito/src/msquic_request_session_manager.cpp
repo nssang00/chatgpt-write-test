@@ -167,6 +167,13 @@ public:
                         lifecycle->ensure(
                             key);
                     });
+            runtime_.request_network().set_data_interest_hooks(
+                [lifecycle = lifecycle_](const InterestKey& key) {
+                    (void)lifecycle->ensure_data(key);
+                },
+                [lifecycle = lifecycle_](const InterestKey& key) {
+                    (void)lifecycle->release_data(key);
+                });
             owns_wait_hook_ = true;
         }
     }
@@ -406,6 +413,7 @@ public:
         }
 
         if (owns_wait_hook_) {
+            runtime_.request_network().clear_data_interest_hooks();
             runtime_.request_network()
                 .clear_wait_hook();
             runtime_.request_network()

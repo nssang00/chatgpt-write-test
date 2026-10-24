@@ -16,6 +16,7 @@
 #include <string_view>
 #include <typeindex>
 #include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <deque>
 #include <vector>
@@ -145,6 +146,8 @@ private:
         }
 
         ~State() {
+            for (const auto& key : published_keys_)
+                runtime_->request_network().release_data_interest(key);
             runtime_->request_network()
                 .cancel_requests(
                     app_id_);
@@ -215,10 +218,30 @@ private:
         }
 
         template <class T>
+        void advertise(std::string_view resource) {
+            if constexpr (StaticCodec<T>::direct) {
+                auto key = make_key(static_type_ref<T>().type_id(), resource);
+                auto& network = runtime_->request_network();
+                if (published_keys_.contains(key) || !network.data_interest_enabled())
+                    return;
+                if (published_keys_.size() >= 256)
+                    throw std::length_error("Cito: maximum published topics exceeded");
+                if (!network.ensure_data_interest(key)) return;
+                try {
+                    published_keys_.insert(key);
+                } catch (...) {
+                    network.release_data_interest(key);
+                    throw;
+                }
+            }
+        }
+
+        template <class T>
         std::size_t publish(std::string_view resource, const T& value) {
             auto delivered = publish_local(resource, value);
 
             if constexpr (StaticCodec<T>::direct) {
+                advertise<T>(resource);
                 const auto key = make_key(
                     static_type_ref<T>().type_id(), resource);
                 auto& host = runtime_->host();
@@ -835,6 +858,7 @@ private:
         std::unordered_map<TypeId, WireResourceMap> wire_routes;
         std::unordered_map<std::size_t, Locator> locators;
         std::vector<std::size_t> pending_removals;
+        std::unordered_set<InterestKey, InterestKeyHash> published_keys_;
     };
 
 public:
@@ -962,6 +986,11 @@ public:
                 resource,
                 value,
                 options);
+    }
+
+    template <class T>
+    void advertise(std::string_view resource = {}) {
+        state_->template advertise<T>(resource);
     }
 
     template <class T>
