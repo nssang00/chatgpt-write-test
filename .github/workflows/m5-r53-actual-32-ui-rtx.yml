@@ -3,7 +3,7 @@ on:
   push:
     branches: [m5/r46-distinct-mvt-32-20261023]
     paths:
-      - '.github/workflows/m5-r53-actual-ol-ui-rtx.yml'
+      - '.github/workflows/m5-r53-actual-32-ui-rtx.yml'
       - 'm5-gpu/r53/actual_32_ol_ui.html'
       - 'm5-gpu/r53/run_actual_32_ol_ui.mjs'
   workflow_dispatch:
