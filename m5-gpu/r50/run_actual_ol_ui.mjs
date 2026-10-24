@@ -14,7 +14,9 @@ try{
  const mime={'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.mjs':'text/javascript; charset=utf-8','.json':'application/json','.pbf':'application/octet-stream','.css':'text/css'};
  server=createServer(async(req,res)=>{
   try{
-   const url=new URL(req.url,'http://127.0.0.1'),file=resolve(root,'.'+decodeURIComponent(url.pathname));
+   const url=new URL(req.url,'http://127.0.0.1');
+   if(url.pathname==='/favicon.ico'){res.writeHead(204);res.end();return;}
+   const file=resolve(root,'.'+decodeURIComponent(url.pathname));
    if(req.method!=='GET'||!file.startsWith(root+sep)||!existsSync(file))throw Error('Forbidden');
    res.writeHead(200,{'Content-Type':mime[extname(file)]||'application/octet-stream','Cache-Control':'no-store'});
    res.end(await readFile(file));
@@ -68,9 +70,11 @@ try{
 }catch(e){trace.error=String(e?.stack||e);console.error('R50_UI_E2E_FAIL',trace.error)}
 finally{
  if(page){try{await page.screenshot({path:join(out,'actual-ol-ui.png'),fullPage:true})}catch{}}
+ if(trace.errors?.length){trace.pass=false;trace.error=(trace.error||'')+' Browser console errors: '+JSON.stringify(trace.errors)}
  await writeFile(join(out,'result.json'),JSON.stringify(trace,null,2)+'\n');
  try{await browser?.close()}catch{}
  if(server?.listening)await new Promise(r=>server.close(r));
 }
 console.log(trace.pass?'R50_ACTUAL_OL_UI_E2E_PASS':'R50_ACTUAL_OL_UI_E2E_FAIL',JSON.stringify(trace.checks));
+if(trace.errors?.length){trace.pass=false;trace.error=(trace.error||'')+' Browser console errors: '+JSON.stringify(trace.errors)}
 if(!trace.pass)process.exitCode=1;
