@@ -34,4 +34,15 @@ function fake({ready=true,respond=true}={}){
  await p.ready;const r=await p.submit({tileKey:'recovered'});
  assert.equal(r.tileKey,'recovered');await p.close();
 }
-console.log(JSON.stringify({pass:true,cases:4,checks:['silent Worker termination task deadline','missing ready boot deadline','healthy task completion cancels deadline','fresh pool restart succeeds']},null,2));
+// postMessage synchronous failure must clear all deadlines and fail closed.
+{
+ let w;const p=new DirectTileWorkerPool({size:1,createWorker:()=>{
+  w=fake();w.postMessage=()=>{throw Error('deliberate structured clone failure')};return w;
+ },bootTimeoutMs:100,taskTimeoutMs:20});
+ await p.ready;
+ await assert.rejects(p.submit({tileKey:'bad-clone'}),/deliberate structured clone failure/);
+ assert.equal(p.closed,true);assert.ok(p.stats.workerErrors>=1);assert.equal(w.terminated,true);
+ await assert.rejects(p.submit({tileKey:'next'}),/closed/);
+ await sleep(40);assert.equal(p.stats.workerErrors,1);
+}
+console.log(JSON.stringify({pass:true,cases:5,checks:['silent Worker termination task deadline','missing ready boot deadline','healthy task completion cancels deadline','fresh pool restart succeeds','postMessage synchronous failure fail-closed without orphan timer']},null,2));
