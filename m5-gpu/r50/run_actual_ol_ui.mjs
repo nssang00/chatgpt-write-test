@@ -21,7 +21,7 @@ try{
   }catch(e){res.writeHead(404);res.end(String(e));}
  });
  await new Promise((r,j)=>{server.once('error',j);server.listen(0,'127.0.0.1',r)});
- const exe=process.env.M5_BROWSER||'C:\Program Files\Google\Chrome\Application\chrome.exe';
+ const exe=process.env.M5_BROWSER||'C:/Program Files/Google/Chrome/Application/chrome.exe';
  browser=await chromium.launch({executablePath:exe,headless:true,
   args:['--enable-webgl','--disable-software-rasterizer','--disable-background-networking','--window-size=1120,720']});
  page=await browser.newPage({viewport:{width:1120,height:720},deviceScaleFactor:1});
