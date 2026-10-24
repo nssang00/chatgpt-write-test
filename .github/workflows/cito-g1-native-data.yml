@@ -96,6 +96,22 @@ jobs:
           test "$server_status" -eq 0
           grep -q 'pubsub_sent=10' evidence/client.log
           grep -q 'pubsub_received=10' evidence/server.log
+
+          # 1,000 distinct sequenced samples: exact receive count and no duplicates.
+          sudo ip netns exec cito-g1-s env CITO_PUBSUB_SMOKE=1 CITO_PUBSUB_COUNT=1000 "$BIN" server 4461 47591 10.202.0.11 47461 "$GITHUB_WORKSPACE/server.pem" "$GITHUB_WORKSPACE/server.key" "$GITHUB_WORKSPACE/ca.pem" > evidence/server-1000.log 2>&1 &
+          server_stress_pid=$!
+          sleep 0.5
+          client_stress_status=0
+          timeout 30s sudo ip netns exec cito-g1-c env CITO_PUBSUB_SMOKE=1 CITO_PUBSUB_COUNT=1000 "$BIN" client 47461 "$GITHUB_WORKSPACE/ca.pem" "$GITHUB_WORKSPACE/client.pem" "$GITHUB_WORKSPACE/client.key" > evidence/client-1000.log 2>&1 || client_stress_status=$?
+          server_stress_status=0
+          wait "$server_stress_pid" || server_stress_status=$?
+          cat evidence/client-1000.log
+          cat evidence/server-1000.log
+          echo "G1_STRESS_CLIENT_EXIT=$client_stress_status G1_STRESS_SERVER_EXIT=$server_stress_status"
+          test "$client_stress_status" -eq 0
+          test "$server_stress_status" -eq 0
+          grep -q 'pubsub_sent=1000' evidence/client-1000.log
+          grep -q 'pubsub_received=1000' evidence/server-1000.log
       - name: Archive success and failure evidence
         if: always()
         uses: actions/upload-artifact@v4

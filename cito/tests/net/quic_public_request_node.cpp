@@ -221,6 +221,16 @@ Detached await_and_stop(
     ctx.stop();
 }
 
+int data_count() {
+    const char* value = std::getenv("CITO_PUBSUB_COUNT");
+    if (!value) return 10;
+    char* end = nullptr;
+    const long parsed = std::strtol(value, &end, 10);
+    if (end == value || *end || parsed < 1 || parsed > 1000)
+        throw std::invalid_argument("CITO_PUBSUB_COUNT must be 1..1000");
+    return static_cast<int>(parsed);
+}
+
 int run_server(
     std::uint16_t quic_port,
     std::uint16_t control_port,
@@ -288,12 +298,20 @@ int run_server(
         });
 
     const bool pubsub_mode = std::getenv("CITO_PUBSUB_SMOKE") != nullptr;
+    const int expected_data = pubsub_mode ? data_count() : 0;
     std::atomic<int> data_seen{0};
+    std::atomic<int> data_rejected{0};
+    std::vector<std::uint8_t> seen_sequences(static_cast<std::size_t>(expected_data)+1);
     cito::Subscription data_subscription;
     if (pubsub_mode) {
         data_subscription = provider.on<NetPing>(
             "robot_1", [&](const NetPing& ping) {
-                if (ping.value == 88) data_seen.fetch_add(1, std::memory_order_relaxed);
+                if (ping.value == 0 || ping.value > static_cast<std::uint32_t>(expected_data) ||
+                    seen_sequences[ping.value]++) {
+                    data_rejected.fetch_add(1, std::memory_order_relaxed);
+                } else {
+                    data_seen.fetch_add(1, std::memory_order_relaxed);
+                }
             });
     }
 
@@ -306,7 +324,7 @@ int run_server(
                 std::chrono::
                     steady_clock::now() +
                 std::chrono::
-                    seconds(10);
+                    seconds(pubsub_mode ? 25 : 10);
 
             while (
                 std::chrono::
@@ -316,7 +334,8 @@ int run_server(
                     handler_calls.load(
                         std::memory_order_relaxed) ==
                         1 &&
-                    (!pubsub_mode || data_seen.load(std::memory_order_relaxed) >= 10) &&
+                    (!pubsub_mode ||
+                     data_seen.load(std::memory_order_relaxed) >= expected_data) &&
                     driver->
                         completed_send_count() >=
                         1 &&
@@ -350,7 +369,9 @@ int run_server(
         handler_calls.load(
             std::memory_order_relaxed) ==
             1 &&
-        (!pubsub_mode || data_seen.load(std::memory_order_relaxed) == 10) &&
+        (!pubsub_mode ||
+         (data_seen.load(std::memory_order_relaxed) == expected_data &&
+          data_rejected.load(std::memory_order_relaxed) == 0)) &&
         stats.datagrams_received >=
             2 &&
         stats.datagrams_sent >= 2;
@@ -365,7 +386,7 @@ int run_server(
 
     std::cout
         << "quic_public_request_server handler=1 reply=1 discovery=udp run=context"
-        << (pubsub_mode ? " pubsub_received=10" : "")
+        << (pubsub_mode ? " pubsub_received=" + std::to_string(expected_data) : "")
         << std::endl;
 
     return 0;
@@ -516,6 +537,7 @@ int run_client(
             .pending_count() == 0;
 
     const bool pubsub_mode = std::getenv("CITO_PUBSUB_SMOKE") != nullptr;
+    const int expected_data = pubsub_mode ? data_count() : 0;
     bool pubsub_ok = true;
     if (pubsub_mode) {
         const cito::InterestKey data_key{
@@ -534,10 +556,12 @@ int run_client(
         }
         pubsub_ok = routed;
         if (routed) {
-            for (int i = 0; i < 10; ++i) {
-                if (requester.publish("robot_1", NetPing{88}) < 1)
+            for (int i = 1; i <= expected_data; ++i) {
+                if (requester.publish("robot_1", NetPing{
+                        static_cast<std::uint32_t>(i)}) < 1)
                     pubsub_ok = false;
                 driver->poll_once();
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
             }
             for (int i = 0; i < 100; ++i) {
                 driver->poll_once();
@@ -563,7 +587,7 @@ int run_client(
 
     std::cout
         << "quic_public_request_client result=42 lazy=1 deadline=1 discovery=udp run=context"
-        << (pubsub_mode ? " pubsub_sent=10" : "")
+        << (pubsub_mode ? " pubsub_sent=" + std::to_string(expected_data) : "")
         << std::endl;
 
     return 0;
