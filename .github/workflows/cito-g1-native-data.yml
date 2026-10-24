@@ -112,6 +112,37 @@ jobs:
           test "$server_stress_status" -eq 0
           grep -q 'pubsub_sent=1000' evidence/client-1000.log
           grep -q 'pubsub_received=1000' evidence/server-1000.log
+          
+          # Real cross-language matrix, all with independent Linux network
+          # namespaces and server-required mTLS. C uses the stable C ABI,
+          # C++ uses the public typed Context API.
+          run_abi_case() {
+            local name="$1" server_mode="$2" client_mode="$3"
+            local quic_port="$4" server_control="$5" client_control="$6"
+            local server_env=(CITO_PUBSUB_SMOKE=1)
+            local client_env=(CITO_PUBSUB_SMOKE=1)
+            if [[ "$server_mode" = c ]]; then server_env+=(CITO_C_API_DATA=1); fi
+            if [[ "$client_mode" = c ]]; then client_env+=(CITO_C_API_DATA=1); fi
+            sudo ip netns exec cito-g1-s env "${server_env[@]}" "$BIN" server "$quic_port" "$server_control" 10.202.0.11 "$client_control" "$GITHUB_WORKSPACE/server.pem" "$GITHUB_WORKSPACE/server.key" "$GITHUB_WORKSPACE/ca.pem" > "evidence/server-$name.log" 2>&1 &
+            local server_pid=$!
+            sleep 0.5
+            local client_status=0 server_status=0
+            timeout 18s sudo ip netns exec cito-g1-c env "${client_env[@]}" "$BIN" client "$client_control" "$GITHUB_WORKSPACE/ca.pem" "$GITHUB_WORKSPACE/client.pem" "$GITHUB_WORKSPACE/client.key" > "evidence/client-$name.log" 2>&1 || client_status=$?
+            wait "$server_pid" || server_status=$?
+            cat "evidence/client-$name.log"
+            cat "evidence/server-$name.log"
+            echo "G4_CASE=$name client=$client_status server=$server_status"
+            test "$client_status" -eq 0
+            test "$server_status" -eq 0
+            grep -q 'pubsub_sent=10' "evidence/client-$name.log"
+            grep -q 'pubsub_received=10' "evidence/server-$name.log"
+            if [[ "$client_mode" = c ]]; then grep -q 'c_api=1' "evidence/client-$name.log"; fi
+            if [[ "$server_mode" = c ]]; then grep -q 'c_api=1' "evidence/server-$name.log"; fi
+          }
+          run_abi_case c-to-c c c 4462 47592 47462
+          run_abi_case c-to-cpp cpp c 4463 47593 47463
+          run_abi_case cpp-to-c c cpp 4464 47594 47464
+
       - name: Archive success and failure evidence
         if: always()
         uses: actions/upload-artifact@v4
