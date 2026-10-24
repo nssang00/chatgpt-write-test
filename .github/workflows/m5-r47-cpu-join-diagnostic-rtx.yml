@@ -11,7 +11,7 @@ permissions:
   contents: read
 concurrency:
   group: r47-cpu-line-pixel-diagnostic
-  cancel-in-progress: false
+  cancel-in-progress: true
 jobs:
   abba:
     name: Stock OL 10.10.0 vs R45 actual app with 8/16/32 unique MVT feeds
@@ -45,7 +45,7 @@ jobs:
         shell: powershell
         run: |
           $ErrorActionPreference='Stop'
-          $dest=Join-Path $env:GITHUB_WORKSPACE 'R46-ABBA-R35'
+          $dest=Join-Path $env:GITHUB_WORKSPACE 'R47-ABBA-R35'
           New-Item -ItemType Directory -Force $dest | Out-Null
           Expand-Archive -LiteralPath $env:R35_ZIP_PATH -DestinationPath $dest -Force
           git -C $dest init -q
@@ -68,14 +68,14 @@ jobs:
         shell: powershell
         run: |
           $ErrorActionPreference='Stop'
-          $dest=Join-Path $env:GITHUB_WORKSPACE 'R46-ABBA-R35'
+          $dest=Join-Path $env:GITHUB_WORKSPACE 'R47-ABBA-R35'
           node (Join-Path $dest 'm5-gpu\r46\download_unique_tiles.mjs') (Join-Path $dest 'tests\fixtures\r46-data')
           if($LASTEXITCODE -ne 0){throw '32 real independent MVT source validation failed'}
       - name: Paired RTX stock OL R45 R45 stock OL acceptance at 8 16 32
         shell: powershell
         run: |
           $ErrorActionPreference='Stop'
-          $dest=Join-Path $env:GITHUB_WORKSPACE 'R46-ABBA-R35'
+          $dest=Join-Path $env:GITHUB_WORKSPACE 'R47-ABBA-R35'
           $out=Join-Path $dest 'RESULTS\R46_DISTINCT_ABBA'
           node (Join-Path $dest 'm5-gpu\r46\run_distinct_abba.mjs') $dest $out
           if($LASTEXITCODE -ne 0){Write-Warning 'R47 diagnostic ABBA under performance threshold'}
@@ -89,7 +89,7 @@ jobs:
           name: r47-cpu-join-diagnostic-${{ github.run_id }}
           path: |
             R46-PERF-EVIDENCE/**
-            R46-ABBA-R35/tests/fixtures/r46-data/manifest.json
-            R46-ABBA-R35/RESULTS/R46_DISTINCT_ABBA/**
+            R47-ABBA-R35/tests/fixtures/r46-data/manifest.json
+            R47-ABBA-R35/RESULTS/R46_DISTINCT_ABBA/**
           retention-days: 30
           if-no-files-found: warn
