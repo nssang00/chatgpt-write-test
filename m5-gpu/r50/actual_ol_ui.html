@@ -62,6 +62,7 @@ try{
     let painted=0,h=2166136261;
     for(let k=0;k<bytes.length;k++){if(k%4===3&&bytes[k])painted++;h=Math.imul(h^bytes[k],16777619)>>>0;}
     details.painted=painted;details.hash=h.toString(16);details.glError=stats.glError;
+    const ext=gl.getExtension('WEBGL_debug_renderer_info');details.renderer=ext?gl.getParameter(ext.UNMASKED_RENDERER_WEBGL):gl.getParameter(gl.RENDERER);
    }catch(e){details.errors.push(String(e.stack||e));}
   }
   return details;
