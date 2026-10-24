@@ -155,6 +155,11 @@ private:
                 .unregister_app(
                     app_id_);
 
+            for (const auto& [id, locator] : locators) {
+                (void)id;
+                if (locator.wire_enabled)
+                    runtime_->host().unregister_resource_name(locator.wire_key);
+            }
             if (registered_) {
                 runtime_->host()
                     .unregister_app(
@@ -229,9 +234,10 @@ private:
                     resource,
                     std::span<const std::uint8_t>(
                         payload.data(), payload.size()),
-                    [](DestinationId, std::span<const std::uint8_t>) {
-                        // Public Context transport attachment is a later step.
-                        return false;
+                    [this](DestinationId destination,
+                           std::span<const std::uint8_t> packet) {
+                        return runtime_->request_network().send_data(
+                            destination, packet);
                     });
 
                 delivered += result.delivered();
@@ -662,6 +668,10 @@ private:
                     throw std::logic_error(
                         "Cito host interest registration failed");
                 }
+                if (!runtime_->host().register_resource_name(key, locator.resource)) {
+                    runtime_->host().remove_interest(app_id_, key);
+                    throw std::logic_error("Cito resource hash collision");
+                }
             } catch (...) {
                 if (--route.count == 0) resources.erase(route_it);
                 if (resources.empty()) wire_routes.erase(type_id);
@@ -676,6 +686,7 @@ private:
         void disable_wire(Locator& locator) {
             if (!locator.wire_enabled) return;
 
+            runtime_->host().unregister_resource_name(locator.wire_key);
             runtime_->host().remove_interest(app_id_, locator.wire_key);
 
             auto type_it = wire_routes.find(locator.wire_type);

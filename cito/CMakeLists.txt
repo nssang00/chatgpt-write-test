@@ -72,6 +72,7 @@ if(BUILD_TESTING)
 
   cito_add_test(cito_context_tests tests/context_test.cpp "unit;regression")
   cito_add_test(cito_reentrant_subscription_growth_tests tests/reentrant_subscription_growth_test.cpp "unit;G2;G4;regression")
+  cito_add_test(cito_public_data_transport_bridge_tests tests/public_data_transport_bridge_test.cpp "unit;G1;regression")
   cito_add_test(cito_shared_context_tests tests/shared_context_test.cpp "unit;latency;regression")
   cito_add_test(cito_context_runtime_driver_tests tests/context_runtime_driver_test.cpp "unit;regression")
   cito_add_test(cito_context_index_tests tests/context_index_test.cpp "unit;latency;regression")

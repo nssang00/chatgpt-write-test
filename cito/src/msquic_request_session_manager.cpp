@@ -1073,6 +1073,22 @@ private:
             return;
         }
 
+        // Data is admitted only when the listener required a validated
+        // client certificate. Legacy unauthenticated RPC remains separate.
+        if (stream->server_side &&
+            stream->received.size() >= 4 &&
+            stream->received[0] == 'C' &&
+            stream->received[1] == 'T' &&
+            stream->received[2] == 'D' &&
+            stream->received[3] == '1') {
+            if (options_.require_client_certificate) {
+                (void)runtime_.request_network().receive_data(
+                    stream->received);
+            }
+            graceful_stream_finish(stream);
+            return;
+        }
+
         RequestTransportFrameView
             frame;
 

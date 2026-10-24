@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cito/detail/request_transport.hpp>
+#include <cito/data_packet.hpp>
 
 #include <algorithm>
 #include <chrono>
@@ -84,6 +85,27 @@ public:
             pending_status);
 
         return removed;
+    }
+
+    // A connected QUIC session transports CTD1 alongside request frames.
+    // Invalid and oversized data must never reach the async sender.
+    bool send_data(DestinationId destination,
+                   std::span<const std::uint8_t> bytes) {
+        constexpr std::size_t limit = 8 * 1024 * 1024;
+        auto it = sessions_.find(destination);
+        if (it == sessions_.end() || bytes.size() > limit) return false;
+        try {
+            (void)cito::decode_data_packet_view(bytes);
+            return it->second(bytes);
+        } catch (...) { return false; }
+    }
+
+    // Only the transport owner's authenticated QUIC event loop may call this.
+    std::size_t receive_data(std::span<const std::uint8_t> bytes) {
+        constexpr std::size_t limit = 8 * 1024 * 1024;
+        if (bytes.size() > limit) return 0;
+        try { return host_.deliver_data_packet(bytes); }
+        catch (...) { return 0; }
     }
 
     bool has_session(
