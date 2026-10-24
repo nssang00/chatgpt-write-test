@@ -142,6 +142,27 @@ jobs:
           run_abi_case c-to-c c c 4462 47592 47462
           run_abi_case c-to-cpp cpp c 4463 47593 47463
           run_abi_case cpp-to-c c cpp 4464 47594 47464
+          
+          # G3 limited fault-injection gate: QUIC streams must recover all 100
+          # sequenced samples through real 2% UDP packet loss. This is not a
+          # test of Cito reconnect nor a full QoS guarantee.
+          sudo ip netns exec cito-g1-c tc qdisc add dev eth0 root netem loss 2%
+          sudo ip netns exec cito-g1-s env CITO_PUBSUB_SMOKE=1 CITO_PUBSUB_COUNT=100 "$BIN" server 4468 47608 10.202.0.11 47468 "$GITHUB_WORKSPACE/server.pem" "$GITHUB_WORKSPACE/server.key" "$GITHUB_WORKSPACE/ca.pem" > evidence/server-loss100.log 2>&1 &
+          loss_server_pid=$!
+          sleep 0.5
+          loss_client_status=0
+          timeout 30s sudo ip netns exec cito-g1-c env CITO_PUBSUB_SMOKE=1 CITO_PUBSUB_COUNT=100 "$BIN" client 47468 "$GITHUB_WORKSPACE/ca.pem" "$GITHUB_WORKSPACE/client.pem" "$GITHUB_WORKSPACE/client.key" > evidence/client-loss100.log 2>&1 || loss_client_status=$?
+          loss_server_status=0
+          wait "$loss_server_pid" || loss_server_status=$?
+          sudo ip netns exec cito-g1-c tc qdisc del dev eth0 root
+          cat evidence/client-loss100.log
+          cat evidence/server-loss100.log
+          echo "G3_LOSS_CLIENT_EXIT=$loss_client_status G3_LOSS_SERVER_EXIT=$loss_server_status"
+          test "$loss_client_status" -eq 0
+          test "$loss_server_status" -eq 0
+          grep -q 'pubsub_sent=100' evidence/client-loss100.log
+          grep -q 'pubsub_received=100' evidence/server-loss100.log
+
 
       - name: Archive success and failure evidence
         if: always()
