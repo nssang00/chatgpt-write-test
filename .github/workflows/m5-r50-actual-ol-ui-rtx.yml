@@ -53,8 +53,8 @@ jobs:
           Copy-Item .\m5-gpu\r50\actual_ol_ui.html,.\m5-gpu\r50\run_actual_ol_ui.mjs (Join-Path $dest 'm5-gpu\r50\')
           Push-Location $dest
           try {
-            npm ci --ignore-scripts --no-audit --no-fund
-            if($LASTEXITCODE -ne 0){throw 'npm ci failed'}
+            npm install --no-save --package-lock=false --ignore-scripts --no-audit --no-fund playwright@1.55.0
+            if($LASTEXITCODE -ne 0){throw 'Pinned playwright install failed'}
           }finally{Pop-Location}
       - name: Real Chrome mouse pointer and wheel OL map integration E2E
         shell: powershell
