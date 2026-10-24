@@ -9,7 +9,9 @@ const report={pass:false,checks:[],metrics:{},errors:[]};
 try{
  server=createServer(async(req,res)=>{
   try{
-   const url=new URL(req.url,'http://127.0.0.1'),file=resolve(root,'.'+decodeURIComponent(url.pathname));
+   const url=new URL(req.url,'http://127.0.0.1');
+   if(url.pathname==='/favicon.ico'){res.writeHead(204);res.end();return;}
+   const file=resolve(root,'.'+decodeURIComponent(url.pathname));
    if(!file.startsWith(root+sep))throw Error('invalid resource path');
    const mime={'.html':'text/html','.js':'text/javascript','.mjs':'text/javascript','.pbf':'application/octet-stream'};
    const payload=await readFile(file);
