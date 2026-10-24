@@ -12,8 +12,9 @@ try{
    const url=new URL(req.url,'http://127.0.0.1'),file=resolve(root,'.'+decodeURIComponent(url.pathname));
    if(!file.startsWith(root+sep))throw Error('invalid resource path');
    const mime={'.html':'text/html','.js':'text/javascript','.mjs':'text/javascript','.pbf':'application/octet-stream'};
+   const payload=await readFile(file);
    res.writeHead(200,{'Content-Type':mime[extname(file)]||'application/octet-stream','Cache-Control':'no-store'});
-   res.end(await readFile(file));
+   res.end(payload);
   }catch(e){res.writeHead(404);res.end(String(e));}
  });
  await new Promise((r,j)=>{server.once('error',j);server.listen(0,'127.0.0.1',r)});
