@@ -522,6 +522,7 @@ int run_client(
             cito::stable_name_id("acme"),
             cito::stable_name_id("robot_1"),
             cito::static_type_ref<NetPing>().type_id()};
+        (void)driver->ensure_data(data_key);
         bool routed = false;
         for (int retry = 0; retry < 150; ++retry) {
             driver->poll_once();
@@ -544,7 +545,12 @@ int run_client(
             }
         }
         if (!pubsub_ok)
-            std::cerr << "G1 data smoke: remote interest/QUIC send failed" << std::endl;
+            std::cerr << "G1 data smoke: routed=" << routed
+                      << " remote_destinations="
+                      << runtime->host().remote_destinations(data_key).size()
+                      << " session_count=" << driver->session_count()
+                      << " send/route failed" << std::endl;
+        (void)driver->release_data(data_key);
     }
 
     (void)runtime->clear_driver(

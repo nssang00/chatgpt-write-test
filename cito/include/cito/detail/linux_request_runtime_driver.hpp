@@ -61,6 +61,10 @@ public:
     // tests and future composition with a larger Cito loop.
     std::size_t poll_once();
 
+    // Owner-thread explicit publisher intent for Discovery-driven data routes.
+    bool ensure_data(const InterestKey& key);
+    bool release_data(const InterestKey& key);
+
     bool running() const noexcept;
 
     std::uint16_t control_port()
