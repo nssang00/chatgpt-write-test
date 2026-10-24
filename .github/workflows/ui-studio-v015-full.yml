@@ -36,7 +36,7 @@ jobs:
           python3 experiments/ui-studio-v0.14/ci/fix-v014-e2e-selectors.py experiments/ui-studio-v0.15/app/e2e/visual-authoring-v014.spec.js
           echo '22b33f0d5623fe56e7a2da33ee46a02c858826f50ac2d9169c614264c9f1e7cb  experiments/ui-studio-v0.15/app/src/framework/UnifiedStudio.jsx' | sha256sum -c -
           echo 'e89b70e39ba7971be5aa3e6dc84f66f924e78fa6ce47ae76f049f2b1eb84d89b  experiments/ui-studio-v0.15/ci/v015-upgrade.patch' | sha256sum -c -
-          (cd experiments/ui-studio-v0.15/app && patch --batch --forward -p1 < ../ci/v015-upgrade.patch)
+          (cd experiments/ui-studio-v0.15/app && awk '/^diff --git a\\/README.md b\\/README.md/{skip=1;next} /^diff --git /{skip=0} !skip{print}' ../ci/v015-upgrade.patch | patch --batch --forward -p1)
           cd experiments/ui-studio-v0.15/app
           echo '66771bcfd171f04c2a4115c7fb3c717e37700002a42779ad67a0b3d090154661  package.json' | sha256sum -c -
           echo 'aed08c4a9dc9ec7b73f4cf8cbef6da96905cc2b5129f443196c2841c7bc23348  packages/core/visual.js' | sha256sum -c -
