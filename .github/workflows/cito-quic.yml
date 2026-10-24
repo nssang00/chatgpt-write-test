@@ -6,6 +6,10 @@ on:
     paths:
       - "cito/CMakeLists.txt"
       - "cito/include/cito/data_packet.hpp"
+      - "cito/include/cito/cito.hpp"
+      - "cito/include/cito/detail/host_runtime_core.hpp"
+      - "cito/include/cito/detail/request_network_adapter.hpp"
+      - "cito/tests/public_data_transport_bridge_test.cpp"
       - "cito/include/cito/detail/transport_selector.hpp"
       - "cito/include/cito/detail/request_reply_core.hpp"
       - "cito/include/cito/detail/request_transport.hpp"
