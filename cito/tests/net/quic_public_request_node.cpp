@@ -4,6 +4,7 @@
 #include <atomic>
 #include <chrono>
 #include <cstdint>
+#include <cstdlib>
 #include <cstdio>
 #include <cstring>
 #include <exception>
@@ -286,6 +287,16 @@ int run_server(
                 ping.value + 1};
         });
 
+    const bool pubsub_mode = std::getenv("CITO_PUBSUB_SMOKE") != nullptr;
+    std::atomic<int> data_seen{0};
+    cito::Subscription data_subscription;
+    if (pubsub_mode) {
+        data_subscription = provider.on<NetPing>(
+            "robot_1", [&](const NetPing& ping) {
+                if (ping.value == 88) data_seen.fetch_add(1, std::memory_order_relaxed);
+            });
+    }
+
     std::atomic<bool>
         completed{false};
 
@@ -305,6 +316,7 @@ int run_server(
                     handler_calls.load(
                         std::memory_order_relaxed) ==
                         1 &&
+                    (!pubsub_mode || data_seen.load(std::memory_order_relaxed) >= 10) &&
                     driver->
                         completed_send_count() >=
                         1 &&
@@ -338,6 +350,7 @@ int run_server(
         handler_calls.load(
             std::memory_order_relaxed) ==
             1 &&
+        (!pubsub_mode || data_seen.load(std::memory_order_relaxed) == 10) &&
         stats.datagrams_received >=
             2 &&
         stats.datagrams_sent >= 2;
@@ -352,6 +365,7 @@ int run_server(
 
     std::cout
         << "quic_public_request_server handler=1 reply=1 discovery=udp run=context"
+        << (pubsub_mode ? " pubsub_received=10" : "")
         << std::endl;
 
     return 0;
@@ -501,16 +515,49 @@ int run_client(
         runtime->requests()
             .pending_count() == 0;
 
+    const bool pubsub_mode = std::getenv("CITO_PUBSUB_SMOKE") != nullptr;
+    bool pubsub_ok = true;
+    if (pubsub_mode) {
+        const cito::InterestKey data_key{
+            cito::stable_name_id("acme"),
+            cito::stable_name_id("robot_1"),
+            cito::static_type_ref<NetPing>().type_id()};
+        bool routed = false;
+        for (int retry = 0; retry < 150; ++retry) {
+            driver->poll_once();
+            if (!runtime->host().remote_destinations(data_key).empty()) {
+                routed = true;
+                break;
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        }
+        pubsub_ok = routed;
+        if (routed) {
+            for (int i = 0; i < 10; ++i) {
+                if (requester.publish("robot_1", NetPing{88}) < 1)
+                    pubsub_ok = false;
+                driver->poll_once();
+            }
+            for (int i = 0; i < 100; ++i) {
+                driver->poll_once();
+                std::this_thread::sleep_for(std::chrono::milliseconds(5));
+            }
+        }
+        if (!pubsub_ok)
+            std::cerr << "G1 data smoke: remote interest/QUIC send failed" << std::endl;
+    }
+
     (void)runtime->clear_driver(
         driver.get());
     driver.reset();
 
-    if (!final_ok) {
+    if (!final_ok || !pubsub_ok) {
         return 23;
     }
 
     std::cout
         << "quic_public_request_client result=42 lazy=1 deadline=1 discovery=udp run=context"
+        << (pubsub_mode ? " pubsub_sent=10" : "")
         << std::endl;
 
     return 0;

@@ -530,6 +530,31 @@ jobs:
           grep -q 'quic_public_request_client result=42' quic-public-mtls-client.log
           grep -q 'quic_public_request_server handler=1 reply=1' quic-public-mtls-server.log
 
+          # G1: actually deliver CTD1 public typed samples across two network
+          # namespaces, under the mutual-TLS profile, not a mock session.
+          sudo ip netns exec cito-quic-s env CITO_PUBSUB_SMOKE=1 "$PUBBIN" server 4460 47590 \
+            10.202.0.11 47460 \
+            "$GITHUB_WORKSPACE/quic-cert.pem" "$GITHUB_WORKSPACE/quic-key.pem" \
+            "$GITHUB_WORKSPACE/quic-ca.pem" \
+            >quic-public-data-server.log 2>&1 &
+          DATA_SERVER_PID=$!
+          sleep 0.3
+          data_client_status=0
+          timeout 14s sudo ip netns exec cito-quic-c env CITO_PUBSUB_SMOKE=1 "$PUBBIN" client 47460 \
+            "$GITHUB_WORKSPACE/quic-ca.pem" \
+            "$GITHUB_WORKSPACE/quic-client-cert.pem" \
+            "$GITHUB_WORKSPACE/quic-client-key.pem" \
+            >quic-public-data-client.log 2>&1 || data_client_status=$?
+          data_server_status=0
+          wait "$DATA_SERVER_PID" || data_server_status=$?
+          echo '=== authenticated public Context typed Pub/Sub ==='
+          cat quic-public-data-client.log
+          cat quic-public-data-server.log
+          test "$data_client_status" -eq 0
+          test "$data_server_status" -eq 0
+          grep -q 'pubsub_sent=10' quic-public-data-client.log
+          grep -q 'pubsub_received=10' quic-public-data-server.log
+
           # No client certificate: server TLS must reject the public API call.
           sudo ip netns exec cito-quic-s "$PUBBIN" server 4452 47520 \
             10.202.0.11 47422 \
