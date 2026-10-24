@@ -57,6 +57,15 @@ if(CITO_ENABLE_MSQUIC)
 
   if(UNIX AND NOT APPLE)
     target_link_libraries(cito_msquic PUBLIC cito_posix_runtime)
+    # The native driver must be loaded dynamically by a Python process.
+    set_target_properties(cito_msquic cito_posix_runtime
+      PROPERTIES POSITION_INDEPENDENT_CODE ON)
+    add_library(cito_native SHARED src/native_runtime_c.cpp)
+    target_include_directories(cito_native PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
+    target_compile_features(cito_native PUBLIC cxx_std_20)
+    target_link_libraries(cito_native PRIVATE
+      cito_msquic cito_posix_runtime cito_core Threads::Threads)
+    target_compile_options(cito_native PRIVATE -Wall -Wextra -Wpedantic)
   endif()
 endif()
 
