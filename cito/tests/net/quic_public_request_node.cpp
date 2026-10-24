@@ -667,6 +667,10 @@ int run_client(
 int main(
     int argc,
     char** argv) {
+    if (argc == 2 && std::strcmp(argv[1], "type-id") == 0) {
+        std::cout << cito::static_type_ref<NetPing>().type_id() << std::endl;
+        return 0;
+    }
     if (
         argc >= 2 &&
         std::strcmp(
