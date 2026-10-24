@@ -20,6 +20,8 @@ const patches=[
  "for(const job of this.inflight.values()){clearTimeout(job.timer);job.reject(reason);}"],
 ["const job=this.queue.shift();slot.busy=true;this.inflight.set(job.id,job);",
  "const job=this.queue.shift();slot.busy=true;this.inflight.set(job.id,job);\n      job.timer=setTimeout(()=>this._failAll(Error('Tile Worker result deadline exceeded'),slot),this.taskTimeoutMs);"],
+["catch(error){slot.busy=false;this.inflight.delete(job.id);job.reject(error);}",
+ "catch(error){clearTimeout(job.timer);slot.busy=false;this.inflight.delete(job.id);job.reject(error);this._failAll(error,slot);}"],
 ["for(const job of this.inflight.values())job.reject(error);",
  "for(const job of this.inflight.values()){clearTimeout(job.timer);job.reject(error);}"],
 ["for(const slot of this.slots)if(!slot.ready)slot.rejectReady(error);",
