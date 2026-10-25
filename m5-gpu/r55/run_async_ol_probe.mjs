@@ -60,7 +60,7 @@ try{
    html=html.slice(0,start)+html.slice(end+6);
    html=html.replace('const layers=manifest.sources.map',`globalThis.__r55={seq:0,generation:0,attempts:{},retried:{},loaders:{},events:[]};
  const layers=manifest.sources.map`);
-   html=html.replace(' globalThis.__r53Snapshot=()=>{',` globalThis.__r55.advance=()=>{globalThis.__r55.generation++;globalThis.__r55.events.push({type:'cancel',generation:0});manifest.sources.forEach((part,i)=>{const source=layers[i].getSource();source.setTileUrlFunction(([,x,y])=>x===i%8&&y===Math.floor(i/8)?part.x+'/'+part.y+'?r55='+globalThis.__r55.generation:undefined,'r55-'+globalThis.__r55.generation);source.clear();source.refresh();layers[i].changed();});map.renderSync();map.render();globalThis.__r55.events.push({type:'ol-cache-reload-attempt',count:Object.keys(globalThis.__r55.loaders).length,view:{center:map.getView().getCenter(),resolution:map.getView().getResolution()}});};
+   html=html.replace(' globalThis.__r53Snapshot=()=>{',` globalThis.__r55.advance=()=>{globalThis.__r55.generation++;globalThis.__r55.events.push({type:'cancel',generation:0});manifest.sources.forEach((part,i)=>{const previous=layers[i].getSource();const next=new VectorTileSource({format:previous.getFormat(),tileGrid:grid,projection:proj,wrapX:false,transition:0,tileUrlFunction:([,x,y])=>x===i%8&&y===Math.floor(i/8)?part.x+'/'+part.y+'?r55='+globalThis.__r55.generation:undefined,tileLoadFunction:previous.getTileLoadFunction()});layers[i].setSource(next);globalThis.__r55.events.push({type:'source-replaced',index:i});});map.renderSync();map.render();globalThis.__r55.events.push({type:'ol-source-replacement-attempt',count:Object.keys(globalThis.__r55.loaders).length,view:{center:map.getView().getCenter(),resolution:map.getView().getResolution()}});};
  globalThis.__r53Snapshot=()=>{`);
    body=Buffer.from(html);
   }
@@ -79,7 +79,7 @@ try{
  // Wait for generation-1 requests at the unchanged, known-good tile-grid view.
  // Moving and zooming first can leave the one-level custom tile grid without
  // any requested coordinates; test input gestures only after reloading.
- await page.waitForFunction(()=>window.__r55?.events.some(e=>e.type==='issued'&&e.generation===1)||window.__r53?.errors?.length>0,null,{timeout:4000}).catch(async e=>{report.events=await page.evaluate(()=>window.__r55?.events||[]);report.snapshots.timeout=await page.evaluate(()=>({generation:window.__r55?.generation,attempts:window.__r55?.attempts,ready:window.__r53?.ready,errors:window.__r53?.errors,frames:window.__r53?.frames}));report.checks.push('OpenLayers cache reload did not issue generation-1 requests; this is an observed gate failure');throw e});
+ await page.waitForFunction(()=>window.__r55?.events.some(e=>e.type==='issued'&&e.generation===1)||window.__r53?.errors?.length>0,null,{timeout:4000}).catch(async e=>{report.events=await page.evaluate(()=>window.__r55?.events||[]);report.snapshots.timeout=await page.evaluate(()=>({generation:window.__r55?.generation,attempts:window.__r55?.attempts,ready:window.__r53?.ready,errors:window.__r53?.errors,frames:window.__r53?.frames}));report.checks.push('OpenLayers replacement source did not issue generation-1 requests; this is an observed gate failure');throw e});
  await page.mouse.move(790,250);await page.mouse.down();await page.mouse.move(780,255,{steps:3});await page.mouse.up();
  await page.waitForTimeout(1200);
  report.events=await page.evaluate(()=>__r55.events);
