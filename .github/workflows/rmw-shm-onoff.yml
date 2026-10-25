@@ -12,6 +12,7 @@ jobs:
     timeout-minutes: 35
     container:
       image: ros:jazzy-ros-base-noble
+      options: --shm-size=2g
     steps:
       - uses: actions/checkout@v4
       - name: Install ROS RMWs and tools
