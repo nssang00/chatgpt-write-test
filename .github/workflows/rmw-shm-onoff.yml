@@ -23,7 +23,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        bytes: [16384]
+        bytes: [1024, 16384, 65536, 1048576]
     container:
       image: ros:jazzy-ros-base-noble
       options: --shm-size=2g
@@ -67,8 +67,8 @@ jobs:
         env:
           BENCH_BINARY: /tmp/rmw-bench-build/rmw_bench
           MATRIX_SIZE: ${{ matrix.bytes }}
-          MATRIX_REPEATS: '0'
-          MATRIX_SECONDS: '1.5'
+          MATRIX_REPEATS: '10'
+          MATRIX_SECONDS: '2.0'
           MATRIX_NODES: '2,4,8,16'
           RUST_LOG: warn
         run: |
