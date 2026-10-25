@@ -151,6 +151,11 @@ def run_case(trial, case_id, profile, stack, rmw, nodes, payload, rate):
         status = "zero_delivery"
     if status == "ok" and any(p.returncode != 0 for p in processes):
         status = "worker_exit_failure"
+    if status == "ok" and rmw == "rmw_zenoh_cpp" and env.get("ZENOH_CONFIG_OVERRIDE", "").find("shared_memory/enabled=true") >= 0:
+        if any("Error creating lazy ShmProvider" in p.read_text(errors="replace") or
+               "Unable to create POSIX shm segment" in p.read_text(errors="replace")
+               for p in work.glob("*.log")):
+            status = "shm_allocation_failure"
     total_received = sum(receives)
     row = dict(
         trial=trial, profile=profile, stack=stack, rmw=rmw, nodes=nodes, subscribers=subs,
