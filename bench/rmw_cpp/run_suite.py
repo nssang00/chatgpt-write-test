@@ -47,6 +47,7 @@ def run_case(trial, case_id, profile, stack, rmw, nodes, payload, rate):
     processes = []
     log_files = []
     zenoh_router = None
+    cyclone_roudi = None
     env = os.environ.copy()
     env["RMW_IMPLEMENTATION"] = rmw
     env["ROS_DOMAIN_ID"] = str(20 + (case_id % 160))
@@ -71,7 +72,22 @@ def run_case(trial, case_id, profile, stack, rmw, nodes, payload, rate):
 
     status = "ok"
     try:
-        if rmw == "rmw_zenoh_cpp":
+        if rmw == "rmw_cyclonedds_cpp" and env.get("CYCLONEDDS_URI"):
+            # iceoryx transport requires the RouDi shared-memory daemon.
+            import shutil
+            roudi_path = shutil.which("iox-roudi")
+            if not roudi_path:
+                status = "roudi_unavailable"
+            else:
+                roudi_log = (work / "iceoryx_roudi.log").open("w")
+                log_files.append(roudi_log)
+                cyclone_roudi = subprocess.Popen(
+                    [roudi_path], env=env, stdout=roudi_log, stderr=subprocess.STDOUT
+                )
+                time.sleep(1.0)
+                if cyclone_roudi.poll() is not None:
+                    status = "roudi_start_failure"
+        if status == "ok" and rmw == "rmw_zenoh_cpp":
             # Isolate Zenoh router graph state between independent scenarios.
             # Router startup is not included in the measured publisher graph time.
             router_path = os.environ.get(
@@ -120,6 +136,14 @@ def run_case(trial, case_id, profile, stack, rmw, nodes, payload, rate):
                 p.wait(timeout=1.5)
             except subprocess.TimeoutExpired:
                 p.kill()
+        if cyclone_roudi is not None:
+            if cyclone_roudi.poll() is None:
+                cyclone_roudi.terminate()
+            try:
+                cyclone_roudi.wait(timeout=3)
+            except subprocess.TimeoutExpired:
+                cyclone_roudi.kill()
+                cyclone_roudi.wait(timeout=2)
         if zenoh_router is not None:
             if zenoh_router.poll() is None:
                 zenoh_router.terminate()
