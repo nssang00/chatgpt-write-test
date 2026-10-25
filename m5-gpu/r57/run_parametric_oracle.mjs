@@ -12,8 +12,9 @@ await mkdir(out,{recursive:true});
 const testedSourceCount=Number(process.env.M5_R57_SOURCES||32),testedDpr=Number(process.env.M5_R57_DPR||1),testedSeed=Number(process.env.M5_R57_SEED||1);
 if(![8,16,32].includes(testedSourceCount)||![1,2].includes(testedDpr)||![1,2].includes(testedSeed))throw Error('Invalid R57 test variant');
 const query='?sourceCount='+testedSourceCount+'&raceSeed='+testedSeed;
+const runVariant={sources:testedSourceCount,dpr:testedDpr,seed:testedSeed};
 let server,browser,page;
-const report={pass:false,checks:[],errors:[],events:[],snapshots:{}};
+const report={pass:false,variant:runVariant,checks:[],errors:[],events:[],snapshots:{}};
 try{
  const mime={'.html':'text/html','.js':'text/javascript','.mjs':'text/javascript','.json':'application/json','.pbf':'application/octet-stream'};
  server=createServer(async(req,res)=>{try{
@@ -112,7 +113,7 @@ globalThis.__r56FrameDump=()=>{
  page.on('pageerror',e=>report.errors.push('pageerror '+e));
  page.on('console',m=>{if(m.type()==='error')report.errors.push('console '+m.text())});
  await page.goto('http://127.0.0.1:'+server.address().port+'/m5-gpu/r53/actual_32_ol_ui.html'+query,{waitUntil:'domcontentloaded'});
- await page.waitForFunction(()=>window.__r53?.ready||window.__r53?.errors?.length,{timeout:45000});
+ await page.waitForFunction(()=>window.__r53?.ready||window.__r53?.errors?.length,{timeout:10000});
  const ready=await page.evaluate(()=>({ready:__r53.ready,errors:__r53.errors}));
  if(!ready.ready||ready.errors.length)throw Error('fixture not ready '+JSON.stringify(ready));
  // An old request must actually be in flight before triggering cancellation.
@@ -145,11 +146,11 @@ globalThis.__r56FrameDump=()=>{
  clean.on('console',m=>{if(m.type()==='error')report.errors.push('oracle console '+m.text())});
  try{
   await clean.goto('http://127.0.0.1:'+server.address().port+'/m5-gpu/r53/actual_32_ol_ui.html'+query,{waitUntil:'domcontentloaded'});
-  await clean.waitForFunction(()=>window.__r53?.ready||window.__r53?.errors?.length,{timeout:45000});
+  await clean.waitForFunction(()=>window.__r53?.ready||window.__r53?.errors?.length,{timeout:10000});
   const finalView=report.snapshots.final.view;
   await clean.evaluate(state=>__r56SetView(state),finalView);
   const required=report.snapshots.final.drawPackets;
-  await clean.waitForFunction(min=>{const s=window.__r53Snapshot?.();return s?.drawPackets>=min||s?.errors?.length>0},required,{timeout:20000});
+  await clean.waitForFunction(min=>{const s=window.__r53Snapshot?.();return s?.drawPackets>=min||s?.errors?.length>0},required,{timeout:10000});
   await clean.waitForTimeout(650);
   const cleanSnapshot=await clean.evaluate(()=>__r53Snapshot());
   report.snapshots.cleanOracle=cleanSnapshot;
