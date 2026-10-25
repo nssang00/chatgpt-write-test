@@ -1,0 +1,125 @@
+name: UI Studio v0.18 — Precision Drag & Drop Full CI
+on:
+  push:
+    branches:
+      - ci/ui-studio-v018-drag-drop-20261025
+    paths:
+      - 'experiments/ui-studio-v0.18/ci/**'
+      - '.github/workflows/ui-studio-v018-full.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  visual-first-full-validation:
+    name: 210 Core + React Build + 20 Chrome Studio/Consumer E2E
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Reproduce pinned v0.17 baseline and apply v0.18 precision drag delta
+        run: |
+          set -euo pipefail
+          echo '9999d896fe4378a87c611724ce469cda98cd54f61ce53addbd2a3ae93ba408de  experiments/ui-studio-v0.13/ui-studio-source.zip' | sha256sum -c -
+          echo '62c55278694646a5bbbafa1fd8f9f43da50bf29bb80d0252d8c23295a68fd81c  experiments/ui-studio-v0.14/ci/delta.patch.xz.b64' | sha256sum -c -
+          mkdir -p experiments/ui-studio-v0.18/app
+          unzip -q experiments/ui-studio-v0.13/ui-studio-source.zip -d experiments/ui-studio-v0.18/app
+          base64 -d experiments/ui-studio-v0.14/ci/delta.patch.xz.b64 > /tmp/ui-studio-v014.patch.xz
+          echo 'daa08bfbfda1b6ab9704ae40491adf281939d4f7682759dfba03134383d10739  /tmp/ui-studio-v014.patch.xz' | sha256sum -c -
+          xz -dc /tmp/ui-studio-v014.patch.xz | (cd experiments/ui-studio-v0.18/app && patch --batch -p1)
+          python3 experiments/ui-studio-v0.14/ci/fix-v014-inspector.py experiments/ui-studio-v0.18/app/src/framework/UnifiedStudio.jsx
+          python3 experiments/ui-studio-v0.14/ci/fix-v014-e2e-selectors.py experiments/ui-studio-v0.18/app/e2e/visual-authoring-v014.spec.js
+          echo '22b33f0d5623fe56e7a2da33ee46a02c858826f50ac2d9169c614264c9f1e7cb  experiments/ui-studio-v0.18/app/src/framework/UnifiedStudio.jsx' | sha256sum -c -
+          echo 'e89b70e39ba7971be5aa3e6dc84f66f924e78fa6ce47ae76f049f2b1eb84d89b  experiments/ui-studio-v0.15/ci/v015-upgrade.patch' | sha256sum -c -
+          (cd experiments/ui-studio-v0.18/app && awk '/^diff --git / {skip=(index($0,"diff --git a/README.md b/README.md")==1)} !skip{print}' ../../ui-studio-v0.15/ci/v015-upgrade.patch | patch --batch --forward -p1)
+          python3 experiments/ui-studio-v0.15/ci/fix-v015-e2e.py experiments/ui-studio-v0.18/app
+          cat experiments/ui-studio-v0.16/ci/patch.part{1,2,3,4,5} > /tmp/v016.patch.xz.b64
+          echo 'd01a1d40ebd09edab0c7e3060b1ac847a4ec223aad3ee9a22eb7e97baf2b8ffd  /tmp/v016.patch.xz.b64' | sha256sum -c -
+          base64 -d /tmp/v016.patch.xz.b64 | xz -dc > /tmp/v016.patch
+          echo '3838da094c5943cb4f9819773776f5b4ed1c7dbd069c372dafed17773f78e390  /tmp/v016.patch' | sha256sum -c -
+          (cd experiments/ui-studio-v0.18/app && patch --batch --forward -p1 < /tmp/v016.patch)
+          echo '8e0bc98efaa20c02325a1601e427341d299c8a5a085938b1c3cfd5e9bb5a8411  experiments/ui-studio-v0.17/ci/v017-upgrade.patch.xz.b64' | sha256sum -c -
+          base64 -d experiments/ui-studio-v0.17/ci/v017-upgrade.patch.xz.b64 | xz -dc > /tmp/v017.patch
+          echo '9bc28d5e802123611403245730a6c6fe13827f85a044716c5e77eeb5a6c29599  /tmp/v017.patch' | sha256sum -c -
+          (cd experiments/ui-studio-v0.18/app && patch --batch --forward -p1 < /tmp/v017.patch)
+          echo 'eb6d752851e657389525e9166a5c3fab09a106437c3e7f9476d1d51fa777a77d  experiments/ui-studio-v0.18/ci/v018-upgrade.patch.xz.b64' | sha256sum -c -
+          base64 -d experiments/ui-studio-v0.18/ci/v018-upgrade.patch.xz.b64 | xz -dc > /tmp/v018.patch
+          echo '32aa19c9b3bb6c035ad94b6814f18bc36309d4326df1d4e350d5b46526c875e1  /tmp/v018.patch' | sha256sum -c -
+          (cd experiments/ui-studio-v0.18/app && patch --batch --forward -p1 < /tmp/v018.patch)
+          cd experiments/ui-studio-v0.18/app
+          echo '8b7f0adb481435ca2eb5e54097601a42181fbc6ebe7b28fc2cd3700ef6833f7a  package.json' | sha256sum -c -
+          echo 'aed08c4a9dc9ec7b73f4cf8cbef6da96905cc2b5129f443196c2841c7bc23348  packages/core/visual.js' | sha256sum -c -
+          echo 'c246ea532550d76594d378810dfac734492a3126cc607054d0f2a871dd5f80e9  tests/visual-v014.test.js' | sha256sum -c -
+          echo '1f937cd46887ab87df39b1760ac0ae8e5484d7aaab8053599dc84830a1408526  e2e/visual-authoring-v014.spec.js' | sha256sum -c -
+          echo 'd9155a68afc6117637aff25ee08d9b0fb15dd73738828b748e0872bac8f672de  packages/core/editor.js' | sha256sum -c -
+          echo 'f69835f0f530d828e721029dca37b2870163640edda70a0553ec6e5e3d1fa3f1  src/framework/UnifiedStudio.jsx' | sha256sum -c -
+          echo '8b422e43354152511b241aea9d2e4825bd71052b363c780ce3c3b90b4c6c2f53  e2e/editing-v015.spec.js' | sha256sum -c -
+          echo 'c5a022257daeded448521c6e2523d22d27c5287763c304910f796c1515ac9ebc  tests/editing-v015.test.js' | sha256sum -c -
+          echo 'c2675f9fb3fc6caf2ca6727a11090a12a338e049c532d970a01ca3c0a7bdcd83  e2e/component-authoring-v013.spec.js' | sha256sum -c -
+          echo 'd6582c2643fa40158114165d1ae3e4ace172d677f64676b5053a03b12a729365  packages/core/shortcuts.js' | sha256sum -c -
+          echo 'f60199dec5abc6c6700a00404ad3865caf42415eb247f5ab26d97dffab9c94dd  src/framework/unified.css' | sha256sum -c -
+          echo '1ffe9c5dc8803cf9387c45e4bbc3d4e50673041c85297d05763d34029ec899ee  tests/canvas-v016.test.js' | sha256sum -c -
+          echo 'd52ecb556d4ca8354ec91ac8c43ab6c91cceffaef5cbef02bb1fa70e04919c06  e2e/canvas-v016.spec.js' | sha256sum -c -
+          echo '1553ebe951f1553b3dd38eddad999b6ee053cda27c6635a074591f11b60707dc  tests/multiselect-v017.test.js' | sha256sum -c -
+          echo '723aeeb248c12bcb5a26feae767f0291b2073e79a52f392cc795593a66c27461  e2e/multiselect-v017.spec.js' | sha256sum -c -
+          echo '75a9d6b7c1b2f560f170495a177be43f34736a72a83df75294e71c7f95df7e7a  tests/drag-v018.test.js' | sha256sum -c -
+          echo '1451f17dae9c83ce4afeab69d35d1cd5fed81f24e9eda57b87990cc4601e7ce0  e2e/drag-v018.spec.js' | sha256sum -c -
+          test -f tests/consumer-v013/package.json
+          node --version
+          npm --version
+      - name: npm install
+        working-directory: experiments/ui-studio-v0.18/app
+        run: npm install --no-audit --no-fund
+      - name: Core regression and visual authoring tests
+        working-directory: experiments/ui-studio-v0.18/app
+        run: npm test
+      - name: Source syntax and React Runtime integration
+        working-directory: experiments/ui-studio-v0.18/app
+        run: |
+          node tools/verify-syntax.mjs
+          npm run verify:runtime
+      - name: Production Vite build
+        working-directory: experiments/ui-studio-v0.18/app
+        run: npm run build
+      - name: Build independently consumable React component
+        working-directory: experiments/ui-studio-v0.18/app
+        run: |
+          npm run export:v014
+          test -s examples/CustomerBrowser-react-component-v0.13.zip
+          mkdir -p tests/component-v014
+          unzip -q -o examples/CustomerBrowser-react-component-v0.13.zip -d tests/component-v014
+          (cd tests/component-v014 && npm install --no-audit --no-fund && npm run build && test -s dist/index.js && npm pack --pack-destination ../consumer-v013)
+          (cd tests/consumer-v013 && npm install --no-audit --no-fund && npm run build && test -s dist/index.html)
+          test -s tests/consumer-v013/node_modules/ui-studio-customer-browser/dist/index.js
+      - name: Verify real system Google Chrome
+        run: |
+          command -v google-chrome || command -v google-chrome-stable
+          google-chrome --version || google-chrome-stable --version
+      - name: Real Chrome Studio visual authoring E2E
+        working-directory: experiments/ui-studio-v0.18/app
+        env:
+          CI: 'true'
+          UI_STUDIO_USE_SYSTEM_CHROME: '1'
+        run: npm run test:e2e
+      - name: Real Chrome exported React consumer E2E
+        working-directory: experiments/ui-studio-v0.18/app
+        env:
+          CI: 'true'
+          UI_STUDIO_USE_SYSTEM_CHROME: '1'
+        run: npx playwright test --config=e2e/consumer-v013.config.js
+      - name: Upload browser proof
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ui-studio-v018-real-chrome-evidence
+          path: |
+            experiments/ui-studio-v0.18/app/test-results/
+            experiments/ui-studio-v0.18/app/playwright-report/
+            experiments/ui-studio-v0.18/app/playwright-report-consumer/
+          if-no-files-found: ignore
+          retention-days: 14
