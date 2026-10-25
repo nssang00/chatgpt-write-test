@@ -22,7 +22,8 @@ SIZE = int(os.environ.get("MATRIX_SIZE", "16384"))
 REPS = int(os.environ.get("MATRIX_REPEATS", "10"))
 SECONDS = float(os.environ.get("MATRIX_SECONDS", "2.0"))
 NODES = tuple(int(v) for v in os.environ.get("MATRIX_NODES", "2,4,8,16").split(","))
-RATE = {1024: 8000, 16384: 2500, 65536: 400, 1048576: 25}[SIZE]
+RATE = ({1024: 16000, 16384: 4000}[SIZE] if os.environ.get('MATRIX_STRESS') == '1'
+        else {1024: 8000, 16384: 2500, 65536: 400, 1048576: 25}[SIZE])
 BASE = Path(os.environ.get("MATRIX_ROOT", "shm-onoff-results"))
 OUT = BASE / f"payload_{SIZE}"
 OUT.mkdir(parents=True, exist_ok=True)
