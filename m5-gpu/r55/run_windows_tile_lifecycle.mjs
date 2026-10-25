@@ -6,12 +6,12 @@ import {build} from 'esbuild';
 const out=resolve('R55-WINDOWS');await mkdir(out,{recursive:true});
 const report={pass:false,events:[],errors:[],checks:[]};
 const html=`<!doctype html><html><body style="margin:0"><div id="map" style="width:512px;height:512px"></div><script type="module">
-import Map from '/node_modules/ol/Map.js';
-import View from '/node_modules/ol/View.js';
-import VectorTileSource from '/node_modules/ol/source/VectorTile.js';
-import VectorTileLayer from '/node_modules/ol/layer/VectorTile.js';
-import TileGrid from '/node_modules/ol/tilegrid/TileGrid.js';
-import Projection from '/node_modules/ol/proj/Projection.js';
+import Map from 'ol/Map.js';
+import View from 'ol/View.js';
+import VectorTileSource from 'ol/source/VectorTile.js';
+import VectorTileLayer from 'ol/layer/VectorTile.js';
+import TileGrid from 'ol/tilegrid/TileGrid.js';
+import Projection from 'ol/proj/Projection.js';
 const events=[];window.__probe={events,ready:false,errors:[]};
 const proj=new Projection({code:'TEST:LOCAL',units:'m',extent:[0,0,256,256]});
 const grid=new TileGrid({extent:[0,0,256,256],origin:[0,256],resolutions:[1],tileSize:256});
