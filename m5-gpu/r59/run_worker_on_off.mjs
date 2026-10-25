@@ -87,7 +87,7 @@ try{
      await page.mouse.move(800,260);await page.mouse.down();
      await page.mouse.move(800+sign*65,260+sign*30,{steps:5});await page.mouse.up();
     }
-    await page.waitForFunction(x=>window.__r59Metrics().frames>x,null,before.frames,{timeout:6000});
+    await page.waitForFunction(x=>window.__r59Metrics().frames>x,before.frames,{timeout:6000});
     const after=await page.evaluate(()=>({time:performance.now(),frames:__r59Metrics().frames,ft:__r59Metrics().frameTimes.slice(-1)[0]}));
     trial.gestureMeasurements.push({type:i%3===2?'wheel':'drag',dispatchToObservedFrameMs:Number((after.ft-before.time).toFixed(3)),
       totalActionMs:Number((after.time-before.time).toFixed(3)),framesChanged:after.frames-before.frames});
