@@ -25,7 +25,7 @@ REPEATS = int(os.environ.get("BENCH_REPEATS", "2"))
 SECONDS = float(os.environ.get("BENCH_SECONDS", "2.5"))
 FIELDS = [
     "trial", "stack", "rmw", "nodes", "subscribers", "payload_bytes",
-    "requested_hz", "discovered_subscribers", "graph_discovery_ms",
+    "requested_hz", "discovered_subscribers", "graph_discovery_ms", "ready_to_graph_ms",
     "sent", "achieved_pub_hz", "mean_received_hz", "min_received_hz",
     "mean_goodput_mib_s", "aggregate_goodput_mib_s", "delivery_percent",
     "median_p50_us", "median_p99_us", "duplicates", "seq_gaps",
@@ -131,7 +131,8 @@ def run_case(trial, case_id, stack, rmw, nodes, payload):
         trial=trial, stack=stack, rmw=rmw, nodes=nodes, subscribers=subs,
         payload_bytes=payload, requested_hz=rate,
         discovered_subscribers=int(pub_stats.get("matched", 0)),
-        graph_discovery_ms=round(float(pub_stats.get("startup_to_graph_ms", 0)), 3),
+        graph_discovery_ms=round(float(pub_stats.get("cold_to_graph_ms", 0)), 3),
+        ready_to_graph_ms=round(float(pub_stats.get("startup_to_graph_ms", 0)), 3),
         sent=sent, achieved_pub_hz=round(sent / elapsed, 1),
         mean_received_hz=round(statistics.mean(receives) / elapsed, 1),
         min_received_hz=round(min(receives) / elapsed, 1),
