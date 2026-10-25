@@ -93,9 +93,10 @@ try{
  await page.waitForFunction(()=>window.__r55?.events.some(e=>e.type==='issued'&&e.generation===0)||window.__r53?.errors?.length>0,null,{timeout:15000});
  await page.mouse.move(790,250);await page.mouse.down();await page.mouse.move(780,255,{steps:3});await page.mouse.up();
  await page.evaluate(()=>__r55.advance());
- // Wait for generation-1 requests at the unchanged, known-good tile-grid view.
- // Moving and zooming first can leave the one-level custom tile grid without
- // any requested coordinates; test input gestures only after reloading.
+ // Demand genuinely new grid tiles by dragging the real OL map across
+ // more than one 64 CSS-pixel tile (the previous 10px drag reused old tiles).
+ await page.mouse.move(800,250);await page.mouse.down();
+ await page.mouse.move(665,272,{steps:12});await page.mouse.up();
  await page.waitForFunction(()=>window.__r55?.events.some(e=>e.type==='issued'&&e.generation===1)||window.__r53?.errors?.length>0,null,{timeout:4000}).catch(async e=>{report.events=await page.evaluate(()=>window.__r55?.events||[]);report.snapshots.timeout=await page.evaluate(()=>({generation:window.__r55?.generation,attempts:window.__r55?.attempts,ready:window.__r53?.ready,errors:window.__r53?.errors,frames:window.__r53?.frames}));report.checks.push('OpenLayers source refresh did not issue generation-1 requests; this is an observed gate failure');throw e});
  await page.mouse.move(790,250);await page.mouse.down();await page.mouse.move(780,255,{steps:3});await page.mouse.up();
  await page.waitForTimeout(1200);
