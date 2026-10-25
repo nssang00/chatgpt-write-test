@@ -5,7 +5,7 @@ Compares **CycloneDDS**, **FastDDS**, and **Zenoh**, all through the **exact sam
 - rmw_fastrtps_cpp
 - rmw_zenoh_cpp
 
-Zenoh uses an independent rmw_zenohd router process (included in the Linux runner job). ROS 2 Jazzy, Ubuntu 24.04, C++17/O3.
+Zenoh uses an independent rmw_zenohd router process, restarted for each Zenoh scenario to isolate graph state (not part of timed publisher discovery). ROS 2 Jazzy, Ubuntu 24.04, C++17/O3.
 
 ## Workload
 - Independent processes: 1 publisher and N-1 subscribers for N=2,4,8,16.
@@ -34,3 +34,7 @@ Both results.csv and individual case diagnostics are uploaded as workflow artifa
 - Run-to-run and runner CPU variation means these are **measurements for this environment only**, not historical proof of a regression/improvement.
 - Each subscriber uses a blocking-when-idle C++ executor spin_once with a 1 ms maximum wait; there is **no artificial 1 ms delay after each received message**. The initial run had such a bug and must not be interpreted as a transport benchmark.
 - Publish-time stamping slightly precedes actual transport send and timestamps are read at callback entry; the latency estimates incorporate publication API overhead.
+
+## Validation note
+
+The first 72-case stress run showed 71 normal executions and one Zenoh subscriber-creation timeout after a 10s interest DeclareFinal warning. To avoid accumulating router state across cases, the suite now creates a fresh router per Zenoh case, independently of the timed publisher. The original failed run remains available for audit and must not be presented as a fully successful trial.
