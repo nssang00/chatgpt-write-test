@@ -67,8 +67,10 @@ try{
   layers.forEach((layer,i)=>{
    const source=layer.getSource();
    source.on('tileloaderror',e=>globalThis.__r55.events.push({type:'source-tileloaderror',index:i,generation:globalThis.__r55.generation,key:e.tile?.getTileUrl?.()}));
+   const part=manifest.sources[i],gen=globalThis.__r55.generation;
+   source.setTileUrlFunction(([,x,y])=>x===i%8&&y===Math.floor(i/8)?part.x+'/'+part.y+'?r55='+gen:undefined,'r55-generation-'+gen+'-source-'+i);
    source.refresh();
-   globalThis.__r55.events.push({type:'source-refreshed',index:i});
+   globalThis.__r55.events.push({type:'source-rekeyed',index:i,key:source.getKey()});
   });
   map.renderSync();map.render();
   globalThis.__r55.events.push({type:'ol-source-refresh',view:{center:map.getView().getCenter(),resolution:map.getView().getResolution()}});
