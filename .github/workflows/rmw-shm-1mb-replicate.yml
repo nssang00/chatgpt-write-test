@@ -1,0 +1,69 @@
+name: RMW 1MiB 16-node SHM Reproducibility 10x
+on:
+  push:
+    branches: [bench/rmw-shm-onoff-20261025]
+    paths: ['.github/workflows/rmw-shm-1mb-replicate.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  replicate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 22
+    container:
+      image: ros:jazzy-ros-base-noble
+      options: --shm-size=2g
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install and build identical C++ workload
+        shell: bash
+        run: |
+          set -eo pipefail
+          apt-get update -qq
+          DEBIAN_FRONTEND=noninteractive apt-get install -y -qq build-essential cmake python3 binutils \
+            ros-jazzy-rclcpp ros-jazzy-std-msgs ros-jazzy-rmw-cyclonedds-cpp \
+            ros-jazzy-rmw-fastrtps-cpp ros-jazzy-rmw-zenoh-cpp
+          source /opt/ros/jazzy/setup.bash
+          cmake -S bench/rmw_cpp -B /tmp/rmw-bench-build -DCMAKE_BUILD_TYPE=Release
+          cmake --build /tmp/rmw-bench-build -j2
+          lscpu | grep -E 'Model name|CPU\(s\)' || true
+      - name: 10 repeated trials per mode
+        shell: bash
+        env:
+          BENCH_BINARY: /tmp/rmw-bench-build/rmw_bench
+          BENCH_SECONDS: '4.0'
+          SHM_REPEATS: '10'
+          SHM_NODES: '16'
+          SHM_PAYLOADS: '1048576'
+          SHM_RATE_1MB: '50'
+        run: |
+          set -eo pipefail
+          source /opt/ros/jazzy/setup.bash
+          mkdir -p shm-results
+          timeout --signal=TERM --kill-after=10s 850s python3 -u bench/rmw_cpp/shm_onoff.py | tee shm-results/runner.log
+      - name: Summary
+        if: always()
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import csv,os,pathlib,statistics
+          p=pathlib.Path('shm-results/results.csv')
+          with open(os.environ['GITHUB_STEP_SUMMARY'],'a') as o:
+              o.write('## 1MiB, 16 nodes, 50msg/s, 4s, 10 repeats per RMW transport\n\n')
+              if p.exists():
+                  rows=list(csv.DictReader(p.open()))
+                  o.write('| Mode | Valid trials | P99 median us | P99 min us | P99 max us | Delivery median % | Actual sender Hz |\n|---|---:|---:|---:|---:|---:|---:|\n')
+                  for name in dict.fromkeys(r['stack'] for r in rows):
+                      a=[r for r in rows if r['stack']==name and r['status']=='ok']
+                      if a:
+                          p99=[float(r['median_p99_us']) for r in a]
+                          m=lambda k: statistics.median(float(r[k]) for r in a)
+                          o.write(f'| {name} | {len(a)} | {statistics.median(p99):.1f} | {min(p99):.1f} | {max(p99):.1f} | {m("delivery_percent"):.2f} | {m("achieved_pub_hz"):.1f} |\n')
+          PY
+      - name: Upload raw evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rmw-shm-1mb-replicates
+          path: shm-results/
+          if-no-files-found: warn
