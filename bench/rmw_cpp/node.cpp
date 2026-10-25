@@ -1,5 +1,5 @@
 // Identical rclcpp workload for CycloneDDS, FastDDS and rmw_zenoh_cpp.
-// One publisher / N-1 subscriber PROCESSES, reliable KEEP_LAST(128) QoS.
+// One publisher / N-1 subscriber PROCESSES, reliable KEEP_LAST(10) QoS.
 // The ONLY middleware selection is RMW_IMPLEMENTATION in the process environment.
 #include <rclcpp/rclcpp.hpp>
 #include <std_msgs/msg/u_int8_multi_array.hpp>
@@ -64,7 +64,7 @@ int main(int argc, char** argv) {
     auto node = std::make_shared<rclcpp::Node>("rmw_bench_"+o.role+"_"+std::to_string(o.id));
     rclcpp::executors::SingleThreadedExecutor ex;
     ex.add_node(node);
-    auto qos = rclcpp::QoS(rclcpp::KeepLast(128)).reliable().durability_volatile();
+    auto qos = rclcpp::QoS(rclcpp::KeepLast(10)).reliable().durability_volatile();
     fs::path dir(o.directory);
     if (o.role=="pub") {
       auto pub=node->create_publisher<std_msgs::msg::UInt8MultiArray>(o.topic,qos);
