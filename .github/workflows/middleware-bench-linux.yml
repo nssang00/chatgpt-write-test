@@ -1,0 +1,51 @@
+name: Middleware Node Scaling Benchmark (Linux)
+
+on:
+  push:
+    branches:
+      - bench/middleware-node-scaling-20261025
+    paths:
+      - 'bench/middleware/**'
+      - '.github/workflows/middleware-bench-linux.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: Show runner hardware
+        run: |
+          lscpu | grep -E 'Model name|CPU\(s\)|Thread\(s\) per core'
+          free -h
+          uname -a
+      - name: ROS 2 Jazzy with DDS, Zenoh and gRPC
+        run: |
+          mkdir -p middleware-results
+          docker run --rm --network host --ipc host \
+            -v "$PWD:/work" -w /work \
+            ros:jazzy-ros-base bash -euc '
+              export DEBIAN_FRONTEND=noninteractive
+              apt-get update -qq
+              apt-get install -y -qq --no-install-recommends \
+                python3-pip ros-jazzy-rmw-cyclonedds-cpp ros-jazzy-rmw-fastrtps-cpp
+              python3 -m pip install -q --break-system-packages \
+                "eclipse-zenoh>=1.0,<2" "grpcio>=1.60,<2" "protobuf>=4,<7"
+              . /opt/ros/jazzy/setup.sh
+              echo "OS: $(cat /etc/os-release | grep PRETTY_NAME)"
+              echo "RMW and Python versions:"
+              dpkg-query -W ros-jazzy-rmw-cyclonedds-cpp ros-jazzy-rmw-fastrtps-cpp
+              python3 -m pip show eclipse-zenoh grpcio protobuf | grep -E "^(Name|Version):"
+              python3 -u bench/middleware/run_suite.py
+            '
+      - name: Publish CSV and per-case logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: middleware-node-scaling-results
+          path: middleware-results/
+          if-no-files-found: warn
