@@ -8,8 +8,8 @@ OUT.mkdir(exist_ok=True)
 bench.OUT = OUT
 bench.SECONDS = float(os.getenv("BENCH_SECONDS", "2.5"))
 REPEATS = int(os.getenv("SHM_REPEATS", "3"))
-NODES = [2, 16]
-PAYLOADS = [1024, 16384]
+NODES = [int(v) for v in os.getenv("SHM_NODES", "2,16").split(",")]
+PAYLOADS = [int(v) for v in os.getenv("SHM_PAYLOADS", "1024,16384").split(",")]
 # Cyclone SHM is NOT labeled as active until its build supports iceoryx and
 # its RouDi daemon can be started. Unsupported is a result, not a silent fallback.
 MODES = [
@@ -45,10 +45,13 @@ def main():
     bad = 0
     cyclone_capable = cyclone_shm_capable()
     print(f"CYCLONE_ICEORYX_READY={cyclone_capable}",flush=True)
+    chosen = set(os.getenv("SHM_MODES", "").split(",")) if os.getenv("SHM_MODES") else None
     print("trial,stack,nodes,payload,send_hz,goodput_mib_s,delivery,p50_us,p99_us,graph_ms,status",flush=True)
     try:
         for trial in range(1,REPEATS+1):
             rotated = MODES[(trial-1)%len(MODES):] + MODES[:(trial-1)%len(MODES)]
+            if chosen:
+                rotated = [m for m in rotated if m[0] in chosen]
             for nodes in NODES:
                 for payload in PAYLOADS:
                     for name, rmw, state in rotated:
