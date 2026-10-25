@@ -1,0 +1,31 @@
+name: M5 Migration Test Suite Export
+on:
+  push:
+    branches: [m5/r46-distinct-mvt-32-20261023]
+    paths:
+      - '.github/workflows/m5-migration-test-export.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Export pinned GPU test harness into portable archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p TEST-EXPORT
+          for file in             m5-gpu/r53/actual_32_ol_ui.html             m5-gpu/r46/download_unique_tiles.mjs             m5-gpu/r59/actual_32_ui_on_off.html             m5-gpu/r59/run_worker_on_off.mjs             m5-gpu/r60/run_worker_inflight_on_off.mjs             m5-gpu/r61/run_strict_physical_dpr_oracle.mjs             m5-gpu/r63/real_ol_fallback.html             m5-gpu/r63/run_real_ol_fallback.mjs             m5-gpu/r58/real_worker_crash_32.html             m5-gpu/r58/run_worker_crash_32.mjs; do
+              test -s "$file"
+              cp "$file" "TEST-EXPORT/$(basename "$file")"
+              sha256sum "$file" >> TEST-EXPORT/ORIGINAL_SHA256.txt
+          done
+          ls -lah TEST-EXPORT/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: portable-m5-hardware-test-source
+          path: TEST-EXPORT/
+          retention-days: 30
