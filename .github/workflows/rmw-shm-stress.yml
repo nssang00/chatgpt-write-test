@@ -51,7 +51,7 @@ jobs:
       - name: Record SHM and environment evidence
         shell: bash
         run: |
-          mkdir -p shm-onoff-results
+          mkdir -p shm-onoff-stress-results
           {
             uname -a
             lscpu | grep -E 'Model name|CPU\(s\)|Thread'
