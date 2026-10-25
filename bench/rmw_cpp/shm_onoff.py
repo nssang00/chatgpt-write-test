@@ -69,7 +69,11 @@ def main():
                                 w=csv.DictWriter(f,fieldnames=FIELDS);w.writeheader();w.writerows(rows)
                             print(f"{trial},{name},{nodes},{payload},UNSUPPORTED",flush=True)
                             continue
-                        rate = int(os.getenv("SHM_RATE_16KB", "2000")) if payload == 16384 else int(os.getenv("SHM_RATE_1KB", "4000"))
+                        rates = {1024:int(os.getenv("SHM_RATE_1KB","4000")),
+                                 16384:int(os.getenv("SHM_RATE_16KB","2000")),
+                                 65536:int(os.getenv("SHM_RATE_64KB","500")),
+                                 1048576:int(os.getenv("SHM_RATE_1MB","50"))}
+                        rate = rates[payload]
                         if name == "CycloneDDS-ON":
                             # Cyclone config must only be used with an actual iceoryx-capable build.
                             cfg=OUT/"cyclone-shm.xml"
