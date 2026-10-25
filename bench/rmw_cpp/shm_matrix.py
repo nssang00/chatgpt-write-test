@@ -175,6 +175,22 @@ def main():
             return 0 if any(r["status"] == "ok" for r in smoke) else 1
         if not usable:
             return 2
+        # Re-check transport mappings at 16-node fan-out under a low rate,
+        # without contaminating the timed high-rate workload with /proc reads.
+        endpoint_probe = []
+        for name, rmw, mode in usable:
+            idx += 1
+            verification = run_one(
+                idx, 0, name, rmw, mode, 16, 16384, 300, "16node_path_probe")
+            endpoint_probe.append(verification)
+            log_row(verification)
+        persist(endpoint_probe, "endpoint_probe")
+        mapped_stacks = {
+            p["stack"] for p in endpoint_probe
+            if p["status"] == "ok" and p["proof_class"] == "mapped_shm_observed"
+        }
+        # Remove intrusive /proc memory inspection during rate/latency trials.
+        os.environ["BENCH_PROBE_SHM"] = "0"
         # All modes use identical C++ source / QoS, same achieved offered-rate
         # scenarios, and randomized/rotated profile order per repetition.
         conditions = [
@@ -194,6 +210,18 @@ def main():
                 for stack, rmw, mode in rotated:
                     idx += 1
                     r = run_one(idx, trial, stack, rmw, mode, nodes, nbytes, hz, profile)
+                    # The timed case is not independently traced; SHM proof
+                    # comes from the separate 16-node same-config validation.
+                    if mode == "on":
+                        r["proof_class"] = (
+                            "16node_transport_mappings_confirmed" if stack in mapped_stacks
+                            else "SHM_on_but_16node_unverified")
+                        r["shm_claim"] = (
+                            "separate_preflight_mappings_only" if stack in mapped_stacks
+                            else "NOT_PROVEN")
+                    else:
+                        r["proof_class"] = "network_selected"
+                        r["shm_claim"] = "NOT_APPLICABLE"
                     rows.append(r)
                     failures += (r["status"] != "ok")
                     persist(rows, "results")
