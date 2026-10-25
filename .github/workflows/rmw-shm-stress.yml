@@ -5,7 +5,7 @@ on:
     branches: [bench/shm-stress-threeway-20261025]
     paths:
       - 'bench/rmw_cpp/**'
-      - '.github/workflows/rmw-shm-onoff.yml'
+      - '.github/workflows/rmw-shm-stress.yml'
   workflow_dispatch:
 
 permissions:
