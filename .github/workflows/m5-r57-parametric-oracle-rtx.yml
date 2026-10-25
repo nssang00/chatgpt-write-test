@@ -78,8 +78,16 @@ jobs:
                 $env:M5_R57_SEED=[string]$seed
                 $case=('sources'+$sourceCount+'-dpr'+$dpr+'-seed'+$seed)
                 $out=Join-Path $env:GITHUB_WORKSPACE ('R57-EVIDENCE\cases\'+$case)
-                & node (Join-Path $dest 'm5-gpu\r57\run_parametric_oracle.mjs') $dest $out
-                $exit=$LASTEXITCODE
+                $script=Join-Path $dest 'm5-gpu\r57\run_parametric_oracle.mjs'
+                $node=(Get-Command node).Source
+                $p=Start-Process -FilePath $node -ArgumentList @($script,$dest,$out) -PassThru -NoNewWindow
+                if(-not $p.WaitForExit(60000)){
+                  Write-Warning ('R57_CASE_TIMEOUT '+$case)
+                  try{& taskkill.exe /PID $p.Id /T /F | Out-Null}catch{}
+                  $exit=124
+                }else{
+                  $exit=$p.ExitCode
+                }
                 $resultFile=Join-Path $out 'result.json'
                 if(-not (Test-Path $resultFile)){
                   $failed+=($case+': missing JSON')
