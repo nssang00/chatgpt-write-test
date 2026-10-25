@@ -33,7 +33,7 @@ All 12 probes exchanged data successfully; 0 excluded configurations. These mapp
 
 ## Instrument-isolated results (three repeats each)
 
-In timed trials memory-map sampling was turned off to avoid contaminating latency. Each result below is the median of 3 run-level medians of the 15 receivers' individual P99 latencies (2-node jumbo has one receiver). All cases completed with **100% delivery** and achieved approximately their requested send rate.
+In timed trials memory-map sampling was turned off to avoid contaminating latency. Each result below is the median of 3 run-level medians of the 15 receivers' individual P99 latencies (2-node jumbo has one receiver). All cases completed with **at least 99.99% delivery** and achieved approximately their requested send rate.
 
 ### 16 nodes, 16KiB, 4,000 msg/s high rate
 
