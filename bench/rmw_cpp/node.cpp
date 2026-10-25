@@ -59,6 +59,7 @@ static Opt parse(int argc, char** argv) {
 int main(int argc, char** argv) {
   try {
     Opt o=parse(argc,argv);
+    const auto cold_start=now_ns();
     rclcpp::init(argc,argv);
     auto node = std::make_shared<rclcpp::Node>("rmw_bench_"+o.role+"_"+std::to_string(o.id));
     rclcpp::executors::SingleThreadedExecutor ex;
@@ -111,6 +112,7 @@ int main(int argc, char** argv) {
           "{\"sent\":"+std::to_string(sent)+
           ",\"send_seconds\":"+std::to_string((ended-started)/1e9)+
           ",\"startup_to_graph_ms\":"+std::to_string((graph_ns-ready)/1e6)+
+          ",\"cold_to_graph_ms\":"+std::to_string((graph_ns-cold_start)/1e6)+
           ",\"matched\":"+std::to_string(matched)+
           ",\"payload_bytes\":"+std::to_string(o.bytes)+"}");
       atomic_write(dir/"DONE",std::to_string(ended));
@@ -145,13 +147,14 @@ int main(int argc, char** argv) {
       auto watchdog=Clock::now()+std::chrono::seconds(45);
       std::int64_t done_ns=0;
       while (rclcpp::ok() && Clock::now()<watchdog) {
-        ex.spin_some();
+        // Do not sleep 1ms after each callback: that artificially caps delivery ~1000 msg/s.
+        // spin_once waits up to 1ms only when no data is available.
+        ex.spin_once(std::chrono::milliseconds(1));
         if (done_ns==0 && fs::exists(dir/"DONE")) {
           std::ifstream in(dir/"DONE");
           in>>done_ns;
         }
         if (done_ns>0 && now_ns()>done_ns+static_cast<std::int64_t>(8e8)) break;
-        std::this_thread::sleep_for(std::chrono::milliseconds(1));
       }
       std::sort(lat_us.begin(),lat_us.end());
       atomic_write(dir/("subscriber_"+std::to_string(o.id)+".json"),
