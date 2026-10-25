@@ -58,7 +58,7 @@ jobs:
         shell: bash
         env:
           BENCH_BINARY: /tmp/rmw-bench-build/rmw_bench
-          BENCH_PHASE: smoke
+          BENCH_PHASE: full
           BENCH_REPEATS: '3'
           BENCH_SECONDS: '2.0'
         run: |
