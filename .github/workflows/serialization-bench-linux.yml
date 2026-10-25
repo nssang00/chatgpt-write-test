@@ -33,7 +33,9 @@ jobs:
         shell: bash
         run: |
           set -o pipefail
-          ./serialization-bench | tee serialization-bench.csv
+          CPU=$(python3 -c 'import os; print(min(os.sched_getaffinity(0)))')
+          echo "Pinned CPU: ${CPU}"
+          taskset -c "$CPU" ./serialization-bench | tee serialization-bench.csv
       - name: Publish results
         if: success()
         shell: bash
@@ -43,7 +45,7 @@ jobs:
           rows=list(csv.DictReader(open('serialization-bench.csv')))
           with open(os.environ['GITHUB_STEP_SUMMARY'],'a') as f:
               f.write('## Format comparison - Linux / C++ O3\n\n')
-              f.write('Times are median nanoseconds per call across 5 repeated loops after warm-up.\n\n')
+              f.write('Times are median nanoseconds per call across 7 repeated loops after warm-up.\n\n')
               f.write('| Payload B | Format | Encoded B | Encode ns | Decode ns |\n|---:|---|---:|---:|---:|\n')
               for r in rows:
                   f.write('| {payload_bytes} | {format} | {encoded_bytes} | {encode_ns} | {decode_ns} |\n'.format(**r))
