@@ -46,6 +46,7 @@ def run_case(trial, case_id, profile, stack, rmw, nodes, payload, rate):
     work = Path(tempfile.mkdtemp(prefix="ros_cpp_rmw_"))
     processes = []
     log_files = []
+    zenoh_router = None
     env = os.environ.copy()
     env["RMW_IMPLEMENTATION"] = rmw
     env["ROS_DOMAIN_ID"] = str(20 + (case_id % 160))
@@ -70,8 +71,25 @@ def run_case(trial, case_id, profile, stack, rmw, nodes, payload, rate):
 
     status = "ok"
     try:
-        for i in range(subs):
-            launch("sub", i)
+        if rmw == "rmw_zenoh_cpp":
+            # Isolate Zenoh router graph state between independent scenarios.
+            # Router startup is not included in the measured publisher graph time.
+            router_path = os.environ.get(
+                "BENCH_ZENOH_ROUTER", "/opt/ros/jazzy/lib/rmw_zenoh_cpp/rmw_zenohd"
+            )
+            router_log = (work / "zenoh_router.log").open("w")
+            log_files.append(router_log)
+            zenoh_router = subprocess.Popen(
+                [router_path], env=env, stdout=router_log, stderr=subprocess.STDOUT
+            )
+            time.sleep(1.0)
+            if zenoh_router.poll() is not None:
+                status = "router_start_failure"
+        if status == "ok":
+            for i in range(subs):
+                launch("sub", i)
+                # Prevent simultaneous graph endpoint bursts on a 4-vCPU runner.
+                time.sleep(0.015)
         if not wait_until(
             lambda: all((work / f"ready_{i}").exists() for i in range(subs)),
             20, processes,
@@ -102,6 +120,14 @@ def run_case(trial, case_id, profile, stack, rmw, nodes, payload, rate):
                 p.wait(timeout=1.5)
             except subprocess.TimeoutExpired:
                 p.kill()
+        if zenoh_router is not None:
+            if zenoh_router.poll() is None:
+                zenoh_router.terminate()
+            try:
+                zenoh_router.wait(timeout=3)
+            except subprocess.TimeoutExpired:
+                zenoh_router.kill()
+                zenoh_router.wait(timeout=2)
         for f in log_files:
             f.close()
 
