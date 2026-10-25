@@ -68,7 +68,7 @@ jobs:
           $contents=[System.IO.Compression.ZipFile]::OpenRead($zip)
           try{
             if($contents.Entries.Count -lt 3400){throw 'Missing source files from candidate'}
-            $srcEntry=$contents.GetEntry('our-renderer/integration/DirectM5SceneBinding.js')
+            $srcEntry=@($contents.Entries | Where-Object {$_.FullName.Replace('\','/') -eq 'our-renderer/integration/DirectM5SceneBinding.js'})
             if(-not $srcEntry){throw 'Missing actual OL app binding source'}
           }finally{$contents.Dispose()}
           Write-Host "R62_SOURCE_CANDIDATE_BUILT $sha"
