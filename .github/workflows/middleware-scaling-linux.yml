@@ -1,0 +1,86 @@
+name: Middleware Scaling Linux Benchmark
+on:
+  push:
+    branches:
+      - bench/middleware-node-scaling-20261025
+    paths:
+      - bench/middleware/**
+      - .github/workflows/middleware-scaling-linux.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  benchmark:
+    name: four stacks node-count discovery and goodput
+    runs-on: ubuntu-24.04
+    container:
+      image: ros:jazzy-ros-base-noble
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Install RMW backends and Python packages
+        shell: bash
+        run: |
+          set -euxo pipefail
+          apt-get update -qq
+          DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
+            ros-jazzy-rmw-cyclonedds-cpp \
+            ros-jazzy-rmw-fastrtps-cpp \
+            ros-jazzy-std-msgs \
+            python3-venv python3-pip procps
+          python3 -m venv --system-site-packages /tmp/middleware-venv
+          /tmp/middleware-venv/bin/python -m pip install --upgrade pip
+          /tmp/middleware-venv/bin/python -m pip install "eclipse-zenoh>=1.9,<1.11" grpcio protobuf
+      - name: Verify dependencies and environment
+        shell: bash
+        run: |
+          set -e
+          source /opt/ros/jazzy/setup.bash
+          . /tmp/middleware-venv/bin/activate
+          python - <<'PY'
+          import rclpy, zenoh, grpc, google.protobuf
+          from std_msgs.msg import String
+          print('dependencies: OK')
+          print('grpcio', grpc.__version__)
+          print('protobuf',google.protobuf.__version__)
+          print('rclpy',rclpy.__file__)
+          print('zenoh',zenoh.__file__)
+          PY
+          echo "ROS_DISTRO=$ROS_DISTRO"
+          uname -a
+          lscpu | grep -E 'Model name|CPU\(s\)|Thread' || true
+          dpkg-query -W ros-jazzy-rmw-cyclonedds-cpp ros-jazzy-rmw-fastrtps-cpp
+      - name: Run middleware scaling benchmark
+        shell: bash
+        run: |
+          set -euo pipefail
+          source /opt/ros/jazzy/setup.bash
+          . /tmp/middleware-venv/bin/activate
+          python -u bench/middleware/run_suite.py | tee middleware-run.log
+      - name: Publish result table
+        if: always()
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import csv,os,pathlib
+          p=pathlib.Path('middleware-results/results.csv')
+          with open(os.environ['GITHUB_STEP_SUMMARY'],'a') as out:
+            out.write('## ROS 2 DDS / Zenoh / gRPC+Protobuf scaling\n\n')
+            out.write('Same Linux runner; 1 publisher + N-1 subscribers; ROS 2 Jazzy Python bindings; reliable DDS QoS; local host; no separate network link.\n\n')
+            out.write('Cold first-message latency includes publisher process initialization, middleware discovery or gRPC connection. One-to-many goodput is app payload delivery, not physical NIC throughput.\n\n')
+            if p.exists():
+              out.write('| Stack | Nodes | Payload | Disc. (of N-1) | Median first msg ms | Mean MiB/s per sub | Delivery % | Status |\n')
+              out.write('|---|---:|---:|---:|---:|---:|---:|---:|\n')
+              for r in csv.DictReader(p.open()):
+                out.write('| {impl} | {total_nodes} | {payload_bytes} | {discovered} | {discovery_median_ms} | {mean_goodput_mib_s} | {delivery_percent} | {status} |\n'.format(**r))
+          PY
+      - name: Upload raw logs and CSV
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: middleware-scaling-linux-results
+          path: |
+            middleware-results/
+            middleware-run.log
+          if-no-files-found: warn
