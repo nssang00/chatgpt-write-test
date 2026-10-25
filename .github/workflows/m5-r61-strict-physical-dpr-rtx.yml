@@ -80,7 +80,15 @@ jobs:
                 $out=Join-Path $env:GITHUB_WORKSPACE ('R61-EVIDENCE\cases\'+$case)
                 $script=Join-Path $dest 'm5-gpu\r61\run_strict_physical_dpr_oracle.mjs'
                 $node=(Get-Command node).Source
-                $p=Start-Process -FilePath $node -ArgumentList @($script,$dest,$out) -PassThru -NoNewWindow
+                # Windows PowerShell Start-Process -PassThru can expose a
+                # null ExitCode even after WaitForExit; use the .NET process
+                # object directly to retain the native exit status.
+                $psi=New-Object System.Diagnostics.ProcessStartInfo
+                $psi.FileName=$node
+                $psi.Arguments=('"'+$script+'" "'+$dest+'" "'+$out+'"')
+                $psi.UseShellExecute=$false
+                $psi.CreateNoWindow=$true
+                $p=[System.Diagnostics.Process]::Start($psi)
                 if(-not $p.WaitForExit(90000)){
                   Write-Warning ('R61_CASE_TIMEOUT '+$case)
                   try{& taskkill.exe /PID $p.Id /T /F | Out-Null}catch{}
