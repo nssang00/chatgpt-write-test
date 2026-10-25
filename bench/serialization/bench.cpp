@@ -22,14 +22,14 @@ void require(bool ok, const char *label) {if(!ok)throw std::runtime_error(label)
 template<typename F> double measure(F&& f, std::size_t times) {
   for(std::size_t i=0;i<500;++i)f();
   std::vector<double> samples;
-  for(int run=0;run<5;++run){
+  for(int run=0;run<7;++run){
     auto a=std::chrono::steady_clock::now();
     for(std::size_t i=0;i<times;++i)f();
     auto b=std::chrono::steady_clock::now();
     samples.push_back(std::chrono::duration<double,std::nano>(b-a).count()/times);
   }
   std::sort(samples.begin(),samples.end());
-  return samples[2];
+  return samples[3];
 }
 void output(std::size_t n,const char *fmt,std::size_t bytes,double enc,double dec,std::size_t count){
  std::cout<<n<<","<<fmt<<","<<bytes<<","<<std::fixed<<std::setprecision(2)<<enc<<","<<dec<<","<<count<<"\n";
@@ -38,7 +38,7 @@ void run(std::size_t n) {
  std::vector<std::uint8_t> src(n);
  for(std::size_t i=0;i<n;++i) src[i]=static_cast<std::uint8_t>((i*131u+17u)&255u);
  const auto last=src.back();
- const std::size_t count=std::max<std::size_t>(60,std::min<std::size_t>(100000,(16u*1024u*1024u)/std::max<std::size_t>(n,64)));
+ const std::size_t count=std::max<std::size_t>(60,std::min<std::size_t>(100000,(32u*1024u*1024u)/std::max<std::size_t>(n,64)));
 
  benchpb::Message pb;
  pb.set_id(ID);pb.set_timestamp(TS);
