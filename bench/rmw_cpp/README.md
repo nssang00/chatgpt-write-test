@@ -10,14 +10,16 @@ Zenoh uses an independent rmw_zenohd router process (included in the Linux runne
 ## Workload
 - Independent processes: 1 publisher and N-1 subscribers for N=2,4,8,16.
 - std_msgs/msg/UInt8MultiArray, identical payload content (8-byte sequence ID + 8-byte steady-clock sending timestamp + filler).
-- 1024 B at target 4000 msg/s; 16384 B at target 1500 msg/s, for 2.5 s; **two repeats**, order rotated between repeats.
+- Baseline: 1024 B at target 4000 msg/s and 16384 B at target 1500 msg/s for nodes 2/4/8/16.
+- Stress: 1024 B at target 16000 msg/s and 16384 B at target 4000 msg/s for nodes 2/16. The stress profile deliberately overloads fan-out to show queueing and throughput limits.
+- Each case is 2.5 s, **two repeats**, stack order rotated between repeats. The CSV profile field distinguishes baseline from stress.
 - QoS: RELIABLE, KEEP_LAST(depth 128), VOLATILE, all three middleware.
 - Same host for all processes, **not a wireless / cross-network benchmark**.
 
 ## Measurements
 - **Cold graph-ready time** (graph_discovery_ms): from calling rclcpp::init in the publisher process to count_subscribers(topic) detecting all N-1 endpoints. Includes middleware startup, node and publisher creation, and RMW graph convergence. It is NOT pure DDS discovery.
 - **Ready-to-match time** (ready_to_graph_ms): from completion of publisher creation to count_subscribers detection. If subscribers are already matched when publisher construction returns, this can be near zero and is NOT the full discovery duration. Publisher execution waits for all subscriptions before GO.
-- **Actual publisher rate**: sent / publish_seconds. This may be below requested rate due to synchronous publish/backpressure/CPU overload.
+- **Actual publisher rate**: sent / publish_seconds. This may be below requested rate due to synchronous publish/backpressure/CPU overload. Stress-case offered rates are not an exact measure of each implementation's maximum capacity.
 - **Per-receiver goodput**: received * nominal payload bytes / publish_seconds in MiB/s; both mean and aggregate recorded.
 - **Delivery ratio**: mean receiver message count divided by actual sent count. A high delivery ratio with sender throttling **does not** mean the target offered rate was achieved.
 - **p50/p99 latency**: receive callback monotonic time minus publish-before-send monotonic time; same host/process-independent steady clock; includes scheduling and queueing, **not inter-machine clock sync**.
