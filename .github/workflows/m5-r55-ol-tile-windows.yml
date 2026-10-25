@@ -19,7 +19,7 @@ jobs:
           node-version: '22'
       - name: Install browser test dependencies
         run: |
-          npm install --no-save --package-lock=false --ignore-scripts playwright@1.55.0 ol@10.10.0
+          npm install --no-save --package-lock=false --ignore-scripts playwright@1.55.0 ol@10.10.0 esbuild@0.25.12
           npx playwright install chromium
       - name: Exercise real OpenLayers tile lifecycle without GPU
         shell: pwsh
