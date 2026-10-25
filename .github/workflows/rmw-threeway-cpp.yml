@@ -12,6 +12,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: rmw-cpp-threeway-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   compare:
     name: identical rclcpp over CycloneDDS, FastDDS and Zenoh
@@ -74,7 +78,7 @@ jobs:
           p=pathlib.Path('rmw-cpp-results/results.csv')
           with open(os.environ['GITHUB_STEP_SUMMARY'],'a') as out:
               out.write('## CycloneDDS vs FastDDS vs Zenoh — identical C++ ROS 2 rclcpp API\n\n')
-              out.write('1 publisher + N-1 subscriber processes, RELIABLE/KEEP_LAST 128, 1/16 KiB, 2 repeated trials. **Graph convergence is timed after publisher creation; throughput is delivered application payload, NOT network capacity.**\n\n')
+              out.write('1 publisher + N-1 subscriber processes, RELIABLE/KEEP_LAST 128, 1/16 KiB, 2 repeated trials. **Graph time includes publisher rclcpp initialization, node/publisher creation and endpoint visibility (not pure protocol discovery). Throughput is delivered application payload, NOT network capacity.**\n\n')
               if p.exists():
                   out.write('| Trial | Stack | Nodes | Bytes | Graph ms | Actual publisher Hz | Goodput MiB/s/receiver | Delivery % | p99 us | Status |\n')
                   out.write('|---:|---|---:|---:|---:|---:|---:|---:|---:|---|\n')
