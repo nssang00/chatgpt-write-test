@@ -4,7 +4,7 @@ on:
     branches: [m5/r46-distinct-mvt-32-20261023]
     paths:
       - 'm5-gpu/r56/run_clean_b_oracle.mjs'
-      - '.github/workflows/m5-r56-clean-b-rtx.yml'
+      - '.github/workflows/m5-r56-clean-b-oracle-rtx.yml'
   workflow_dispatch:
 permissions:
   contents: read
