@@ -1,0 +1,80 @@
+name: FastDDS Shared-Memory Transport Ablation (Linux)
+
+on:
+  push:
+    branches:
+      - bench/fastdds-shm-ablation-20261025
+    paths:
+      - 'bench/rmw_cpp/**'
+      - '.github/workflows/fastdds-shm-ablation.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: fastdds-shm-ablation-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ablation:
+    name: identical rclcpp workload with FastDDS transport toggles
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    container:
+      image: ros:jazzy-ros-base-noble
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install RMW implementations and build dependencies
+        shell: bash
+        run: |
+          set -eo pipefail
+          apt-get update -qq
+          DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
+            build-essential cmake python3 \
+            ros-jazzy-rclcpp ros-jazzy-std-msgs \
+            ros-jazzy-rmw-cyclonedds-cpp ros-jazzy-rmw-fastrtps-cpp
+      - name: Build identical C++ publisher and subscribers
+        shell: bash
+        run: |
+          set -eo pipefail
+          source /opt/ros/jazzy/setup.bash
+          cmake -S bench/rmw_cpp -B /tmp/rmw-bench-build -DCMAKE_BUILD_TYPE=Release
+          cmake --build /tmp/rmw-bench-build -j2
+          lscpu | grep -E 'Model name|CPU\(s\)' || true
+          dpkg-query -W ros-jazzy-rmw-cyclonedds-cpp ros-jazzy-rmw-fastrtps-cpp
+      - name: Run repeated 16KiB 16-node transport ablations
+        shell: bash
+        env:
+          BENCH_BINARY: /tmp/rmw-bench-build/rmw_bench
+          BENCH_SECONDS: "2.5"
+          ABLATION_REPEATS: "5"
+        run: |
+          set -eo pipefail
+          source /opt/ros/jazzy/setup.bash
+          python3 -u bench/rmw_cpp/transport_ablation.py | tee ablation-results/runner.log
+      - name: Write benchmark summary
+        if: always()
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import csv, os, pathlib, statistics
+          p = pathlib.Path('ablation-results/results.csv')
+          with open(os.environ['GITHUB_STEP_SUMMARY'],'a') as o:
+              o.write('## FastDDS transport ablation: same rclcpp C++ binary, 16KiB x 4000msg/s x 15 receivers\n\n')
+              o.write('The FASTDDS_BUILTIN_TRANSPORTS environment variable sets DEFAULT, SHM, or UDPv4. CycloneDDS baseline is a control. Values are medians of completed successful cases.\n\n')
+              if p.exists():
+                  rows = list(csv.DictReader(p.open()))
+                  o.write('| Variant | Valid trials | Publisher msg/s | Mean MiB/s/receiver | Delivery % | P50 us | P99 us |\n')
+                  o.write('|---|---:|---:|---:|---:|---:|---:|\n')
+                  for name in dict.fromkeys(r['stack'] for r in rows):
+                      valid = [r for r in rows if r['stack'] == name and r['status'] == 'ok']
+                      if valid:
+                          fmt = lambda key: f"{statistics.median(float(r[key]) for r in valid):.2f}"
+                          o.write(f"| {name} | {len(valid)} | {fmt('achieved_pub_hz')} | {fmt('mean_goodput_mib_s')} | {fmt('delivery_percent')} | {fmt('median_p50_us')} | {fmt('median_p99_us')} |\n")
+          PY
+      - name: Upload per-case logs and CSV
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fastdds-shm-ablation-results
+          path: ablation-results/
+          if-no-files-found: warn
