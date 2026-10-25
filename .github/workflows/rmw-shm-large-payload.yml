@@ -1,0 +1,69 @@
+name: RMW SHM Large Payload 64KiB 1MiB
+on:
+  push:
+    branches: [bench/rmw-shm-onoff-20261025]
+    paths: ['.github/workflows/rmw-shm-large-payload.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  large:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    container:
+      image: ros:jazzy-ros-base-noble
+      options: --shm-size=2g
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install ROS and compile
+        shell: bash
+        run: |
+          set -eo pipefail
+          apt-get update -qq
+          DEBIAN_FRONTEND=noninteractive apt-get install -y -qq build-essential cmake python3 binutils \
+            ros-jazzy-rclcpp ros-jazzy-std-msgs ros-jazzy-rmw-cyclonedds-cpp \
+            ros-jazzy-rmw-fastrtps-cpp ros-jazzy-rmw-zenoh-cpp
+          source /opt/ros/jazzy/setup.bash
+          cmake -S bench/rmw_cpp -B /tmp/rmw-bench-build -DCMAKE_BUILD_TYPE=Release
+          cmake --build /tmp/rmw-bench-build -j2
+          lscpu | grep -E 'Model name|CPU\(s\)' || true
+      - name: Compare large messages with fixed C++ API
+        shell: bash
+        env:
+          BENCH_BINARY: /tmp/rmw-bench-build/rmw_bench
+          BENCH_SECONDS: '2.5'
+          SHM_REPEATS: '2'
+          SHM_NODES: '2,16'
+          SHM_PAYLOADS: '65536,1048576'
+          SHM_RATE_64KB: '500'
+          SHM_RATE_1MB: '50'
+        run: |
+          set -eo pipefail
+          source /opt/ros/jazzy/setup.bash
+          mkdir -p shm-results
+          timeout --signal=TERM --kill-after=10s 850s python3 -u bench/rmw_cpp/shm_onoff.py | tee shm-results/runner.log
+      - name: Summary
+        if: always()
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import csv,os,pathlib,statistics
+          p=pathlib.Path('shm-results/results.csv')
+          with open(os.environ['GITHUB_STEP_SUMMARY'],'a') as o:
+              o.write('## 64KiB at 500Hz, 1MiB at 50Hz, 2/16 nodes, identical C++ RMW SHM toggle\n\n')
+              if p.exists():
+                  rows=list(csv.DictReader(p.open()))
+                  o.write('| Mode | Nodes | Bytes | Successful trials | P99 us | Delivery % | Actual sender msg/s |\n|---|---:|---:|---:|---:|---:|---:|\n')
+                  for key in dict.fromkeys((r['stack'],r['nodes'],r['payload_bytes']) for r in rows):
+                      a=[r for r in rows if (r['stack'],r['nodes'],r['payload_bytes'])==key and r['status']=='ok']
+                      if a:
+                          m=lambda k: f'{statistics.median(float(r[k]) for r in a):.1f}'
+                          o.write(f'| {key[0]} | {key[1]} | {key[2]} | {len(a)} | {m("median_p99_us")} | {m("delivery_percent")} | {m("achieved_pub_hz")} |\n')
+          PY
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rmw-shm-large-payload-results
+          path: shm-results/
+          if-no-files-found: warn
