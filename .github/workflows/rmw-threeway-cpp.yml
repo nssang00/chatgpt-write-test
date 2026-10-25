@@ -1,0 +1,90 @@
+name: C++ ROS 2 Three RMW Node Scaling (Linux)
+
+on:
+  push:
+    branches:
+      - bench/rclcpp-rmw-three-way-20261025
+    paths:
+      - 'bench/rmw_cpp/**'
+      - '.github/workflows/rmw-threeway-cpp.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  compare:
+    name: identical rclcpp over CycloneDDS, FastDDS and Zenoh
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    container:
+      image: ros:jazzy-ros-base-noble
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install three RMW implementations and C++ compiler
+        shell: bash
+        run: |
+          set -euo pipefail
+          apt-get update -qq
+          DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
+            build-essential cmake python3 \
+            ros-jazzy-rclcpp ros-jazzy-std-msgs \
+            ros-jazzy-rmw-cyclonedds-cpp \
+            ros-jazzy-rmw-fastrtps-cpp \
+            ros-jazzy-rmw-zenoh-cpp
+      - name: Build identical C++ ROS 2 executable
+        shell: bash
+        run: |
+          set -eo pipefail
+          source /opt/ros/jazzy/setup.bash
+          cmake -S bench/rmw_cpp -B /tmp/rmw-bench-build -DCMAKE_BUILD_TYPE=Release
+          cmake --build /tmp/rmw-bench-build -j 2
+          test -x /tmp/rmw-bench-build/rmw_bench
+      - name: Capture environment and verify implementations
+        shell: bash
+        run: |
+          set -eo pipefail
+          source /opt/ros/jazzy/setup.bash
+          uname -a
+          lscpu | grep -E 'Model name|CPU\(s\)|Thread\(s\) per core' || true
+          dpkg-query -W ros-jazzy-rmw-cyclonedds-cpp ros-jazzy-rmw-fastrtps-cpp ros-jazzy-rmw-zenoh-cpp ros-jazzy-rclcpp
+          ros2 pkg executables rmw_zenoh_cpp
+      - name: Run three backends with a common C++ benchmark
+        shell: bash
+        env:
+          BENCH_BINARY: /tmp/rmw-bench-build/rmw_bench
+          BENCH_REPEATS: '2'
+          BENCH_SECONDS: '2.5'
+        run: |
+          set -eo pipefail
+          source /opt/ros/jazzy/setup.bash
+          mkdir -p rmw-cpp-results
+          RUST_LOG=error ros2 run rmw_zenoh_cpp rmw_zenohd >rmw-cpp-results/zenoh_router.log 2>&1 &
+          router_pid=$!
+          trap 'kill "$router_pid" 2>/dev/null || true; wait "$router_pid" 2>/dev/null || true' EXIT
+          sleep 3
+          kill -0 "$router_pid"
+          python3 -u bench/rmw_cpp/run_suite.py | tee rmw-cpp-results/runner.log
+      - name: Summarize measured results
+        if: always()
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import csv,os,pathlib
+          p=pathlib.Path('rmw-cpp-results/results.csv')
+          with open(os.environ['GITHUB_STEP_SUMMARY'],'a') as out:
+              out.write('## CycloneDDS vs FastDDS vs Zenoh — identical C++ ROS 2 rclcpp API\n\n')
+              out.write('1 publisher + N-1 subscriber processes, RELIABLE/KEEP_LAST 128, 1/16 KiB, 2 repeated trials. **Graph convergence is timed after publisher creation; throughput is delivered application payload, NOT network capacity.**\n\n')
+              if p.exists():
+                  out.write('| Trial | Stack | Nodes | Bytes | Graph ms | Actual publisher Hz | Goodput MiB/s/receiver | Delivery % | p99 us | Status |\n')
+                  out.write('|---:|---|---:|---:|---:|---:|---:|---:|---:|---|\n')
+                  for r in csv.DictReader(p.open()):
+                      out.write('| {trial} | {stack} | {nodes} | {payload_bytes} | {graph_discovery_ms} | {achieved_pub_hz} | {mean_goodput_mib_s} | {delivery_percent} | {median_p99_us} | {status} |\n'.format(**r))
+          PY
+      - name: Upload CSV, JSON and per-node execution logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rmw-cpp-threeway-results
+          path: rmw-cpp-results/
+          if-no-files-found: warn
