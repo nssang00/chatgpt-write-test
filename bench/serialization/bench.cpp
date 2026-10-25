@@ -14,6 +14,8 @@
 #include "message_generated.h"
 
 static volatile std::uint64_t sink = 0;
+// GCC benchmark barrier: force writes/reads of each serialized buffer in every measured iteration.
+static inline void escape(const void* p) { asm volatile("" : : "g"(p) : "memory"); }
 constexpr std::uint32_t ID = 123456;
 constexpr std::uint64_t TS = 1700000000123456789ULL;
 void require(bool ok, const char *label) {if(!ok)throw std::runtime_error(label);}
@@ -44,11 +46,13 @@ void run(std::size_t n) {
  std::vector<char> pbwire(pb.ByteSizeLong());
  auto pe=[&](){
    require(pb.SerializeToArray(pbwire.data(),static_cast<int>(pbwire.size())),"protobuf encode");
+   escape(pbwire.data());
    sink+=static_cast<unsigned char>(pbwire.back());
  };
  pe();
  benchpb::Message decoded;
  auto pd=[&](){
+   escape(pbwire.data());
    require(decoded.ParseFromArray(pbwire.data(),static_cast<int>(pbwire.size())),"protobuf decode");
    sink+=decoded.id()+static_cast<unsigned char>(decoded.payload().back());
  };
@@ -62,10 +66,12 @@ void run(std::size_t n) {
    fb.Clear();
    auto data=fb.CreateVector(src);
    fb.Finish(benchfb::CreateMessage(fb,ID,TS,data));
+   escape(fb.GetBufferPointer());
    sink+=fb.GetSize();
  };
  fe();
  auto fd=[&](){
+   escape(fb.GetBufferPointer());
    auto msg=benchfb::GetMessage(fb.GetBufferPointer());
    sink+=msg->id()+msg->payload()->Get(n-1);
  };
@@ -80,10 +86,12 @@ void run(std::size_t n) {
    p.pack_array(3);p.pack_uint32(ID);p.pack_uint64(TS);
    p.pack_bin(static_cast<std::uint32_t>(n));
    p.pack_bin_body(reinterpret_cast<const char*>(src.data()),static_cast<std::uint32_t>(n));
+   escape(mp.data());
    sink+=mp.size();
  };
  me();
  auto md=[&](){
+   escape(mp.data());
    auto handle=msgpack::unpack(mp.data(),mp.size());
    auto const &o=handle.get();
    require(o.type==msgpack::type::ARRAY&&o.via.array.size==3,"msgpack array");
@@ -103,6 +111,7 @@ void run(std::size_t n) {
    s.serialize_encapsulation();
    s<<ID<<TS<<src;
    cdsz=s.getSerializedDataLength();
+   escape(bytes.data());
    sink+=cdsz;
  };
  ce();
@@ -111,6 +120,7 @@ void run(std::size_t n) {
  std::vector<std::uint8_t> dbytes;
  auto cd=[&](){
    eprosima::fastcdr::Cdr d(buf,eprosima::fastcdr::Cdr::DEFAULT_ENDIAN);
+   escape(bytes.data());
    d.read_encapsulation();
    d>>di>>dt>>dbytes;
    sink+=di+dbytes.back();
