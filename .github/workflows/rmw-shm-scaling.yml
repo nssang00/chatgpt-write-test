@@ -1,0 +1,74 @@
+name: RMW SHM Node Scaling Validated
+on:
+  push:
+    branches: [bench/rmw-shm-onoff-20261025]
+    paths: ['.github/workflows/rmw-shm-scaling.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  scale:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    container:
+      image: ros:jazzy-ros-base-noble
+      options: --shm-size=2g
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install ROS RMWs
+        shell: bash
+        run: |
+          set -eo pipefail
+          apt-get update -qq
+          DEBIAN_FRONTEND=noninteractive apt-get install -y -qq build-essential cmake python3 binutils \
+            ros-jazzy-rclcpp ros-jazzy-std-msgs ros-jazzy-rmw-cyclonedds-cpp \
+            ros-jazzy-rmw-fastrtps-cpp ros-jazzy-rmw-zenoh-cpp
+      - name: Build common C++ binary
+        shell: bash
+        run: |
+          set -eo pipefail
+          source /opt/ros/jazzy/setup.bash
+          cmake -S bench/rmw_cpp -B /tmp/rmw-bench-build -DCMAKE_BUILD_TYPE=Release
+          cmake --build /tmp/rmw-bench-build -j2
+          lscpu | grep -E 'Model name|CPU\(s\)' || true
+      - name: Run node scaling SHM ON OFF
+        shell: bash
+        env:
+          BENCH_BINARY: /tmp/rmw-bench-build/rmw_bench
+          BENCH_SECONDS: '2.5'
+          SHM_REPEATS: '2'
+          SHM_NODES: '2,4,8,16'
+          SHM_PAYLOADS: '1024,16384'
+          SHM_RATE_16KB: '2000'
+          SHM_RATE_1KB: '4000'
+        run: |
+          set -eo pipefail
+          source /opt/ros/jazzy/setup.bash
+          mkdir -p shm-results
+          timeout --signal=TERM --kill-after=10s 1100s python3 -u bench/rmw_cpp/shm_onoff.py | tee shm-results/runner.log
+      - name: Summarize
+        if: always()
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import csv,os,pathlib,statistics
+          p=pathlib.Path('shm-results/results.csv')
+          with open(os.environ['GITHUB_STEP_SUMMARY'],'a') as out:
+              out.write('## SHM ON/OFF: 2,4,8,16 nodes; 1KiB and 16KiB; 2 repeats\n\n')
+              if p.exists():
+                  rows=list(csv.DictReader(p.open()))
+                  out.write('| Stack | Nodes | Bytes | Valid | Publisher msg/s | Delivery % | P99 us | Graph ms |\n')
+                  out.write('|---|---:|---:|---:|---:|---:|---:|---:|\n')
+                  for key in dict.fromkeys((r['stack'],r['nodes'],r['payload_bytes']) for r in rows):
+                      a=[r for r in rows if (r['stack'],r['nodes'],r['payload_bytes'])==key and r['status']=='ok']
+                      if a:
+                          m=lambda k: f'{statistics.median(float(r[k]) for r in a):.2f}'
+                          out.write(f'| {key[0]} | {key[1]} | {key[2]} | {len(a)} | {m("achieved_pub_hz")} | {m("delivery_percent")} | {m("median_p99_us")} | {m("graph_discovery_ms")} |\n')
+          PY
+      - name: Upload raw logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rmw-shm-node-scaling-results
+          path: shm-results/
+          if-no-files-found: warn
