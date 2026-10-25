@@ -2,6 +2,7 @@ import {createServer} from 'node:http';
 import {readFile,mkdir,writeFile} from 'node:fs/promises';
 import {resolve,extname,sep} from 'node:path';
 import {chromium} from 'playwright';
+import {build} from 'esbuild';
 const out=resolve('R55-WINDOWS');await mkdir(out,{recursive:true});
 const report={pass:false,events:[],errors:[],checks:[]};
 const html=`<!doctype html><html><body style="margin:0"><div id="map" style="width:512px;height:512px"></div><script type="module">
@@ -37,11 +38,16 @@ window.__probe.advance=()=>{generation++;events.push({type:'cancel',gen:generati
  layer.setSource(makeSource());map.renderSync();};
 map.renderSync();window.__probe.ready=true;
 </script></body></html>`;
+const moduleBody=html.match(/<script type="module">([\s\S]*?)<\/script>/)?.[1];
+if(!moduleBody)throw Error('OL module missing');
+await build({stdin:{contents:moduleBody,resolveDir:process.cwd(),sourcefile:'ol-lifecycle-entry.js',loader:'js'},bundle:true,format:'esm',platform:'browser',outfile:out+'/ol-app.js'});
+const servedHtml=html.replace(/<script type="module">[\s\S]*?<\/script>/,'<script type="module" src="/ol-app.js"></script>');
 let server,browser,page;
 try{
  server=createServer(async(req,res)=>{try{
  const pathname=new URL(req.url,'http://localhost').pathname;
- if(pathname==='/'){res.writeHead(200,{'Content-Type':'text/html'});res.end(html);return;}
+ if(pathname==='/'){res.writeHead(200,{'Content-Type':'text/html'});res.end(servedHtml);return;}
+ if(pathname==='/ol-app.js'){res.writeHead(200,{'Content-Type':'text/javascript'});res.end(await readFile(out+'/ol-app.js'));return;}
  if(pathname.startsWith('/tile')){res.writeHead(200,{'Content-Type':'application/octet-stream'});res.end('');return;}
  const path=resolve('.'+decodeURIComponent(pathname));
  if(!path.startsWith(process.cwd()+sep))throw Error('invalid path');
