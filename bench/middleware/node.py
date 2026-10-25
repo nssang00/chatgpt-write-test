@@ -111,7 +111,7 @@ def grpc_subscribe(args, on_payload):
         request_serializer=Empty.SerializeToString,
         response_deserializer=BytesValue.FromString)
     try:
-        for response in rpc(Empty(), timeout=25):
+        for response in rpc(Empty(), timeout=25, wait_for_ready=True):
             on_payload(response.value)
     finally:
         channel.close()
