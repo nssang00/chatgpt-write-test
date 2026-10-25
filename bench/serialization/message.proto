@@ -1,0 +1,3 @@
+syntax = "proto3";
+package benchpb;
+message Message { uint32 id = 1; uint64 timestamp = 2; bytes payload = 3; }
