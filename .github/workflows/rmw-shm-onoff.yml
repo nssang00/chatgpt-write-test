@@ -1,0 +1,86 @@
+name: RMW SHM ON OFF Identical C++ Comparison
+on:
+  push:
+    branches: [bench/rmw-shm-onoff-20261025]
+    paths: ['bench/rmw_cpp/**', '.github/workflows/rmw-shm-onoff.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  compare:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    container:
+      image: ros:jazzy-ros-base-noble
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install ROS RMWs and tools
+        shell: bash
+        run: |
+          set -eo pipefail
+          apt-get update -qq
+          DEBIAN_FRONTEND=noninteractive apt-get install -y -qq build-essential cmake python3 binutils \
+            ros-jazzy-rclcpp ros-jazzy-std-msgs ros-jazzy-rmw-cyclonedds-cpp \
+            ros-jazzy-rmw-fastrtps-cpp ros-jazzy-rmw-zenoh-cpp
+      - name: Build identical rclcpp C++ binary with SHM-compatible QoS10
+        shell: bash
+        run: |
+          set -eo pipefail
+          source /opt/ros/jazzy/setup.bash
+          cmake -S bench/rmw_cpp -B /tmp/rmw-bench-build -DCMAKE_BUILD_TYPE=Release
+          cmake --build /tmp/rmw-bench-build -j2
+          test -x /tmp/rmw-bench-build/rmw_bench
+      - name: Record versions and probe CycloneDDS iceoryx capability
+        shell: bash
+        run: |
+          mkdir -p shm-results
+          {
+            uname -a
+            lscpu | grep -E 'Model name|CPU\(s\)' || true
+            dpkg-query -W ros-jazzy-rmw-cyclonedds-cpp ros-jazzy-rmw-fastrtps-cpp ros-jazzy-rmw-zenoh-cpp
+            echo '--- iceoryx / RouDi availability ---'
+            command -v iox-roudi || true
+            dpkg-query -W '*iceoryx*' 2>/dev/null || true
+            echo '--- CycloneDDS RMW linked libraries ---'
+            find /opt/ros/jazzy -name 'librmw_cyclonedds_cpp.so' -exec ldd {} \; | grep -Ei 'iceoryx|iox|cyclone' || true
+            echo '--- /dev/shm ---'
+            df -h /dev/shm
+          } | tee shm-results/environment.txt
+      - name: Execute baseline and SHM toggles
+        shell: bash
+        env:
+          BENCH_BINARY: /tmp/rmw-bench-build/rmw_bench
+          BENCH_SECONDS: '2.5'
+          SHM_REPEATS: '3'
+        run: |
+          set -eo pipefail
+          source /opt/ros/jazzy/setup.bash
+          mkdir -p shm-results
+          python3 -u bench/rmw_cpp/shm_onoff.py | tee shm-results/runner.log
+      - name: Summarize results
+        if: always()
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import csv,os,pathlib,statistics
+          p=pathlib.Path('shm-results/results.csv')
+          with open(os.environ['GITHUB_STEP_SUMMARY'],'a') as out:
+              out.write('## Identical rclcpp SHM toggle test — KEEP_LAST(10)\n\n')
+              out.write('SHM-ON is config-enabled but transport path is **not independently proven**; CycloneDDS iceoryx capability is separately probed. These values cannot be used to claim zero-copy.\n\n')
+              if p.exists():
+                  rows=list(csv.DictReader(p.open()))
+                  out.write('| Stack | Nodes | Bytes | Valid | Sender Hz | MiB/s/receiver | Delivery % | P99 us |\n')
+                  out.write('|---|---:|---:|---:|---:|---:|---:|---:|\n')
+                  for key in dict.fromkeys((r['stack'],r['nodes'],r['payload_bytes']) for r in rows):
+                      valid=[r for r in rows if (r['stack'],r['nodes'],r['payload_bytes'])==key and r['status']=='ok']
+                      if valid:
+                          m=lambda k: f'{statistics.median(float(r[k]) for r in valid):.2f}'
+                          out.write(f'| {key[0]} | {key[1]} | {key[2]} | {len(valid)} | {m("achieved_pub_hz")} | {m("mean_goodput_mib_s")} | {m("delivery_percent")} | {m("median_p99_us")} |\n')
+          PY
+      - name: Upload complete logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rmw-shm-onoff-results
+          path: shm-results/
+          if-no-files-found: warn
