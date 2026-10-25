@@ -1,0 +1,57 @@
+name: Serialization Formats Benchmark (Linux)
+on:
+  push:
+    branches: [bench/serialization-four-formats-20261025]
+    paths:
+      - "bench/serialization/**"
+      - ".github/workflows/serialization-bench-linux.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  benchmark:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install libraries
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq protobuf-compiler libprotobuf-dev flatbuffers-compiler libflatbuffers-dev libmsgpack-cxx-dev libfastcdr-dev
+      - name: Environment
+        run: |
+          uname -a
+          lscpu | grep -E 'Model name|CPU\(s\)|Thread|MHz' || true
+          g++ --version | head -1
+          dpkg-query -W protobuf-compiler libprotobuf-dev flatbuffers-compiler libflatbuffers-dev libmsgpack-cxx-dev libfastcdr-dev
+      - name: Compile
+        run: |
+          protoc -Ibench/serialization --cpp_out=bench/serialization bench/serialization/message.proto
+          flatc --cpp -o bench/serialization bench/serialization/message.fbs
+          g++ -std=c++17 -O3 -DNDEBUG -Ibench/serialization bench/serialization/bench.cpp bench/serialization/message.pb.cc -lprotobuf -lfastcdr -pthread -o serialization-bench
+      - name: Run benchmark
+        shell: bash
+        run: |
+          set -o pipefail
+          ./serialization-bench | tee serialization-bench.csv
+      - name: Publish results
+        if: success()
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import csv,os
+          rows=list(csv.DictReader(open('serialization-bench.csv')))
+          with open(os.environ['GITHUB_STEP_SUMMARY'],'a') as f:
+              f.write('## Format comparison - Linux / C++ O3\n\n')
+              f.write('Times are median nanoseconds per call across 5 repeated loops after warm-up.\n\n')
+              f.write('| Payload B | Format | Encoded B | Encode ns | Decode ns |\n|---:|---|---:|---:|---:|\n')
+              for r in rows:
+                  f.write('| {payload_bytes} | {format} | {encoded_bytes} | {encode_ns} | {decode_ns} |\n'.format(**r))
+              f.write('\nFlatBuffers reads fields zero-copy, while others parse messages. DDS networking, QoS, encryption and zero-copy loaning are not measured.\n')
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: serialization-benchmark-linux-csv
+          path: serialization-bench.csv
+          if-no-files-found: ignore
