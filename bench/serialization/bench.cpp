@@ -78,6 +78,18 @@ void run(std::size_t n) {
  require(benchfb::GetMessage(fb.GetBufferPointer())->timestamp()==TS&&benchfb::GetMessage(fb.GetBufferPointer())->payload()->size()==n&&benchfb::GetMessage(fb.GetBufferPointer())->payload()->Get(n-1)==last,"flatbuffers value");
  double fet=measure(fe,count),fdt=measure(fd,count);
  output(n,"FlatBuffers",fb.GetSize(),fet,fdt,count);
+ // Equal-footing decode variant: materialize the entire FlatBuffers payload.
+ std::vector<std::uint8_t> fbcopy;
+ fbcopy.reserve(n);
+ auto fd_copy=[&](){
+   escape(fb.GetBufferPointer());
+   const auto *m=benchfb::GetMessage(fb.GetBufferPointer());
+   const auto *v=m->payload();
+   fbcopy.assign(v->Data(),v->Data()+v->size());
+   sink+=m->id()+fbcopy.back();
+ };
+ double fdct=measure(fd_copy,count);
+ output(n,"FlatBuffers-Copy",fb.GetSize(),fet,fdct,count);
 
  msgpack::sbuffer mp;
  auto me=[&](){
@@ -102,6 +114,19 @@ void run(std::size_t n) {
  md();
  double met=measure(me,count),mdt=measure(md,count);
  output(n,"MessagePack",mp.size(),met,mdt,count);
+ // Equal-footing decode variant: parse and copy the full MessagePack binary.
+ std::vector<std::uint8_t> mpcopy;
+ mpcopy.reserve(n);
+ auto md_copy=[&](){
+   escape(mp.data());
+   auto handle=msgpack::unpack(mp.data(),mp.size());
+   auto v=handle.get().via.array.ptr;
+   const auto *p=reinterpret_cast<const std::uint8_t*>(v[2].via.bin.ptr);
+   mpcopy.assign(p,p+n);
+   sink+=v[0].as<std::uint32_t>()+mpcopy.back();
+ };
+ double mdct=measure(md_copy,count);
+ output(n,"MessagePack-Copy",mp.size(),met,mdct,count);
 
  std::vector<char> bytes(n+256);
  eprosima::fastcdr::FastBuffer buf(bytes.data(),bytes.size());
