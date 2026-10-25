@@ -26,6 +26,7 @@ jobs:
         bytes: [16384]
     container:
       image: ros:jazzy-ros-base-noble
+      options: --shm-size=2g
     steps:
       - uses: actions/checkout@v4
       - name: Install RMWs and build tools
@@ -56,6 +57,7 @@ jobs:
             lscpu | grep -E 'Model name|CPU\(s\)|Thread'
             free -h
             df -h /dev/shm
+            command -v iox-roudi
             dpkg-query -W ros-jazzy-rmw-cyclonedds-cpp ros-jazzy-rmw-fastrtps-cpp ros-jazzy-rmw-zenoh-cpp ros-jazzy-cyclonedds
             echo 'CycloneDDS linked objects:'
             (ldd /opt/ros/jazzy/lib/librmw_cyclonedds_cpp.so || true) | grep -Ei 'iceoryx|iox|dds|lib' | head -25 || true
