@@ -52,7 +52,8 @@ jobs:
         env:
           BENCH_BINARY: /tmp/rmw-bench-build/rmw_bench
           BENCH_SECONDS: '2.5'
-          SHM_REPEATS: '2'
+          SHM_REPEATS: '3'
+          SHM_RATE_16KB: '4000'
           SHM_NODES: '16'
           SHM_PAYLOADS: '16384'
         run: |
