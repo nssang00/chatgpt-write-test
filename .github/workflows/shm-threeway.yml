@@ -1,0 +1,100 @@
+name: ROS 2 Three RMW SHM Capabilities and Transport Comparison
+
+on:
+  push:
+    branches:
+      - bench/shm-threeway-20261025
+    paths:
+      - 'bench/rmw_cpp/**'
+      - '.github/workflows/shm-threeway.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: shm-threeway-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  shm:
+    name: Same rclcpp - Cyclone / Fast / Zenoh, SHM ON vs OFF
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    container:
+      image: ros:jazzy-ros-base-noble
+      options: --shm-size=2g
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install RMW implementations and iceoryx dependencies
+        shell: bash
+        run: |
+          set -eo pipefail
+          apt-get update -qq
+          DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
+            build-essential cmake python3 \
+            ros-jazzy-rclcpp ros-jazzy-std-msgs \
+            ros-jazzy-rmw-cyclonedds-cpp ros-jazzy-rmw-fastrtps-cpp \
+            ros-jazzy-rmw-zenoh-cpp ros-jazzy-iceoryx-posh ros-jazzy-iceoryx-hoofs
+      - name: Build common C++ executable, inspect SHM capability
+        shell: bash
+        run: |
+          set -eo pipefail
+          source /opt/ros/jazzy/setup.bash
+          cmake -S bench/rmw_cpp -B /tmp/rmw-bench-build -DCMAKE_BUILD_TYPE=Release
+          cmake --build /tmp/rmw-bench-build -j 2
+          mkdir -p shm-matrix-results
+          echo '--- HOST ---' | tee shm-matrix-results/environment.txt
+          uname -a | tee -a shm-matrix-results/environment.txt
+          lscpu | grep -E 'Model name|CPU\(s\)|Thread\(s\) per core' | tee -a shm-matrix-results/environment.txt
+          df -h /dev/shm | tee -a shm-matrix-results/environment.txt
+          echo '--- RMW VERSIONS ---' | tee -a shm-matrix-results/environment.txt
+          dpkg-query -W 'ros-jazzy-rmw-*' ros-jazzy-cyclonedds ros-jazzy-iceoryx-posh | tee -a shm-matrix-results/environment.txt
+          echo '--- ROUDI BINARIES ---' | tee -a shm-matrix-results/environment.txt
+          find /opt/ros/jazzy -type f \( -name 'iox-roudi' -o -name 'RouDiApp' \) -print | tee -a shm-matrix-results/environment.txt
+          echo '--- CYCLONE ICEORYX LINKAGE ---' | tee -a shm-matrix-results/environment.txt
+          find /opt/ros/jazzy -name '*ddsc*.so*' -print | head -n 6 | tee -a shm-matrix-results/environment.txt
+      - name: Execute SHM capability and measurement cases
+        shell: bash
+        env:
+          BENCH_BINARY: /tmp/rmw-bench-build/rmw_bench
+          BENCH_PHASE: smoke
+          BENCH_REPEATS: '3'
+          BENCH_SECONDS: '2.0'
+        run: |
+          set -eo pipefail
+          source /opt/ros/jazzy/setup.bash
+          mkdir -p shm-matrix-results
+          python3 -u bench/rmw_cpp/shm_matrix.py | tee shm-matrix-results/runner.log
+      - name: Append evidence summary
+        if: always()
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import csv, os, pathlib, statistics
+          root=pathlib.Path("shm-matrix-results")
+          with open(os.environ["GITHUB_STEP_SUMMARY"],"a") as out:
+            out.write("## CycloneDDS/FastDDS/Zenoh SHM ON/OFF — identical rclcpp\n\n")
+            out.write("A SHM ON switch is **not proof** of SHM data transport: consult the process mapping evidence and exclusions.\n\n")
+            for filename in ["smoke.csv","results.csv"]:
+              p=root/filename
+              if not p.exists(): continue
+              rows=list(csv.DictReader(p.open()))
+              out.write("### "+filename+"\n\n")
+              out.write("| Variant | Cases | OK | Median p99 us | Mean goodput MiB/s | SHM proof class |\n")
+              out.write("|---|---:|---:|---:|---:|---|\n")
+              for variant in dict.fromkeys(r["stack"] for r in rows):
+                subset=[r for r in rows if r["stack"]==variant]
+                valid=[r for r in subset if r["status"]=="ok"]
+                p99=statistics.median(float(r["median_p99_us"]) for r in valid) if valid else float("nan")
+                gp=statistics.median(float(r["mean_goodput_mib_s"]) for r in valid) if valid else float("nan")
+                proof=','.join(sorted(set(r["proof_class"] for r in subset)))
+                out.write(f"| {variant} | {len(subset)} | {len(valid)} | {p99:.1f} | {gp:.3f} | {proof} |\n")
+          PY
+      - name: Upload per-case logs and source versions
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: shm-threeway-results
+          path: shm-matrix-results/
+          if-no-files-found: warn
