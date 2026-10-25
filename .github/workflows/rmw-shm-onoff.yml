@@ -1,0 +1,110 @@
+name: C++ ROS2 Middleware SHM ON-OFF Verification
+
+on:
+  push:
+    branches: [bench/shm-on-off-threeway-20261025]
+    paths:
+      - 'bench/rmw_cpp/**'
+      - '.github/workflows/rmw-shm-onoff.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rmw-shm-onoff-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  benchmark:
+    name: "identical C++ RMW: payload ${{ matrix.bytes }} B"
+    runs-on: ubuntu-24.04
+    timeout-minutes: 48
+    strategy:
+      fail-fast: false
+      matrix:
+        bytes: [16384]
+    container:
+      image: ros:jazzy-ros-base-noble
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install RMWs and build tools
+        shell: bash
+        run: |
+          set -eo pipefail
+          apt-get update -qq
+          DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends \
+            build-essential cmake python3 binutils procps \
+            ros-jazzy-rclcpp ros-jazzy-std-msgs \
+            ros-jazzy-rmw-cyclonedds-cpp \
+            ros-jazzy-rmw-fastrtps-cpp \
+            ros-jazzy-rmw-zenoh-cpp
+      - name: Build common C++ binary
+        shell: bash
+        run: |
+          set -eo pipefail
+          source /opt/ros/jazzy/setup.bash
+          cmake -S bench/rmw_cpp -B /tmp/rmw-bench-build -DCMAKE_BUILD_TYPE=Release
+          cmake --build /tmp/rmw-bench-build -j2
+          test -x /tmp/rmw-bench-build/rmw_bench
+      - name: Record SHM and environment evidence
+        shell: bash
+        run: |
+          mkdir -p shm-onoff-results
+          {
+            uname -a
+            lscpu | grep -E 'Model name|CPU\(s\)|Thread'
+            free -h
+            df -h /dev/shm
+            dpkg-query -W ros-jazzy-rmw-cyclonedds-cpp ros-jazzy-rmw-fastrtps-cpp ros-jazzy-rmw-zenoh-cpp ros-jazzy-cyclonedds
+            echo 'CycloneDDS linked objects:'
+            (ldd /opt/ros/jazzy/lib/librmw_cyclonedds_cpp.so || true) | grep -Ei 'iceoryx|iox|dds|lib' | head -25 || true
+          } | tee shm-onoff-results/environment.txt
+      - name: Probe SHM capability and run scaling matrix
+        shell: bash
+        env:
+          BENCH_BINARY: /tmp/rmw-bench-build/rmw_bench
+          MATRIX_SIZE: ${{ matrix.bytes }}
+          MATRIX_REPEATS: '0'
+          MATRIX_SECONDS: '1.5'
+          MATRIX_NODES: '2,4,8,16'
+          RUST_LOG: warn
+        run: |
+          set -eo pipefail
+          source /opt/ros/jazzy/setup.bash
+          python3 -u bench/rmw_cpp/shm_matrix.py | tee shm-onoff-results/probe-${{ matrix.bytes }}.log
+      - name: Publish verified results
+        if: always()
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json, pathlib, os, csv, statistics
+          root=pathlib.Path("shm-onoff-results")
+          with open(os.environ["GITHUB_STEP_SUMMARY"],"a") as out:
+              out.write("## Identical rclcpp SHM ON/OFF experiment\n\n")
+              for d in sorted(root.glob("payload_*")):
+                  out.write(f"### Payload {d.name}\n\n")
+                  cap=d/"capabilities.json"
+                  if cap.exists():
+                      for name,c in json.loads(cap.read_text()).items():
+                          out.write(f"- {name}: {c['status']}, pass={c['passed_data_exchange']}, {c['interpretation']}\n")
+                      out.write("\n")
+                  p=d/"results.csv"
+                  if p.exists():
+                      rows=[r for r in csv.DictReader(p.open()) if r["profile"]=="steady" and r["status"]=="ok"]
+                      if rows:
+                          out.write("| Backend | Nodes | Trials | P99 us | Goodput MiB/s | Delivery % |\n|---|---:|---:|---:|---:|---:|\n")
+                          for name in dict.fromkeys(r["stack"] for r in rows):
+                              for nodes in dict.fromkeys(r["nodes"] for r in rows):
+                                  a=[r for r in rows if r["stack"]==name and r["nodes"]==nodes]
+                                  if a:
+                                      med=lambda k: f"{statistics.median(float(r[k]) for r in a):.1f}"
+                                      out.write(f"|{name}|{nodes}|{len(a)}|{med('median_p99_us')}|{med('mean_goodput_mib_s')}|{med('delivery_percent')}|\n")
+          PY
+      - name: Upload CSV, JSON and per-case diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: "rmw-shm-onoff-${{ matrix.bytes }}-bytes"
+          path: shm-onoff-results/
+          if-no-files-found: warn
