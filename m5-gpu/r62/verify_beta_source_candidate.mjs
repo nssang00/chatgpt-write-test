@@ -27,7 +27,7 @@ try{
  check('R48 CPU line join fallback exactly once',pipeline.split('const gpu=null; // R48 strict-OL candidate: use existing CPU line-join encoder').length===2);
  check('R45 Worker default OFF, explicit opt-in only',binding.includes('deferredWorker=null')&&
   binding.includes('this._deferredConfig=deferredWorker?.enabled===true?deferredWorker:null'));
- check('R45 opt-in config flows to real OL binding',bridge.includes('deferredWorker'));
+ check('R45 opt-in config flows to real OL binding',bridge.includes('static async createDirectScene(options={})')&&bridge.includes('new DirectM5SceneBinding(options)'));
  check('R45 actual handover implementation exists',record.criticalFileShas[files[3]].length===64);
  const tests=['verify_r45_handover.mjs','verify_r45_duplicate_cpu_equivalence.mjs','verify_r34_shared_worker_pool.mjs',
   'verify_r33_worker_pool.mjs','verify_direct_feature_edge_cases.mjs'];
