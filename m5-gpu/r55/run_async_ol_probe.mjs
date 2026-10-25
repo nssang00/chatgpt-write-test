@@ -40,10 +40,11 @@ try{
      globalThis.__r55.events.push({type:stale?'late':'settled',key,seq,generation,attempt});
      if(stale)return;
      if(generation===1&&!globalThis.__r55.retried[key]){\n      globalThis.__r55.retried[key]=true;
-      globalThis.__r55.events.push({type:'retry',key,seq});
+      tile.setState(3); // Real OL source tileloaderror, not merely a synthetic log label.
+      globalThis.__r55.events.push({type:'error-injected',key,seq,generation});
       setTimeout(()=>{
        if(generation!==globalThis.__r55.generation)return;
-       try{tile.setFeatures(format.readFeatures(pbf.get(key).slice(0),{extent,featureProjection:projection}));info.sourceLoads++}
+       try{tile.setState(0);tile.load();globalThis.__r55.events.push({type:'retry',key,seq,generation});}
        catch(e){info.sourceErrors++;info.errors.push(String(e));tile.setState(3)}
       },40);
       return;
@@ -60,7 +61,8 @@ try{
    html=html.slice(0,start)+html.slice(end+6);
    html=html.replace('const layers=manifest.sources.map',`globalThis.__r55={seq:0,generation:0,attempts:{},retried:{},loaders:{},events:[]};
  const layers=manifest.sources.map`);
-   html=html.replace(' globalThis.__r53Snapshot=()=>{',` globalThis.__r55.advance=()=>{globalThis.__r55.generation++;globalThis.__r55.events.push({type:'cancel',generation:0});manifest.sources.forEach((part,i)=>{const previous=layers[i].getSource();const next=new VectorTileSource({format:previous.getFormat(),tileGrid:grid,projection:proj,wrapX:false,transition:0,tileUrlFunction:([,x,y])=>x===i%8&&y===Math.floor(i/8)?part.x+'/'+part.y+'?r55='+globalThis.__r55.generation:undefined,tileLoadFunction:previous.getTileLoadFunction()});layers[i].setSource(next);globalThis.__r55.events.push({type:'source-replaced',index:i});});map.renderSync();map.render();globalThis.__r55.events.push({type:'ol-source-replacement-attempt',count:Object.keys(globalThis.__r55.loaders).length,view:{center:map.getView().getCenter(),resolution:map.getView().getResolution()}});};
+   html=html.replace(' globalThis.__r53Snapshot=()=>{',` globalThis.__r55.advance=()=>{globalThis.__r55.generation++;globalThis.__r55.events.push({type:'cancel',generation:0});manifest.sources.forEach((part,i)=>{const previous=layers[i].getSource();const next=new VectorTileSource({format:previous.getFormat(),tileGrid:grid,projection:proj,wrapX:false,transition:0,tileUrlFunction:([,x,y])=>x===i%8&&y===Math.floor(i/8)?part.x+'/'+part.y+'?r55='+globalThis.__r55.generation:undefined,tileLoadFunction:previous.getTileLoadFunction()});next.on('tileloaderror',e=>globalThis.__r55.events.push({type:'source-tileloaderror',index:i,generation:globalThis.__r55.generation,key:e.tile?.getTileUrl?.()}));
+layers[i].setSource(next);globalThis.__r55.events.push({type:'source-replaced',index:i});});map.renderSync();map.render();globalThis.__r55.events.push({type:'ol-source-replacement-attempt',count:Object.keys(globalThis.__r55.loaders).length,view:{center:map.getView().getCenter(),resolution:map.getView().getResolution()}});};
  globalThis.__r53Snapshot=()=>{`);
    body=Buffer.from(html);
   }
@@ -75,6 +77,9 @@ try{
  await page.waitForFunction(()=>window.__r53?.ready||window.__r53?.errors?.length,{timeout:45000});
  const ready=await page.evaluate(()=>({ready:__r53.ready,errors:__r53.errors}));
  if(!ready.ready||ready.errors.length)throw Error('fixture not ready '+JSON.stringify(ready));
+ // An old request must actually be in flight before triggering cancellation.
+ await page.waitForFunction(()=>window.__r55?.events.some(e=>e.type==='issued'&&e.generation===0)||window.__r53?.errors?.length>0,null,{timeout:15000});
+ await page.mouse.move(790,250);await page.mouse.down();await page.mouse.move(780,255,{steps:3});await page.mouse.up();
  await page.evaluate(()=>__r55.advance());
  // Wait for generation-1 requests at the unchanged, known-good tile-grid view.
  // Moving and zooming first can leave the one-level custom tile grid without
@@ -85,9 +90,9 @@ try{
  report.events=await page.evaluate(()=>__r55.events);
  report.snapshots.final=await page.evaluate(()=>__r53Snapshot());
  const count=t=>report.events.filter(e=>e.type===t).length;
- if(count('issued')<16||count('cancel')<1||count('late')<1||count('retry')<1||!report.events.some(e=>e.type==='issued'&&e.generation===1))throw Error('race coverage insufficient '+JSON.stringify({issued:count('issued'),cancel:count('cancel'),late:count('late'),retry:count('retry')}));
+ if(count('issued')<16||count('cancel')<1||count('late')<1||count('retry')<1||count('source-tileloaderror')<1||!report.events.some(e=>e.type==='issued'&&e.generation===1))throw Error('race coverage insufficient '+JSON.stringify({issued:count('issued'),cancel:count('cancel'),late:count('late'),retry:count('retry')}));
  report.checks.push('actual OL UI async tile issue, generation cancellation, late response and retry observed');
- if(report.snapshots.final.glError!==0||report.snapshots.final.painted<=0||report.snapshots.final.sourceErrors||report.snapshots.final.errors.length)throw Error('invalid framebuffer '+JSON.stringify(report.snapshots.final));
+ if(report.snapshots.final.glError!==0||report.snapshots.final.painted<=0||report.snapshots.final.sourceErrors||report.snapshots.final.errors.length||!/NVIDIA.*RTX 5060 Ti/i.test(report.snapshots.final.renderer||''))throw Error('invalid framebuffer '+JSON.stringify(report.snapshots.final));
  report.checks.push('physical GL nonempty and error-free after delayed tile race');
  report.pass=true;
 }catch(e){report.error=String(e.stack||e)}
