@@ -114,7 +114,7 @@ def run_case(counter, rep, name, rmw, onoff, nodes, payload, rate, profile):
         roudi_log = (OUT / f"roudi_{counter:04d}.log").open("w")
         roudi = subprocess.Popen(
             ["iox-roudi", "-c", str(HERE / "roudi_mempool.toml"),
-             "--monitoring-mode", "off"],
+             "--monitoring-mode", "off", "--compatibility", "minor"],
             stdout=roudi_log, stderr=subprocess.STDOUT)
         time.sleep(1)
         if roudi.poll() is not None:
