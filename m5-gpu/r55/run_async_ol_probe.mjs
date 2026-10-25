@@ -31,6 +31,7 @@ try{
     const key=url.split('?')[0], seq=++globalThis.__r55.seq;
     globalThis.__r55.loaders[key]=()=>tile.setLoader((ex,res,proj)=>{tile.setFeatures(format.readFeatures(pbf.get(key).slice(0),{extent:ex,featureProjection:proj}));info.sourceLoads++;});
     const generation=globalThis.__r55.generation;
+    globalThis.__r55.inflight.push({tile,key,generation,seq});
     const attempt=(globalThis.__r55.attempts[key]||0)+1;
     globalThis.__r55.attempts[key]=attempt;
     globalThis.__r55.events.push({type:'issued',key,seq,generation,attempt});
@@ -59,11 +60,17 @@ try{
    const end=html.indexOf('   })',start);
    if(start<0||end<0)throw Error('R53 synchronous body removal failed');
    html=html.slice(0,start)+html.slice(end+6);
-   html=html.replace('const layers=manifest.sources.map',`globalThis.__r55={seq:0,generation:0,attempts:{},retried:{},loaders:{},events:[]};
+   html=html.replace('const layers=manifest.sources.map',`globalThis.__r55={seq:0,generation:0,attempts:{},retried:{},loaders:{},inflight:[],events:[]};
  const layers=manifest.sources.map`);
    html=html.replace(' globalThis.__r53Snapshot=()=>{',` globalThis.__r55.advance=()=>{
   globalThis.__r55.generation++;
   globalThis.__r55.events.push({type:'cancel',generation:0});
+  // Release OpenLayers' default maxTilesLoading=16 queue slots. Merely
+  // suppressing the late callback leaves 16 source tiles LOADING forever.
+  // The delayed async callbacks remain scheduled to assert stale drop.
+  for(const request of globalThis.__r55.inflight.filter(r=>r.generation===0)){
+   if(request.tile.getState()===1){request.tile.setState(3);globalThis.__r55.events.push({type:'aborted',key:request.key,seq:request.seq,generation:0});}
+  }
   layers.forEach((layer,i)=>{
    const source=layer.getSource();
    source.on('tileloaderror',e=>globalThis.__r55.events.push({type:'source-tileloaderror',index:i,generation:globalThis.__r55.generation,key:e.tile?.getTileUrl?.()}));
@@ -103,7 +110,7 @@ try{
  report.events=await page.evaluate(()=>__r55.events);
  report.snapshots.final=await page.evaluate(()=>__r53Snapshot());
  const count=t=>report.events.filter(e=>e.type===t).length;
- if(count('issued')<16||count('cancel')<1||count('late')<1||count('retry')<1||count('source-tileloaderror')<1||!report.events.some(e=>e.type==='issued'&&e.generation===1))throw Error('race coverage insufficient '+JSON.stringify({issued:count('issued'),cancel:count('cancel'),late:count('late'),retry:count('retry')}));
+ if(count('issued')<16||count('cancel')<1||count('aborted')<1||count('late')<1||count('retry')<1||count('source-tileloaderror')<1||!report.events.some(e=>e.type==='issued'&&e.generation===1))throw Error('race coverage insufficient '+JSON.stringify({issued:count('issued'),cancel:count('cancel'),late:count('late'),retry:count('retry')}));
  report.checks.push('actual OL UI async tile issue, generation cancellation, late response and retry observed');
  if(report.snapshots.final.glError!==0||report.snapshots.final.painted<=0||report.snapshots.final.sourceErrors||report.snapshots.final.errors.length||!/NVIDIA.*RTX 5060 Ti/i.test(report.snapshots.final.renderer||''))throw Error('invalid framebuffer '+JSON.stringify(report.snapshots.final));
  report.checks.push('physical GL nonempty and error-free after delayed tile race');
