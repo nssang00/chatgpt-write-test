@@ -86,6 +86,7 @@ jobs:
                   try{& taskkill.exe /PID $p.Id /T /F | Out-Null}catch{}
                   $exit=124
                 }else{
+                  $p.Refresh()
                   $exit=$p.ExitCode
                 }
                 $resultFile=Join-Path $out 'result.json'
@@ -94,7 +95,10 @@ jobs:
                   continue
                 }
                 $r=Get-Content $resultFile -Raw | ConvertFrom-Json
-                if($exit -ne 0 -or -not $r.pass -or @($r.checks).Count -lt 3 -or $r.pixelAudit.diffPixels -ne 0 -or $r.pixelAudit.changedChannels -ne 0 -or $r.pixelAudit.sources -ne $sourceCount -or $r.pixelAudit.dpr -ne $dpr -or $r.pixelAudit.seed -ne $seed -or -not $r.tileAudit.exact){
+                $isNodeExitZero=($null -ne $exit -and [int]$exit -eq 0)
+                $isCaseExact=($r.pass -eq $true -and @($r.checks).Count -ge 4 -and $r.pixelAudit.diffPixels -eq 0 -and $r.pixelAudit.changedChannels -eq 0 -and [int]$r.pixelAudit.sources -eq $sourceCount -and [int]$r.pixelAudit.dpr -eq $dpr -and [int]$r.pixelAudit.seed -eq $seed -and $r.tileAudit.exact -eq $true)
+                Write-Host ('R61_GATE_DIAGNOSTIC '+$case+' nodeExit='+[string]$exit+' nodeExitZero='+$isNodeExitZero+' exact='+$isCaseExact+' resultPass='+$r.pass+' pixelSources='+$r.pixelAudit.sources+' expectedSources='+$sourceCount+' tileExact='+$r.tileAudit.exact)
+                if(-not $isNodeExitZero -or -not $isCaseExact){
                   $failed+=($case+': failed gate')
                 }else{
                   $checked++
