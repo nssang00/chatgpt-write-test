@@ -50,6 +50,7 @@ jobs:
         run: |
           set -eo pipefail
           source /opt/ros/jazzy/setup.bash
+          mkdir -p ablation-results
           python3 -u bench/rmw_cpp/transport_ablation.py | tee ablation-results/runner.log
       - name: Write benchmark summary
         if: always()
