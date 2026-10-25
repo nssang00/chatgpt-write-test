@@ -23,12 +23,13 @@ MODES = [
 FIELDS = bench.FIELDS + ["shm_setting", "shm_verified", "transport_evidence"]
 
 def mode_env(name, state):
-    for k in ("FASTDDS_BUILTIN_TRANSPORTS", "ZENOH_CONFIG_OVERRIDE", "CYCLONEDDS_URI"):
+    for k in ("FASTDDS_BUILTIN_TRANSPORTS", "ZENOH_CONFIG_OVERRIDE", "ZENOH_SHM_ALLOC_SIZE", "CYCLONEDDS_URI"):
         os.environ.pop(k, None)
     if name.startswith("FastDDS"):
         os.environ["FASTDDS_BUILTIN_TRANSPORTS"] = "SHM" if state == "on" else "UDPv4"
     if name.startswith("Zenoh") and state == "on":
-        os.environ["ZENOH_CONFIG_OVERRIDE"] = "transport/shared_memory/enabled=true"
+        os.environ["ZENOH_CONFIG_OVERRIDE"] = "transport/shared_memory/enabled=true;transport/shared_memory/transport_optimization/pool_size=4194304"
+        os.environ["ZENOH_SHM_ALLOC_SIZE"] = "4194304"
     # Zenoh OFF uses the ROS package default config; FastDDS UDPv4 is forced.
     # Cyclone OFF uses its default transport configuration.
 
