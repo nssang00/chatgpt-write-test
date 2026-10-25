@@ -35,7 +35,7 @@ static double percentile(std::vector<double>& sorted, double q) {
 }
 struct Opt {
   std::string role, directory, topic;
-  int id=0, subscribers=1, bytes=1024, rate=4000;
+  int id=0, subscribers=1, bytes=1024, rate=4000, depth=128;
   double seconds=2.5;
 };
 static Opt parse(int argc, char** argv) {
@@ -49,11 +49,12 @@ static Opt parse(int argc, char** argv) {
     else if (k=="--subscribers") o.subscribers=std::stoi(v);
     else if (k=="--bytes") o.bytes=std::stoi(v);
     else if (k=="--rate") o.rate=std::stoi(v);
+    else if (k=="--depth") o.depth=std::stoi(v);
     else if (k=="--seconds") o.seconds=std::stod(v);
     else throw std::runtime_error("unknown argument "+k);
   }
   if (o.directory.empty() || o.topic.empty() || (o.role!="pub" && o.role!="sub") ||
-      o.bytes<16 || o.rate<1 || o.subscribers<1) throw std::runtime_error("invalid arguments");
+      o.bytes<16 || o.rate<1 || o.subscribers<1 || o.depth<1) throw std::runtime_error("invalid arguments");
   return o;
 }
 int main(int argc, char** argv) {
@@ -64,7 +65,7 @@ int main(int argc, char** argv) {
     auto node = std::make_shared<rclcpp::Node>("rmw_bench_"+o.role+"_"+std::to_string(o.id));
     rclcpp::executors::SingleThreadedExecutor ex;
     ex.add_node(node);
-    auto qos = rclcpp::QoS(rclcpp::KeepLast(128)).reliable().durability_volatile();
+    auto qos = rclcpp::QoS(rclcpp::KeepLast(o.depth)).reliable().durability_volatile();
     fs::path dir(o.directory);
     if (o.role=="pub") {
       auto pub=node->create_publisher<std_msgs::msg::UInt8MultiArray>(o.topic,qos);
