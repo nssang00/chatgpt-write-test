@@ -15,7 +15,8 @@ Zenoh uses an independent rmw_zenohd router process (included in the Linux runne
 - Same host for all processes, **not a wireless / cross-network benchmark**.
 
 ## Measurements
-- **Graph discovery time**: from publisher ROS node + publisher creation (after it is ready) to count_subscribers(topic) detecting all N-1 endpoints. Publisher execution is blocked until all are discovered; this measures RMW graph visibility (not cold boot).
+- **Cold graph-ready time** (graph_discovery_ms): from calling rclcpp::init in the publisher process to count_subscribers(topic) detecting all N-1 endpoints. Includes middleware startup, node and publisher creation, and RMW graph convergence. It is NOT pure DDS discovery.
+- **Ready-to-match time** (ready_to_graph_ms): from completion of publisher creation to count_subscribers detection. If subscribers are already matched when publisher construction returns, this can be near zero and is NOT the full discovery duration. Publisher execution waits for all subscriptions before GO.
 - **Actual publisher rate**: sent / publish_seconds. This may be below requested rate due to synchronous publish/backpressure/CPU overload.
 - **Per-receiver goodput**: received * nominal payload bytes / publish_seconds in MiB/s; both mean and aggregate recorded.
 - **Delivery ratio**: mean receiver message count divided by actual sent count. A high delivery ratio with sender throttling **does not** mean the target offered rate was achieved.
@@ -29,4 +30,5 @@ Both results.csv and individual case diagnostics are uploaded as workflow artifa
 - Zenoh requires a router process which consumes separate resources. Native DDS discovery is decentralized.
 - No measurements of physical NIC throughput, wireless loss, discovery network bytes, allocator profiles, per-core CPU or memory utilization.
 - Run-to-run and runner CPU variation means these are **measurements for this environment only**, not historical proof of a regression/improvement.
+- Each subscriber uses a blocking-when-idle C++ executor spin_once with a 1 ms maximum wait; there is **no artificial 1 ms delay after each received message**. The initial run had such a bug and must not be interpreted as a transport benchmark.
 - Publish-time stamping slightly precedes actual transport send and timestamps are read at callback entry; the latency estimates incorporate publication API overhead.
