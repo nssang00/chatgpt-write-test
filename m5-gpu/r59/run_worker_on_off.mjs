@@ -71,7 +71,7 @@ try{
     trial.worker=first.worker;
     if(trial.worker!==null)throw Error('Worker OFF unexpectedly constructed a deferred pool');
    }
-   const early=await page.evaluate(()=>__r59Snapshot());
+   const early=await page.evaluate(()=>__r53Snapshot());
    if(early.glError!==0||early.painted<=0||!/NVIDIA.*RTX 5060 Ti/i.test(early.renderer||''))throw Error('physical GPU initial invalid '+JSON.stringify({glError:early.glError,painted:early.painted,renderer:early.renderer}));
    trial.renderer=early.renderer;
    const cdpBefore=(await cdp.send('Performance.getMetrics')).metrics;
