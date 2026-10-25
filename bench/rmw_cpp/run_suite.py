@@ -57,6 +57,7 @@ def run_case(trial, case_id, profile, stack, rmw, nodes, payload, rate):
         "--directory", str(work), "--topic", topic,
         "--subscribers", str(subs), "--bytes", str(payload),
         "--rate", str(rate), "--seconds", str(SECONDS),
+        "--depth", str(int(env.get("BENCH_QOS_DEPTH", "128"))),
     ]
 
     def launch(role, idx):
@@ -104,6 +105,30 @@ def run_case(trial, case_id, profile, stack, rmw, nodes, payload, rate):
                 status = "graph_discovery_failure"
         if status == "ok":
             (work / "GO").write_text(str(time.monotonic_ns()))
+            if os.environ.get("BENCH_PROBE_SHM") == "1":
+                # Configuration is not proof of SHM use: inspect Linux mappings
+                # of live sender/subscribers during message exchange.
+                time.sleep(min(0.4, SECONDS / 3))
+                with (work / "shm_probe.txt").open("w") as probe:
+                    for proc in processes + ([zenoh_router] if zenoh_router is not None else []):
+                        if proc.poll() is not None:
+                            continue
+                        pid = proc.pid
+                        try:
+                            maps = (Path("/proc") / str(pid) / "maps").read_text(errors="replace")
+                            matching = [line.strip() for line in maps.splitlines()
+                                        if any(word in line.lower() for word in
+                                               ("zenoh", "shm", "memfd", "iceoryx", "/sysv", "/dev/shm"))]
+                            status_text = (Path("/proc") / str(pid) / "status").read_text(errors="replace")
+                            rss = next((line for line in status_text.splitlines()
+                                        if line.startswith("VmRSS:")), "VmRSS: unknown")
+                            probe.write(f"PID {pid} {rss} shm_related_mappings={len(matching)}\n")
+                            for line in matching[:120]:
+                                probe.write(line + "\n")
+                        except OSError as exc:
+                            probe.write(f"PID {pid} probe_failed {exc}\n")
+                    probe.write("/dev/shm contents: " + repr(
+                        [p.name for p in Path("/dev/shm").iterdir()][:100]) + "\n")
             if not wait_until(lambda: (work / "publisher.json").exists(), SECONDS + 12, [pub]):
                 status = "publisher_failure"
         for p in processes:
@@ -177,6 +202,9 @@ def run_case(trial, case_id, profile, stack, rmw, nodes, payload, rate):
         for log in sorted(work.glob("*.log")):
             f.write("\n=== " + log.name + " ===\n")
             f.write(log.read_text(errors="replace")[-2500:] + "\n")
+        shm_probe = work / "shm_probe.txt"
+        if shm_probe.exists():
+            f.write("\n=== shm_probe.txt ===\n"+shm_probe.read_text()[:15000]+"\n")
         failure = work / "publisher_failure"
         if failure.exists():
             f.write("\n" + failure.read_text())
