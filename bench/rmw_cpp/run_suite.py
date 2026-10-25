@@ -24,7 +24,7 @@ PAYLOADS = [1024, 16384]
 REPEATS = int(os.environ.get("BENCH_REPEATS", "2"))
 SECONDS = float(os.environ.get("BENCH_SECONDS", "2.5"))
 FIELDS = [
-    "trial", "stack", "rmw", "nodes", "subscribers", "payload_bytes",
+    "trial", "profile", "stack", "rmw", "nodes", "subscribers", "payload_bytes",
     "requested_hz", "discovered_subscribers", "graph_discovery_ms", "ready_to_graph_ms",
     "sent", "achieved_pub_hz", "mean_received_hz", "min_received_hz",
     "mean_goodput_mib_s", "aggregate_goodput_mib_s", "delivery_percent",
@@ -42,7 +42,7 @@ def wait_until(check, seconds, procs=()):
         time.sleep(0.025)
     return check()
 
-def run_case(trial, case_id, stack, rmw, nodes, payload):
+def run_case(trial, case_id, profile, stack, rmw, nodes, payload, rate):
     work = Path(tempfile.mkdtemp(prefix="ros_cpp_rmw_"))
     processes = []
     log_files = []
@@ -51,7 +51,6 @@ def run_case(trial, case_id, stack, rmw, nodes, payload):
     env["ROS_DOMAIN_ID"] = str(20 + (case_id % 160))
     env["RCUTILS_LOGGING_USE_STDOUT"] = "1"
     subs = nodes - 1
-    rate = 4000 if payload == 1024 else 1500
     topic = "/cpp_bench/topic_" + str(case_id)
     port_params = [
         "--directory", str(work), "--topic", topic,
@@ -128,7 +127,7 @@ def run_case(trial, case_id, stack, rmw, nodes, payload):
         status = "worker_exit_failure"
     total_received = sum(receives)
     row = dict(
-        trial=trial, stack=stack, rmw=rmw, nodes=nodes, subscribers=subs,
+        trial=trial, profile=profile, stack=stack, rmw=rmw, nodes=nodes, subscribers=subs,
         payload_bytes=payload, requested_hz=rate,
         discovered_subscribers=int(pub_stats.get("matched", 0)),
         graph_discovery_ms=round(float(pub_stats.get("cold_to_graph_ms", 0)), 3),
@@ -170,23 +169,26 @@ def main():
     rows = []
     count = 0
     failed = 0
-    print("trial,stack,nodes,bytes,graph_ms,publisher_hz,mean_goodput_MiBs,delivery_pct,p99_us,status", flush=True)
+    print("trial,profile,stack,nodes,bytes,offered_hz,graph_ms,publisher_hz,mean_goodput_MiBs,delivery_pct,p99_us,status", flush=True)
+    baseline = [("baseline", payload, nodes, 4000 if payload == 1024 else 1500)
+                for payload in PAYLOADS for nodes in NODES]
+    stress = [("stress", 1024, n, 16000) for n in (2, 16)] + [
+        ("stress", 16384, n, 4000) for n in (2, 16)]
     try:
         for trial in range(1, REPEATS + 1):
             rotated = STACKS[(trial - 1) % 3:] + STACKS[:(trial - 1) % 3]
-            for payload in PAYLOADS:
-                for nodes in NODES:
-                    for stack, rmw in rotated:
-                        count += 1
-                        row = run_case(trial, count, stack, rmw, nodes, payload)
-                        rows.append(row)
-                        failed += (row["status"] != "ok")
-                        print(",".join(str(v) for v in (
-                            trial, stack, nodes, payload, row["graph_discovery_ms"],
-                            row["achieved_pub_hz"], row["mean_goodput_mib_s"],
-                            row["delivery_percent"], row["median_p99_us"], row["status"]
-                        )), flush=True)
-                        dump(rows)
+            for profile, payload, nodes, rate in baseline + stress:
+                for stack, rmw in rotated:
+                    count += 1
+                    row = run_case(trial, count, profile, stack, rmw, nodes, payload, rate)
+                    rows.append(row)
+                    failed += (row["status"] != "ok")
+                    print(",".join(str(v) for v in (
+                        trial, profile, stack, nodes, payload, rate, row["graph_discovery_ms"],
+                        row["achieved_pub_hz"], row["mean_goodput_mib_s"],
+                        row["delivery_percent"], row["median_p99_us"], row["status"]
+                    )), flush=True)
+                    dump(rows)
     finally:
         dump(rows)
     print(f"FINISHED cases={len(rows)} failed={failed}", flush=True)
