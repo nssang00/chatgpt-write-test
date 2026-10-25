@@ -178,24 +178,25 @@ def run_case(trial, case_id, profile, stack, rmw, nodes, payload, rate):
     if status == "ok" and any(p.returncode != 0 for p in processes):
         status = "worker_exit_failure"
     total_received = sum(receives)
-    # Count live shared-memory mappings observed DURING the send phase. This
-    # is separate from configuration (an ON switch can still fall back).
+    # Ignore ROS lttng instrumentation, which maps /dev/shm even with SHM OFF.
+    # Count only vendor-specific data/transport segments.
     probe_file = work / "shm_probe.txt"
     shm_mapping_count = 0
     shm_mapped_pids = 0
     if probe_file.exists():
         probe_text = probe_file.read_text(errors="replace")
-        for line in probe_text.splitlines():
-            if line.startswith("PID ") and "shm_related_mappings=" in line:
-                # This first count may contain libraries whose name says "shm".
-                continue
-            if any(token in line.lower() for token in
-                   ("/dev/shm/", "memfd:", "/sysv", "iceoryx_mgmt", "zenoh_shm")):
-                shm_mapping_count += 1
+        def is_transport_mapping(line):
+            lower = line.lower()
+            return any(token in lower for token in (
+                "/dev/shm/fastrtps_", "/dev/shm/iceoryx_mgmt",
+                "/dev/shm/root", ".zenoh", "memfd:zenoh",
+            )) and "lttng" not in lower
         for pidblock in probe_text.split("PID ")[1:]:
-            if any(token in pidblock.lower() for token in
-                   ("/dev/shm/", "memfd:", "/sysv", "iceoryx_mgmt", "zenoh_shm")):
-                shm_mapped_pids += 1
+            matching = [line for line in pidblock.splitlines()
+                        if is_transport_mapping(line) and
+                        ("/dev/shm/" in line.lower() or "memfd:" in line.lower())]
+            shm_mapping_count += len(matching)
+            shm_mapped_pids += bool(matching)
     row = dict(
         trial=trial, profile=profile, stack=stack, rmw=rmw, nodes=nodes, subscribers=subs,
         payload_bytes=payload, requested_hz=rate,
