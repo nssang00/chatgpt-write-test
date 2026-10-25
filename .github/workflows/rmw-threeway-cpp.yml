@@ -78,12 +78,12 @@ jobs:
           p=pathlib.Path('rmw-cpp-results/results.csv')
           with open(os.environ['GITHUB_STEP_SUMMARY'],'a') as out:
               out.write('## CycloneDDS vs FastDDS vs Zenoh — identical C++ ROS 2 rclcpp API\n\n')
-              out.write('1 publisher + N-1 subscriber processes, RELIABLE/KEEP_LAST 128, 1/16 KiB, 2 repeated trials. **Graph time includes publisher rclcpp initialization, node/publisher creation and endpoint visibility (not pure protocol discovery). Throughput is delivered application payload, NOT network capacity.**\n\n')
+              out.write('1 publisher + N-1 subscriber processes, RELIABLE/KEEP_LAST 128, baseline + high-load stress, 2 repeated trials. **Graph time includes publisher rclcpp initialization, node/publisher creation and endpoint visibility (not pure protocol discovery). Throughput is delivered application payload, NOT network capacity.**\n\n')
               if p.exists():
-                  out.write('| Trial | Stack | Nodes | Bytes | Graph ms | Actual publisher Hz | Goodput MiB/s/receiver | Delivery % | p99 us | Status |\n')
-                  out.write('|---:|---|---:|---:|---:|---:|---:|---:|---:|---|\n')
+                  out.write('| Trial | Profile | Stack | Nodes | Bytes | Offered Hz | Graph ms | Actual publisher Hz | Goodput MiB/s/receiver | Delivery % | p99 us | Status |\n')
+                  out.write('|---:|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|\n')
                   for r in csv.DictReader(p.open()):
-                      out.write('| {trial} | {stack} | {nodes} | {payload_bytes} | {graph_discovery_ms} | {achieved_pub_hz} | {mean_goodput_mib_s} | {delivery_percent} | {median_p99_us} | {status} |\n'.format(**r))
+                      out.write('| {trial} | {profile} | {stack} | {nodes} | {payload_bytes} | {requested_hz} | {graph_discovery_ms} | {achieved_pub_hz} | {mean_goodput_mib_s} | {delivery_percent} | {median_p99_us} | {status} |\n'.format(**r))
           PY
       - name: Upload CSV, JSON and per-node execution logs
         if: always()
