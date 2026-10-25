@@ -10,6 +10,7 @@ import os
 from pathlib import Path
 import resource
 import statistics
+import subprocess
 import sys
 import threading
 import time
@@ -106,6 +107,20 @@ def run_case(counter, rep, name, rmw, onoff, nodes, payload, rate, profile):
     transport = set_variant(name, rmw, onoff)
     start_rusage = resource.getrusage(resource.RUSAGE_CHILDREN)
     snapshots = {}
+    roudi = None
+    roudi_log = None
+    if name == "CycloneDDS-ON":
+        # Iceoryx SHM cannot operate without RouDi. Start it for each isolated case.
+        roudi_log = (OUT / f"roudi_{counter:04d}.log").open("w")
+        roudi = subprocess.Popen(
+            ["iox-roudi", "-c", str(HERE / "roudi_mempool.toml"),
+             "--monitoring-mode", "off"],
+            stdout=roudi_log, stderr=subprocess.STDOUT)
+        time.sleep(1)
+        if roudi.poll() is not None:
+            roudi_log.flush()
+            print("RouDi exited before case", counter,
+                  (OUT / f"roudi_{counter:04d}.log").read_text()[-1500:], flush=True)
     done = threading.Event()
     sampler = threading.Thread(target=sample_children, args=(done, snapshots), daemon=True)
     sampler.start()
@@ -114,6 +129,15 @@ def run_case(counter, rep, name, rmw, onoff, nodes, payload, rate, profile):
     finally:
         done.set()
         sampler.join(timeout=2)
+        if roudi is not None:
+            if roudi.poll() is None:
+                roudi.terminate()
+            try:
+                roudi.wait(timeout=3)
+            except subprocess.TimeoutExpired:
+                roudi.kill()
+                roudi.wait(timeout=3)
+            roudi_log.close()
     end_rusage = resource.getrusage(resource.RUSAGE_CHILDREN)
     cpu = (end_rusage.ru_utime + end_rusage.ru_stime) - (
         start_rusage.ru_utime + start_rusage.ru_stime)
