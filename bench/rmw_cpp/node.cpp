@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cstdint>
+#include <cstdlib>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
@@ -64,7 +65,10 @@ int main(int argc, char** argv) {
     auto node = std::make_shared<rclcpp::Node>("rmw_bench_"+o.role+"_"+std::to_string(o.id));
     rclcpp::executors::SingleThreadedExecutor ex;
     ex.add_node(node);
-    auto qos = rclcpp::QoS(rclcpp::KeepLast(128)).reliable().durability_volatile();
+    const char* depth_env = std::getenv("BENCH_QOS_DEPTH");
+    const unsigned depth = depth_env ? static_cast<unsigned>(std::stoul(depth_env)) : 128u;
+    if (depth < 1u || depth > 1024u) throw std::runtime_error("bad qos depth");
+    auto qos = rclcpp::QoS(rclcpp::KeepLast(depth)).reliable().durability_volatile();
     fs::path dir(o.directory);
     if (o.role=="pub") {
       auto pub=node->create_publisher<std_msgs::msg::UInt8MultiArray>(o.topic,qos);
