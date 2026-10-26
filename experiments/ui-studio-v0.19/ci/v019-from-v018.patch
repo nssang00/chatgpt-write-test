@@ -1,0 +1,374 @@
+diff --git a/V019-SCOPE.md b/V019-SCOPE.md
+new file mode 100644
+index 0000000..76eabad
+--- /dev/null
++++ b/V019-SCOPE.md
+@@ -0,0 +1,24 @@
++# UI Studio v0.19 — Simple First UX
++
++## Product goal
++
++Keep all v0.18 component authoring features; expose only essential controls by default. Expert users switch to the unchanged advanced editing workflow at any time.
++
++## Basic surface
++
++- Five primary header actions: Undo, Redo, Preview/Edit, Export, Advanced tools.
++- Left quick-add rail: Text, Button, Input, Layout, on-demand Structure tree and Other elements.
++- Center Canvas/Preview; breadcrumb selection; compact editing menu.
++- Right contextual Inspector: Name, up to three relevant component properties, Frame direction and gap; opt-in data/actions panel.
++- A named Advanced mode (button or `?mode=advanced`) for complete pre-existing v0.18 tools: DSL, raw JSON, Data, component library, property/event/binding editors, selection/move/resize, and import/export operations.
++
++## Non-goals
++
++No canonical v6 schema or Runtime/React Export changes. No new data expression language, coordinate-based canvas, or breaking migration.
++
++## Acceptance
++
++1. Default first view has exactly five header action buttons, quick insert actions, no open Component Tree, and contextual inspector.
++2. Add Text and edit its content on canvas; undo and preview observe the same canonical source of truth.
++3. Open and close Structure on demand and expand Data/Actions only when requested.
++4. Advanced mode exposes v0.18 functionality with all prior Studio E2E and isolated Consumer E2E passing.
+diff --git a/e2e/canvas-v016.spec.js b/e2e/canvas-v016.spec.js
+index 002620c..2bd208a 100644
+--- a/e2e/canvas-v016.spec.js
++++ b/e2e/canvas-v016.spec.js
+@@ -11,7 +11,7 @@ async function documentJson(page){
+  return JSON.parse(await studio(page).getByRole('textbox',{name:'v6 JSON 문서'}).inputValue());
+ }
+ test.beforeEach(async({page})=>{
+- await page.goto('/');await expect(studio(page)).toBeVisible();
++ await page.goto('/?mode=advanced');await expect(studio(page)).toBeVisible();
+  await studio(page).getByRole('button',{name:'Preview Harness',exact:true}).first().click();
+ });
+ test('v0.16 reorder controls and Alt arrows change canonical root order and undo restores it',async({page})=>{
+diff --git a/e2e/component-authoring-v013.spec.js b/e2e/component-authoring-v013.spec.js
+index 835cfa3..b38e1a0 100644
+--- a/e2e/component-authoring-v013.spec.js
++++ b/e2e/component-authoring-v013.spec.js
+@@ -35,7 +35,7 @@ const publishEvent=async(page,name)=>{
+ };
+ 
+ test('v0.13 Lego user journey: visually create 3 layered components, re-export and preview 2 instances',async({page})=>{
+-  await page.goto('/');
++  await page.goto('/?mode=advanced');
+   await createComponent(page,'MiniSearch');
+   await insert(page,'Input');
+   await publishProp(page,'value');
+@@ -77,7 +77,7 @@ test('v0.13 Lego user journey: visually create 3 layered components, re-export a
+ });
+ 
+ test('v0.13 a composed instance provides one-click navigation to the canonical child definition',async({page})=>{
+-  await page.goto('/');
++  await page.goto('/?mode=advanced');
+   await root(page).getByRole('button',{name:/LEGO 재사용 예제/}).click();
+   await selectDefinition(page,'CustomerBrowser');
+   const instance=root(page).locator('.v6-tree [data-v6-tree-id]').nth(1);
+diff --git a/e2e/drag-v018.spec.js b/e2e/drag-v018.spec.js
+index 4d90453..5410973 100644
+--- a/e2e/drag-v018.spec.js
++++ b/e2e/drag-v018.spec.js
+@@ -2,7 +2,7 @@ import {test,expect} from '@playwright/test';
+ const studio=p=>p.locator('.v6-studio');
+ const tree=p=>studio(p).locator('.v6-tree');
+ const row=(p,id)=>tree(p).locator(`[data-v6-tree-id="${id}"]`);
+-async function openPage(page){await page.goto('/');await studio(page).locator('.v6-tree-actions').getByRole('button',{name:'Preview Harness'}).click();}
++async function openPage(page){await page.goto('/?mode=advanced');await studio(page).locator('.v6-tree-actions').getByRole('button',{name:'Preview Harness'}).click();}
+ const treeIds=p=>tree(p).locator('[data-v6-tree-id]').evaluateAll(nodes=>nodes.map(n=>n.dataset.v6TreeId));
+ async function readJson(page){await studio(page).getByRole('button',{name:'JSON 편집'}).click();return JSON.parse(await studio(page).getByRole('textbox',{name:'v6 JSON 문서'}).inputValue());}
+ 
+diff --git a/e2e/editing-v015.spec.js b/e2e/editing-v015.spec.js
+index 42c2495..a12488f 100644
+--- a/e2e/editing-v015.spec.js
++++ b/e2e/editing-v015.spec.js
+@@ -6,7 +6,7 @@ async function insert(page,type){
+  await studio(page).getByRole('button',{name:/Insert/}).first().click();
+  await studio(page).locator('.v6-insert-items button').filter({hasText:type}).first().click();
+ }
+-test.beforeEach(async({page})=>{await page.goto('/');await expect(studio(page)).toBeVisible();});
++test.beforeEach(async({page})=>{await page.goto('/?mode=advanced');await expect(studio(page)).toBeVisible();});
+ test('v0.15 breadcrumbs navigate nested frames; duplicating frames copies descendants and undo/redo works',async({page})=>{
+  await studio(page).getByRole('button',{name:'Preview Harness'}).click();
+  const baseCount=await tree(page).locator('[data-v6-tree-id]').count();
+diff --git a/e2e/multiselect-v017.spec.js b/e2e/multiselect-v017.spec.js
+index e561eec..fdec583 100644
+--- a/e2e/multiselect-v017.spec.js
++++ b/e2e/multiselect-v017.spec.js
+@@ -2,7 +2,7 @@ import {test,expect} from '@playwright/test';
+ const studio=p=>p.locator('.v6-studio');
+ const tree=p=>studio(p).locator('.v6-tree');
+ const bar=p=>studio(p).getByTestId('selection-toolbar');
+-async function openPage(page){await page.goto('/');await expect(studio(page)).toBeVisible();await studio(page).locator('.v6-tree-actions').getByRole('button',{name:'Preview Harness'}).click();}
++async function openPage(page){await page.goto('/?mode=advanced');await expect(studio(page)).toBeVisible();await studio(page).locator('.v6-tree-actions').getByRole('button',{name:'Preview Harness'}).click();}
+ async function json(page){await studio(page).getByRole('button',{name:'JSON 편집'}).click();return JSON.parse(await studio(page).getByRole('textbox',{name:'v6 JSON 문서'}).inputValue());}
+ const row=(page,id)=>tree(page).locator(`[data-v6-tree-id="${id}"]`);
+ test('v0.17 Ctrl selects sibling nodes and group reordering, alignment, gap, undo persist in canonical JSON',async({page})=>{
+diff --git a/e2e/simple-v019.spec.js b/e2e/simple-v019.spec.js
+new file mode 100644
+index 0000000..0c5ef45
+--- /dev/null
++++ b/e2e/simple-v019.spec.js
+@@ -0,0 +1,46 @@
++import {test,expect} from '@playwright/test';
++const studio=page=>page.locator('.v6-studio');
++const quick=page=>studio(page).getByTestId('quick-tools');
++test.beforeEach(async({page})=>{await page.goto('/');await expect(quick(page)).toBeVisible();});
++test('Simple First default keeps 5 main actions; Tree, developer controls and advanced inspector are absent',async({page})=>{
++  await expect(studio(page).locator('.v6-header .v6-actions button')).toHaveCount(5);
++  await expect(studio(page).getByRole('button',{name:'고급 도구 열기'})).toBeVisible();
++  await expect(studio(page).getByTestId('simple-inspector')).toBeVisible();
++  await expect(studio(page).locator('.v6-tree')).toHaveCount(0);
++  await expect(studio(page).getByRole('button',{name:'JSON 편집'})).toHaveCount(0);
++  await expect(studio(page).locator('.v6-property-field')).not.toContainText('Instance Overrides');
++  await expect(quick(page).getByRole('button',{name:'구조 열기'})).toHaveAttribute('aria-expanded','false');
++  await quick(page).getByRole('button',{name:'구조 열기'}).click();
++  await expect(studio(page).locator('.v6-tree [data-v6-tree-id]').first()).toBeVisible();
++  await quick(page).getByRole('button',{name:'구조 열기'}).click();
++  await expect(studio(page).locator('.v6-tree')).toHaveCount(0);
++});
++test('Quick add, simple text editing, undo, preview and the advanced inspector share one document',async({page})=>{
++  await quick(page).getByRole('button',{name:'텍스트 추가'}).click();
++  const text=studio(page).getByRole('textbox',{name:'간편 text'});
++  await expect(text).toBeVisible();
++  await text.fill('단순한 화면');
++  await expect(studio(page).locator('.v6-canvas-control-ui').last()).toContainText('단순한 화면');
++  await studio(page).getByRole('button',{name:/Undo/}).click();
++  await expect(studio(page).locator('.v6-canvas-control-ui').last()).not.toContainText('단순한 화면');
++  await text.fill('사용자 친화적');
++  await studio(page).getByRole('button',{name:'▶ 미리보기'}).click();
++  await expect(studio(page).locator('.v6-artboard')).toContainText('사용자 친화적');
++  await studio(page).getByRole('button',{name:'편집으로'}).click();
++  await studio(page).getByRole('button',{name:'고급 도구 열기'}).click();
++  await expect(studio(page).locator('.v6-tree [data-v6-tree-id]').last()).toBeVisible();
++  await expect(studio(page).getByRole('button',{name:'JSON 편집'})).toBeVisible();
++  await studio(page).getByRole('button',{name:'간단 모드'}).click();
++  await expect(studio(page).getByTestId('simple-inspector')).toBeVisible();
++  await expect(studio(page).locator('.v6-canvas-control-ui').last()).toContainText('사용자 친화적');
++});
++test('Data and action editing remains discoverable but closed until requested',async({page})=>{
++  await quick(page).getByRole('button',{name:'버튼 추가'}).click();
++  await expect(studio(page).getByTestId('visual-logic-panel')).toHaveCount(0);
++  await studio(page).getByRole('button',{name:/데이터·동작 연결/}).click();
++  await expect(studio(page).getByTestId('visual-logic-panel')).toBeVisible();
++  await studio(page).getByRole('button',{name:/데이터·동작 연결/}).click();
++  await expect(studio(page).getByTestId('visual-logic-panel')).toHaveCount(0);
++  await studio(page).getByRole('button',{name:'더 많은 설정 보기'}).click();
++  await expect(studio(page).locator('.v6-inspector-content')).toBeVisible();
++});
+diff --git a/e2e/studio.spec.js b/e2e/studio.spec.js
+index 50a0682..2d1382e 100644
+--- a/e2e/studio.spec.js
++++ b/e2e/studio.spec.js
+@@ -16,7 +16,7 @@ const selectPage = async page => {
+ 
+ // Every test starts with a fresh browser context and the v6 editor loaded.
+ test.beforeEach(async ({ page }) => {
+-  await page.goto('/');
++  await page.goto('/?mode=advanced');
+   await expect(root(page)).toBeVisible();
+ });
+ 
+diff --git a/e2e/visual-authoring-v014.spec.js b/e2e/visual-authoring-v014.spec.js
+index cb824c6..be2590e 100644
+--- a/e2e/visual-authoring-v014.spec.js
++++ b/e2e/visual-authoring-v014.spec.js
+@@ -37,7 +37,7 @@ async function setSelect(page,scope,label){
+ }
+ 
+ test('v0.14 visual rules: users create typed data and select condition/repeat without writing JSON',async({page})=>{
+-  await page.goto('/');
++  await page.goto('/?mode=advanced');
+   await studio(page).getByRole('button',{name:'Preview Harness',exact:true}).click();
+   await addState(page,'showCustomers','boolean','true');
+   await addState(page,'customers','array','[{"id":1,"name":"Alice"},{"id":2,"name":"Bob"}]');
+@@ -56,7 +56,7 @@ test('v0.14 visual rules: users create typed data and select condition/repeat wi
+ });
+ 
+ test('v0.14 visual action: click copies live input state to a display field',async({page})=>{
+-  await page.goto('/');
++  await page.goto('/?mode=advanced');
+   await studio(page).getByRole('button',{name:'Preview Harness',exact:true}).click();
+   await addState(page,'keyword','string','');
+   await addState(page,'lastSearch','string','');
+diff --git a/package.json b/package.json
+index 5feac7c..f16496a 100644
+--- a/package.json
++++ b/package.json
+@@ -1,7 +1,7 @@
+ {
+   "name": "ui-studio-design-code",
+   "private": true,
+-  "version": "0.18.0",
++  "version": "0.19.0",
+   "type": "module",
+   "scripts": {
+     "dev": "vite --host 127.0.0.1",
+@@ -29,5 +29,5 @@
+     "typescript": "^5.9.3",
+     "@playwright/test": "1.64.1"
+   },
+-  "description": "UI Studio v0.18 Precision Drag & Drop Component Builder: schema-driven inspector, visual binding/actions/rules, static and dynamic rendering"
++  "description": "UI Studio v0.19 Simple First: progressive canvas UI with expert-mode parity, schema-driven properties, static and dynamic React execution"
+ }
+diff --git a/src/framework/UnifiedStudio.jsx b/src/framework/UnifiedStudio.jsx
+index b6c7669..aa21685 100644
+--- a/src/framework/UnifiedStudio.jsx
++++ b/src/framework/UnifiedStudio.jsx
+@@ -122,6 +122,41 @@ function VisualLogicPanel({node,doc,selectedDefinition,onPatch,registryMeta}){
+     </div>}
+   </div>;
+ }
++/** Beginner-facing inspector: one name, a few relevant props, and opt-in behaviors.
++ *  These edits use the exact same canonical v6 document commands as Advanced mode. */
++function SimpleInspector({node,doc,selectedDefinition,onPatch,onInstanceProp,onInstanceBinding,onOpenAdvanced}){
++  const [showLogic,setShowLogic]=useState(false);
++  useEffect(()=>setShowLogic(false),[node.id]);
++  const meta=node.kind==='component'?registry.get(node.typeId):null;
++  const def=node.kind==='instance'?doc.definitions[node.definitionId]:null;
++  const quickProps=node.kind==='component'?Object.entries(meta?.properties||{}).filter(([key,p])=>['text','title','label','placeholder','value','color','variant','weight'].includes(key)&&!['array','object'].includes(p.type)).slice(0,3):[];
++  return <div className="v19-simple-inspector" data-testid="simple-inspector">
++    <h3>{label(node)}</h3><p className="v19-subtle">선택한 요소를 편집하세요</p>
++    <div className="v6-property-field"><label htmlFor="simple-element-name">이름</label><Input id="simple-element-name" aria-label="요소 이름" value={node.name||''} onChange={e=>onPatch(n=>({...n,name:e.target.value}))}/></div>
++    {node.kind==='frame'&&<>
++      <div className="v6-property-field"><label>배치 방향</label><Select aria-label="배치 방향" value={node.layout.type} options={[{label:'세로',value:'column'},{label:'가로',value:'row'},{label:'격자',value:'grid'},...FRAME_TYPES.filter(v=>!['column','row','grid'].includes(v)).map(v=>({value:v,label:v}))]} onChange={type=>onPatch(n=>({...n,layout:{...n.layout,type}}))}/></div>
++      <div className="v6-property-field"><label>요소 사이 간격</label><Select aria-label="요소 사이 간격" value={node.layout.gap??0} options={[0,8,16,24].map(gap=>({label:`${gap}px`,value:gap}))} onChange={gap=>onPatch(n=>({...n,layout:{...n.layout,gap}}))}/></div>
++    </>}
++    {quickProps.map(([key,property])=>{
++      const current=node.props?.[key];const raw=current?.kind==='literal'?current.value:property.defaultValue;
++      const update=value=>onPatch(n=>({...n,props:{...n.props,[key]:literal(value)}}));
++      return <div className="v6-property-field" key={key}>
++        <label>{({text:'텍스트',title:'제목',label:'라벨',placeholder:'안내 문구',value:'값',color:'색상',variant:'모양',weight:'글자 스타일'})[key]||key}</label>
++        {current?.kind==='binding'?<div className="v19-connected">데이터 연결됨 <Button size="small" onClick={onOpenAdvanced}>연결 편집</Button></div>:
++        property.type==='boolean'?<input aria-label={key} type="checkbox" checked={!!raw} onChange={e=>update(e.target.checked)}/>:
++        property.type==='enum'?<Select aria-label={key} value={raw} options={(property.options||[]).map(v=>({value:v,label:v}))} onChange={update}/>:
++        property.type==='color'?<input aria-label={key} type="color" value={/^#[a-f\d]{6}$/i.test(String(raw))?raw:'#3764df'} onChange={e=>update(e.target.value)}/>:
++        property.type==='number'?<InputNumber aria-label={key} value={raw} onChange={value=>update(value??0)}/>:
++        <Input aria-label={`간편 ${key}`} value={String(raw??'')} onChange={e=>update(e.target.value)}/>}
++      </div>;
++    })}
++    {def&&<><p className="v19-subtle">재사용 컴포넌트 · {node.definitionId}</p>
++      {Object.entries(def.publicProps||{}).filter(([,p])=>p.type==='string').slice(0,2).map(([key,p])=>{const current=node.bindings?.[key]||node.props?.[key];return <div className="v6-property-field" key={key}><label>{key}</label>{current?.kind==='binding'?<Button onClick={onOpenAdvanced}>데이터 연결 편집</Button>:<Input aria-label={`간편 ${key}`} value={String(current?.value??p.defaultValue??'')} onChange={e=>onInstanceProp(key,literal(e.target.value))}/>}</div>;})}</>}
++    {node.kind==='component'&&<button type="button" className="v19-disclosure" aria-expanded={showLogic} onClick={()=>setShowLogic(v=>!v)}>{showLogic?'▾':'▸'} 데이터·동작 연결</button>}
++    {showLogic&&node.kind==='component'&&<VisualLogicPanel node={node} doc={doc} selectedDefinition={selectedDefinition} onPatch={onPatch} registryMeta={meta}/>}
++    <button type="button" className="v19-more" onClick={onOpenAdvanced}>더 많은 설정 보기</button>
++  </div>;
++}
+ function Inspector({node,doc,paths,onPatch,onRemove,onInstanceBinding,onInstanceProp,onOverride,selectedDefinition,rootId,onExtract,onExpose,onExposeEvent,onAllowOverride,onExposeSlot,onAddSlot,onClearSlot,onResetSlot,onAddPublicProp,onOpenDefinition}){
+   if(!node)return <p className="v6-muted">Component Tree나 Canvas에서 노드를 선택하세요.</p>;
+   const [publicName,setPublicName]=useState('value');
+@@ -197,6 +232,9 @@ export function UnifiedStudio({legacyProject}){
+   const selectAnchor=useRef('searchRoot');
+   const setSelected=id=>{setActiveSelected(id);selectAnchor.current=id;setMultiIds([]);};
+   const [view,setView]=useState('design');
++  const [advanced,setAdvanced]=useState(()=>typeof window!=='undefined'&&new URLSearchParams(window.location.search).get('mode')==='advanced');
++  const [structureOpen,setStructureOpen]=useState(false);
++  const [editMenuOpen,setEditMenuOpen]=useState(false);
+   const [editingDef,setEditingDef]=useState('SearchBox');
+   const [insertOpen,setInsertOpen]=useState(false);
+   const [insertSearch,setInsertSearch]=useState('');
+@@ -390,13 +428,23 @@ export function UnifiedStudio({legacyProject}){
+   }}):session.rootScope();
+   return <div className="v6-studio">
+     <input hidden type="file" accept="application/json,.json" ref={uploadRef} onChange={async e=>{const file=e.target.files?.[0];if(!file)return;try{const content=await file.text();const raw=JSON.parse(content);const next=raw.schemaVersion===5?migrateV5ToV6(raw):parseDocument(content,registry);sync(next,{resetState:true,record:false});setSelected(next.pages.main.root.id);setEditingDef(null);setView('design');setError('');}catch(err){setError(`파일 불러오기 실패: ${err.message}`);}finally{e.target.value='';}}}/>
+-    <div className="v6-header"><div><strong>UI Studio v0.18 · Visual-First Component Builder</strong><small>드래그 → 속성 · 데이터 · 동작 연결 → 재사용 → React·Dynamic 실행</small></div>
+-      <div className="v6-actions"><Button size="small" onClick={undo} disabled={!history.current.past.length}>↶ Undo</Button><Button size="small" onClick={redo} disabled={!history.current.future.length}>↷ Redo</Button><Button size="small" type="primary" onClick={()=>{setCreateName('MyComponent');setCreateOpen(true);}}>＋ New Component</Button><Button size="small" onClick={()=>{setDataOpen(true);setDataName("newField");setDataDefault("");}}>＋ 데이터 만들기</Button><Button size="small" onClick={previewAdd} disabled={!editingDef}>＋ Preview Instance</Button><Button size="small" onClick={reset}>SearchBox 예제</Button><Button size="small" onClick={legoExample}>🧱 LEGO 재사용 예제</Button><Button size="small" onClick={slotsExample}>▣ Slots 예제</Button><Button size="small" onClick={dynamicExample}>↻ Dynamic 예제</Button><Button size="small" onClick={importV5}>Legacy v5 가져오기</Button><Button size="small" onClick={()=>uploadRef.current?.click()}>JSON 불러오기</Button><Button size="small" onClick={()=>{setJsonOpen(v=>!v);setJsonDraft(serializeDocument(doc,registry));}}>JSON 편집</Button><Button size="small" onClick={()=>download(code,'ui-studio-v6.dsl.jsx')}>DSL 저장</Button><Button size="small" onClick={exportPackage}>📦 React Component ZIP</Button><Button size="small" onClick={()=>download(generateRuntimeTsx(doc,registry),'GeneratedPageV6.tsx','text/typescript')}>Page TSX (Legacy)</Button><Button size="small" type="primary" onClick={()=>download(serializeDocument(doc,registry),'ui-studio-v6.json','application/json')}>JSON 저장</Button></div>
++    <div className="v6-header"><div><strong>UI Studio v0.19 · Simple First</strong><small>필요한 것만 보여주는 시각적 편집기</small></div>
++      <div className="v6-actions">{!advanced?<><Button size="small" onClick={undo} disabled={!history.current.past.length}>↶ Undo</Button><Button size="small" onClick={redo} disabled={!history.current.future.length}>↷ Redo</Button><Button size="small" onClick={()=>{setView(view==='preview'?'design':'preview');}}>{view==='preview'?'편집으로':'▶ 미리보기'}</Button><Button size="small" type="primary" onClick={exportPackage}>내보내기</Button><Button size="small" aria-label="고급 도구 열기" onClick={()=>setAdvanced(true)}>⚙ 고급 도구</Button></>:<><Button size="small" onClick={()=>{setAdvanced(false);setView(v=>v==='code'?'design':v);setStructureOpen(false);}}>간단 모드</Button><Button size="small" onClick={undo} disabled={!history.current.past.length}>↶ Undo</Button><Button size="small" onClick={redo} disabled={!history.current.future.length}>↷ Redo</Button><Button size="small" type="primary" onClick={()=>{setCreateName('MyComponent');setCreateOpen(true);}}>＋ New Component</Button><Button size="small" onClick={()=>{setDataOpen(true);setDataName("newField");setDataDefault("");}}>＋ 데이터 만들기</Button><Button size="small" onClick={previewAdd} disabled={!editingDef}>＋ Preview Instance</Button><Button size="small" onClick={reset}>SearchBox 예제</Button><Button size="small" onClick={legoExample}>🧱 LEGO 재사용 예제</Button><Button size="small" onClick={slotsExample}>▣ Slots 예제</Button><Button size="small" onClick={dynamicExample}>↻ Dynamic 예제</Button><Button size="small" onClick={importV5}>Legacy v5 가져오기</Button><Button size="small" onClick={()=>uploadRef.current?.click()}>JSON 불러오기</Button><Button size="small" onClick={()=>{setJsonOpen(v=>!v);setJsonDraft(serializeDocument(doc,registry));}}>JSON 편집</Button><Button size="small" onClick={()=>download(code,'ui-studio-v6.dsl.jsx')}>DSL 저장</Button><Button size="small" onClick={exportPackage}>📦 React Component ZIP</Button><Button size="small" onClick={()=>download(generateRuntimeTsx(doc,registry),'GeneratedPageV6.tsx','text/typescript')}>Page TSX (Legacy)</Button><Button size="small" type="primary" onClick={()=>download(serializeDocument(doc,registry),'ui-studio-v6.json','application/json')}>JSON 저장</Button></>}</div>
+     </div>
+     {error&&<Alert className="v6-error" type="warning" showIcon message={error} closable onClose={()=>setError('')}/>}
+     {jsonOpen?<div className="v6-json"><div className="v6-inline"><strong>Canonical JSON v6</strong><span>정의·바인딩·Override 포함 · 유효한 문서만 적용</span><Button type="primary" onClick={applyJson}>JSON 검증 및 적용</Button></div><textarea aria-label="v6 JSON 문서" value={jsonDraft} onChange={e=>setJsonDraft(e.target.value)} spellCheck={false}/></div>:
+-    <div className="v6-columns">
+-      <aside className="v6-left"><div className="v6-left-head"><strong>Component Tree</strong><Button size="small" onClick={()=>setInsertOpen(v=>!v)}>＋ Insert</Button></div>
++    <div className={"v6-columns "+(!advanced?"v19-simple-layout":"")}>
++      <aside className={'v6-left '+(!advanced?'v19-left':'')}>
++        {!advanced&&<div className="v19-quick-tools" data-testid="quick-tools">
++          <strong>추가</strong>
++          <button type="button" aria-label="텍스트 추가" title="텍스트" onClick={()=>add('core/Text')}>T<span>텍스트</span></button>
++          <button type="button" aria-label="버튼 추가" title="버튼" onClick={()=>add('core/Button')}>▢<span>버튼</span></button>
++          <button type="button" aria-label="입력 추가" title="입력" onClick={()=>add('core/Input')}>▤<span>입력</span></button>
++          <button type="button" aria-label="레이아웃 추가" title="레이아웃" onClick={()=>add('layout/column')}>▥<span>배치</span></button>
++          <button type="button" aria-label="구조 열기" aria-expanded={structureOpen} onClick={()=>setStructureOpen(v=>!v)}>☷<span>구조</span></button>
++          <button type="button" aria-label="모든 요소" onClick={()=>{setAdvanced(true);setInsertOpen(true);}}>＋<span>더보기</span></button>
++        </div>}
++        {(advanced||structureOpen)&&<div className={advanced?'v19-tree-body':'v19-structure-panel'} data-testid="structure-panel"><div className="v6-left-head"><strong>Component Tree</strong><Button size="small" onClick={()=>setInsertOpen(v=>!v)}>＋ Insert</Button></div>
+         <div className="v6-component-library">
+           <div className="v6-library-head"><strong>Component Library</strong><small>사용자가 만든 재사용 부품</small></div>
+           <div className="v6-tree-actions"><Button size="small" type={!editingDef?'primary':'default'} onClick={goPage}>Preview Harness</Button></div>
+@@ -411,12 +459,14 @@ export function UnifiedStudio({legacyProject}){
+           {Object.keys(doc.definitions).filter(matchesInsert).map(id=><button key={id} onPointerDown={e=>pointerDown(e,{kind:'new',typeId:`module/${id}`},id)} onClick={()=>!ignoreClick.current&&add(`module/${id}`)}>◇ {id}</button>)}
+         </div></div>:null}
+         <div className="v6-tree" role="tree"><TreeNode node={treeRoot} selected={selected} selectedIds={selectedIds} onSelect={selectNode} onPointerDown={pointerDown} definitions={doc.definitions}/></div>
+-        <div className="v6-help">트리 항목을 끌어 순서·부모 변경 · Canvas 드롭도 같은 IR 명령을 사용합니다.</div>
++        <div className="v6-help">트리 항목을 끌어 순서·부모 변경 · Canvas 드롭도 같은 IR 명령을 사용합니다.</div></div>}
+       </aside>
+-      <main className="v6-center"><div className="v6-center-head"><Segmented size="small" options={[{label:'◫ Design',value:'design'},{label:'〈/〉 Code',value:'code'},{label:'▶ Preview',value:'preview'}]} value={view} onChange={v=>{if(v==='code'){const printed=printV6Dsl(treeRoot);setCode(printed.text);codeRanges.current=printed.ranges;}setView(v);}}/><span>Schema v6 · {editingDef?`Component: ${editingDef}`:'Preview / Page: main'}</span></div>
++      <main className="v6-center"><div className="v6-center-head"><Segmented size="small" options={advanced?[{label:'◫ Design',value:'design'},{label:'〈/〉 Code',value:'code'},{label:'▶ Preview',value:'preview'}]:[{label:'디자인',value:'design'},{label:'미리보기',value:'preview'}]} value={view} onChange={v=>{if(v==='code'){const printed=printV6Dsl(treeRoot);setCode(printed.text);codeRanges.current=printed.ranges;}setView(v);}}/><span>Schema v6 · {editingDef?`Component: ${editingDef}`:'Preview / Page: main'}</span></div>
+         <div className="v15-selection-bar" data-testid="selection-toolbar">
+           <nav className="v15-breadcrumbs" aria-label="선택 경로">{trail.map((part,i)=><React.Fragment key={part.id}>{i>0&&<span aria-hidden="true">›</span>}<button type="button" aria-current={i===trail.length-1?'location':undefined} onClick={()=>setSelected(part.id)}>{part.name||part.id}</button></React.Fragment>)}</nav>
+-          <div className="v15-selection-actions"><div className="v16-reorder-controls" role="group" aria-label="계층 편집">
++          <div className={'v15-selection-actions '+(!advanced?'v19-compact-actions':'')}>
++          {!advanced&&<button type="button" className="v19-disclosure" aria-expanded={editMenuOpen} aria-label="선택 도구 펼치기" onClick={()=>setEditMenuOpen(v=>!v)}>···</button>}
++          {(advanced||editMenuOpen)&&<div className="v19-editing-menu"><div className="v16-reorder-controls" role="group" aria-label="계층 편집">
+             <Button size="small" aria-label="위로 이동" title="Alt+↑" disabled={view!=='design'||!(multi?groupOptions.up:moveOptions.up)} onClick={()=>moveSelected('up')}>↑</Button>
+             <Button size="small" aria-label="아래로 이동" title="Alt+↓" disabled={view!=='design'||!(multi?groupOptions.down:moveOptions.down)} onClick={()=>moveSelected('down')}>↓</Button>
+             <Button size="small" aria-label="하위 Frame으로" title="이전 형제 Frame 안으로 이동" disabled={view!=='design'||multi||!moveOptions.indent} onClick={()=>moveSelected('indent')}>↳</Button>
+@@ -425,7 +475,7 @@ export function UnifiedStudio({legacyProject}){
+             <span>{selectedIds.length}개 선택 · 공통 부모 Frame</span>
+             <Select size="small" aria-label="선택한 형제의 부모 정렬" placeholder="부모 정렬" style={{width:106}} options={[{value:'stretch',label:'늘이기'},{value:'start',label:'시작'},{value:'center',label:'가운데'},{value:'end',label:'끝'}]} onChange={align=>alignSelected({align})}/>
+             <Select size="small" aria-label="선택한 형제의 부모 간격" placeholder="부모 간격" style={{width:94}} options={[0,8,16,24].map(gap=>({value:gap,label:`${gap}px`}))} onChange={gap=>alignSelected({gap})}/>
+-          </div>}<Button size="small" onClick={duplicate} disabled={multi||!location?.parent||view!=='design'} title="Ctrl/Cmd+D">복제</Button><Button size="small" danger onClick={remove} disabled={!location?.parent||view!=='design'} title="Delete">삭제</Button></div>
++          </div>}<Button size="small" onClick={duplicate} disabled={multi||!location?.parent||view!=='design'} title="Ctrl/Cmd+D">복제</Button><Button size="small" danger onClick={remove} disabled={!location?.parent||view!=='design'} title="Delete">삭제</Button></div>}</div>
+         </div>
+         <div className={'v6-design-code '+(view==='code'?'is-split':'')}>
+           <div className="v6-artboard-space"><div className="v6-stage-title">{view==='preview'?'Runtime Preview':'Design Canvas'} · 실제 React / AntD</div><div className="v6-artboard">
+@@ -437,7 +487,7 @@ export function UnifiedStudio({legacyProject}){
+           {view==='code'&&<div className="v6-code-pane"><div className="v6-pane-heading">v6 JSX DSL · {editingDef?`Definition: ${editingDef}`:'현재 페이지'} <small>유효한 변경은 즉시 Design에 반영</small></div><textarea ref={codeRef} aria-label="v6 JSX DSL" spellCheck={false} value={code} onChange={e=>changeCode(e.target.value)} onClick={codeCaret} onKeyUp={codeCaret}/><div>Code와 Design은 현재 선택한 Page 또는 Definition을 편집합니다. 공개 API와 Override 정책은 Properties/JSON에서 편집합니다.</div></div>}
+         </div>
+       </main>
+-      <aside className="v6-right"><div className="v6-pane-heading">Properties <small>Control Registry 기반</small></div>{editingDef&&<div className="v6-component-api"><strong>◇ {editingDef}</strong><small>Public Props: {Object.keys(doc.definitions[editingDef].publicProps).join(', ')||'없음'}<br/>Events: {Object.keys(doc.definitions[editingDef].publicEvents).join(', ')||'없음'}</small></div>}<Inspector key={`${editingDef||'page'}:${node.id}`} node={node} doc={doc} paths={paths} onPatch={patch} onRemove={remove} onInstanceBinding={setBinding} onInstanceProp={setProp} onOverride={setOverride} selectedDefinition={editingDef} rootId={treeRoot.id} onExtract={extract} onExpose={expose} onExposeEvent={exposeEvent} onAllowOverride={allowOverride} onExposeSlot={exposeSlot} onAddSlot={addSlot} onClearSlot={clearSlot} onResetSlot={resetSlot} onAddPublicProp={addPublicProp} onOpenDefinition={chooseDefinition}/></aside>
++      <aside className="v6-right"><div className="v6-pane-heading">{advanced?'Properties':'속성'} {advanced&&<small>Control Registry 기반</small>}</div>{advanced&&editingDef&&<div className="v6-component-api"><strong>◇ {editingDef}</strong><small>Public Props: {Object.keys(doc.definitions[editingDef].publicProps).join(', ')||'없음'}<br/>Events: {Object.keys(doc.definitions[editingDef].publicEvents).join(', ')||'없음'}</small></div>}{!advanced?<SimpleInspector key={`${editingDef||'page'}:${node.id}`} node={node} doc={doc} selectedDefinition={editingDef} onPatch={patch} onInstanceProp={setProp} onInstanceBinding={setBinding} onOpenAdvanced={()=>setAdvanced(true)}/>:<Inspector key={`${editingDef||'page'}:${node.id}`} node={node} doc={doc} paths={paths} onPatch={patch} onRemove={remove} onInstanceBinding={setBinding} onInstanceProp={setProp} onOverride={setOverride} selectedDefinition={editingDef} rootId={treeRoot.id} onExtract={extract} onExpose={expose} onExposeEvent={exposeEvent} onAllowOverride={allowOverride} onExposeSlot={exposeSlot} onAddSlot={addSlot} onClearSlot={clearSlot} onResetSlot={resetSlot} onAddPublicProp={addPublicProp} onOpenDefinition={chooseDefinition}/>}</aside>
+     </div>}
+     <Modal title="데이터 필드 추가 · 코딩 없이 데이터 연결" open={dataOpen} onCancel={()=>setDataOpen(false)} onOk={createStateField} okText="데이터 추가" destroyOnHidden>
+       <div className="v6-property-field"><label>데이터 이름</label><Input aria-label="데이터 이름" value={dataName} onChange={e=>setDataName(e.target.value)}/></div>
+@@ -450,7 +500,7 @@ export function UnifiedStudio({legacyProject}){
+       <p>생성 즉시 라이브러리에 등록되며 다른 컴포넌트에 삽입할 수 있습니다.</p>
+       <Button onClick={()=>createNew(true)}>새 컴포넌트 프로젝트로 시작 (Preview Harness만 유지)</Button>
+     </Modal>
+-    <div className="v6-footer">Visual-first · Registry 기반 Inspector · 데이터 · 조건 · 반복 · 선언형 동작 · 정적/동적 공통 문서</div>
++    <div className="v6-footer">{advanced?'Visual-first · Registry 기반 Inspector · 데이터 · 조건 · 반복 · 선언형 동작 · 정적/동적 공통 문서':'클릭해서 선택하고, 오른쪽에서 바꾸세요.'}</div>
+     {drag&&<div className={'v6-drag-ghost '+(drop&&!drop.valid?'is-invalid':'')} data-testid="drop-feedback" data-drop-valid={drop?.valid?'true':'false'} style={{left:drag.x+18,top:drag.y+18}}>{drag.labelText}<small>{drop?drop.description:'Frame으로 이동하세요'}</small></div>}
+     {drag&&drop?.valid&&drop.guide&&<div data-testid="drop-guide" className="v6-drop-line" style={{left:drop.guide.left,top:drop.guide.top,width:drop.guide.width,height:drop.guide.height}}/>}
+     {resizePreview&&<div className="v6-drop-tip" style={{left:resizePreview.x+12,top:resizePreview.y-22}}>{resizePreview.width} × {resizePreview.height} px</div>}
+diff --git a/src/framework/unified.css b/src/framework/unified.css
+index dae68be..747801f 100644
+--- a/src/framework/unified.css
++++ b/src/framework/unified.css
+@@ -73,3 +73,29 @@
+ .v6-drag-ghost.is-invalid{border-color:#cc5968;background:#fff5f5;color:#a73b48}
+ .v6-drag-ghost.is-invalid small{color:#a73b48}
+ .v6-drop-line{box-shadow:0 0 0 2px #ffffffb8;outline:1px solid #2461c1}
++
++/* v0.19 Simple First: progressive disclosure without removing advanced operations. */
++.v6-columns.v19-simple-layout{grid-template-columns:78px minmax(330px,1fr) 250px}
++.v19-simple-layout .v6-right{padding:16px 17px;background:#fff}
++.v19-left{overflow:visible;position:relative;z-index:8;background:#fff}
++.v19-quick-tools{padding:13px 6px;display:flex;flex-direction:column;align-items:stretch;gap:8px;height:100%;background:#fff}
++.v19-quick-tools>strong{font-size:11px;color:#7c8794;text-align:center;margin-bottom:10px}
++.v19-quick-tools>button{display:flex;flex-direction:column;align-items:center;gap:2px;border:1px solid transparent;border-radius:9px;padding:9px 2px;background:transparent;color:#28558e;font-size:21px;cursor:pointer;line-height:1.2}
++.v19-quick-tools>button span{font-size:10px;color:#697e94}
++.v19-quick-tools>button:hover,.v19-quick-tools>button[aria-expanded=true]{background:#eaf2fd;border-color:#c7d9ee}
++.v19-structure-panel{position:absolute;z-index:15;top:0;bottom:0;left:78px;width:265px;max-height:100%;display:flex;flex-direction:column;background:#fff;border-right:1px solid #d9e3f0;box-shadow:6px 4px 28px #26385026}
++.v19-tree-body{display:flex;flex-direction:column;min-height:0;height:100%}
++.v19-simple-inspector h3{font-size:14px;margin:4px 0 1px}
++.v19-subtle{font-size:11px;color:#788a9e;margin:0 0 20px}
++.v19-simple-inspector .v6-property-field{margin-bottom:15px}
++.v19-connected{display:flex;justify-content:space-between;align-items:center;font-size:11px;color:#51708a}
++.v19-disclosure,.v19-more{border:0;border-radius:6px;background:#eff5fe;color:#315f9c;cursor:pointer;padding:9px 11px;text-align:left;font-size:12px;width:100%;margin-top:8px}
++.v19-more{background:transparent;border:1px solid #d9e3ef;color:#5a708c;margin-top:18px}
++.v19-compact-actions{position:relative;align-items:center}
++.v19-compact-actions>.v19-disclosure{width:38px;margin:0;text-align:center;padding:5px;background:#eef3f9}
++.v19-compact-actions>.v19-editing-menu{position:absolute;top:32px;right:0;z-index:25;width:max-content;max-width:min(430px,90vw);padding:10px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;background:#fff;border:1px solid #e1e7ef;border-radius:8px;box-shadow:0 9px 24px #162b4d29}
++.v19-compact-actions .v19-editing-menu .v17-group-controls{flex-wrap:wrap}
++.v19-simple-layout .v6-center-head span{display:none}
++.v19-simple-layout .v6-design-help{display:none}
++@media(max-width:920px){.v6-columns.v19-simple-layout{grid-template-columns:68px minmax(280px,1fr)}.v19-simple-layout .v6-right{display:none}.v19-structure-panel{left:68px}}
++.v19-editing-menu{display:flex;align-items:center;gap:7px}
