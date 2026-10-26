@@ -53,8 +53,14 @@ std::size_t EventDispatcher::emit(
         }
     }
 
+    // One-way messages have no response channel for callback exceptions.
+    // Never let one application subscriber unwind through browser IPC or
+    // prevent later subscribers from receiving the same event.
     for (std::size_t i = 0; i < callbacks.size(); ++i)
-        callbacks[i](payload);
+    {
+        try { callbacks[i](payload); }
+        catch (...) { /* isolate untrusted callback failures */ }
+    }
 
     return callbacks.size();
 }

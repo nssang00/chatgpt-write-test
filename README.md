@@ -2,9 +2,71 @@
 
 > **Modern Web UI for native applications.**
 
-NativeWeb은 기존 C/C++ application과 native SDK를 유지하면서 UI를 HTML/CSS/JavaScript로 만들 수 있게 하는 desktop runtime/platform을 목표로 한다.
+NativeWeb(Xytron)은 **Electron/Tauri형 데스크톱 앱 플랫폼**으로, **공통 네이티브 Core는 C/C++**, 실제 사용자 백엔드는 **C++·Python·C# 중 선택**한다. Electron처럼 OS 창·앱 메뉴·컨텍스트 메뉴를 제어하는 독립 실행 앱과 WebView2처럼 WPF·WinForms·MFC에 들어가는 컨트롤을 모두 제공하는 것이 목표다. HTML/CSS/JavaScript 프론트엔드와 C/C++ 앱을 결합해 **새 앱을 만들거나 기존 앱에 내장**할 수 있으며, Python은 LLM/AI 앱의 실제 백엔드, C#은 레거시 .NET 앱의 실제 백엔드가 될 수 있으며 공식 wrapper도 제공한다.
 
-현재 저장소는 **Core runtime + Linux/Windows CEF + Windows WebView2 real browser integration 단계**다. Windows/Linux Core CI와 세 browser matrix가 GitHub Actions에서 실제 동작한다.
+확정된 제품 요구사항: [독립 앱 셸·호스트 컨트롤·언어 백엔드 계약](docs/PRODUCT_MODES_AND_BACKENDS.md). 아직 이 셸/언어/컨트롤 기능은 구현 또는 검증 완료가 아니다.
+
+현재 저장소는 **Core/Plugin 런타임과 Linux/Windows CEF·Windows WebView2의 실제 브라우저 E2E를 통과한 기반 단계**다. 첫 완성 목표에는 **보안, CLI 새 프로젝트 생성/다운로드/빌드/실행/배포, 양방향 플러그인 콜백, Python·C# 최소 wrapper, Win32·GTK3 Host Adapter, 엔진 포함 배포**를 포함한다 (승인된 Scope A). 기존 E2E 성공만으로 출시 완료로 판정하지 않는다.
+
+## Latest tested security and developer CLI slices (2026-10-13)
+
+- [Actual 3-browser E2E 38354623946](https://github.com/nssang00/chatgpt-write-test/actions/runs/38354623946): same trusted entry HTML loaded in **child frame** cannot invoke the native test checkpoint; main-page JS→C++ plugin lifecycle still passes.
+- [Windows/Linux CLI 38355060435](https://github.com/nssang00/chatgpt-write-test/actions/runs/38355060435): native `xytron doctor --sdk PREFIX` confirms installed **Core** SDK + CMake; `xytron plugin build` creates real DLL/SO.
+- **These are incremental features.** Actual `xytron restore/run/publish`, desktop window/menu shell, first-class Python/C# process hosting and full origin/method security are not yet released or complete.
+
+## Current partial development foundation (not product-complete)
+
+- Main/Module Registry C++11, app-scoped IDs and safe lifetime:
+  [Core CI 38334300674](https://github.com/nssang00/chatgpt-write-test/actions/runs/38334300674) — Linux/Windows success.
+- Native xytron CLI scaffolds cpp/python/csharp and creates C++ plugin source;
+  generated DLL/SO builds from installed SDK:
+  [CLI CI 38334470209](https://github.com/nssang00/chatgpt-write-test/actions/runs/38334470209) — Linux/Windows success.
+- Default-deny exact method/frame Core policy foundation:
+  [Core CI 38334609344](https://github.com/nssang00/chatgpt-write-test/actions/runs/38334609344) — Linux/Windows success. **Not wired to actual browser requests**.
+- App shell/menus, real mixed-language hosts, reverse plugin callbacks,
+  xytron run/restore/publish and full origin-based browser security are
+  **not implemented**. See [bootstrap CLI](docs/XYTRON_CLI.md) and
+  [security foundation](docs/NATIVE_PERMISSION_POLICY.md).
+
+## Cross-language registration API status (2026-10-14)
+
+The accepted user developer syntax is C++ `XYTRON_MODULE(m)` (with
+`m.function` now implemented, fluent `class_` planned), C#
+`[Export]` and Python `@xytron.export`. All share a planned
+Promise-first JavaScript API regardless of language. See
+[Cross-Language Binding contract](docs/CROSS_LANGUAGE_BINDING.md)
+and [tests](docs/RELEASE_TEST_MATRIX.md).
+The C++11 free-function SDK and installed plugin binary load are
+verified on Windows/Linux [CLI 38481853765](https://github.com/nssang00/chatgpt-write-test/actions/runs/38481853765).
+Python/C# export discovery tests pass locally on both OS
+[38481659399](https://github.com/nssang00/chatgpt-write-test/actions/runs/38481659399),
+**but actual Python/.NET native JS-host RPC is not implemented**.
+Do not assume `import { Player } from "game"` works yet.
+
+## Packaged UI resources: app:// — real engines verified
+
+CEF on Linux and Windows and WebView2 on Windows now support actual
+`app://desktop/...` packaged in-memory HTML/JS/CSS/image resources,
+not a file:// alias. Asset bundles are canonical-path validated,
+snapshotted at WebView creation, and served with explicit MIME/404.
+[Real browser 3-engine CI #38525221064](https://github.com/nssang00/chatgpt-write-test/actions/runs/38525221064)
+passed relative JS/CSS/SVG, Fetch, private host separation and existing
+file:// plugin lifecycle. `xytron new desktop` declares app:// as
+its default UI URL, but `xytron run/build/publish` are still TODO.
+This does not grant native methods: NW-014 remains P0.
+See [URL protocol status and remaining cases](docs/APP_RESOURCE_PROTOCOLS.md).
+
+## Main Backend, Modules, Plugins
+
+- **One Main Backend** (cpp/python/csharp) is the application's logical
+  main Module; **0..N additional Modules** may implement features in
+  ANY of these languages simultaneously.
+- **Plugin = independently packaged/loaded Module**. C++ DLL/SO plugin
+  authoring is a primary convenience path, with reverse JS callbacks.
+- JavaScript `xytron.camera.capture()` calls the same API whether
+  its Module implementation is C++, Python or C#. The app-scoped Core
+  registry handles discovery, routing, permissions and lifetimes.
+- [Full architecture and testcases](docs/MODULE_ARCHITECTURE.md)
 
 ## Why
 
@@ -27,7 +89,29 @@ Web UI
   -> C/C++ SDK
 ```
 
-Python, Node.js, .NET, Rust, Go, Java 등이 더 자연스러운 경우에는 plugin 또는 sidecar로 함께 사용할 수 있다.
+**Python 및 C#/.NET**은 실제 앱 백엔드를 작성하는 공식 선택지이며 래퍼 API도 제공한다 (현재 구현/검증 전). Python/.NET을 Core wrapper만으로 처리하지 않으며 실제 앱 백엔드 코드도 작성할 수 있도록 한다. Node/Rust 등의 별도 프로세스 Sidecar는 고급 선택지다.
+
+## CLI-first development experience (planned)
+
+The `xytron` UX is a **required product goal**. The commands below are
+**target syntax, not yet working commands**:
+
+```sh
+xytron new desktop hello --backend cpp
+cd hello
+xytron restore
+xytron run
+xytron build --configuration release
+xytron test
+xytron publish --runtime win-x64
+xytron plugin new camera --language cpp
+xytron plugin build camera
+xytron doctor
+```
+
+The CLI manages pinned engine/SDK dependencies and a reproducible manifest;
+manual CEF/WebView2 archive assembly is not the default user experience.
+See [product vision](docs/PRODUCT_VISION.md).
 
 ## Developer experience
 
@@ -90,9 +174,11 @@ NativeWeb은 기존 GUI framework를 대체하지 않는다.
 
 ## Native plugins
 
-핵심 장기 기능:
+핵심 제품 기능:
 
-> **Build a DLL/SO. Drop it into the app. Call it from the Web.**
+> **Build a DLL/SO. Call native from JS, and call JS back from native.**
+
+플러그인 소유 콜백/이벤트의 **완성은 아직 미검증**이며, 첫 완성본에 포함하는 필수 작업이다.
 
 ROS2 pluginlib와 비슷한 사용 경험을 목표로 하되, NativeWeb에서는 shared library가 곧 Web API namespace로 연결된다.
 
@@ -117,30 +203,30 @@ macro 내부에서는 versioned `nativeweb_plugin_init_v1` C ABI entry point만 
 
 ## Current verified status
 
-GitHub Actions에서 C++11 CMake/CTest smoke environment를 실제 검증했다.
+- Linux/Windows C++11 Core Regression: [CI 38322632990](https://github.com/nssang00/chatgpt-write-test/actions/runs/38322632990) — PASS.
+- Real browser plugin object lifecycle: [CI 38322633033](https://github.com/nssang00/chatgpt-write-test/actions/runs/38322633033) — Linux CEF, Windows CEF and Windows WebView2 all PASS.
+- Core SDK clean installed consumer: [CI 38322633018](https://github.com/nssang00/chatgpt-write-test/actions/runs/38322633018) — Linux/Windows PASS, **Core-only package**.
+- Full Scope A1 security, Win32/GTK3 embedded hosts and engine-inclusive distribution are **not yet complete**.
 
-| Environment | Status |
-|---|---:|
-| Ubuntu latest | ✅ |
-| Windows latest | ✅ |
+First-deliverable scope and gates:
+[Scope A](docs/RELEASE_SCOPE_A.md) ·
+[Execution plan](docs/EXECUTION_PLAN.md) ·
+[Release test matrix](docs/RELEASE_TEST_MATRIX.md) ·
+[Acceptance criteria](docs/ACCEPTANCE_CRITERIA.md).
 
-Initial verified workflow run:
+## Installed Core SDK (first packaging slice)
 
-- Workflow: `Platform Smoke`
-- Run ID: `37597876713`
-- Head SHA: `c253803db28f0047128a4723a2e82862a26f7bf7`
+```sh
+cmake -S . -B build-sdk -DNATIVEWEB_BUILD_TESTS=OFF -DCMAKE_INSTALL_PREFIX=/tmp/nativeweb-sdk
+cmake --build build-sdk --config Release
+cmake --install build-sdk --config Release
+cmake -S examples/sdk_consumer -B build-consumer -DCMAKE_PREFIX_PATH=/tmp/nativeweb-sdk
+cmake --build build-consumer --config Release
+ctest --test-dir build-consumer -C Release --output-on-failure
+```
 
-Any 기반 Core regression과 public API contract가 Windows/Ubuntu에서 통과한다. Linux CEF와 Windows WebView2 모두 public `WebView` API를 통한 실제 JS↔C++ bridge를 검증한다. 현재 공통 검증에는 `xytron.foo()` direct facade, `xytron.invoke()` compatibility, worker-pool 기반 JS→C++ 병렬 실행, RequestId 기반 typed C++ future, root C++ object binding, object/array/binary, reload, events, Promise/error mapping, multi-WebView isolation, destroy-pending, native object Proxy lifecycle가 포함된다.
-
-Latest verified code head: `b876a74726e33609d3603ec572c6c8d03ab592e8`.
-
-- Core Regression: `38107973666` — Ubuntu/Windows success
-- NativeWeb CEF Bridge: `38107973658` — real Linux CEF success
-- NativeWeb CEF Windows Bridge: `38107973662` — real Windows CEF success
-- NativeWeb WebView2 Bridge: `38107973704` — real Windows WebView2 success
-- Platform Smoke: `38107973650` — Ubuntu/Windows success
-
-Callable/signature metadata, generation-safe registration ownership, real DLL/SO SharedLibrary, C ABI v1 PluginModule, queued/running task module lease, native-object owner-lease foundation, C++ Plugin/PluginApi wrapper와 `NATIVEWEB_PLUGIN` convenience까지 기존 WebView public API 변경 없이 검증됐다. Plugin-created native object ABI와 safe hot-unload는 아직 미완료다.
+The exported CMake target is `NativeWeb::Core`. This does not yet package
+CEF or WebView2 engines. See [SDK packaging](docs/SDK_PACKAGING.md).
 
 ## Start here
 
@@ -156,17 +242,21 @@ Callable/signature metadata, generation-safe registration ownership, real DLL/SO
 - [Target project structure](docs/PROJECT_STRUCTURE.md)
 - [Contribution rules](CONTRIBUTING.md)
 
-## Immediate next work
+## Immediate next work — product-aligned
 
-1. plugin-created native object ABI + module lifetime regression
-2. conservative unload / `plugin_busy` state machine
-3. Windows WebView2/CEF engine-switch regression
-4. plugin descriptor runtime/capability/permission metadata
-5. security permission/capability policy
-6. TransferBuffer / SharedBuffer advanced binary transport
-7. Win32/MFC/WinForms thin host adapters
-8. TypeScript/codegen metadata 확장
+1. Secure native dispatch boundary; cross-origin/iframe/method negative tests.
+2. Implement C++ DLL/SO plugin-to-JavaScript callback/event lifetime path.
+3. Create minimum xytron CLI for new/restore/run/build/test/publish, plugin new/build.
+4. Add greenfield desktop app and Win32/GTK3 embedded host E2E.
+5. Build initial Python/C# official wrapper smoke tests.
+6. Distribute engine-inclusive runtime SDK, test clean installs and publish.
+
+See [product vision](docs/PRODUCT_VISION.md) and
+[first release test matrix](docs/RELEASE_TEST_MATRIX.md).
 
 ## Repository note
 
 이 저장소는 처음에는 ChatGPT ↔ GitHub 연결 기능 검증용으로 만들어졌기 때문에 과거 integration demo artifact가 일부 남아 있다. 현재부터는 NativeWeb 개발과 handoff 가능한 source-of-truth repository로 사용한다.
+
+
+Developer workflow decisions and implementation phase gates: [Xytron CLI plan (KO)](docs/XYTRON_DEVELOPER_EXPERIENCE_PLAN_KO.md).

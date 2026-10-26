@@ -276,3 +276,81 @@ set_target_properties(nativeweb_binding_registry_regression PROPERTIES
     CXX_EXTENSIONS NO
 )
 add_test(NAME core.binding_registry COMMAND nativeweb_binding_registry_regression)
+
+# One Main plus N language-agnostic Modules, with C++11 RAII lifecycle.
+add_executable(nativeweb_module_registry_regression module_registry_regression.cpp)
+target_link_libraries(nativeweb_module_registry_regression PRIVATE NativeWeb::Core)
+target_include_directories(nativeweb_module_registry_regression PRIVATE ${PROJECT_SOURCE_DIR}/src)
+set_target_properties(nativeweb_module_registry_regression PROPERTIES
+    CXX_STANDARD 11 CXX_STANDARD_REQUIRED YES CXX_EXTENSIONS NO)
+add_test(NAME core.module_registry COMMAND nativeweb_module_registry_regression)
+
+add_executable(nativeweb_native_permission_regression
+    native_permission_policy_regression.cpp)
+target_link_libraries(nativeweb_native_permission_regression PRIVATE NativeWeb::Core)
+target_include_directories(nativeweb_native_permission_regression
+    PRIVATE ${PROJECT_SOURCE_DIR}/src)
+set_target_properties(nativeweb_native_permission_regression PROPERTIES
+    CXX_STANDARD 11 CXX_STANDARD_REQUIRED YES CXX_EXTENSIONS NO)
+add_test(NAME core.native_permission_policy
+    COMMAND nativeweb_native_permission_regression)
+
+# Native host-supplied URL / frame trust primitive, not browser-level E2E.
+add_executable(nativeweb_trusted_document_regression
+    trusted_document_regression.cpp)
+target_link_libraries(nativeweb_trusted_document_regression PRIVATE NativeWeb::Core)
+target_include_directories(nativeweb_trusted_document_regression
+    PRIVATE ${PROJECT_SOURCE_DIR}/src)
+set_target_properties(nativeweb_trusted_document_regression PROPERTIES
+    CXX_STANDARD 11 CXX_STANDARD_REQUIRED YES CXX_EXTENSIONS NO)
+add_test(NAME core.trusted_document
+    COMMAND nativeweb_trusted_document_regression)
+
+add_executable(nativeweb_module_bridge_regression module_bridge_regression.cpp)
+target_link_libraries(nativeweb_module_bridge_regression PRIVATE NativeWeb::Core)
+target_include_directories(nativeweb_module_bridge_regression PRIVATE ${PROJECT_SOURCE_DIR}/src)
+set_target_properties(nativeweb_module_bridge_regression PROPERTIES
+    CXX_STANDARD 11 CXX_STANDARD_REQUIRED YES CXX_EXTENSIONS NO)
+add_test(NAME core.module_bridge COMMAND nativeweb_module_bridge_regression)
+
+
+# Canonical package-only app:// URLs and explicit resource catalog.
+add_executable(nativeweb_app_resources_regression
+    app_resources_regression.cpp)
+target_link_libraries(nativeweb_app_resources_regression PRIVATE NativeWeb::Core)
+set_target_properties(nativeweb_app_resources_regression PROPERTIES
+    CXX_STANDARD 11 CXX_STANDARD_REQUIRED YES CXX_EXTENSIONS NO)
+add_test(NAME core.app_resources COMMAND nativeweb_app_resources_regression)
+
+# Native C++11 broker against a separately launched real Python worker.
+find_package(Python3 COMPONENTS Interpreter QUIET)
+if(Python3_Interpreter_FOUND)
+add_executable(nativeweb_process_broker_regression process_broker_regression.cpp)
+target_include_directories(nativeweb_process_broker_regression PRIVATE ${PROJECT_SOURCE_DIR}/src)
+target_link_libraries(nativeweb_process_broker_regression PRIVATE NativeWeb::Core)
+set_target_properties(nativeweb_process_broker_regression PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED YES CXX_EXTENSIONS NO)
+add_test(NAME core.process_broker COMMAND nativeweb_process_broker_regression
+    "${Python3_EXECUTABLE}" "${PROJECT_SOURCE_DIR}/tests/ipc/broker_fixture.py")
+set_tests_properties(core.process_broker PROPERTIES TIMEOUT 25)
+
+endif() # Python3_Interpreter_FOUND: native process IPC integration regression
+
+# Managed bridge -> actual Python child process with document revocation.
+find_package(Python3 COMPONENTS Interpreter QUIET)
+if(Python3_Interpreter_FOUND)
+  add_executable(nativeweb_managed_bridge_integration managed_bridge_integration.cpp)
+  target_include_directories(nativeweb_managed_bridge_integration PRIVATE ${PROJECT_SOURCE_DIR}/src)
+  target_link_libraries(nativeweb_managed_bridge_integration PRIVATE NativeWeb::Core)
+  set_target_properties(nativeweb_managed_bridge_integration PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED YES CXX_EXTENSIONS NO)
+  add_test(NAME core.managed_bridge COMMAND nativeweb_managed_bridge_integration
+    "${Python3_EXECUTABLE}" "${PROJECT_SOURCE_DIR}/tests/ipc/broker_fixture.py")
+  set_tests_properties(core.managed_bridge PROPERTIES TIMEOUT 25)
+endif()
+
+# Per-navigation OS entropy and stale-token rejection (C++11).
+add_executable(nativeweb_document_session_regression document_session_token_regression.cpp)
+target_include_directories(nativeweb_document_session_regression PRIVATE ${PROJECT_SOURCE_DIR}/src)
+target_link_libraries(nativeweb_document_session_regression PRIVATE NativeWeb::Core)
+set_target_properties(nativeweb_document_session_regression PROPERTIES
+  CXX_STANDARD 11 CXX_STANDARD_REQUIRED YES CXX_EXTENSIONS NO)
+add_test(NAME core.document_session COMMAND nativeweb_document_session_regression)

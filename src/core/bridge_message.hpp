@@ -15,7 +15,8 @@ enum class BridgeMessageType
     Request,
     Response,
     Error,
-    Event
+    Event,
+    Cancel
 };
 
 struct BridgeMessage
@@ -48,6 +49,9 @@ Any makeResponseMessage(
 Any makeErrorMessage(
     RequestId requestId,
     const Error& error);
+
+// JS -> native: cancel one in-flight JS-initiated request by ID.
+Any makeCancelMessage(RequestId requestId);
 
 Any makeEventMessage(
     const std::string& eventName,

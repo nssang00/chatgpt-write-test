@@ -6,6 +6,7 @@
 #include "nativeweb/plugin_abi.h"
 
 #include <cstring>
+#include <cstddef>
 #include <exception>
 #include <limits>
 #include <memory>
@@ -450,6 +451,29 @@ public:
     }
 
 private:
+    static bool abiValueType(const detail::CallableType& t,
+                             uint32_t* value, bool result)
+    {
+        switch (t.kind)
+        {
+        case detail::CallableTypeKind::Void:
+            if (!result) return false;
+            *value = NW_VALUE_NULL_V1; return true;
+        case detail::CallableTypeKind::Boolean:
+            *value = NW_VALUE_BOOL_V1; return true;
+        case detail::CallableTypeKind::Integer:
+            *value = NW_VALUE_INT32_V1; return true;
+        case detail::CallableTypeKind::Floating:
+            *value = NW_VALUE_DOUBLE_V1; return true;
+        case detail::CallableTypeKind::String:
+            *value = NW_VALUE_STRING_V1; return true;
+        case detail::CallableTypeKind::Binary:
+            *value = NW_VALUE_BINARY_V1; return true;
+        default:
+            return false; // Preserve the legacy ABI path for other types.
+        }
+    }
+
     PluginApi(
         const nw_host_api_v1* host,
         std::vector<
@@ -461,7 +485,8 @@ private:
         if (
             !host_ ||
             host_->struct_size <
-                sizeof(nw_host_api_v1) ||
+                offsetof(nw_host_api_v1, register_function) +
+                    sizeof(host_->register_function) ||
             host_->abi_version !=
                 NATIVEWEB_PLUGIN_ABI_V1 ||
             !host_->register_function ||
@@ -491,12 +516,43 @@ private:
             new detail::PluginBinding(
                 callable));
 
-        const int32_t status =
-            host_->register_function(
-                host_->host_context,
-                relativeName.c_str(),
-                &detail::PluginBinding::invokeThunk,
-                binding.get());
+        int32_t status = -1;
+        // The host copies all signature fields before returning. A legacy
+        // host sees only register_function and remains fully compatible.
+        const detail::CallableSignature& sig = callable.signature();
+        std::vector<uint32_t> types;
+        bool supported = sig.result.kind != detail::CallableTypeKind::Unknown;
+        uint32_t resultType = NW_VALUE_NULL_V1;
+        if (supported)
+            supported = abiValueType(sig.result, &resultType, true);
+        for (std::size_t i = 0; supported && i < sig.arguments.size(); ++i)
+        {
+            uint32_t type = 0;
+            supported = abiValueType(sig.arguments[i], &type, false);
+            if (supported) types.push_back(type);
+        }
+        if (supported && types.size() <= 64 &&
+            host_->struct_size >=
+                offsetof(nw_host_api_v1, register_typed_function) +
+                    sizeof(host_->register_typed_function) &&
+            host_->register_typed_function)
+        {
+            nw_function_signature_v1 descriptor = {};
+            descriptor.struct_size = sizeof(descriptor);
+            descriptor.result_type = resultType;
+            descriptor.argument_types = types.empty() ? 0 : &types[0];
+            descriptor.argument_count = static_cast<uint32_t>(types.size());
+            status = host_->register_typed_function(
+                host_->host_context, relativeName.c_str(),
+                &detail::PluginBinding::invokeThunk, binding.get(),
+                &descriptor);
+        }
+        else
+        {
+            status = host_->register_function(
+                host_->host_context, relativeName.c_str(),
+                &detail::PluginBinding::invokeThunk, binding.get());
+        }
 
         if (status != 0)
         {

@@ -72,12 +72,76 @@ typedef int32_t (*nw_host_register_function_v1)(
     nw_plugin_call_v1 function,
     void* user_data);
 
+/* Object factories are an optional, size-gated extension to ABI v1.
+ * Returned objects must be destroyed by the providing module. */
+typedef void* (*nw_plugin_create_object_v1)(void* user_data);
+typedef void (*nw_plugin_destroy_object_v1)(void* user_data, void* object);
+typedef int32_t (*nw_host_register_object_factory_v1)(
+    void* host_context,
+    const char* relative_type_name,
+    nw_plugin_create_object_v1 create,
+    nw_plugin_destroy_object_v1 destroy,
+    void* user_data);
+
+/* Optional ABI v1 extension: instance methods receive the plugin-owned
+ * instance, never an STL/C++ object across the binary boundary. */
+typedef int32_t (*nw_plugin_object_call_v1)(
+    void* user_data,
+    void* object,
+    const nw_value_v1* args,
+    uint64_t argc,
+    nw_value_v1* result,
+    nw_error_v1* error);
+typedef int32_t (*nw_host_register_object_method_v1)(
+    void* host_context,
+    const char* relative_type_name,
+    const char* relative_method_name,
+    nw_plugin_object_call_v1 function,
+    void* user_data);
+
+/* Optional appended ABI v1 extension for factories with arguments.
+ * The caller owns args; they are valid only during the callback. */
+typedef void* (*nw_plugin_create_object_args_v1)(
+    void* user_data, const nw_value_v1* args, uint64_t argc,
+    nw_error_v1* error);
+typedef int32_t (*nw_host_register_object_factory_args_v1)(
+    void* host_context, const char* relative_type_name,
+    nw_plugin_create_object_args_v1 create,
+    nw_plugin_destroy_object_v1 destroy, void* user_data);
+
+/* ABI v1 additive extension. Types use NW_VALUE_*; result NULL denotes void.
+ * Metadata pointers are valid during registration only and are copied by host.
+ * Type metadata supports scalar/binary values, not objects or collections.
+ */
+typedef struct nw_function_signature_v1
+{
+    uint32_t struct_size;
+    uint32_t result_type;
+    const uint32_t* argument_types;
+    uint32_t argument_count;
+} nw_function_signature_v1;
+
+typedef int32_t (*nw_host_register_typed_function_v1)(
+    void* host_context,
+    const char* relative_name,
+    nw_plugin_call_v1 function,
+    void* user_data,
+    const nw_function_signature_v1* signature);
+
 typedef struct nw_host_api_v1
 {
     uint32_t struct_size;
     uint32_t abi_version;
     void* host_context;
     nw_host_register_function_v1 register_function;
+    /* Check struct_size before accessing this optional appended field. */
+    nw_host_register_object_factory_v1 register_object_factory;
+    /* Check struct_size before accessing this optional appended field. */
+    nw_host_register_object_method_v1 register_object_method;
+    /* Check struct_size before using this optional appended field. */
+    nw_host_register_object_factory_args_v1 register_object_factory_args;
+    /* Check struct_size before accessing the optional typed registration. */
+    nw_host_register_typed_function_v1 register_typed_function;
 } nw_host_api_v1;
 
 typedef int32_t (*nw_plugin_register_api_v1)(
