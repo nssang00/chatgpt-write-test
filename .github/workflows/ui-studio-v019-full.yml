@@ -11,7 +11,7 @@ permissions:
   contents: read
 jobs:
   visual-first-full-validation:
-    name: 210 Core + React Build + 23 Chrome Studio/Consumer E2E
+    name: 210 Core + React Build + 24 Chrome Studio/Consumer E2E
     runs-on: ubuntu-latest
     timeout-minutes: 40
     defaults:
@@ -51,7 +51,7 @@ jobs:
           base64 -d experiments/ui-studio-v0.18/ci/v018-upgrade.patch.xz.b64 | xz -dc > /tmp/v018.patch
           echo '32aa19c9b3bb6c035ad94b6814f18bc36309d4326df1d4e350d5b46526c875e1  /tmp/v018.patch' | sha256sum -c -
           (cd experiments/ui-studio-v0.19/app && patch --batch --forward -p1 < /tmp/v018.patch)
-          echo '015a3c9943412ba1b7e8b4caa17e6bf68a5ea2eb4113a09157ddd6b0cdbb95ae  experiments/ui-studio-v0.19/ci/v019-from-v018.patch' | sha256sum -c -
+          echo 'fa9b6d1849b91a949a26631832caacdf1ef659752cec5f01eb71f2fdb4a6a410  experiments/ui-studio-v0.19/ci/v019-from-v018.patch' | sha256sum -c -
           (cd experiments/ui-studio-v0.19/app && patch --batch --forward -p1 < ../ci/v019-from-v018.patch)
           cd experiments/ui-studio-v0.19/app
           echo 'aa4d74bcf4e1565e92d1d2e33ca108783b15903b7f775757ef6a143739e1ca28  package.json' | sha256sum -c -
@@ -64,16 +64,16 @@ jobs:
           echo 'c5a022257daeded448521c6e2523d22d27c5287763c304910f796c1515ac9ebc  tests/editing-v015.test.js' | sha256sum -c -
           echo '0bbde6cd50c7b603448bef55cb72597f17b43257734b22aee31b8c18d7abd901  e2e/component-authoring-v013.spec.js' | sha256sum -c -
           echo 'd6582c2643fa40158114165d1ae3e4ace172d677f64676b5053a03b12a729365  packages/core/shortcuts.js' | sha256sum -c -
-          echo '1a2d8bf8237d5f788b55f9f206c43f761e18f07b8e24397cb08916280427ecce  src/framework/unified.css' | sha256sum -c -
+          echo '0763373b683a15cec8ea9039587d64b92d97a68de82ebf898c4dbf5869953ff5  src/framework/unified.css' | sha256sum -c -
           echo '1ffe9c5dc8803cf9387c45e4bbc3d4e50673041c85297d05763d34029ec899ee  tests/canvas-v016.test.js' | sha256sum -c -
           echo '8f72181f62017189a1d18ac5885f44790fe4b5b99480211639f5c243fc942945  e2e/canvas-v016.spec.js' | sha256sum -c -
           echo '1553ebe951f1553b3dd38eddad999b6ee053cda27c6635a074591f11b60707dc  tests/multiselect-v017.test.js' | sha256sum -c -
           echo 'd00ace9fefdbe7307d1dcd7c927c3065729e92b1e32d1d326b4658eaea637c7e  e2e/multiselect-v017.spec.js' | sha256sum -c -
           echo '75a9d6b7c1b2f560f170495a177be43f34736a72a83df75294e71c7f95df7e7a  tests/drag-v018.test.js' | sha256sum -c -
           echo '0da03cca2602ae0eda424bd73ce1ac2c9dabc76a76a28f723cc69b17814c1cdc  e2e/drag-v018.spec.js' | sha256sum -c -
-          echo 'cc73763269b700141b9329a1a3ae5601e7895a35534929ed16f41b79fb3ebdbd  e2e/simple-v019.spec.js' | sha256sum -c -
+          echo 'ff78dfcdd0cfa9310778a17d4bf28789af03fd2288df998561b66a09f721b347  e2e/simple-v019.spec.js' | sha256sum -c -
           echo '688d0797564dd785a22fc3054574fa53307d976ac572853a97210d4b248db1d5  e2e/studio.spec.js' | sha256sum -c -
-          echo '941feab64cf1ed7a911efd75d3fc7058e889a88d0be9f0426c48b1f9e0b64cb0  V019-SCOPE.md' | sha256sum -c -
+          echo '46428694387f6c6eecc83631c3adf83bb5a649688da405eadc3c74a23186d162  V019-SCOPE.md' | sha256sum -c -
           test -f tests/consumer-v013/package.json
           node --version
           npm --version
