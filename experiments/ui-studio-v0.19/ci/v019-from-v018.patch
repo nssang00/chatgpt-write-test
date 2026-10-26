@@ -1,9 +1,9 @@
 diff --git a/V019-SCOPE.md b/V019-SCOPE.md
 new file mode 100644
-index 0000000..76eabad
+index 0000000..8958d07
 --- /dev/null
 +++ b/V019-SCOPE.md
-@@ -0,0 +1,24 @@
+@@ -0,0 +1,25 @@
 +# UI Studio v0.19 — Simple First UX
 +
 +## Product goal
@@ -15,6 +15,7 @@ index 0000000..76eabad
 +- Five primary header actions: Undo, Redo, Preview/Edit, Export, Advanced tools.
 +- Left quick-add rail: Text, Button, Input, Layout, on-demand Structure tree and Other elements.
 +- Center Canvas/Preview; breadcrumb selection; compact editing menu.
++- Responsive Inspector remains accessible below the canvas on narrow screens.
 +- Right contextual Inspector: Name, up to three relevant component properties, Frame direction and gap; opt-in data/actions panel.
 +- A named Advanced mode (button or `?mode=advanced`) for complete pre-existing v0.18 tools: DSL, raw JSON, Data, component library, property/event/binding editors, selection/move/resize, and import/export operations.
 +
@@ -104,10 +105,10 @@ index e561eec..fdec583 100644
  test('v0.17 Ctrl selects sibling nodes and group reordering, alignment, gap, undo persist in canonical JSON',async({page})=>{
 diff --git a/e2e/simple-v019.spec.js b/e2e/simple-v019.spec.js
 new file mode 100644
-index 0000000..0c5ef45
+index 0000000..b9315d8
 --- /dev/null
 +++ b/e2e/simple-v019.spec.js
-@@ -0,0 +1,46 @@
+@@ -0,0 +1,56 @@
 +import {test,expect} from '@playwright/test';
 +const studio=page=>page.locator('.v6-studio');
 +const quick=page=>studio(page).getByTestId('quick-tools');
@@ -118,7 +119,7 @@ index 0000000..0c5ef45
 +  await expect(studio(page).getByTestId('simple-inspector')).toBeVisible();
 +  await expect(studio(page).locator('.v6-tree')).toHaveCount(0);
 +  await expect(studio(page).getByRole('button',{name:'JSON 편집'})).toHaveCount(0);
-+  await expect(studio(page).locator('.v6-property-field')).not.toContainText('Instance Overrides');
++  await expect(studio(page).locator('.v6-right')).not.toContainText('Instance Overrides');
 +  await expect(quick(page).getByRole('button',{name:'구조 열기'})).toHaveAttribute('aria-expanded','false');
 +  await quick(page).getByRole('button',{name:'구조 열기'}).click();
 +  await expect(studio(page).locator('.v6-tree [data-v6-tree-id]').first()).toBeVisible();
@@ -153,6 +154,16 @@ index 0000000..0c5ef45
 +  await expect(studio(page).getByTestId('visual-logic-panel')).toHaveCount(0);
 +  await studio(page).getByRole('button',{name:'더 많은 설정 보기'}).click();
 +  await expect(studio(page).locator('.v6-inspector-content')).toBeVisible();
++});
++
++test('Responsive Simple First keeps Inspector usable at tablet width',async({page})=>{
++  await page.setViewportSize({width:800,height:800});
++  await expect(quick(page)).toBeVisible();
++  await expect(studio(page).locator('.v6-artboard')).toBeVisible();
++  await expect(studio(page).getByTestId('simple-inspector')).toBeVisible();
++  await quick(page).getByRole('button',{name:'버튼 추가'}).click();
++  await expect(studio(page).getByTestId('simple-inspector')).toBeVisible();
++  await expect(studio(page).getByRole('textbox',{name:'간편 text'})).toBeVisible();
 +});
 diff --git a/e2e/studio.spec.js b/e2e/studio.spec.js
 index 50a0682..2d1382e 100644
@@ -339,10 +350,10 @@ index b6c7669..aa21685 100644
      {drag&&drop?.valid&&drop.guide&&<div data-testid="drop-guide" className="v6-drop-line" style={{left:drop.guide.left,top:drop.guide.top,width:drop.guide.width,height:drop.guide.height}}/>}
      {resizePreview&&<div className="v6-drop-tip" style={{left:resizePreview.x+12,top:resizePreview.y-22}}>{resizePreview.width} × {resizePreview.height} px</div>}
 diff --git a/src/framework/unified.css b/src/framework/unified.css
-index dae68be..747801f 100644
+index dae68be..fa5e3db 100644
 --- a/src/framework/unified.css
 +++ b/src/framework/unified.css
-@@ -73,3 +73,29 @@
+@@ -73,3 +73,36 @@
  .v6-drag-ghost.is-invalid{border-color:#cc5968;background:#fff5f5;color:#a73b48}
  .v6-drag-ghost.is-invalid small{color:#a73b48}
  .v6-drop-line{box-shadow:0 0 0 2px #ffffffb8;outline:1px solid #2461c1}
@@ -372,3 +383,10 @@ index dae68be..747801f 100644
 +.v19-simple-layout .v6-design-help{display:none}
 +@media(max-width:920px){.v6-columns.v19-simple-layout{grid-template-columns:68px minmax(280px,1fr)}.v19-simple-layout .v6-right{display:none}.v19-structure-panel{left:68px}}
 +.v19-editing-menu{display:flex;align-items:center;gap:7px}
++/* On narrow screens keep contextual properties accessible beneath the canvas. */
++@media(max-width:920px){
++  .v6-columns.v19-simple-layout{grid-template-columns:68px minmax(0,1fr);grid-template-rows:minmax(230px,1fr) 240px}
++  .v19-simple-layout .v6-left{grid-row:1/3}
++  .v19-simple-layout .v6-center{grid-column:2;grid-row:1}
++  .v19-simple-layout .v6-right{grid-column:2;grid-row:2;display:block;border-top:1px solid #e1e7f0;overflow:auto}
++}
