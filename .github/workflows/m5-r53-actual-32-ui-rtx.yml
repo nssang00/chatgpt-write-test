@@ -1,0 +1,85 @@
+name: M5 R53 Actual OpenLayers 32 Source UI RTX E2E
+on:
+  push:
+    branches: [m5/r46-distinct-mvt-32-20261023]
+    paths:
+      - '.github/workflows/m5-r53-actual-32-ui-rtx.yml'
+      - 'm5-gpu/r53/actual_32_ol_ui.html'
+      - 'm5-gpu/r53/run_actual_32_ol_ui.mjs'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: r53-actual-ol-ui
+  cancel-in-progress: true
+jobs:
+  e2e:
+    runs-on: self-hosted
+    timeout-minutes: 50
+    env:
+      R35_ZIP_PATH: 'C:\M5_R35\M5_R35_RTX_READY_SELF_CONTAINED_2026-10-22.zip'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Assert physical Windows RTX and pinned R35 source
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          New-Item -ItemType Directory -Force R53-EVIDENCE | Out-Null
+          $g=@(Get-CimInstance Win32_VideoController | Select-Object Name,DriverVersion)
+          if($env:OS -ne 'Windows_NT' -or -not ($g | Where-Object {$_.Name -match 'NVIDIA.*RTX 5060 Ti'})){throw 'physical RTX 5060 Ti needed'}
+          $g | ConvertTo-Json -Depth 4 | Set-Content -Encoding utf8 R53-EVIDENCE\gpu.json
+          nvidia-smi --query-gpu=name,driver_version,memory.total --format=csv,noheader | Tee-Object -FilePath R53-EVIDENCE\nvidia.txt
+          if($LASTEXITCODE -ne 0){throw 'nvidia-smi failed'}
+          $hash=(Get-FileHash -Algorithm SHA256 $env:R35_ZIP_PATH).Hash.ToLowerInvariant()
+          if($hash -ne '3e5d3cb5d525b818a3b560731dac0ae17ce734ab5a96057c67c546c4b7cb2776'){throw 'R35 pinned SHA mismatch'}
+          $hash | Set-Content -Encoding ascii R53-EVIDENCE\r35.txt
+      - name: Reconstruct original plus R48 candidate and browser diagnostic
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $dest=Join-Path $env:GITHUB_WORKSPACE 'R53-SOURCE'
+          New-Item -ItemType Directory -Force $dest | Out-Null
+          Expand-Archive -LiteralPath $env:R35_ZIP_PATH -DestinationPath $dest -Force
+          git -C $dest init -q
+          if($LASTEXITCODE -ne 0){throw 'git init failed'}
+          node m5-gpu/r45/apply_r45.mjs $dest
+          if($LASTEXITCODE -ne 0){throw 'R45 patch failed'}
+          node m5-gpu/r48/apply_cpu_join_fallback.mjs $dest
+          if($LASTEXITCODE -ne 0){throw 'R48 patch failed'}
+          New-Item -ItemType Directory -Force (Join-Path $dest 'm5-gpu\r53') | Out-Null
+          Copy-Item .\m5-gpu\r53\actual_32_ol_ui.html,.\m5-gpu\r53\run_actual_32_ol_ui.mjs (Join-Path $dest 'm5-gpu\r53\')
+          Push-Location $dest
+          try {
+            npm install --no-save --package-lock=false --ignore-scripts --no-audit --no-fund playwright@1.55.0
+            if($LASTEXITCODE -ne 0){throw 'Pinned playwright install failed'}
+          }finally{Pop-Location}
+      - name: Download 32 independent PBFs and assert real SHA identity
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $dest=Join-Path $env:GITHUB_WORKSPACE 'R53-SOURCE'
+          New-Item -ItemType Directory -Force (Join-Path $dest 'm5-gpu\r46') | Out-Null
+          Copy-Item .\m5-gpu\r46\download_unique_tiles.mjs (Join-Path $dest 'm5-gpu\r46\download_unique_tiles.mjs')
+          node (Join-Path $dest 'm5-gpu\r46\download_unique_tiles.mjs') (Join-Path $dest 'tests\fixtures\r46-data')
+          if($LASTEXITCODE -ne 0){throw '32 independent PBF identities/download FAIL'}
+      - name: Real Chrome mouse pointer and wheel OL map integration E2E
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $dest=Join-Path $env:GITHUB_WORKSPACE 'R53-SOURCE'
+          $out=Join-Path $env:GITHUB_WORKSPACE 'R53-EVIDENCE\ui'
+          node (Join-Path $dest 'm5-gpu\r53\run_actual_32_ol_ui.mjs') $dest $out
+          if($LASTEXITCODE -ne 0){throw 'R53 real OL map UI E2E FAIL'}
+          $report=Get-Content (Join-Path $out 'result.json') -Raw | ConvertFrom-Json
+          if(-not $report.pass -or @($report.checks).Count -lt 4){throw 'R53 report lacks acceptance checks'}
+      - name: Preserve actual UI input logs/screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: r53-actual-32-ol-ui
+          path: R53-EVIDENCE/**
+          retention-days: 30
+          if-no-files-found: warn

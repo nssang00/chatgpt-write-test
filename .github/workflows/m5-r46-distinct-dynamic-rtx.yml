@@ -1,0 +1,104 @@
+name: M5 R46 RTX Real Distinct Pan Zoom Rotate Parity
+on:
+  push:
+    branches: [m5/r46-distinct-mvt-32-20261023]
+    paths:
+      - '.github/workflows/m5-r46-distinct-dynamic-rtx.yml'
+      - 'm5-gpu/r46/patch_dynamic_views.mjs'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: r46-dynamic-rtx-32
+  cancel-in-progress: false
+jobs:
+  webgl:
+    name: Actual RTX 8/16/32 independent MVT source viewport transformations and Worker exact pixels
+    runs-on: self-hosted
+    timeout-minutes: 70
+    env:
+      R35_ZIP_PATH: 'C:\M5_R35\M5_R35_RTX_READY_SELF_CONTAINED_2026-10-22.zip'
+      M5_SWIFTSHADER: '0'
+      M5_GPU_COMPARE_TIMEOUT_MS: '240000'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Assert physical RTX and pinned R35 origin
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          New-Item -ItemType Directory -Force R46-RTX-EVIDENCE | Out-Null
+          $gpu=@(Get-CimInstance Win32_VideoController | Select-Object Name,DriverVersion)
+          $gpu | ConvertTo-Json -Depth 4 | Set-Content -Encoding utf8 R46-RTX-EVIDENCE\gpu.json
+          if($env:OS -ne 'Windows_NT' -or -not ($gpu | Where-Object {$_.Name -match 'NVIDIA.*RTX 5060 Ti'})){throw 'Real Windows RTX 5060 Ti required'}
+          nvidia-smi --query-gpu=name,driver_version,memory.total --format=csv,noheader | Tee-Object -FilePath R46-RTX-EVIDENCE\nvidia.txt
+          if($LASTEXITCODE -ne 0){throw 'nvidia-smi failed'}
+          $hash=(Get-FileHash -Algorithm SHA256 $env:R35_ZIP_PATH).Hash.ToLowerInvariant()
+          if($hash -ne '3e5d3cb5d525b818a3b560731dac0ae17ce734ab5a96057c67c546c4b7cb2776'){throw 'R35 pinned checksum mismatch'}
+          $hash | Set-Content -Encoding ascii R46-RTX-EVIDENCE\r35-sha256.txt
+      - name: Apply R45 actual app, GPU instrument, R46 distinct-source harness
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $dest=Join-Path $env:GITHUB_WORKSPACE 'R46-BROWSER-SOURCE'
+          New-Item -ItemType Directory -Force $dest | Out-Null
+          Expand-Archive -LiteralPath $env:R35_ZIP_PATH -DestinationPath $dest -Force
+          git -C $dest init -q
+          if($LASTEXITCODE -ne 0){throw 'git root failed'}
+          node .\m5-gpu\r45\apply_r45.mjs $dest
+          if($LASTEXITCODE -ne 0){throw 'R45 patch failed'}
+          node .\m5-gpu\r45\instrument_gpu.mjs $dest
+          if($LASTEXITCODE -ne 0){throw 'R45 GPU instrument failed'}
+          node .\m5-gpu\r46\patch_browser_sources.mjs $dest
+          if($LASTEXITCODE -ne 0){throw 'R46 browser source patch failed'}
+          node .\m5-gpu\r45\instrument_gpu_dynamic.mjs $dest
+          if($LASTEXITCODE -ne 0){throw 'Dynamic GPU baseline instrument failed'}
+          node .\m5-gpu\r46\patch_dynamic_views.mjs $dest
+          if($LASTEXITCODE -ne 0){throw 'R46 dynamic viewport patch failed'}
+          New-Item -ItemType Directory -Force (Join-Path $dest 'm5-gpu\r46') | Out-Null
+          Copy-Item .\m5-gpu\r46\download_unique_tiles.mjs (Join-Path $dest 'm5-gpu\r46\download_unique_tiles.mjs')
+      - name: Download independent MVT and assert SHA / nonempty
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $dest=Join-Path $env:GITHUB_WORKSPACE 'R46-BROWSER-SOURCE'
+          node (Join-Path $dest 'm5-gpu\r46\download_unique_tiles.mjs') (Join-Path $dest 'tests\fixtures\r46-data')
+          if($LASTEXITCODE -ne 0){throw 'R46 independent MVT source setup failed'}
+      - name: Real R45 WebGL CPU→Worker DPR1 and DPR2 source scale
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $dest=Join-Path $env:GITHUB_WORKSPACE 'R46-BROWSER-SOURCE'
+          Set-Location $dest
+          foreach($dpr in @(1,2)){
+            $id='r46_gpu_dpr'+$dpr
+            & node .\tests\round14_gpu_compare\run_one.mjs --mode=m5 --id=$id --rounds=2 --workerPool=off --partialEarcut=1 --closedJoins=1 --r45=1 --r45Dpr=$dpr --out=.\RESULTS\R46_GPU
+            if($LASTEXITCODE -ne 0){throw ('R46 WebGL GPU FAIL DPR '+$dpr)}
+            $data=Get-Content (Join-Path $dest ('RESULTS\R46_GPU\'+$id+'\result.json')) -Raw | ConvertFrom-Json
+            if(-not $data.pass -or $data.distinctPbfSHA256 -ne 32 -or @($data.scenes).Count -ne 3){throw 'R46 browser report incorrect'}
+            foreach($n in @(8,16,32)){
+              $scene=@($data.scenes | Where-Object {$_.name -eq ('sources-'+$n)})[0]
+              if(-not $scene -or -not $scene.pass -or $scene.layerCount -ne $n -or $scene.tileCount -ne $n -or $scene.renderer -notmatch 'NVIDIA|RTX 5060 Ti'){throw ('Invalid source count or GPU '+$n)}
+              foreach($sample in $scene.samples){
+                if(@($sample.r45.dynamicTests).Count -ne 4){throw ('Expected four independent transformed view controls at '+$n)}
+                foreach($view in $sample.r45.dynamicTests){
+                  if($view.paintedPixels -le 0 -or $view.viewChangedChannels -le 0 -or $view.workerChangedChannels -ne 0 -or $view.drawCalls -le 0){throw ('R46 nonempty dynamic GPU parity failed: '+$view.view+' '+$n)}
+                }
+                if($sample.r45.workerRows -ne $n -or $sample.r45.groups -ne $n -or $sample.r45.differentChannels -ne 0 -or $sample.r45.failures -ne 0 -or $sample.r45.parityRejects -ne 0 -or $sample.glError -ne 0){throw ('Worker pixel mismatch on '+$n+' sources')}
+              }
+            }
+            Write-Host ('R46_PHYSICAL_GPU_PASS dpr='+$dpr+' sourceCounts=8,16,32 pixelChannelDiff=0')
+          }
+      - name: Upload real GPU measurements even on failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: r46-distinct-dynamic-rtx-${{ github.run_id }}
+          path: |
+            R46-RTX-EVIDENCE/**
+            R46-BROWSER-SOURCE/tests/fixtures/r46-data/manifest.json
+            R46-BROWSER-SOURCE/RESULTS/R46_GPU/**
+          retention-days: 30
+          if-no-files-found: warn

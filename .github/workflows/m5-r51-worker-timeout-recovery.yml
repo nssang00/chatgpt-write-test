@@ -1,0 +1,62 @@
+name: M5 R51 Worker Deadline Recovery Regression
+on:
+  push:
+    branches: [m5/r46-distinct-mvt-32-20261023]
+    paths:
+      - 'm5-gpu/r51/apply_worker_timeouts.mjs'
+      - 'm5-gpu/r51/verify_worker_timeouts.mjs'
+      - '.github/workflows/m5-r51-worker-timeout-recovery.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: r51-worker-timeout
+  cancel-in-progress: true
+jobs:
+  worker:
+    runs-on: self-hosted
+    timeout-minutes: 40
+    env:
+      R35_ZIP_PATH: 'C:\M5_R35\M5_R35_RTX_READY_SELF_CONTAINED_2026-10-22.zip'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Pinned seed and original source validation
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          if($env:OS -ne 'Windows_NT'){throw 'Windows required'}
+          $hash=(Get-FileHash -Algorithm SHA256 $env:R35_ZIP_PATH).Hash.ToLowerInvariant()
+          if($hash -ne '3e5d3cb5d525b818a3b560731dac0ae17ce734ab5a96057c67c546c4b7cb2776'){throw 'R35 ZIP hash mismatch'}
+      - name: Apply R48 candidate plus experimental R51 deadlines and test
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $dest=Join-Path $env:GITHUB_WORKSPACE 'R51-SOURCE'
+          New-Item -ItemType Directory -Force $dest | Out-Null
+          Expand-Archive -LiteralPath $env:R35_ZIP_PATH -DestinationPath $dest -Force
+          git -C $dest init -q
+          if($LASTEXITCODE -ne 0){throw 'git init failed'}
+          node m5-gpu/r45/apply_r45.mjs $dest
+          if($LASTEXITCODE -ne 0){throw 'R45 apply failed'}
+          node m5-gpu/r48/apply_cpu_join_fallback.mjs $dest
+          if($LASTEXITCODE -ne 0){throw 'R48 apply failed'}
+          node m5-gpu/r51/apply_worker_timeouts.mjs $dest
+          if($LASTEXITCODE -ne 0){throw 'R51 apply failed'}
+          New-Item -ItemType Directory -Force (Join-Path $dest 'm5-gpu\r51') | Out-Null
+          Copy-Item .\m5-gpu\r51\verify_worker_timeouts.mjs (Join-Path $dest 'm5-gpu\r51\verify_worker_timeouts.mjs')
+          New-Item -ItemType Directory -Force (Join-Path $dest 'm5-gpu\r49') | Out-Null
+          Copy-Item .\m5-gpu\r49\verify_worker_churn_restart.mjs (Join-Path $dest 'm5-gpu\r49\verify_worker_churn_restart.mjs')
+          foreach($test in @(
+            'tests\verify_r33_worker_pool.mjs',
+            'tests\verify_r34_shared_worker_pool.mjs',
+            'tests\verify_r45_handover.mjs',
+            'm5-gpu\r49\verify_worker_churn_restart.mjs',
+            'm5-gpu\r51\verify_worker_timeouts.mjs'
+          )){
+            node (Join-Path $dest $test)
+            if($LASTEXITCODE -ne 0){throw ('R51 regression failed: '+$test)}
+          }
+          Write-Host 'R51_WORKER_DEADLINE_AND_EXISTING_POOL_REGRESSIONS_PASS'

@@ -1,0 +1,35 @@
+name: M5 R55 OL Tile Lifecycle Windows
+on:
+  workflow_dispatch:
+  push:
+    branches: [m5/r46-distinct-mvt-32-20261023]
+    paths:
+      - 'm5-gpu/r55/run_windows_tile_lifecycle.mjs'
+      - '.github/workflows/m5-r55-ol-tile-windows.yml'
+permissions:
+  contents: read
+jobs:
+  ol-tile:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install browser test dependencies
+        run: |
+          npm install --no-save --package-lock=false --ignore-scripts playwright@1.55.0 ol@10.10.0 esbuild@0.25.12
+          npx playwright install chromium
+      - name: Exercise real OpenLayers tile lifecycle without GPU
+        shell: pwsh
+        run: |
+          node m5-gpu/r55/run_windows_tile_lifecycle.mjs
+          if ($LASTEXITCODE -ne 0) { throw 'OL tile lifecycle failed' }
+      - name: Preserve evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: r55-ol-tile-windows
+          path: R55-WINDOWS/**
+          if-no-files-found: warn

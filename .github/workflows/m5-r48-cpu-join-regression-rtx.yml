@@ -1,0 +1,155 @@
+name: M5 R48 CPU Join Fallback RTX Regression
+on:
+  push:
+    branches: [m5/r46-distinct-mvt-32-20261023]
+    paths:
+      - '.github/workflows/m5-r48-cpu-join-regression-rtx.yml'
+      - 'm5-gpu/r48/apply_cpu_join_fallback.mjs'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: r48-cpu-join-regression
+  cancel-in-progress: true
+jobs:
+  rtx:
+    name: R48 strict OL pixel / dynamic / retry - ${{ matrix.variant }}
+    runs-on: self-hosted
+    timeout-minutes: 80
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: [pixel, dynamic, retry]
+    env:
+      R48_VARIANT: ${{ matrix.variant }}
+      R35_ZIP_PATH: 'C:\M5_R35\M5_R35_RTX_READY_SELF_CONTAINED_2026-10-22.zip'
+      M5_SWIFTSHADER: '0'
+      M5_GPU_COMPARE_TIMEOUT_MS: '240000'
+      R45_PERF_ROUNDS: '3'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Assert physical RTX and pinned original
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          New-Item -ItemType Directory -Force R48-EVIDENCE | Out-Null
+          if($env:OS -ne 'Windows_NT'){throw 'Windows required'}
+          $gpu=@(Get-CimInstance Win32_VideoController | Select-Object Name,DriverVersion)
+          if(-not ($gpu | Where-Object {$_.Name -match 'NVIDIA.*RTX 5060 Ti'})){throw 'Physical RTX 5060 Ti required'}
+          $gpu | ConvertTo-Json -Depth 4 | Set-Content -Encoding utf8 R48-EVIDENCE\gpu.json
+          nvidia-smi --query-gpu=name,driver_version,memory.total --format=csv,noheader | Tee-Object -FilePath R48-EVIDENCE\nvidia.txt
+          if($LASTEXITCODE -ne 0){throw 'nvidia-smi failed'}
+          $hash=(Get-FileHash -Algorithm SHA256 $env:R35_ZIP_PATH).Hash.ToLowerInvariant()
+          if($hash -ne '3e5d3cb5d525b818a3b560731dac0ae17ce734ab5a96057c67c546c4b7cb2776'){throw 'Pinned R35 SHA mismatch'}
+          $hash | Set-Content -Encoding ascii R48-EVIDENCE\r35.txt
+      - name: Reconstruct R45 and apply R48 CPU fallback candidate
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $dest=Join-Path $env:GITHUB_WORKSPACE ('R48-'+$env:R48_VARIANT)
+          New-Item -ItemType Directory -Force $dest | Out-Null
+          Expand-Archive -LiteralPath $env:R35_ZIP_PATH -DestinationPath $dest -Force
+          git -C $dest init -q
+          if($LASTEXITCODE -ne 0){throw 'git init failed'}
+          node m5-gpu/r45/apply_r45.mjs $dest
+          if($LASTEXITCODE -ne 0){throw 'R45 source patch failed'}
+          node m5-gpu/r45/instrument_gpu.mjs $dest
+          if($LASTEXITCODE -ne 0){throw 'R45 GPU instrument failed'}
+          node m5-gpu/r46/patch_browser_sources.mjs $dest
+          if($LASTEXITCODE -ne 0){throw 'R46 independent source patch failed'}
+          node m5-gpu/r48/apply_cpu_join_fallback.mjs $dest
+          if($LASTEXITCODE -ne 0){throw 'R48 CPU fallback patch failed'}
+          if($env:R48_VARIANT -eq 'pixel'){
+            node m5-gpu/r46/patch_ol_sources.mjs $dest
+            if($LASTEXITCODE -ne 0){throw 'Stock OL source patch failed'}
+          }elseif($env:R48_VARIANT -eq 'dynamic'){
+            node m5-gpu/r45/instrument_gpu_dynamic.mjs $dest
+            if($LASTEXITCODE -ne 0){throw 'Dynamic instrument failed'}
+            node m5-gpu/r46/patch_dynamic_views.mjs $dest
+            if($LASTEXITCODE -ne 0){throw 'Dynamic viewport patch failed'}
+          }elseif($env:R48_VARIANT -eq 'retry'){
+            node m5-gpu/r46/patch_tile_retry.mjs $dest
+            if($LASTEXITCODE -ne 0){throw 'Retry instrument failed'}
+          }else{throw 'Unknown variant'}
+          New-Item -ItemType Directory -Force (Join-Path $dest 'm5-gpu\r46') | Out-Null
+          Copy-Item .\m5-gpu\r46\download_unique_tiles.mjs (Join-Path $dest 'm5-gpu\r46\download_unique_tiles.mjs')
+          if($env:R48_VARIANT -eq 'pixel'){
+            Copy-Item .\m5-gpu\r46\run_distinct_abba.mjs (Join-Path $dest 'm5-gpu\r46\run_distinct_abba.mjs')
+            New-Item -ItemType Directory -Force (Join-Path $dest 'm5-gpu\r47') | Out-Null
+            Copy-Item .\m5-gpu\r47\compare_ol_r45.mjs (Join-Path $dest 'm5-gpu\r47\compare_ol_r45.mjs')
+          }
+      - name: Download and hash 32 distinct real MVT inputs
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $dest=Join-Path $env:GITHUB_WORKSPACE ('R48-'+$env:R48_VARIANT)
+          node (Join-Path $dest 'm5-gpu\r46\download_unique_tiles.mjs') (Join-Path $dest 'tests\fixtures\r46-data')
+          if($LASTEXITCODE -ne 0){throw 'Distinct MVT source validation failed'}
+      - name: Strict paired OL 10.10.0 ABBA pixel and performance gate
+        if: matrix.variant == 'pixel'
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $dest=Join-Path $env:GITHUB_WORKSPACE 'R48-pixel'
+          $out=Join-Path $dest 'RESULTS\R48_ABBA'
+          node (Join-Path $dest 'm5-gpu\r46\run_distinct_abba.mjs') $dest $out
+          if($LASTEXITCODE -ne 0){throw 'R48 ABBA performance failed'}
+          node (Join-Path $dest 'm5-gpu\r47\compare_ol_r45.mjs') $out
+          if($LASTEXITCODE -ne 0){throw 'R48 strict OL RGBA8 pixel comparison failed'}
+          $audit=Get-Content (Join-Path $out 'r47-cpu-join-pixel-audit.json') -Raw | ConvertFrom-Json
+          if(-not $audit.exact){throw 'R48 pixel audit not exact'}
+          foreach($scene in @('sources-8','sources-16','sources-32')){
+            $pairs=$audit.scenes.$scene
+            foreach($key in @('ol_a__r45_a','ol_b__r45_b','ol_a__ol_b','r45_a__r45_b')){
+              if(-not $pairs.$key.exactRGBA8 -or $pairs.$key.diffPixels -ne 0){throw ('R48 mismatch '+$scene+' '+$key)}
+            }
+          }
+          Write-Host 'R48_STRICT_OL_RGBA8_PASS 8,16,32 two independent ABBA trials, all four pair comparisons exact'
+      - name: Physical RTX DPR1 DPR2 Worker pixel and view/retry gates
+        if: matrix.variant != 'pixel'
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $dest=Join-Path $env:GITHUB_WORKSPACE ('R48-'+$env:R48_VARIANT)
+          Set-Location $dest
+          $rounds=1
+          if($env:R48_VARIANT -eq 'dynamic'){$rounds=2}
+          foreach($dpr in @(1,2)){
+            $id='r48_'+$env:R48_VARIANT+'_dpr'+$dpr
+            & node .\tests\round14_gpu_compare\run_one.mjs --mode=m5 --id=$id --rounds=$rounds --workerPool=off --partialEarcut=1 --closedJoins=1 --r45=1 --r45Dpr=$dpr --out=.\RESULTS\R48_GPU
+            if($LASTEXITCODE -ne 0){throw ('R48 '+$env:R48_VARIANT+' failed at DPR'+$dpr)}
+            $data=Get-Content (Join-Path $dest ('RESULTS\R48_GPU\'+$id+'\result.json')) -Raw | ConvertFrom-Json
+            if(-not $data.pass -or $data.distinctPbfSHA256 -ne 32 -or @($data.scenes).Count -ne 3){throw 'Invalid R48 result'}
+            foreach($n in @(8,16,32)){
+              $scene=@($data.scenes | Where-Object {$_.name -eq ('sources-'+$n)})[0]
+              if(-not $scene -or -not $scene.pass -or $scene.layerCount -ne $n -or $scene.tileCount -ne $n -or $scene.renderer -notmatch 'NVIDIA|RTX 5060 Ti'){throw ('Invalid scene '+$n)}
+              foreach($sample in $scene.samples){
+                $w=$sample.r45
+                if($w.workerRows -ne $n -or $w.groups -ne $n -or $w.differentChannels -ne 0 -or $w.failures -ne 0 -or $w.parityRejects -ne 0 -or $sample.glError -ne 0){throw ('Worker parity FAIL '+$n)}
+                if($env:R48_VARIANT -eq 'dynamic'){
+                  if(@($w.dynamicTests).Count -ne 4){throw ('Missing dynamic tests '+$n)}
+                  foreach($v in $w.dynamicTests){
+                    if($v.paintedPixels -le 0 -or $v.viewChangedChannels -le 0 -or $v.workerChangedChannels -ne 0 -or $v.drawCalls -le 0){throw ('Dynamic GPU mismatch '+$n+' '+$v.view)}
+                  }
+                }else{
+                  $t=$w.eventRetry
+                  if(-not $t -or -not $t.removedFromAdapter -or -not $t.loadedAfterRetry -or $t.removedDiff -le 0 -or $t.parityDiff -ne 0 -or $t.restoredDiff -ne 0 -or $t.glErrors -ne 0 -or $t.workerRowsAfterRetry -lt ($n+1)){throw ('Retry GPU mismatch '+$n)}
+                }
+              }
+            }
+            Write-Host ('R48_RTX_PASS variant='+$env:R48_VARIANT+' dpr='+$dpr+' sources=8,16,32')
+          }
+      - name: Preserve raw physical GPU and pixel evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: r48-${{ matrix.variant }}-${{ github.run_id }}
+          path: |
+            R48-EVIDENCE/**
+            R48-*/tests/fixtures/r46-data/manifest.json
+            R48-*/RESULTS/**
+          retention-days: 30
+          if-no-files-found: warn

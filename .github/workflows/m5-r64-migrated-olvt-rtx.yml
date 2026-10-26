@@ -1,0 +1,124 @@
+name: M5 R64 Migrated OL VT GL Boost RTX E2E
+on:
+  push:
+    branches: [m5/r46-distinct-mvt-32-20261023]
+    paths:
+      - '.github/workflows/m5-r64-migrated-olvt-rtx.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: m5-r64-migrated-selfhost
+  cancel-in-progress: true
+jobs:
+  r64-physical-rtx:
+    runs-on: self-hosted
+    timeout-minutes: 55
+    steps:
+      - name: Checkout original GPU oracle harness
+        uses: actions/checkout@v4
+        with:
+          path: harness
+      - name: Checkout migrated source at exact reviewed commit
+        uses: actions/checkout@v4
+        with:
+          repository: rydolabs/ol-vt-gl-boost
+          ref: 4f1917f7eb2fc0fe524eef8257376bd4036b6062
+          path: candidate
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify physical RTX, candidate SHA, CPU-first default
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $g=@(Get-CimInstance Win32_VideoController | Select-Object Name,DriverVersion)
+          if(-not ($g|Where-Object{$_.Name -match 'NVIDIA.*RTX 5060 Ti'})){throw 'Real RTX 5060 Ti required'}
+          New-Item -ItemType Directory -Force R64-EVIDENCE | Out-Null
+          $g | ConvertTo-Json -Depth 4 | Set-Content -Encoding utf8 R64-EVIDENCE\GPU.json
+          $candidate=Join-Path $env:GITHUB_WORKSPACE 'candidate'
+          $sha=(git -C $candidate rev-parse HEAD).Trim()
+          if($sha -ne '4f1917f7eb2fc0fe524eef8257376bd4036b6062'){throw 'Migrated source SHA drift'}
+          $sha | Set-Content R64-EVIDENCE\CANDIDATE_SHA.txt
+          Push-Location $candidate
+          try{
+            npm test
+            if($LASTEXITCODE -ne 0){throw 'Node 17 regression failure'}
+            npm run test:contract
+            if($LASTEXITCODE -ne 0){throw 'Source/Worker OFF contract failure'}
+          }finally{Pop-Location}
+      - name: Rebase original real-OL test harness onto simplified paths
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $candidate=Join-Path $env:GITHUB_WORKSPACE 'candidate'
+          $harness=Join-Path $env:GITHUB_WORKSPACE 'harness'
+          foreach($kind in @('r46','r53','r61','r63')){
+            New-Item -ItemType Directory -Force (Join-Path $candidate ('m5-gpu\'+$kind)) | Out-Null
+          }
+          Copy-Item (Join-Path $harness 'm5-gpu\r46\download_unique_tiles.mjs') (Join-Path $candidate 'm5-gpu\r46\')
+          Copy-Item (Join-Path $harness 'm5-gpu\r53\actual_32_ol_ui.html') (Join-Path $candidate 'm5-gpu\r53\')
+          Copy-Item (Join-Path $harness 'm5-gpu\r61\run_strict_physical_dpr_oracle.mjs') (Join-Path $candidate 'm5-gpu\r61\')
+          Copy-Item (Join-Path $harness 'm5-gpu\r63\real_ol_fallback.html') (Join-Path $candidate 'm5-gpu\r63\')
+          Copy-Item (Join-Path $harness 'm5-gpu\r63\run_real_ol_fallback.mjs') (Join-Path $candidate 'm5-gpu\r63\')
+          foreach($htmlFile in @('m5-gpu\r53\actual_32_ol_ui.html','m5-gpu\r63\real_ol_fallback.html')){
+            $path=Join-Path $candidate $htmlFile
+            $html=Get-Content -LiteralPath $path -Raw
+            if(-not $html.Contains('../../our-renderer/backend/WebGL1Backend.js')){throw "Missing GL import $htmlFile"}
+            if(-not $html.Contains('../../our-renderer/OpenLayersRendererBinding.js')){throw "Missing binding import $htmlFile"}
+            $html=$html.Replace('../../our-renderer/backend/WebGL1Backend.js','../../src/gl/backend.js').Replace('../../our-renderer/OpenLayersRendererBinding.js','../../src/compat/OpenLayersRendererBinding.js')
+            [System.IO.File]::WriteAllText($path,$html,(New-Object System.Text.UTF8Encoding($false)))
+          }
+          Push-Location $candidate
+          try{
+            npm install --no-save --package-lock=false --ignore-scripts --no-audit --no-fund playwright@1.55.0
+            if($LASTEXITCODE -ne 0){throw 'Playwright install failed'}
+            node m5-gpu/r46/download_unique_tiles.mjs tests/fixtures/r46-data
+            if($LASTEXITCODE -ne 0){throw 'Distinct real PBF download failed'}
+          }finally{Pop-Location}
+      - name: Exact pixel and tile completeness 12-case matrix
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $candidate=Join-Path $env:GITHUB_WORKSPACE 'candidate'
+          $outRoot=Join-Path $env:GITHUB_WORKSPACE 'R64-EVIDENCE\r61'
+          New-Item -ItemType Directory -Force $outRoot | Out-Null
+          $checked=0
+          foreach($sources in @(8,16,32)){
+            foreach($dpr in @(1,2)){
+              foreach($seed in @(1,2)){
+                $env:M5_R57_SOURCES=[string]$sources
+                $env:M5_R57_DPR=[string]$dpr
+                $env:M5_R57_SEED=[string]$seed
+                $case=('s'+$sources+'-dpr'+$dpr+'-seed'+$seed)
+                $out=Join-Path $outRoot $case
+                node (Join-Path $candidate 'm5-gpu\r61\run_strict_physical_dpr_oracle.mjs') $candidate $out
+                if($LASTEXITCODE -ne 0){throw ('R64 RTX R61 script failed '+$case)}
+                $r=Get-Content (Join-Path $out 'result.json') -Raw | ConvertFrom-Json
+                if(-not $r.pass -or $r.pixelAudit.diffPixels -ne 0 -or $r.pixelAudit.changedChannels -ne 0 -or -not $r.tileAudit.exact -or $r.pixelAudit.sources -ne $sources -or $r.pixelAudit.dpr -ne $dpr -or $r.pixelAudit.seed -ne $seed){throw ('R64 RTX oracle failed '+$case)}
+                $checked++
+                Write-Host ('R64_RTX_EXACT_PASS '+$case)
+              }
+            }
+          }
+          if($checked -ne 12){throw 'R64 incomplete RTX matrix'}
+          Write-Host 'R64_MIGRATED_RTX_12_OF_12_PASS'
+      - name: Stock OL post-fault fallback with actual mouse and wheel
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $candidate=Join-Path $env:GITHUB_WORKSPACE 'candidate'
+          $out=Join-Path $env:GITHUB_WORKSPACE 'R64-EVIDENCE\r63'
+          node (Join-Path $candidate 'm5-gpu\r63\run_real_ol_fallback.mjs') $candidate $out
+          if($LASTEXITCODE -ne 0){throw 'R64 stock OL fallback failed'}
+          $r=Get-Content (Join-Path $out 'result.json') -Raw | ConvertFrom-Json
+          if(-not $r.pass -or @($r.checks).Count -lt 8){throw 'R64 stock OL fallback incomplete'}
+          Write-Host 'R64_MIGRATED_OL_FALLBACK_PASS'
+      - name: Upload complete raw evidence, even on failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: m5-r64-migrated-actual-rtx-raw
+          path: R64-EVIDENCE/**
+          retention-days: 30
+          if-no-files-found: warn

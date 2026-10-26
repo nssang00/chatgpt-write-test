@@ -1,0 +1,74 @@
+<!doctype html><meta charset="utf-8"><title>R58 32 distinct PBF multi-cycle Chromium Worker faults</title><pre id="status">running</pre>
+<script type="module">
+import {DirectTileWorkerPool} from '../../our-renderer/integration/workers/DirectTileWorkerPool.js';
+import {encodeTileLayerGroupTask} from '../../our-renderer/integration/workers/DirectTileEncodeTask.js';
+const state={done:false,pass:false,errors:[],checks:[],metrics:{}};
+globalThis.__r58=state;
+function assert(ok,why){if(!ok)throw Error(why)}
+function exactArray(a,b){if(a.constructor!==b.constructor||a.length!==b.length)return false;for(let i=0;i<a.length;i++)if(a[i]!==b[i])return false;return true}
+const WORKER_URL=new URL('../../our-renderer/integration/workers/DirectTileEncodeWorker.browser.js',import.meta.url);
+const cfg={size:2,maxCacheBytes:0,taskTimeoutMs:800,bootTimeoutMs:6000};
+function makePool(taskTimeoutMs=cfg.taskTimeoutMs){
+ const workers=[];
+ const pool=new DirectTileWorkerPool({...cfg,taskTimeoutMs,createWorker:()=>{const w=new Worker(WORKER_URL,{type:'module'});workers.push(w);return w}});
+ return {pool,workers};
+}
+try{
+ const manifestResponse=await fetch('/tests/fixtures/r46-data/manifest.json');
+ if(!manifestResponse.ok)throw Error('R58 manifest HTTP '+manifestResponse.status);
+ const manifest=await manifestResponse.json();
+ assert(manifest.sources?.length===32&&new Set(manifest.sources.map(s=>s.sha256)).size===32,'32 independent PBF manifest identity invalid');
+ const tasks=await Promise.all(manifest.sources.map(async (part)=>{
+  const resp=await fetch('/tests/fixtures/r46-data/tiles/12/'+part.x+'/'+part.y+'.pbf');
+  if(!resp.ok)throw Error('R58 distinct PBF HTTP '+resp.status+' '+part.x+'/'+part.y);
+  return {tileKey:'12/'+part.x+'/'+part.y,
+   layers:[{layer:part.layer,style:{'stroke-color':'rgba(220,65,55,0.92)','stroke-width':3}}],
+   bytes:await resp.arrayBuffer(),
+   extent:[(part.x-2174)*4096,(1437-part.y)*4096,(part.x-2173)*4096,(1438-part.y)*4096],
+   options:{partialEarcut:true,unclipped:true,drawMode:'style-pass',closedLineJoins:true,polygonInsideSegmentFastPath:true,polygonEarBBoxPrecheck:true}};
+ }));
+ assert(tasks.length===32&&new Set(tasks.map(t=>t.tileKey)).size===32,'task identity duplicate');
+ const expected=tasks.map(t=>encodeTileLayerGroupTask(t));
+ state.metrics.sourceBytes=tasks.map(t=>t.bytes.byteLength);
+ state.metrics.sourceShaCount=manifest.sources.length;
+ let streams=0,rows=0,packetCounts=0,abortCycles=0,recoveredTasks=0;
+ const cycles=[];
+ for(let cycle=0;cycle<3;cycle++){
+  const first=makePool(800);await first.pool.ready;
+  assert(first.workers.length===2,'No two real Worker threads');
+  const pending=first.pool.map(tasks);
+  first.workers[0].terminate();
+  let failure=null;try{await pending}catch(e){failure=e}
+  assert(failure&&/deadline exceeded/.test(String(failure)),'R58 worker crash did not enforce deadline '+cycle+': '+failure);
+  assert(first.pool.closed&&first.pool.stats.workerErrors>=1,'R58 fail-closed gate '+cycle);
+  abortCycles++;
+  const healthy=makePool(20000);await healthy.pool.ready;
+  const results=await healthy.pool.map(tasks);
+  assert(results.length===32&&healthy.pool.stats.completed===32,'R58 32-source recovery incomplete '+cycle);
+  for(let i=0;i<results.length;i++){
+   const got=results[i],ref=expected[i];
+   assert(got.tileKey===ref.tileKey&&got.decodeCalls===1,'R58 source identity or decode discrepancy');
+   assert(got.rows.length===ref.rows.length&&ref.rows.length>0,'R58 row length '+i);
+   for(let k=0;k<got.rows.length;k++){
+    rows++;
+    const a=got.rows[k].encoded,b=ref.rows[k].encoded;
+    for(const name of ['vertices','indices','lineInstances']){
+     streams++;assert(exactArray(a[name],b[name]),'R58 recovered Worker buffer mismatch '+cycle+':'+i+':'+name);
+    }
+    assert(JSON.stringify(a.packets)===JSON.stringify(b.packets),'R58 recovered Worker draw packet mismatch '+cycle+':'+i);
+    packetCounts+=a.packets.length;
+   }
+  }
+  assert(healthy.pool.stats.workerErrors===0,'healthy Worker pool errors');
+  recoveredTasks+=results.length;
+  cycles.push({cycle,terminatedWorkerDeadline:String(failure),healthyCompleted:results.length,healthyWorkerErrors:healthy.pool.stats.workerErrors});
+  await healthy.pool.close();await first.pool.close();
+ }
+ state.metrics={...state.metrics,workerCount:2,tiles:32,cycles,abortCycles,recoveredTasks,streamsExact:streams,rows,packetsCompared:packetCounts};
+ assert(abortCycles===3&&recoveredTasks===96&&streams>=288,'R58 all fault cycles incomplete');
+ state.checks.push('three actual Chromium Worker kill/deadline/fail-closed cycles observed across 32 unique MVT inputs');
+ state.checks.push('all 3 fresh two-Worker pools re-encoded 32 different PBFs with exact CPU typed-stream and packet parity');
+ state.pass=true;
+}catch(e){state.errors.push(String(e.stack||e))}
+finally{state.done=true;document.getElementById('status').textContent=JSON.stringify(state,null,2)}
+</script>

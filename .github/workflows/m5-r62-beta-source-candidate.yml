@@ -1,0 +1,82 @@
+name: M5 R62 CPU-first Beta Source Candidate Gate
+on:
+  push:
+    branches: [m5/r46-distinct-mvt-32-20261023]
+    paths:
+      - 'm5-gpu/r62/**'
+      - '.github/workflows/m5-r62-beta-source-candidate.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: m5-r62-beta-source
+  cancel-in-progress: true
+jobs:
+  verify-and-pack:
+    runs-on: self-hosted
+    timeout-minutes: 35
+    env:
+      R35_ZIP_PATH: 'C:\M5_R35\M5_R35_RTX_READY_SELF_CONTAINED_2026-10-22.zip'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Assert SHA-pinned R35 source
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          New-Item -ItemType Directory -Force R62-EVIDENCE | Out-Null
+          if($env:OS -ne 'Windows_NT'){throw 'Windows packaging runner needed'}
+          $got=(Get-FileHash -Algorithm SHA256 $env:R35_ZIP_PATH).Hash.ToLowerInvariant()
+          if($got -ne '3e5d3cb5d525b818a3b560731dac0ae17ce734ab5a96057c67c546c4b7cb2776'){throw 'Unpinned seed: refused'}
+          $got | Set-Content R62-EVIDENCE\R35_SEED_SHA256.txt
+      - name: Reconstruct exact CPU-first R45 plus R48
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $dest=Join-Path $env:GITHUB_WORKSPACE 'R62-SOURCE'
+          New-Item -ItemType Directory -Force $dest | Out-Null
+          Expand-Archive -LiteralPath $env:R35_ZIP_PATH -DestinationPath $dest -Force
+          git -C $dest init -q
+          if($LASTEXITCODE -ne 0){throw 'init failed'}
+          node m5-gpu/r45/apply_r45.mjs $dest
+          if($LASTEXITCODE -ne 0){throw 'R45 apply failed'}
+          node m5-gpu/r48/apply_cpu_join_fallback.mjs $dest
+          if($LASTEXITCODE -ne 0){throw 'R48 apply failed'}
+      - name: Exact source integrity and regression
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $dest=Join-Path $env:GITHUB_WORKSPACE 'R62-SOURCE'
+          node .\m5-gpu\r62\verify_beta_source_candidate.mjs $dest (Join-Path $env:GITHUB_WORKSPACE 'R62-EVIDENCE')
+          if($LASTEXITCODE -ne 0){throw 'R62 regressions failed'}
+          $r=Get-Content R62-EVIDENCE\R62_GATE.json -Raw | ConvertFrom-Json
+          if(-not $r.pass -or @($r.tests | Where-Object {-not $_.pass}).Count -gt 0 -or @($r.tests).Count -ne 5){throw 'R62 manifest mismatch'}
+          $r.criticalFileShas | ConvertTo-Json -Depth 4 | Set-Content -Encoding UTF8 R62-EVIDENCE\CORE_SHA256.json
+      - name: Build reproducible source snapshot candidate (no production approval)
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          $dest=Join-Path $env:GITHUB_WORKSPACE 'R62-SOURCE'
+          Remove-Item -Recurse -Force (Join-Path $dest '.git') -ErrorAction SilentlyContinue
+          $zip=Join-Path $env:GITHUB_WORKSPACE 'R62-EVIDENCE\M5_R62_CPU_FIRST_BETA_SOURCE_CANDIDATE.zip'
+          [System.IO.Compression.ZipFile]::CreateFromDirectory($dest,$zip,[System.IO.Compression.CompressionLevel]::Optimal,$false)
+          $sha=(Get-FileHash -Algorithm SHA256 $zip).Hash.ToLowerInvariant()
+          $sha | Set-Content R62-EVIDENCE\CANDIDATE_SHA256.txt
+          $contents=[System.IO.Compression.ZipFile]::OpenRead($zip)
+          try{
+            if($contents.Entries.Count -lt 3400){throw 'Missing source files from candidate'}
+            $srcEntry=@($contents.Entries | Where-Object {$_.FullName.Replace('\','/') -eq 'our-renderer/integration/DirectM5SceneBinding.js'})
+            if(-not $srcEntry){throw 'Missing actual OL app binding source'}
+          }finally{$contents.Dispose()}
+          Write-Host "R62_SOURCE_CANDIDATE_BUILT $sha"
+      - name: Archive evidence even on failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: m5-r62-cpu-first-beta-source-candidate
+          path: R62-EVIDENCE/**
+          retention-days: 30
+          if-no-files-found: warn
