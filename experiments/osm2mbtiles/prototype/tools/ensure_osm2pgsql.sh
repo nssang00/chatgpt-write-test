@@ -18,7 +18,7 @@ SYSTEM_BIN="$(command -v osm2pgsql || true)"
 if [[ -n "$SYSTEM_BIN" ]] && compatible "$SYSTEM_BIN"; then printf '%s\n' "$SYSTEM_BIN"; exit 0; fi
 echo "[FIX] osm2pgsql needs >=1.8.0, building private $BUILD_VERSION" >&2
 sudo apt-get update
-sudo apt-get install -y --no-install-recommends build-essential cmake pkg-config git libboost-dev libexpat1-dev zlib1g-dev libbz2-dev libpq-dev libproj-dev liblua5.3-dev lua5.3 nlohmann-json3-dev
+sudo apt-get install -y --no-install-recommends build-essential cmake pkg-config git libboost-dev libboost-system-dev libboost-filesystem-dev libboost-thread-dev libexpat1-dev zlib1g-dev libbz2-dev libpq-dev libproj-dev liblua5.3-dev lua5.3 nlohmann-json3-dev
 SOURCE="$BASE/build-osm2pgsql-$BUILD_VERSION/source"
 BUILD="$BASE/build-osm2pgsql-$BUILD_VERSION/build"
 mkdir -p "$BASE/build-osm2pgsql-$BUILD_VERSION"
