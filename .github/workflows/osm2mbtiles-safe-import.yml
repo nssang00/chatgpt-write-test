@@ -1,0 +1,56 @@
+name: osm2mbtiles bounded-memory PostGIS import
+on:
+  workflow_dispatch:
+  push:
+    branches: [ci/osm2mbtiles-native-test]
+    paths:
+      - .github/workflows/osm2mbtiles-safe-import.yml
+      - experiments/osm2mbtiles/prototype/src/osm2mbtiles/runtime.py
+
+permissions:
+  contents: read
+jobs:
+  monaco-bounded-import:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install real native PostGIS and osm2pgsql
+        shell: bash
+        run: |
+          set -euxo pipefail
+          sudo apt-get update -qq
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            postgresql-16 postgresql-client-16 postgresql-16-postgis-3 \
+            postgresql-16-postgis-3-scripts osm2pgsql curl git python3-pytest
+      - name: Real OSM Carto v6 Monaco import with bounded memory
+        shell: bash
+        run: |
+          set -euxo pipefail
+          WORK="$RUNNER_TEMP/osm-import"
+          mkdir -p "$WORK/socket"
+          export PATH="/usr/lib/postgresql/16/bin:$PATH"
+          export PGHOST="$WORK/socket" PGPORT=55434 PGUSER=testosm PGDATABASE=gis
+          printf 'test-only-credential-2026\n' > "$WORK/pw"
+          export PGPASSWORD="$(cat "$WORK/pw")"
+          initdb -D "$WORK/pgdata" -U "$PGUSER" --auth-local=scram-sha-256 --auth-host=scram-sha-256 --pwfile="$WORK/pw"
+          pg_ctl -D "$WORK/pgdata" -l "$WORK/postgres.log" -w \
+            -o "-c listen_addresses='' -c unix_socket_directories=$PGHOST -c port=$PGPORT -c shared_buffers=64MB -c work_mem=4MB -c maintenance_work_mem=64MB -c max_parallel_maintenance_workers=0 -c max_parallel_workers_per_gather=0" start
+          trap 'pg_ctl -D "$WORK/pgdata" -m immediate -w stop || true; tail -n 60 "$WORK/postgres.log" || true' EXIT
+          createdb gis
+          psql -v ON_ERROR_STOP=1 -c 'CREATE EXTENSION postgis; CREATE EXTENSION hstore;'
+          git clone -q --depth 1 --branch v6.0.0 https://github.com/openstreetmap-carto/openstreetmap-carto.git "$WORK/osm-carto"
+          curl -fL --retry 3 --silent --show-error https://download.geofabrik.de/europe/monaco-latest.osm.pbf -o "$WORK/monaco.osm.pbf"
+          osm2pgsql --version
+          osm2pgsql --slim --drop --cache=256 --number-processes=1 --disable-parallel-indexing \
+            -O flex -S "$WORK/osm-carto/openstreetmap-carto-flex.lua" -d gis "$WORK/monaco.osm.pbf"
+          ROWS="$(psql -Atc 'SELECT COUNT(*) FROM planet_osm_point')"
+          test "$ROWS" -gt 100
+          echo "BOUNDED_MEMORY_MONACO_IMPORT_OK rows=$ROWS"
+          pg_ctl -D "$WORK/pgdata" -w -m fast stop
+          trap - EXIT
+      - name: Regression suite for Python runtime
+        shell: bash
+        run: |
+          python3 -m pip install --break-system-packages -e "experiments/osm2mbtiles/prototype[test]"
+          python3 -m pytest -q experiments/osm2mbtiles/prototype/tests
