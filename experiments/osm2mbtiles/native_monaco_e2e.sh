@@ -47,7 +47,18 @@ psql -X -v ON_ERROR_STOP=1 -d gis -f indexes.sql
 psql -X -v ON_ERROR_STOP=1 -d gis -f functions.sql
 psql -X -v ON_ERROR_STOP=1 -d gis -f common-values.sql
 echo "Fetching and installing upstream OSM Carto external data and fonts..."
-/usr/bin/python3 scripts/get-external-data.py --cache --no-update
+# The upstream importer downloads >1 GB and can fail on transient network errors.
+# --cache --no-update preserves successful downloads and already loaded tables.
+external_loaded=0
+for retry in 1 2 3 4; do
+  if /usr/bin/python3 scripts/get-external-data.py --cache --no-update; then
+    external_loaded=1
+    break
+  fi
+  echo "External data import attempt $retry failed; retrying from local cache..."
+  sleep 5
+done
+test "$external_loaded" -eq 1
 # The upstream Hanazono font mirror can disappear; Monaco's Latin glyphs
 # render with OS-provided Noto fonts. Keep this smoke check independent
 # of a remote optional font server. Pixel-parity CI must pin font files.
