@@ -48,8 +48,11 @@ psql -X -v ON_ERROR_STOP=1 -d gis -f functions.sql
 psql -X -v ON_ERROR_STOP=1 -d gis -f common-values.sql
 echo "Fetching and installing upstream OSM Carto external data and fonts..."
 /usr/bin/python3 scripts/get-external-data.py --cache --no-update
-/usr/bin/python3 scripts/get-fonts.py
-fc-cache -f "$WORK/openstreetmap-carto/fonts" || true
+# The upstream Hanazono font mirror can disappear; Monaco's Latin glyphs
+# render with OS-provided Noto fonts. Keep this smoke check independent
+# of a remote optional font server. Pixel-parity CI must pin font files.
+echo "Using system Noto fonts (upstream Hanazono mirror not required for Monaco)"
+fc-cache -f
 
 echo "Rendering a real 2x2 Mapnik metatile and writing MBTiles..."
 /usr/bin/python3 - "$OUT" <<'PY'
@@ -59,7 +62,8 @@ import mapnik
 from PIL import Image as PILImage, ImageStat
 
 out = Path(sys.argv[1])
-mapnik.register_fonts(str(Path.cwd() / "fonts"), True)
+mapnik.register_fonts("/usr/share/fonts/truetype", True)
+mapnik.register_fonts("/usr/share/fonts/opentype", True)
 # Monaco central map coordinate in WebMercator.
 z = 14
 lat, lon = 43.735, 7.423
