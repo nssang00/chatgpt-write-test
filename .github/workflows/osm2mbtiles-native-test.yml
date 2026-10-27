@@ -1,0 +1,45 @@
+name: Docker-free OSM Carto Native E2E
+on:
+  push:
+    branches: [ci/osm2mbtiles-native-test]
+    paths:
+      - ".github/workflows/osm2mbtiles-native-test.yml"
+      - "experiments/osm2mbtiles/**"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  native-monaco:
+    name: PBF to Raster MBTiles (Ubuntu, no Docker)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install native PostgreSQL, PostGIS, Mapnik and import tools
+        shell: bash
+        run: |
+          set -euxo pipefail
+          sudo apt-get update -qq
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            postgresql-16 postgresql-client-16 postgresql-16-postgis-3 postgresql-16-postgis-3-scripts \
+            osm2pgsql gdal-bin python3-mapnik python3-psycopg2 python3-requests python3-yaml \
+            python3-pil fonts-noto-core fonts-noto-cjk
+          sudo npm install --global carto@1.2.0
+          /usr/bin/python3 -c 'import mapnik, psycopg2, yaml, requests; print("native python prerequisites OK")'
+          export PATH="/usr/lib/postgresql/16/bin:$PATH"
+          initdb --version; osm2pgsql --version; carto --version
+      - name: Load Monaco into temporary user PostgreSQL and render OSM Carto PNG MBTiles
+        shell: bash
+        run: |
+          set -euxo pipefail
+          export PATH="/usr/lib/postgresql/16/bin:$PATH"
+          bash experiments/osm2mbtiles/native_monaco_e2e.sh
+      - name: Upload generated MBTiles and verification evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: osm2mbtiles-native-monaco
+          path: |
+            experiments/osm2mbtiles/output/
+          if-no-files-found: warn
+          retention-days: 7
