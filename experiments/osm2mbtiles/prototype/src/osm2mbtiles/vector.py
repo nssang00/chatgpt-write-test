@@ -123,18 +123,26 @@ def _properties(alias: str, z: int, name: str, key: str) -> str:
 
 
 def query_for_zoom(z: int) -> str:
-    """One PostGIS statement per tile (one indexed scan per relevant layer)."""
-    parts = []
+    """One indexed SQL statement per XYZ tile, with UNIQUE MVT layer names.
+
+    When a logical layer has two source tables (point POIs and area label
+    points), UNION the source features BEFORE ST_AsMVT. Appending two MVT
+    layers with the same name causes ambiguity in real tile renderers.
+    """
+    grouped = {}
     for name, table, key, predicate in layer_specs(z):
         props = _properties('t', z, name, key)
-        # TileEnvelope expects XYZ y, not flipped MBTiles TMS y.
+        branch = f"""SELECT ST_AsMVTGeom(t.geom, b.tile, {EXTENT}, {BUFFER}, true) AS geom,
+                          {props} AS properties
+                     FROM {table} t
+                    WHERE t.geom && b.search AND ({predicate})"""
+        grouped.setdefault(name, []).append(branch)
+    parts = []
+    for name, branches in grouped.items():
+        query = ' UNION ALL '.join(branches)
         parts.append(f"""COALESCE((
-          SELECT ST_AsMVT(q, '{name}', {EXTENT}, 'geom') FROM (
-            SELECT ST_AsMVTGeom(t.geom, b.tile, {EXTENT}, {BUFFER}, true) AS geom,
-                   {props} AS properties
-            FROM {table} t
-            WHERE t.geom && b.search AND ({predicate})
-          ) q WHERE q.geom IS NOT NULL
+          SELECT ST_AsMVT(q, '{name}', {EXTENT}, 'geom')
+            FROM ({query}) q WHERE q.geom IS NOT NULL
         ), ''::bytea)""")
     if not parts:
         return "SELECT ''::bytea"
