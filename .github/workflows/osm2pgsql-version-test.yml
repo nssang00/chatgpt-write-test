@@ -15,6 +15,25 @@ jobs:
         run: |
           set -euxo pipefail
           sudo apt-get update -qq
-          sudo apt-get install -y osm2pgsql
+          sudo apt-get install -y osm2pgsql postgresql-14 postgresql-client-14 postgresql-14-postgis-3 postgresql-14-postgis-3-scripts curl git
           osm2pgsql --version
-          bash experiments/osm2mbtiles/prototype/tools/ensure_osm2pgsql.sh "$RUNNER_TEMP/osm2mbtiles"
+          NATIVE="$(bash experiments/osm2mbtiles/prototype/tools/ensure_osm2pgsql.sh "$RUNNER_TEMP/osm2mbtiles")"
+          echo "Compiled/selected: $NATIVE"
+          "$NATIVE" --version
+          git clone --depth 1 -q --branch v6.0.0 https://github.com/openstreetmap-carto/openstreetmap-carto.git "$RUNNER_TEMP/carto"
+          curl -fL --retry 3 https://download.geofabrik.de/europe/monaco-latest.osm.pbf -o "$RUNNER_TEMP/monaco.osm.pbf"
+          export PATH="/usr/lib/postgresql/14/bin:$PATH"
+          export PGUSER=localosm PGDATABASE=gis PGPORT=55435
+          export PGHOST="$RUNNER_TEMP/osm-socket"
+          mkdir -p "$PGHOST"
+          printf 'example-ci-password-123456789\n' > "$RUNNER_TEMP/dbpw"
+          export PGPASSWORD="$(cat "$RUNNER_TEMP/dbpw")"
+          initdb -D "$RUNNER_TEMP/pgdata" -U "$PGUSER" --auth-local=scram-sha-256 --auth-host=scram-sha-256 --pwfile="$RUNNER_TEMP/dbpw"
+          pg_ctl -D "$RUNNER_TEMP/pgdata" -l "$RUNNER_TEMP/postgres.log" -w -o "-c listen_addresses='' -c unix_socket_directories=$PGHOST -c port=$PGPORT" start
+          createdb gis
+          psql -v ON_ERROR_STOP=1 -c "CREATE EXTENSION postgis; CREATE EXTENSION hstore;"
+          "$NATIVE" -O flex -S "$RUNNER_TEMP/carto/openstreetmap-carto-flex.lua" -d gis "$RUNNER_TEMP/monaco.osm.pbf"
+          count="$(psql -Atc 'SELECT count(*) FROM planet_osm_point')"
+          echo "OSM carto v6 Monaco imported point rows=$count"
+          test "$count" -gt 100
+          pg_ctl -D "$RUNNER_TEMP/pgdata" -m fast -w stop
