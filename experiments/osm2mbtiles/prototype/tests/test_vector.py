@@ -89,3 +89,12 @@ def test_vector_verifier_rejects_wrong_format(tmp_path):
         assert False, 'must reject PNG metadata'
     except ValueError as exc:
         assert 'Not a vector' in str(exc)
+
+
+def test_postgres_jsonb_function_arg_limit():
+    # PostgreSQL rejects jsonb_build_object calls above 100 args.
+    detailed = query_for_zoom(15)
+    for fragment in detailed.split('jsonb_build_object(')[1:]:
+        arguments = fragment.split(')',1)[0]
+        assert arguments.count("t.tags->>") <= 49
+    assert " || jsonb_strip_nulls(jsonb_build_object(" in detailed
