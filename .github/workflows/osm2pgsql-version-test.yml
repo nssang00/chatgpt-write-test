@@ -3,7 +3,7 @@ on:
   workflow_dispatch:
   push:
     branches: [ci/osm2mbtiles-native-test]
-    paths: ['.github/workflows/osm2pgsql-version-test.yml']
+    paths: ['.github/workflows/osm2pgsql-version-test.yml', 'experiments/osm2mbtiles/prototype/tools/ensure_osm2pgsql.sh']
 jobs:
   check:
     runs-on: ubuntu-22.04
