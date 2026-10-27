@@ -73,7 +73,12 @@ script.write_text(s[:start] + "# Hanazono mirror unavailable in GitHub CI; other
 print("Skipping only optional Hanazono font mirror; preserving upstream Noto/Emoji download")
 PYFONTFIX
 /usr/bin/python3 scripts/get-fonts.py
-test -d fonts
+# OSM Carto FontSet validates Hanazono family names at map-load time.
+# Ubuntu package fonts-hanazono contains the exact HanaMinA/B 20170904 fonts.
+ln -sf /usr/share/fonts/truetype/hanazono/HanaMinA.ttf fonts/HanaMinA.ttf
+ln -sf /usr/share/fonts/truetype/hanazono/HanaMinB.ttf fonts/HanaMinB.ttf
+test -s fonts/HanaMinA.ttf
+test -s fonts/HanaMinB.ttf
 fc-cache -f fonts
 
 echo "Rendering a real 2x2 Mapnik metatile and writing MBTiles..."
