@@ -51,27 +51,19 @@ echo "Fetching and installing upstream OSM Carto external data and fonts..."
 # The upstream Hanazono font mirror can disappear; Monaco's Latin glyphs
 # render with OS-provided Noto fonts. Keep this smoke check independent
 # of a remote optional font server. Pixel-parity CI must pin font files.
-echo "Using system Noto fonts (upstream Hanazono mirror not required for Monaco)"
-# CartoCSS has Map { font-directory: url('fonts'); }. Mapnik's XML loader
-# requires an actual directory of font files, even when faces are registered
-# system-wide. Link already-installed native fonts without downloading them.
-mkdir -p fonts
-/usr/bin/python3 - <<'PYFONTS'
+echo "Downloading pinned OSM Carto Noto font files (omit unreachable optional Hanazono mirror)..."
+/usr/bin/python3 - <<'PYFONTFIX'
 from pathlib import Path
-dest = Path("fonts")
-added = 0
-for source in (Path("/usr/share/fonts/truetype"), Path("/usr/share/fonts/opentype")):
-    if source.exists():
-        for font in source.rglob("*"):
-            if font.is_file() and font.suffix.lower() in {".ttf", ".otf", ".ttc"}:
-                link = dest / font.name
-                if not link.exists():
-                    link.symlink_to(font.resolve())
-                    added += 1
-assert added > 0, "No native fonts found for Carto style"
-print("Carto font-directory entries:", added)
-PYFONTS
-fc-cache -f
+script = Path("scripts/get-fonts.py")
+s = script.read_text(encoding="utf-8")
+start = s.index('downloadToFile(\n    ["https://mirrors.dotsrc.org/osdn/hanazono-font/')
+end = s.index("# clean up tmp directories", start)
+script.write_text(s[:start] + "# Hanazono mirror unavailable in GitHub CI; other upstream fonts unchanged\n" + s[end:], encoding="utf-8")
+print("Skipping only optional Hanazono font mirror; preserving upstream Noto/Emoji download")
+PYFONTFIX
+/usr/bin/python3 scripts/get-fonts.py
+test -d fonts
+fc-cache -f fonts
 
 echo "Rendering a real 2x2 Mapnik metatile and writing MBTiles..."
 /usr/bin/python3 - "$OUT" <<'PY'
@@ -81,8 +73,6 @@ import mapnik
 from PIL import Image as PILImage, ImageStat
 
 out = Path(sys.argv[1])
-mapnik.register_fonts("/usr/share/fonts/truetype")
-mapnik.register_fonts("/usr/share/fonts/opentype")
 # Monaco central map coordinate in WebMercator.
 z = 14
 lat, lon = 43.735, 7.423
