@@ -138,6 +138,11 @@ class LocalDatabase:
                 self.env['PGHOST'] = str(self.sock)
                 options = (f"-c listen_addresses='' -c unix_socket_directories='{self.sock}' "
                            f'-p {self.port} -c jit=off')
+            # Constrain PostgreSQL memory / parallel workers for WSL imports.
+            options += (' -c shared_buffers=64MB -c work_mem=4MB'
+                        ' -c maintenance_work_mem=64MB'
+                        ' -c max_parallel_maintenance_workers=0'
+                        ' -c max_parallel_workers_per_gather=0')
             run([self.runtime.bin('pg_ctl'), '-D', self.data, '-l', self.log,
                  '-w', '-o', options, 'start'], self.env)
             self.started = True
@@ -150,7 +155,12 @@ class LocalDatabase:
     def __exit__(self, error_type, error, traceback):
         try:
             if self.started:
-                run([self.runtime.bin('pg_ctl'), '-D', self.data, '-m', 'fast', '-w', 'stop'], self.env)
+                try:
+                    run([self.runtime.bin('pg_ctl'), '-D', self.data, '-m', 'fast', '-w', 'stop'], self.env)
+                except PipelineError as stop_error:
+                    if error_type is None:
+                        raise
+                    print(f'[WARN] PostgreSQL already stopped after prior failure: {stop_error}', file=sys.stderr)
         finally:
             self.started = False
             if os.name != 'nt':
@@ -162,11 +172,29 @@ class LocalDatabase:
     def import_extract(self, pbf: Path, style: Path) -> None:
         run([self.runtime.bin('createdb'), 'gis'], self.env)
         self.psql('-c', 'CREATE EXTENSION IF NOT EXISTS postgis; CREATE EXTENSION IF NOT EXISTS hstore;')
-        run([self.runtime.bin('osm2pgsql'), '-O', 'flex', '-S',
-             style/'openstreetmap-carto-flex.lua', '-d', 'gis', pbf], self.env, cwd=style)
+        # Lower peak memory: on-disk middle data and serial index creation.
+        import_cmd = [self.runtime.bin('osm2pgsql'), '--slim', '--drop',
+                      '--cache=256', '--number-processes=1',
+                      '--disable-parallel-indexing', '-O', 'flex', '-S',
+                      style/'openstreetmap-carto-flex.lua', '-d', 'gis', pbf]
+        try:
+            run(import_cmd, self.env, cwd=style)
+        except PipelineError:
+            self.print_database_diagnostics()
+            raise
         # These are required by OSM Carto 6.x; order matches upstream setup requirements.
         for sql in ('indexes.sql','functions.sql','common-values.sql'):
             self.psql('-f', str(style/sql))
+
+    def print_database_diagnostics(self) -> None:
+        print(f'[DIAG] PostgreSQL logfile: {self.log}', file=sys.stderr)
+        try:
+            if self.log.exists():
+                lines = self.log.read_text(encoding='utf-8', errors='replace').splitlines()
+                for line in lines[-70:]:
+                    print(line, file=sys.stderr)
+        except OSError as exc:
+            print(f'[DIAG] Could not read PostgreSQL log: {exc}', file=sys.stderr)
 
     def prepare_external_data(self, style: Path) -> None:
         """Install bundled style assets or execute upstream scripts on first use."""
