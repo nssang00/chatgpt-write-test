@@ -138,7 +138,9 @@ class LocalDatabase:
                 self.env['PGHOST'] = str(self.sock)
                 options = (f"-c listen_addresses='' -c unix_socket_directories='{self.sock}' "
                            f'-p {self.port} -c jit=off')
-            # Constrain PostgreSQL memory / parallel workers for WSL imports.
+            # Conservative settings for WSL: OSM import/index postprocessing can
+            # run out of memory when PostgreSQL spawns parallel workers.
+            # Keep fsync enabled; a DB import can be safely restarted on failure.
             options += (' -c shared_buffers=64MB -c work_mem=4MB'
                         ' -c maintenance_work_mem=64MB'
                         ' -c max_parallel_maintenance_workers=0'
@@ -156,11 +158,16 @@ class LocalDatabase:
         try:
             if self.started:
                 try:
-                    run([self.runtime.bin('pg_ctl'), '-D', self.data, '-m', 'fast', '-w', 'stop'], self.env)
+                    run([self.runtime.bin('pg_ctl'), '-D', self.data,
+                         '-m', 'fast', '-w', 'stop'], self.env)
                 except PipelineError as stop_error:
+                    # PostgreSQL may already have been killed by the OOM killer.
+                    # Never hide the real import failure with a secondary
+                    # 'pg_ctl could not send stop signal' exception.
                     if error_type is None:
                         raise
-                    print(f'[WARN] PostgreSQL already stopped after prior failure: {stop_error}', file=sys.stderr)
+                    print(f'[WARN] PostgreSQL already stopped or stop failed '
+                          f'after prior error: {stop_error}', file=sys.stderr)
         finally:
             self.started = False
             if os.name != 'nt':
@@ -170,9 +177,17 @@ class LocalDatabase:
         run([self.runtime.bin('psql'), '-X', '-v', 'ON_ERROR_STOP=1', '-d', database, *args], self.env)
 
     def import_extract(self, pbf: Path, style: Path) -> None:
+        # A failed/aborted import may have left an incomplete 'gis' database.
+        # The cluster is application-owned: reset only that database on retry.
+        self.psql('-c', 'DROP DATABASE IF EXISTS gis;', database='postgres')
         run([self.runtime.bin('createdb'), 'gis'], self.env)
         self.psql('-c', 'CREATE EXTENSION IF NOT EXISTS postgis; CREATE EXTENSION IF NOT EXISTS hstore;')
-        # Lower peak memory: on-disk middle data and serial index creation.
+        # The default middle mode retains all temporary nodes/ways in RAM.
+        # South Korea can exceed WSL's memory allowance even when the PBF is
+        # relatively small. Slim/drop stores temporary middle data in PostGIS
+        # and removes it afterward; index creation is serial to cap peak RAM.
+        # Tradeoff: more disk writes and possibly longer imports, but fewer
+        # abrupt PostgreSQL OOM terminations.
         import_cmd = [self.runtime.bin('osm2pgsql'), '--slim', '--drop',
                       '--cache=256', '--number-processes=1',
                       '--disable-parallel-indexing', '-O', 'flex', '-S',
@@ -186,15 +201,47 @@ class LocalDatabase:
         for sql in ('indexes.sql','functions.sql','common-values.sql'):
             self.psql('-f', str(style/sql))
 
+    def ensure_gis_database(self) -> None:
+        """Create only our private gis database if absent; preserve Carto tables."""
+        probe = subprocess.run(
+            [str(self.runtime.bin('psql')), '-X', '-At', '-d', 'postgres',
+             '-c', "SELECT 1 FROM pg_database WHERE datname='gis'"],
+            env=self.env, capture_output=True, text=True, check=True)
+        if probe.stdout.strip() != '1':
+            run([self.runtime.bin('createdb'), 'gis'], self.env)
+        self.psql('-c', 'CREATE EXTENSION IF NOT EXISTS postgis; CREATE EXTENSION IF NOT EXISTS hstore;')
+
+    def import_vector_extract(self, pbf: Path, vector_dir: Path) -> None:
+        """Independent all-tag vector import into vector_* tables.
+
+        Raster tables in gis are preserved. Drops only own vector tables.
+        """
+        self.ensure_gis_database()
+        self.psql('-c', 'DROP TABLE IF EXISTS vector_label_points, vector_points, vector_lines, vector_areas, vector_relations CASCADE;')
+        command = [self.runtime.bin('osm2pgsql'), '--slim', '--drop',
+                   '--cache=256', '--number-processes=1',
+                   '--disable-parallel-indexing', '-O', 'flex', '-S',
+                   vector_dir/'vector-flex.lua', '-d', 'gis', pbf]
+        try:
+            run(command, self.env, cwd=vector_dir)
+            self.psql('-f', str(vector_dir/'post-import.sql'))
+        except PipelineError:
+            self.print_database_diagnostics()
+            raise
+
     def print_database_diagnostics(self) -> None:
-        print(f'[DIAG] PostgreSQL logfile: {self.log}', file=sys.stderr)
+        """Report original PostgreSQL crash details, not just the cleanup failure."""
+        print(f'[DIAG] PostgreSQL log: {self.log}', file=sys.stderr)
         try:
             if self.log.exists():
                 lines = self.log.read_text(encoding='utf-8', errors='replace').splitlines()
+                print('[DIAG] Last PostgreSQL log lines:', file=sys.stderr)
                 for line in lines[-70:]:
                     print(line, file=sys.stderr)
         except OSError as exc:
             print(f'[DIAG] Could not read PostgreSQL log: {exc}', file=sys.stderr)
+        print('[DIAG] Check WSL memory and disk availability; see WINDOWS-ONECLICK.md.',
+              file=sys.stderr)
 
     def prepare_external_data(self, style: Path) -> None:
         """Install bundled style assets or execute upstream scripts on first use."""
