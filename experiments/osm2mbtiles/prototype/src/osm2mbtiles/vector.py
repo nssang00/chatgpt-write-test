@@ -114,7 +114,12 @@ def _properties(alias: str, z: int, name: str, key: str) -> str:
              f"'osm_id', '{key}' || {alias}.{key}::text"]
     for field in fields:
         pairs.append(f"'{field}', {alias}.tags->>'{field}'")
-    return 'jsonb_strip_nulls(jsonb_build_object(' + ', '.join(pairs) + '))'
+    # PostgreSQL limits function calls to 100 arguments (50 JSONB pairs).
+    # Emit bounded objects and merge them with || for the detailed high-zoom
+    # schema, which intentionally contains more than 50 OSM attributes.
+    chunks = [pairs[i:i+40] for i in range(0, len(pairs), 40)]
+    return ' || '.join('jsonb_strip_nulls(jsonb_build_object(' + ', '.join(part) + '))'
+                       for part in chunks)
 
 
 def query_for_zoom(z: int) -> str:
