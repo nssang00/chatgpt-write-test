@@ -98,3 +98,20 @@ def test_postgres_jsonb_function_arg_limit():
         arguments = fragment.split(')',1)[0]
         assert arguments.count("t.tags->>") <= 49
     assert " || jsonb_strip_nulls(jsonb_build_object(" in detailed
+
+
+def test_no_duplicate_named_mvt_layers():
+    sql=query_for_zoom(15)
+    for name in ('poi','housenumber'):
+        assert sql.count(f"ST_AsMVT(q, '{name}'") == 1
+    assert ' UNION ALL ' in sql
+
+
+def test_high_zoom_attributes_include_detailed_road_and_building_fields():
+    sql = query_for_zoom(15)
+    for field in ('maxspeed','lanes','surface','building:levels',
+                  'addr:housenumber','opening_hours','name:ko'):
+        assert f"'{field}'" in sql
+    # One MVT layer per logical name, including multi-source labels.
+    for name in LAYER_NAMES:
+        assert sql.count(f"ST_AsMVT(q, '{name}'") == 1
