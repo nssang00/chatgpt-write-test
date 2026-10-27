@@ -52,6 +52,25 @@ echo "Fetching and installing upstream OSM Carto external data and fonts..."
 # render with OS-provided Noto fonts. Keep this smoke check independent
 # of a remote optional font server. Pixel-parity CI must pin font files.
 echo "Using system Noto fonts (upstream Hanazono mirror not required for Monaco)"
+# CartoCSS has Map { font-directory: url('fonts'); }. Mapnik's XML loader
+# requires an actual directory of font files, even when faces are registered
+# system-wide. Link already-installed native fonts without downloading them.
+mkdir -p fonts
+/usr/bin/python3 - <<'PYFONTS'
+from pathlib import Path
+dest = Path("fonts")
+added = 0
+for source in (Path("/usr/share/fonts/truetype"), Path("/usr/share/fonts/opentype")):
+    if source.exists():
+        for font in source.rglob("*"):
+            if font.is_file() and font.suffix.lower() in {".ttf", ".otf", ".ttc"}:
+                link = dest / font.name
+                if not link.exists():
+                    link.symlink_to(font.resolve())
+                    added += 1
+assert added > 0, "No native fonts found for Carto style"
+print("Carto font-directory entries:", added)
+PYFONTS
 fc-cache -f
 
 echo "Rendering a real 2x2 Mapnik metatile and writing MBTiles..."
