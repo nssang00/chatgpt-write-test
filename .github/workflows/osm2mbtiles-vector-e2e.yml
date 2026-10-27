@@ -55,7 +55,7 @@ jobs:
             psql -Atc "SELECT '$t',COUNT(*) FROM $t"
           done
           cat > "$WORK/job.json" <<EOF
-          {"pbf":"$WORK/monaco.osm.pbf","output":"$GITHUB_WORKSPACE/vector-artifacts/monaco.vector.mbtiles","bbox":[7.40,43.71,7.46,43.75],"minzoom":12,"maxzoom":14,"processes":2}
+          {"pbf":"$WORK/monaco.osm.pbf","output":"$GITHUB_WORKSPACE/vector-artifacts/monaco.vector.mbtiles","bbox":[7.40,43.71,7.46,43.75],"minzoom":0,"maxzoom":15,"processes":2}
           EOF
           /usr/bin/python3 "$PROJECT/src/osm2mbtiles/vector_worker.py" "$WORK/job.json"
           /usr/bin/python3 -m osm2mbtiles verify-vector "$GITHUB_WORKSPACE/vector-artifacts/monaco.vector.mbtiles"
@@ -77,11 +77,39 @@ jobs:
                           samples += [(name,feature['properties']) for feature in layer['features'][:2]]
               print('ACTUAL_MVT_LAYER_COUNTS',json.dumps(found,sort_keys=True))
               assert 'road' in found and 'building' in found and 'poi' in found, found
+              assert len(found) >= 12, found
+              # Verify rich OSM attributes survive the entire PBF -> flex -> MVT chain.
+              actual_fields=set()
+              for _,blob in rows:
+                  for layer in mapbox_vector_tile.decode(gzip.decompress(blob)).values():
+                      for feature in layer['features']:
+                          actual_fields.update(feature['properties'])
+              detail={'maxspeed','lanes','surface','height','building:levels','opening_hours','addr:housenumber','operator','brand'}
+              assert len(actual_fields & detail) >= 3, actual_fields & detail
+              assert 'name' in actual_fields and 'osm_id' in actual_fields
+              print('REAL_OSM_DETAIL_FIELDS',sorted(actual_fields & detail))
               assert any('name' in p or 'name:ko' in p for _,p in samples)
               assert any('osm_id' in p for _,p in samples)
               assert all(isinstance(p,dict) for _,p in samples)
               print('REAL_MONACO_VECTOR_MBTILES_SUCCESS tiles=',len(rows),'layers=',len(found),'features=',sum(found.values()))
           PY
+          # Test the end-user CLI, not only the standalone vector worker.
+          RUNTIME="$WORK/runtime"
+          mkdir -p "$RUNTIME/bin" "$RUNTIME/python/bin" "$RUNTIME/styles/osm-carto"
+          for tool in initdb pg_ctl createdb psql osm2pgsql; do
+            ln -s "$(command -v "$tool")" "$RUNTIME/bin/$tool"
+          done
+          ln -s /usr/bin/python3 "$RUNTIME/python/bin/python3"
+          for file in project.xml openstreetmap-carto-flex.lua indexes.sql functions.sql common-values.sql; do
+            printf 'vector CI runtime stub; not used for vector import\n' > "$RUNTIME/styles/osm-carto/$file"
+          done
+          /usr/bin/python3 -m osm2mbtiles "$WORK/monaco.osm.pbf" -z 12-14 \
+            --bbox 7.40,43.71,7.46,43.75 --format vector \
+            -o "$GITHUB_WORKSPACE/vector-artifacts/monaco.cli.vector.mbtiles" \
+            --runtime "$RUNTIME" --workdir "$WORK/cli-work" --processes 2
+          /usr/bin/python3 -m osm2mbtiles verify-vector \
+            "$GITHUB_WORKSPACE/vector-artifacts/monaco.cli.vector.mbtiles"
+          echo REAL_OSM2MBTILES_VECTOR_CLI_SUCCESS
           pg_ctl -D "$WORK/pgdata" -m fast -w stop
           trap - EXIT
       - name: Python unit regression tests
