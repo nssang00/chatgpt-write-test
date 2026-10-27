@@ -19,15 +19,29 @@ jobs:
         shell: bash
         run: |
           set -euxo pipefail
-          sudo apt-get update -qq
-          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+          timeout 180 sudo apt-get update -qq
+          timeout 240 sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
             postgresql-16 postgresql-client-16 postgresql-16-postgis-3 postgresql-16-postgis-3-scripts \
             osm2pgsql gdal-bin python3-mapnik python3-psycopg2 python3-requests python3-yaml \
             python3-pil fonts-noto-core fonts-noto-cjk
-          sudo npm install --global carto@1.2.0
+          timeout 90 sudo npm install --global carto@1.2.0
           /usr/bin/python3 -c 'import mapnik, psycopg2, yaml, requests; print("native python prerequisites OK")'
           export PATH="/usr/lib/postgresql/16/bin:$PATH"
           initdb --version; osm2pgsql --version; carto --version
+      - name: Native Mapnik API preflight (before large external data downloads)
+        shell: bash
+        run: |
+          set -euxo pipefail
+          /usr/bin/python3 - <<'PY'
+          import mapnik
+          from pathlib import Path
+          mapnik.register_fonts("/usr/share/fonts/truetype")
+          mapnik.register_fonts("/usr/share/fonts/opentype")
+          image = mapnik.Image(32, 32)
+          m = mapnik.Map(32, 32)
+          mapnik.render(m, image)
+          print("NATIVE_MAPNIK_PREFLIGHT_SUCCESS")
+          PY
       - name: Load Monaco into temporary user PostgreSQL and render OSM Carto PNG MBTiles
         shell: bash
         run: |
