@@ -62,8 +62,8 @@ import mapnik
 from PIL import Image as PILImage, ImageStat
 
 out = Path(sys.argv[1])
-mapnik.register_fonts("/usr/share/fonts/truetype", True)
-mapnik.register_fonts("/usr/share/fonts/opentype", True)
+mapnik.register_fonts("/usr/share/fonts/truetype")
+mapnik.register_fonts("/usr/share/fonts/opentype")
 # Monaco central map coordinate in WebMercator.
 z = 14
 lat, lon = 43.735, 7.423
