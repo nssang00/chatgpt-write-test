@@ -1,0 +1,91 @@
+name: R67 OL VT GL Boost Independent RTX CI
+on:
+  push:
+    branches: [ci/r67-olvt-selfhosted-rtx]
+    paths:
+      - '.github/workflows/r67-olvt-selfhosted-rtx.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: r67-olvt-self-contained-rtx
+  cancel-in-progress: true
+jobs:
+  self-contained-rtx:
+    runs-on: self-hosted
+    timeout-minutes: 55
+    steps:
+      - name: Checkout NEW repository, no old harness
+        uses: actions/checkout@v4
+        with:
+          repository: rydolabs/ol-vt-gl-boost
+          ref: 536b9ce92be9dfd016066437a15d87b24e4b9706
+          path: candidate
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Require physical GPU, locked source and 17 CPU/Worker regressions
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $g=@(Get-CimInstance Win32_VideoController|Select-Object Name,DriverVersion)
+          if(-not ($g|Where-Object {$_.Name -match 'NVIDIA.*RTX 5060 Ti'})){throw 'NVIDIA RTX 5060 Ti required'}
+          $sha=(git -C candidate rev-parse HEAD).Trim()
+          if($sha -ne '536b9ce92be9dfd016066437a15d87b24e4b9706'){throw 'Source drift'}
+          New-Item -ItemType Directory -Force candidate\artifacts\r67 | Out-Null
+          $g | ConvertTo-Json -Depth 4 | Set-Content -Encoding utf8 candidate\artifacts\r67\GPU.json
+          $sha | Set-Content candidate\artifacts\r67\PINNED_SHA.txt
+          Push-Location candidate
+          try{
+            npm test
+            if($LASTEXITCODE -ne 0){throw '17 tests failed'}
+            npm run test:contract
+            if($LASTEXITCODE -ne 0){throw 'Source bytes/default OFF failed'}
+            npm run test:examples
+            if($LASTEXITCODE -ne 0){throw 'Comparison example contract failed'}
+            npm run test:facade
+            if($LASTEXITCODE -ne 0){throw 'Unified facade test failed'}
+          }finally{Pop-Location}
+      - name: Install Playwright and download independent MVT fixtures
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          Push-Location candidate
+          try{
+            npm install --no-save --package-lock=false --ignore-scripts --no-audit --no-fund playwright@1.55.0
+            if($LASTEXITCODE -ne 0){throw 'Playwright install failed'}
+            npm run test:rtx:prepare
+            if($LASTEXITCODE -ne 0){throw 'R46 32 distinct MVT fixture failed'}
+          }finally{Pop-Location}
+      - name: Fully independent migrated RTX test harness DPR1/2 12-case
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          Push-Location candidate
+          try{
+            npm run test:rtx
+            if($LASTEXITCODE -ne 0){throw 'R67 self-contained RTX pixel/tile oracle failed'}
+            $r=Get-Content artifacts\rtx-r61\summary.json -Raw | ConvertFrom-Json
+            if(-not $r.pass -or $r.checked -ne 12){throw 'R67 12 matrix incomplete'}
+            Write-Host 'R67_SELFCONTAINED_12_RTX_PIXEL_ORACLES_PASS'
+          }finally{Pop-Location}
+      - name: Full stock OL recovery after real input
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          Push-Location candidate
+          try{
+            npm run test:rtx:rollback
+            if($LASTEXITCODE -ne 0){throw 'R67 self-contained stock OL recovery failed'}
+            $r=Get-Content artifacts\rtx-rollback\result.json -Raw | ConvertFrom-Json
+            if(-not $r.pass -or @($r.checks).Count -lt 8){throw 'Recovery evidence invalid'}
+            Write-Host 'R67_SELFCONTAINED_OL_FALLBACK_PASS'
+          }finally{Pop-Location}
+      - name: Preserve self-contained raw GPU evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: r67-olvt-self-contained-rtx-raw
+          path: candidate/artifacts/**
+          retention-days: 30
+          if-no-files-found: warn
