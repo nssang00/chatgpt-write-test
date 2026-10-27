@@ -57,3 +57,17 @@ jobs:
             experiments/osm2mbtiles/output/
           if-no-files-found: warn
           retention-days: 7
+
+  prototype-unit:
+    name: Original Python prototype tests (Ubuntu)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install prototype including test dependencies
+        run: python -m pip install -e "experiments/osm2mbtiles/prototype[test]"
+      - name: Run original prototype test suite
+        run: python -m pytest -q experiments/osm2mbtiles/prototype/tests

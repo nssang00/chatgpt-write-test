@@ -1,0 +1,183 @@
+"""Packaged native-tool detection and safely scoped temporary PostgreSQL cluster."""
+from __future__ import annotations
+import contextlib
+import hashlib
+import json
+import os
+import secrets
+import shutil
+import socket
+import subprocess
+import sys
+import tempfile
+from dataclasses import dataclass
+from pathlib import Path
+
+class PipelineError(RuntimeError):
+    pass
+
+def executable(path: Path) -> Path:
+    if path.exists() and path.is_file():
+        return path
+    if os.name == 'nt' and path.with_suffix('.exe').is_file():
+        return path.with_suffix('.exe')
+    raise PipelineError(f"Missing bundled executable: {path}. Provide a prepared native --runtime bundle.")
+
+@dataclass(frozen=True)
+class Runtime:
+    root: Path
+
+    def bin(self, tool: str) -> Path:
+        return executable(self.root / 'bin' / tool)
+
+    @property
+    def python(self) -> Path:
+        # mapnik Python bindings must match this interpreter; host Python isn't assumed compatible.
+        for path in (self.root / 'python' / 'bin' / 'python3',
+                     self.root / 'python' / 'python.exe'):
+            if path.exists():
+                return path
+        raise PipelineError('Missing runtime/python interpreter with Mapnik bindings')
+
+    @property
+    def style(self) -> Path:
+        return self.root / 'styles' / 'osm-carto'
+
+    def validate(self) -> None:
+        missing = []
+        for name in ('initdb', 'pg_ctl', 'createdb', 'psql', 'osm2pgsql'):
+            try:
+                self.bin(name)
+            except PipelineError:
+                missing.append(name)
+        try:
+            self.python
+        except PipelineError:
+            missing.append('python-with-mapnik')
+        for name in ('project.xml','openstreetmap-carto-flex.lua','indexes.sql',
+                     'functions.sql','common-values.sql'):
+            if not (self.style / name).is_file():
+                missing.append(f'osm-carto/{name}')
+        if missing:
+            raise PipelineError('Native runtime incomplete: ' + ', '.join(missing))
+
+    def env(self) -> dict[str, str]:
+        env = os.environ.copy()
+        bins = str(self.root / 'bin')
+        env['PATH'] = bins + os.pathsep + env.get('PATH','')
+        if os.name != 'nt':
+            libs = str(self.root/'lib')
+            env['LD_LIBRARY_PATH'] = libs + os.pathsep + env.get('LD_LIBRARY_PATH','')
+        # Paths are bundle-owned, not system-global locations.
+        for key,folder in [('GDAL_DATA',self.root/'share'/'gdal'),
+                           ('PROJ_DATA',self.root/'share'/'proj'),
+                           ('FONTCONFIG_PATH',self.root/'etc'/'fonts')]:
+            if folder.is_dir():
+                env[key]=str(folder)
+        return env
+
+def run(cmd: list[str | Path], env: dict | None = None, cwd: Path | None = None) -> None:
+    argv = [str(v) for v in cmd]
+    try:
+        subprocess.run(argv, env=env, cwd=str(cwd) if cwd else None, check=True)
+    except (OSError, subprocess.CalledProcessError) as exc:
+        raise PipelineError(f"Step failed ({Path(argv[0]).name}); see output above") from exc
+
+def file_digest(path: Path) -> str:
+    h = hashlib.sha256()
+    with path.open('rb') as f:
+        for part in iter(lambda: f.read(8*1024*1024), b''):
+            h.update(part)
+    return h.hexdigest()
+
+class LocalDatabase:
+    """Ephemeral process. No global service installation and no exposed network on Unix."""
+    def __init__(self, runtime: Runtime, work: Path):
+        self.runtime = runtime
+        self.work = work
+        self.data = work / 'pgdata'
+        self.sock = work / 'socket'  # replaced by a short private /tmp path at runtime
+        self.secret_file = work / '.pgpass-secret'
+        self.log = work / 'postgres.log'
+        self.started = False
+        self.port = 0
+        self.env = runtime.env()
+
+    def _setup(self):
+        self.work.mkdir(mode=0o700, parents=True, exist_ok=True)
+        if os.name != 'nt':
+            self.work.chmod(0o700)
+        if not self.secret_file.exists():
+            self.secret_file.write_text(secrets.token_urlsafe(36)+'\n', encoding='utf-8')
+        if os.name != 'nt':
+            self.secret_file.chmod(0o600)
+        self.env.update({
+            'PGUSER':'osm2mbtiles', 'PGPASSWORD':self.secret_file.read_text().strip(),
+            'PGDATABASE':'gis',
+        })
+        if not (self.data/'PG_VERSION').exists():
+            run([self.runtime.bin('initdb'), '-D', self.data,
+                 '-U', 'osm2mbtiles', '--auth-local=scram-sha-256',
+                 '--auth-host=scram-sha-256', f'--pwfile={self.secret_file}'], self.env)
+
+    def __enter__(self):
+        self._setup()
+        # A short Unix socket path avoids the sockaddr_un path-length limit when
+        # the user's --workdir is deeply nested. A private 0700 dir guards access.
+        if os.name != 'nt':
+            self.sock = Path(tempfile.mkdtemp(prefix='osm2mbtiles-pg-'))
+        try:
+            with socket.socket() as sock:
+                sock.bind(('127.0.0.1',0))
+                self.port = sock.getsockname()[1]
+            self.env['PGPORT'] = str(self.port)
+            if os.name == 'nt':
+                self.env['PGHOST'] = '127.0.0.1'
+                options = f'-c listen_addresses=127.0.0.1 -p {self.port} -c jit=off'
+            else:
+                self.env['PGHOST'] = str(self.sock)
+                options = (f"-c listen_addresses='' -c unix_socket_directories='{self.sock}' "
+                           f'-p {self.port} -c jit=off')
+            run([self.runtime.bin('pg_ctl'), '-D', self.data, '-l', self.log,
+                 '-w', '-o', options, 'start'], self.env)
+            self.started = True
+            return self
+        except BaseException:
+            if os.name != 'nt':
+                shutil.rmtree(self.sock,ignore_errors=True)
+            raise
+
+    def __exit__(self, error_type, error, traceback):
+        try:
+            if self.started:
+                run([self.runtime.bin('pg_ctl'), '-D', self.data, '-m', 'fast', '-w', 'stop'], self.env)
+        finally:
+            self.started = False
+            if os.name != 'nt':
+                shutil.rmtree(self.sock,ignore_errors=True)
+
+    def psql(self, *args: str, database: str = 'gis') -> None:
+        run([self.runtime.bin('psql'), '-X', '-v', 'ON_ERROR_STOP=1', '-d', database, *args], self.env)
+
+    def import_extract(self, pbf: Path, style: Path) -> None:
+        run([self.runtime.bin('createdb'), 'gis'], self.env)
+        self.psql('-c', 'CREATE EXTENSION IF NOT EXISTS postgis; CREATE EXTENSION IF NOT EXISTS hstore;')
+        run([self.runtime.bin('osm2pgsql'), '-O', 'flex', '-S',
+             style/'openstreetmap-carto-flex.lua', '-d', 'gis', pbf], self.env, cwd=style)
+        # These are required by OSM Carto 6.x; order matches upstream setup requirements.
+        for sql in ('indexes.sql','functions.sql','common-values.sql'):
+            self.psql('-f', str(style/sql))
+
+    def prepare_external_data(self, style: Path) -> None:
+        """Install bundled style assets or execute upstream scripts on first use."""
+        # Upstream installer imports external GIS tables into each new database.
+        # It must run even when cached asset files are already present.
+        data_script = style/'scripts'/'get-external-data.py'
+        font_script = style/'scripts'/'get-fonts.py'
+        if not data_script.is_file() or not font_script.is_file():
+            raise PipelineError('OSM Carto assets missing; bundle get-external-data.py and get-fonts.py scripts')
+        run([self.runtime.python, data_script, '--cache', '--no-update'], self.env, cwd=style)
+        font_marker = style/'.osm2mbtiles-fonts-ready'
+        if not font_marker.exists():
+            run([self.runtime.python, font_script], self.env, cwd=style)
+            font_marker.write_text('complete\n',encoding='utf-8')
