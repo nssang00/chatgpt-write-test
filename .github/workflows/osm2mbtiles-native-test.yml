@@ -23,7 +23,7 @@ jobs:
           timeout 240 sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
             postgresql-16 postgresql-client-16 postgresql-16-postgis-3 postgresql-16-postgis-3-scripts \
             osm2pgsql gdal-bin python3-mapnik python3-psycopg2 python3-requests python3-yaml \
-            python3-pil fonts-noto-core fonts-noto-cjk
+            python3-pil
           timeout 90 sudo npm install --global carto@1.2.0
           /usr/bin/python3 -c 'import mapnik, psycopg2, yaml, requests; print("native python prerequisites OK")'
           export PATH="/usr/lib/postgresql/16/bin:$PATH"
