@@ -22,7 +22,11 @@ if errorlevel 1 (
   exit /b 1
 )
 
-powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%~dp0tools\run_windows.ps1" %*
+if /i "%~1"=="--format" (
+  powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%~dp0tools\run_windows.ps1" "%~2" "%~3"
+) else (
+  powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%~dp0tools\run_windows.ps1" %*
+)
 set "RESULT=%ERRORLEVEL%"
 if not "%RESULT%"=="0" (
   echo.
