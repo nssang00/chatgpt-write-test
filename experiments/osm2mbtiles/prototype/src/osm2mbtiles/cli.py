@@ -16,12 +16,14 @@ from .validate import inspect, compare, ValidationError
 MAX_TILES = 2_000_000
 
 def arguments(argv=None):
-    p = argparse.ArgumentParser(prog='osm2mbtiles',description='Docker-free OSM Carto → raster MBTiles exporter')
+    p = argparse.ArgumentParser(prog='osm2mbtiles',description='Docker-free OSM Carto raster + detailed PBF vector MBTiles exporter')
     sub = p.add_subparsers(dest='action')
     doctor = sub.add_parser('doctor',help='check packaged native runtime')
     doctor.add_argument('--runtime',type=Path)
     verify = sub.add_parser('verify',help='check PNG MBTiles integrity and tile coordinates')
     verify.add_argument('file',type=Path)
+    vverify = sub.add_parser('verify-vector',help='check gzip MVT PBF MBTiles and metadata')
+    vverify.add_argument('file',type=Path)
     cmp = sub.add_parser('compare',help='compare two raster MBTiles tile-for-tile')
     cmp.add_argument('reference',type=Path)
     cmp.add_argument('candidate',type=Path)
@@ -30,6 +32,7 @@ def arguments(argv=None):
     export.add_argument('pbf',type=Path)
     export.add_argument('-z','--zoom',default='0-15',help='zoom range, e.g. 0-15')
     export.add_argument('-o','--output',type=Path,required=True)
+    export.add_argument('--format', choices=('raster','vector','both'),default='raster',help='output format, or both separate MBTiles files')
     export.add_argument('--bbox',help='west,south,east,north (otherwise from PBF header)')
     export.add_argument('--runtime',type=Path,help='prepared native runtime folder')
     export.add_argument('--workdir',type=Path,help='persist intermediate database for subsequent runs')
@@ -38,10 +41,12 @@ def arguments(argv=None):
     export.add_argument('--max-tiles',type=int,default=MAX_TILES,help='safety limit on selected tiles')
     export.add_argument('--buffer',type=int,default=128,help='Mapnik rendering buffer (pixels)')
     export.add_argument('--metatile',type=int,default=8,help='metatile edge length (tiles)')
+    export.add_argument('--processes',type=int,default=min(4,os.cpu_count() or 1),help='parallel Mapnik rendering workers (default: up to 4)')
+    export.add_argument('--encoding',choices=('png','png256'),default='png',help='PNG encoding; png256 is faster/smaller but lossy')
     # Backwards-compatible one-command CLI without 'convert' keyword.
     if argv is None:
         argv = sys.argv[1:]
-    if argv and argv[0] not in ('convert','doctor','verify','compare','-h','--help'):
+    if argv and argv[0] not in ('convert','doctor','verify','verify-vector','compare','-h','--help'):
         argv = ['convert',*argv]
     return p.parse_args(argv),p
 
@@ -60,10 +65,10 @@ def get_runtime(arg):
     default = Path(sys.executable).resolve().parent/'runtime' if getattr(sys,'frozen',False) else Path(__file__).resolve().parents[2]/'runtime'
     return Runtime(Path(arg or home or default).expanduser().resolve())
 
-def _job_key(pbf_digest,style,bbox,lo,hi,buffer,meta):
+def _job_key(pbf_digest,style,bbox,lo,hi,buffer,meta,encoding):
     # Full hashing only occurs after preflight, not in dry-run.
     fields = [pbf_digest,file_digest(style/'openstreetmap-carto-flex.lua'),
-              file_digest(style/'project.xml'),str(bbox),str(lo),str(hi),str(buffer),str(meta)]
+              file_digest(style/'project.xml'),str(bbox),str(lo),str(hi),str(buffer),str(meta),str(encoding)]
     return hashlib.sha256('|'.join(fields).encode()).hexdigest()
 
 def _import_key(pbf_digest,style):
@@ -84,6 +89,8 @@ def convert(args):
     lo,hi = parse_zoom(args.zoom)
     if args.buffer < 0 or args.buffer > 1024 or not 1 <= args.metatile <= 32:
         raise PipelineError('--buffer must be 0..1024, --metatile 1..32')
+    if not 1 <= args.processes <= 64:
+        raise PipelineError('--processes must be 1..64')
     bbox = validate_bbox(tuple(float(x) for x in args.bbox.split(','))) if args.bbox else read_bbox(pbf)
     count = tile_count(bbox,lo,hi)
     if count > args.max_tiles:
@@ -93,8 +100,9 @@ def convert(args):
     if args.dry_run:
         return
     out = args.output.expanduser().resolve()
-    if out.exists() and not args.force:
-        raise PipelineError(f'Output already exists: {out}; use --force to replace')
+    outputs = [out] if args.format != 'both' else [out.with_name(out.stem + '.raster.mbtiles'), out.with_name(out.stem + '.vector.mbtiles')]
+    if not args.force and any(p.exists() for p in outputs):
+        raise PipelineError('Output already exists; use --force to replace: ' + ', '.join(map(str,outputs)))
     runtime = get_runtime(args.runtime)
     runtime.validate()
     if args.workdir:
@@ -122,44 +130,80 @@ def run_pipeline(pbf,out,bbox,lo,hi,args,work,runtime):
     if not style.is_dir():
         shutil.copytree(source_style, style)
         style_key_path.write_text(style_source_key)
-    worker = _worker_path()
-    if not worker.is_file():
-        raise PipelineError('Bundled renderer worker missing')
     # Personal temp key changes if a source/style changes. In that case, preserve logs
     # but discard previous private database before the new import.
     pbf_digest = file_digest(pbf)
     key = _import_key(pbf_digest,style)
     state_file = work/'import-state.json'
     previous = json.loads(state_file.read_text()) if state_file.is_file() else {}
-    if previous.get('import_key') != key and (work/'pgdata').exists():
+    if (args.format != 'vector' or (previous.get('import_key') is not None and previous.get('import_key') != key)) and previous.get('import_key') != key and (work/'pgdata').exists():
         # Never delete an unrelated directory merely because the user points --workdir there.
         if not (work/'pgdata'/'PG_VERSION').exists() or not (work/'.osm2mbtiles-workspace').exists():
             raise PipelineError('Unsafe workspace: refusing to remove unowned PostgreSQL cluster')
         shutil.rmtree(work/'pgdata')
-    job_key = _job_key(pbf_digest,style,bbox,lo,hi,args.buffer,args.metatile)
+        (work/'vector-state.json').unlink(missing_ok=True)
+    job_key = _job_key(pbf_digest,style,bbox,lo,hi,args.buffer,args.metatile,args.encoding)
     out.parent.mkdir(parents=True,exist_ok=True)
     partial = out.with_name(out.name+'.partial')
     if args.force and partial.exists():
         partial.unlink()
+    raster = args.format in ('raster','both')
+    vector = args.format in ('vector','both')
+    raster_out = out.with_name(out.stem+'.raster.mbtiles') if args.format == 'both' else out
+    vector_out = out.with_name(out.stem+'.vector.mbtiles') if args.format == 'both' else out
     job = dict(bbox=bbox,minzoom=lo,maxzoom=hi,mapfile=str(style/'project.xml'),
-               partial=str(partial),name=out.stem,job_key=job_key,buffer=args.buffer,
-               metatile=args.metatile,runtime=str(runtime.root),fonts=str(style/'fonts'))
+               partial=str(raster_out.with_name(raster_out.name+'.partial')),
+               name=raster_out.stem,job_key=job_key,buffer=args.buffer,
+               metatile=args.metatile,processes=args.processes,encoding=args.encoding,
+               runtime=str(runtime.root),fonts=str(style/'fonts'))
+    vector_dir = Path(__file__).resolve().parents[2]/'vector'
+    if vector and not (vector_dir/'vector-flex.lua').is_file():
+        raise PipelineError(f'Missing vector flex source: {vector_dir}')
     with LocalDatabase(runtime,work) as db:
-        if previous.get('import_key') != key:
-            print('Importing PBF into private PostGIS database...',flush=True)
-            db.import_extract(pbf,style)
-            db.prepare_external_data(style)
-            state_file.write_text(json.dumps({'import_key':key},indent=2),encoding='utf-8')
-        else:
-            print('Reusing prior PBF import.',flush=True)
-        # Atomic job file includes no credentials. Credentials only live in process env.
-        job_path = work/'render-job.json'
-        job_path.write_text(json.dumps(job,indent=2),encoding='utf-8')
-        print('Rendering metatiles into MBTiles...',flush=True)
-        run([runtime.python,worker,job_path],env=db.env,cwd=style)
-    # Only a worker that exits successfully can replace the final output.
-    os.replace(partial,out)
-    print(f'DONE: {out} ({out.stat().st_size:,} bytes)',flush=True)
+        if raster:
+            if previous.get('import_key') != key:
+                print('Importing PBF into private PostGIS for raster...',flush=True)
+                db.import_extract(pbf,style)
+                db.prepare_external_data(style)
+                state_file.write_text(json.dumps({'import_key':key},indent=2),encoding='utf-8')
+                # Carto import drops gis. Invalidate any prior vector tables.
+                (work/'vector-state.json').unlink(missing_ok=True)
+            else:
+                print('Reusing prior raster import.',flush=True)
+        if vector:
+            vkey = hashlib.sha256((pbf_digest+file_digest(vector_dir/'vector-flex.lua')+
+                     file_digest(vector_dir/'post-import.sql')).encode()).hexdigest()
+            vstate = work/'vector-state.json'
+            cached = json.loads(vstate.read_text()) if vstate.is_file() else {}
+            if cached.get('import_key') != vkey:
+                print('[VECTOR] Importing full OSM tags into private vector tables...',flush=True)
+                db.import_vector_extract(pbf,vector_dir)
+                vstate.write_text(json.dumps({'import_key':vkey},indent=2),encoding='utf-8')
+            else:
+                print('[VECTOR] Reusing detailed vector import.',flush=True)
+        if raster:
+            worker = _worker_path()
+            if not worker.is_file():
+                raise PipelineError('Bundled renderer worker missing')
+            if args.force and Path(job['partial']).exists():
+                Path(job['partial']).unlink()
+            job_path = work/'render-job.json'
+            job_path.write_text(json.dumps(job,indent=2),encoding='utf-8')
+            print('Rendering metatiles into PNG MBTiles...',flush=True)
+            run([runtime.python,worker,job_path],env=db.env,cwd=style)
+            os.replace(job['partial'],raster_out)
+            print(f'DONE Raster: {raster_out} ({raster_out.stat().st_size:,} bytes)',flush=True)
+        if vector:
+            # Invoke using the Mapnik-enabled system Python whose psycopg2 is
+            # already installed by the WSL setup; vector renderer doesn't use Mapnik.
+            vector_script = Path(__file__).with_name('vector_worker.py')
+            vector_job = work/'vector-job.json'
+            vector_job.write_text(json.dumps({
+                'pbf':str(pbf),'output':str(vector_out),'bbox':bbox,'minzoom':lo,
+                'maxzoom':hi,'processes':args.processes},indent=2),encoding='utf-8')
+            run([runtime.python,vector_script,vector_job],env=db.env)
+            print(f'DONE Vector: {vector_out} ({vector_out.stat().st_size:,} bytes)',flush=True)
+
 
 def main(argv=None):
     args,parser=arguments(argv)
@@ -170,6 +214,9 @@ def main(argv=None):
             print(f'Runtime layout OK: {runtime.root}')
         elif args.action == 'convert':
             convert(args)
+        elif args.action == 'verify-vector':
+            from .vector import verify as verify_vector
+            print(json.dumps(verify_vector(args.file),indent=2))
         elif args.action == 'verify':
             print(json.dumps(inspect(args.file),indent=2))
         elif args.action == 'compare':
