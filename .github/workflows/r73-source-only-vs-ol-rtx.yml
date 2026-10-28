@@ -24,7 +24,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: rydolabs/ol-vt-gl-boost
-          ref: 751df635fbd31b732048fd47fb3e77deee54979a
+          ref: 019c65998f45ea615026f5ac4c0a8d2f790e9aa0
           path: candidate
       - uses: actions/setup-node@v4
         with:
@@ -36,7 +36,7 @@ jobs:
           $g=@(Get-CimInstance Win32_VideoController|Select-Object Name,DriverVersion)
           if(-not ($g | Where-Object {$_.Name -match 'NVIDIA.*RTX 5060 Ti'})){throw 'Real physical RTX 5060 Ti required'}
           $s=(git -C candidate rev-parse HEAD).Trim()
-          if($s -ne '751df635fbd31b732048fd47fb3e77deee54979a'){throw 'R69 candidate drift'}
+          if($s -ne '019c65998f45ea615026f5ac4c0a8d2f790e9aa0'){throw 'R69 candidate drift'}
           New-Item -Type Directory -Force candidate\artifacts\r73-benchmark | Out-Null
           $g | ConvertTo-Json -Depth 4 | Set-Content -Encoding utf8 candidate\artifacts\r73-benchmark\gpu.json
           $s | Set-Content candidate\artifacts\r73-benchmark\candidate-sha.txt
