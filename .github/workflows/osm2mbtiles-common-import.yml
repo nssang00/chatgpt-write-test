@@ -20,10 +20,12 @@ jobs:
         include:
           - region: monaco
             sample: '0'
+            png: 'yes'
             bbox: '7.40,43.71,7.46,43.75'
             pbf_url: 'https://download.geofabrik.de/europe/monaco-latest.osm.pbf'
           - region: seoul
             sample: '1200'
+            png: 'no'
             bbox: '127.015,37.485,127.075,37.535'
             pbf_url: 'https://tiles.osm.kr/download/seoul-non-military.osm.pbf'
     runs-on: ubuntu-24.04
@@ -37,7 +39,7 @@ jobs:
           sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
             postgresql-16 postgresql-client-16 postgresql-16-postgis-3 \
             postgresql-16-postgis-3-scripts osm2pgsql python3-psycopg2 \
-            python3-pip python3-pytest git time curl
+            python3-pip python3-pytest python3-mapnik git time curl
           /usr/bin/python3 -m pip install --break-system-packages mapbox-vector-tile
       - name: Download exact input PBF and pinned OSM Carto style
         shell: bash
@@ -60,6 +62,7 @@ jobs:
           BBOX: ${{ matrix.bbox }}
           REGION: ${{ matrix.region }}
           SNAPSHOT_LIMIT: ${{ matrix.sample }}
+          PNG_SMOKE: ${{ matrix.png }}
         run: |
           set -euxo pipefail
           WORK="$RUNNER_TEMP/common-import"
@@ -71,6 +74,8 @@ jobs:
             ln -s "$(command -v "$tool")" "$WORK/runtime/bin/$tool"
           done
           /usr/bin/python3 -m pytest -q "$PROJECT/tests/test_common_import.py"
+          PNG_ARGS=()
+          if [[ "$PNG_SMOKE" == yes ]]; then PNG_ARGS+=(--png-smoke); fi
           /usr/bin/python3 "$PROJECT/benchmarks/common_import_benchmark.py" \
             --pbf "$WORK/input.osm.pbf" \
             --carto "$WORK/carto" \
@@ -78,7 +83,7 @@ jobs:
             --vector "$PROJECT/vector" \
             --work "$WORK/bench" \
             --bbox "$BBOX" --zoom 12-15 \
-            --sequence split,common,common,split --snapshot-limit "$SNAPSHOT_LIMIT"
+            --sequence split,common,common,split --snapshot-limit "$SNAPSHOT_LIMIT" "${PNG_ARGS[@]}"
           cp "$WORK/bench/results.json" "$GITHUB_WORKSPACE/common-import-artifacts/$REGION-results.json"
           /usr/bin/python3 - "$WORK/bench/results.json" <<'PY' >> "$GITHUB_STEP_SUMMARY"
           import json,sys
