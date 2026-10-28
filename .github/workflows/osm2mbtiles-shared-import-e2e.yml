@@ -1,0 +1,84 @@
+name: osm2mbtiles Shared Import Real E2E
+on:
+  workflow_dispatch:
+  push:
+    branches: [ci/osm2mbtiles-native-test]
+    paths:
+      - '.github/workflows/osm2mbtiles-shared-import-e2e.yml'
+      - 'experiments/osm2mbtiles/prototype/benchmarks/shared_real_e2e.py'
+      - 'experiments/osm2mbtiles/prototype/src/osm2mbtiles/runtime.py'
+      - 'experiments/osm2mbtiles/prototype/src/osm2mbtiles/cli.py'
+permissions:
+  contents: read
+jobs:
+  shared-real-monaco:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 38
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install real PostGIS, osm2pgsql, Mapnik, and MVT decoder
+        run: |
+          set -euxo pipefail
+          sudo apt-get update -qq
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            postgresql-16 postgresql-client-16 postgresql-16-postgis-3 \
+            postgresql-16-postgis-3-scripts osm2pgsql python3-mapnik \
+            python3-psycopg2 python3-pil python3-pip curl git
+          /usr/bin/python3 -m pip install --break-system-packages mapbox-vector-tile
+          /usr/bin/python3 -c 'import mapnik,psycopg2,mapbox_vector_tile;print("NATIVE_PREREQUISITES_OK")'
+      - name: Fetch real Carto 6.0.0 style and Monaco Geofabrik PBF
+        run: |
+          set -euxo pipefail
+          mkdir -p "$RUNNER_TEMP/shared-osm" "$GITHUB_WORKSPACE/shared-evidence"
+          git clone -q --depth 1 --branch v6.0.0 \
+            https://github.com/openstreetmap-carto/openstreetmap-carto.git \
+            "$RUNNER_TEMP/shared-osm/carto"
+          curl -fL --retry 3 --retry-delay 2 \
+            https://download.geofabrik.de/europe/monaco-latest.osm.pbf \
+            -o "$RUNNER_TEMP/shared-osm/monaco.osm.pbf"
+          sha256sum "$RUNNER_TEMP/shared-osm/monaco.osm.pbf" | tee "$GITHUB_WORKSPACE/shared-evidence/input.sha256"
+      - name: Run separate and shared real imports with actual Mapnik/PostGIS and MVT parity
+        shell: bash
+        run: |
+          set -euxo pipefail
+          export PATH="/usr/lib/postgresql/16/bin:$PATH"
+          export SHARED_CI_WORK="$RUNNER_TEMP/shared-osm"
+          export SHARED_CI_STYLE="$RUNNER_TEMP/shared-osm/carto"
+          export SHARED_CI_PBF="$RUNNER_TEMP/shared-osm/monaco.osm.pbf"
+          export PYTHONPATH="$GITHUB_WORKSPACE/experiments/osm2mbtiles/prototype/src"
+          export PGHOST="$RUNNER_TEMP/shared-osm/socket" PGPORT=55456 PGUSER=sharedtest PGDATABASE=gis
+          mkdir -p "$PGHOST"
+          initdb -D "$RUNNER_TEMP/shared-osm/pgdata" -U "$PGUSER" --auth-local=trust --auth-host=trust
+          pg_ctl -D "$RUNNER_TEMP/shared-osm/pgdata" -l "$RUNNER_TEMP/shared-osm/postgres.log" -w \
+            -o "-c listen_addresses='' -c unix_socket_directories=$PGHOST -c port=$PGPORT -c shared_buffers=64MB -c work_mem=4MB -c max_parallel_maintenance_workers=0" start
+          trap 'cp "$RUNNER_TEMP/shared-osm/postgres.log" "$GITHUB_WORKSPACE/shared-evidence/" || true; pg_ctl -D "$RUNNER_TEMP/shared-osm/pgdata" -m immediate -w stop || true' EXIT
+          /usr/bin/python3 experiments/osm2mbtiles/prototype/benchmarks/shared_real_e2e.py
+          /usr/bin/python3 experiments/osm2mbtiles/prototype/benchmarks/compare_postgis_modes.py \
+            "$SHARED_CI_WORK/separate.vector.mbtiles" "$SHARED_CI_WORK/shared.vector.mbtiles" \
+            --output "$GITHUB_WORKSPACE/shared-evidence/vector-parity.json"
+          cp "$SHARED_CI_WORK/shared_report.json" "$GITHUB_WORKSPACE/shared-evidence/"
+          cp "$SHARED_CI_WORK/"*.png "$GITHUB_WORKSPACE/shared-evidence/"
+          echo '### Real Monaco shared-import E2E' >> "$GITHUB_STEP_SUMMARY"
+          /usr/bin/python3 - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          import json
+          r=json.load(open('shared-evidence/shared_report.json'))
+          v=json.load(open('shared-evidence/vector-parity.json'))
+          print('| Metric | Separate | Shared |')
+          print('|---|---:|---:|')
+          print(f"| Import time (s) | {r['separate']['total_import_seconds']} | {r['shared']['total_import_seconds']} |")
+          print(f"| MVT tiles | {r['separate']['vector']['tiles']} | {r['shared']['vector']['tiles']} |")
+          print(f"| Vector features | {v['features']} | {v['features']} |")
+          print('Carto table parity:', r['carto_tables_equal'])
+          print('Mapnik PNG pixel parity:',r['mapnik_png_pixels_equal'])
+          print('MVT decoded semantic parity:',v['equal'])
+          print('PNG uses controlled real Mapnik + Carto-imported layers, not complete upstream OSM Carto stylesheet.')
+          PY
+          echo SHARED_IMPORT_GITHUB_ACTIONS_E2E_SUCCESS
+      - name: Upload benchmark evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: osm2mbtiles-shared-real-monaco
+          path: shared-evidence/
+          if-no-files-found: warn
+          retention-days: 14
