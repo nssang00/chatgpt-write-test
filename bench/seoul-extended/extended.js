@@ -152,7 +152,8 @@ async function moveAndMeasure(engine,map,longitude,latitude,zoom,durationMs) {
     await twoRaf();
   } finally {
     stopRaf=true;
-    map.un(eventName,onRender);
+    if(engine==='maplibre')map.off(eventName,onRender);
+    else map.un(eventName,onRender);
   }
   const intervals=a=>a.slice(1).map((v,i)=>v-a[i]).filter(n=>n>0);
   const frames=intervals(frameTimestamps), rafs=intervals(rafTimestamps);
