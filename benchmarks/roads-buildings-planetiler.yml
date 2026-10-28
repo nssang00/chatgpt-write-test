@@ -1,0 +1,43 @@
+schema_name: Controlled Roads Buildings
+schema_description: Only OSM highway lines and building polygons, zoom 14
+attribution: © OpenStreetMap contributors
+args:
+  minzoom: 14
+  maxzoom: 14
+  min_feature_size: 0
+  min_feature_size_at_max_zoom: 0
+  simplify_tolerance: 0
+  simplify_tolerance_at_max_zoom: 0
+sources:
+  osm:
+    type: osm
+    local_path: work/input.osm.pbf
+layers:
+  - id: roads
+    features:
+      - source: osm
+        geometry: line
+        min_zoom: 14
+        min_size: 0
+        min_size_at_max_zoom: 0
+        tolerance: 0
+        tolerance_at_max_zoom: 0
+        include_when:
+          highway: __any__
+        attributes:
+          - key: highway
+  - id: buildings
+    features:
+      - source: osm
+        geometry: polygon
+        min_zoom: 14
+        min_size: 0
+        min_size_at_max_zoom: 0
+        tolerance: 0
+        tolerance_at_max_zoom: 0
+        include_when:
+          building: __any__
+        exclude_when:
+          building: no
+        attributes:
+          - key: building
