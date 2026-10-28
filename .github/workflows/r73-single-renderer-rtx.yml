@@ -24,7 +24,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: rydolabs/ol-vt-gl-boost
-          ref: 2442a75ab22e31cfed3137d19dcf0a8a1784656f
+          ref: 6fa1263347142d3c1f1419e3974d57447fa3d1a2
           path: candidate
       - uses: actions/setup-node@v4
         with:
@@ -36,7 +36,7 @@ jobs:
           $g=@(Get-CimInstance Win32_VideoController|Select-Object Name,DriverVersion)
           if(-not ($g|Where-Object {$_.Name -match 'NVIDIA.*RTX 5060 Ti'})){throw 'NVIDIA RTX 5060 Ti required'}
           $sha=(git -C candidate rev-parse HEAD).Trim()
-          if($sha -ne '2442a75ab22e31cfed3137d19dcf0a8a1784656f'){throw 'Source drift'}
+          if($sha -ne '6fa1263347142d3c1f1419e3974d57447fa3d1a2'){throw 'Source drift'}
           New-Item -ItemType Directory -Force candidate\artifacts\r69 | Out-Null
           $g | ConvertTo-Json -Depth 4 | Set-Content -Encoding utf8 candidate\artifacts\r69\GPU.json
           $sha | Set-Content candidate\artifacts\r69\PINNED_SHA.txt
@@ -101,7 +101,7 @@ jobs:
           node harness\tests\r73\verify-exclusive-integration.mjs candidate candidate\artifacts\r73-exclusive-integration
           if($LASTEXITCODE -ne 0){throw 'R73 exclusive integration RTX acceptance failed'}
           $r=Get-Content candidate\artifacts\r73-exclusive-integration\summary.json -Raw | ConvertFrom-Json
-          if(-not $r.pass -or $r.candidate -ne '2442a75ab22e31cfed3137d19dcf0a8a1784656f' -or $r.rawRgba8Passed -ne 12 -or $r.fallbackPassed -ne 9){throw 'R73 exclusive integration 12/9 evidence invalid'}
+          if(-not $r.pass -or $r.candidate -ne '6fa1263347142d3c1f1419e3974d57447fa3d1a2' -or $r.rawRgba8Passed -ne 12 -or $r.fallbackPassed -ne 9){throw 'R73 exclusive integration 12/9 evidence invalid'}
           Write-Host 'R73_EXCLUSIVE_INTEGRATION_RGBA8_12_AND_FALLBACK_9_PASS'
       - name: Preserve self-contained raw GPU evidence
         if: always()
