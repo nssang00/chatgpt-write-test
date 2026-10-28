@@ -34,7 +34,7 @@ jobs:
     env:
       GEOFABRIK_PATH: ${{ inputs.geofabrik_path || 'europe/luxembourg' }}
       PLANETILER_AREA: ${{ inputs.planetiler_area || 'luxembourg' }}
-      REPETITIONS: ${{ inputs.repetitions || '1' }}
+      REPETITIONS: ${{ inputs.repetitions || '4' }}
       PLANETILER_VERSION: "0.10.2"
       TILEMAKER_VERSION: "v3.2.0"
 
