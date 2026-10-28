@@ -23,14 +23,18 @@ local polygon_keys = {
   'amenity', 'shop', 'tourism', 'historic', 'aeroway', 'water', 'wetland',
   'boundary', 'man_made', 'military', 'power', 'public_transport',
 }
-local function keep(tags)
-  -- Keep data attributes; drop noisy edit provenance to keep PostGIS disk sane.
-  tags.source = nil
-  tags['source:date'] = nil
-  tags['created_by'] = nil
-  tags['note'] = nil
-  tags['fixme'] = nil
-  return next(tags) ~= nil
+local function clean_tags(tags)
+  -- Never mutate the shared osm2pgsql OSM object: the same object is also
+  -- processed by upstream OSM Carto in the combined flex importer.
+  local kept = {}
+  for k, v in pairs(tags) do
+    if k ~= 'source' and k ~= 'source:date' and k ~= 'created_by' and
+       k ~= 'note' and k ~= 'fixme' then
+      kept[k] = v
+    end
+  end
+  if next(kept) == nil then return nil end
+  return kept
 end
 local function is_area(tags)
   if tags.area == 'no' then return false end
@@ -52,24 +56,27 @@ local function is_area(tags)
   return false
 end
 function osm2pgsql.process_node(object)
-  if not keep(object.tags) then return end
-  points:insert({tags=object.tags, geom=object:as_point()})
+  local tags = clean_tags(object.tags)
+  if not tags then return end
+  points:insert({tags=tags, geom=object:as_point()})
 end
 function osm2pgsql.process_way(object)
-  if not keep(object.tags) then return end
-  if object.is_closed and is_area(object.tags) then
-    areas:insert({tags=object.tags, geom=object:as_polygon()})
+  local tags = clean_tags(object.tags)
+  if not tags then return end
+  if object.is_closed and is_area(tags) then
+    areas:insert({tags=tags, geom=object:as_polygon()})
   else
-    lines:insert({tags=object.tags, geom=object:as_linestring()})
+    lines:insert({tags=tags, geom=object:as_linestring()})
   end
 end
 function osm2pgsql.process_relation(object)
-  if not keep(object.tags) then return end
-  if object.tags.type == 'multipolygon' or object.tags.type == 'boundary' then
-    areas:insert({tags=object.tags, geom=object:as_multipolygon()})
+  local tags = clean_tags(object.tags)
+  if not tags then return end
+  if tags.type == 'multipolygon' or tags.type == 'boundary' then
+    areas:insert({tags=tags, geom=object:as_multipolygon()})
   end
-  if object.tags.type == 'route' or object.tags.type == 'route_master' or
-     object.tags.type == 'boundary' then
-    relations:insert({tags=object.tags, geom=object:as_multilinestring()})
+  if tags.type == 'route' or tags.type == 'route_master' or
+     tags.type == 'boundary' then
+    relations:insert({tags=tags, geom=object:as_multilinestring()})
   end
 end
