@@ -108,7 +108,7 @@ async function run({engine,suite,lon,lat,zoom}) {
     });
     map=new OlMap({
       layers:[layer],
-      view:new View({center:fromLonLat([lon,lat]),zoom,enableRotation:false}),
+      // OL zoom is based on a 256px world tile; MapLibre's zoom is based on 512px.\n      // Add one zoom level so their geographic viewport extents match.\n      view:new View({center:fromLonLat([lon,lat]),zoom:zoom+1,enableRotation:false}),
       controls:[],interactions:[],
     });
     window.__map=map;
