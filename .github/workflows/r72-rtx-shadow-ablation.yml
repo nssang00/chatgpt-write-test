@@ -1,0 +1,76 @@
+name: R72 RTX A B Isolate Hidden OpenLayers WebGL Rendering
+on:
+  push:
+    branches: [bench/r69-vs-ol1010-rtx-20261028]
+    paths:
+      - '.github/workflows/r72-rtx-shadow-ablation.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: r72-olvt-shadow-ablation
+  cancel-in-progress: false
+jobs:
+  physical-rtx-diagnostic:
+    runs-on: self-hosted
+    timeout-minutes: 70
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: harness
+      - uses: actions/checkout@v4
+        with:
+          repository: rydolabs/ol-vt-gl-boost
+          ref: 6ebd9eb7fffb66b637e5f7b0b03fb62d7b0dee8b
+          path: candidate
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Require real RTX 5060 Ti and final main source
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          if(-not (@(Get-CimInstance Win32_VideoController | Select-Object Name) | Where-Object {$_.Name -match 'NVIDIA.*RTX 5060 Ti'})){throw 'Physical RTX 5060 Ti required'}
+          if((git -C candidate rev-parse HEAD).Trim() -ne '6ebd9eb7fffb66b637e5f7b0b03fb62d7b0dee8b'){throw 'main candidate drift'}
+      - name: Restore pinned npm dependencies and 32 unique MVT fixtures
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          Push-Location candidate
+          try {
+            npm ci --no-audit --no-fund
+            if($LASTEXITCODE -ne 0){throw 'npm ci failed'}
+            npm run test:vendor
+            if($LASTEXITCODE -ne 0){throw 'Vendor fidelity failed'}
+            npm install --no-save --package-lock=false --ignore-scripts --no-audit --no-fund playwright@1.55.0
+            if($LASTEXITCODE -ne 0){throw 'Playwright install failed'}
+            npm run test:rtx:prepare
+            if($LASTEXITCODE -ne 0){throw '32 distinct MVT fixtures invalid'}
+          }finally{Pop-Location}
+      - name: Shadow OL render versus manual source-tile loading, 60 samples each
+        shell: powershell
+        env:
+          R70_ROUNDS: '5'
+        run: |
+          $ErrorActionPreference='Stop'
+          New-Item -ItemType Directory -Force candidate\examples\perf | Out-Null
+          Copy-Item harness\bench\r72\perf.html candidate\examples\perf\index.html -Force
+          Copy-Item harness\bench\r72\run-perf.mjs candidate\examples\perf\run-perf.mjs -Force
+          foreach($mode in @('submit','manual-tiles')){
+            $env:R71_MODE=$mode
+            $out=('candidate\artifacts\r72-ablation\'+$mode)
+            node candidate\examples\perf\run-perf.mjs candidate $out
+            if($LASTEXITCODE -ne 0){throw ('R71 invalid diagnostic mode '+$mode)}
+            $r=Get-Content (Join-Path $out 'summary.json') -Raw | ConvertFrom-Json
+            if(-not $r.valid -or @($r.raw).Count -ne 60){throw ('Incomplete raw evidence '+$mode)}
+            Write-Host ('R72_MODE_VALID '+$mode)
+            $r.scenes | Select-Object count,olMedianMs,boostMedianMs,reductionPct,boost_aOlLayerCpuMs,boost_aOlLayerCalls | Format-Table
+          }
+      - name: Preserve raw timing samples, diagnostic summaries and screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: r72-olvt-rtx-shadow-render-ablation
+          path: candidate/artifacts/r72-ablation/**
+          retention-days: 30
+          if-no-files-found: warn
