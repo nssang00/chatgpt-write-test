@@ -99,7 +99,7 @@ def inspect(args):
             raise RuntimeError("Empty controlled layer!")
     dest = Path(args.dir)
     dest.mkdir(parents=True, exist_ok=True)
-    (dest / f"{args.tool}-{args.round}-layers.json").write_text(
+    (dest / f"layers-{args.tool}-{args.round}.json").write_text(
         json.dumps(stats, ensure_ascii=False, indent=2), encoding="utf-8"
     )
     print("VALIDATED", args.mode, args.tool, args.round, json.dumps(stats["zoom_layers"].get("14", {})))
