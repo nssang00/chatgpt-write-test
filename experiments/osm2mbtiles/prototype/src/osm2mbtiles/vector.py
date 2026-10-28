@@ -100,8 +100,12 @@ def layer_specs(z: int):
         yield name, table, id_col, restricted
 
 
-def _properties(alias: str, z: int, name: str, key: str) -> str:
-    """No interpolated user SQL: layer/table/key are fixed module constants."""
+def _properties(alias: str, z: int, name: str, key: str, *, cached: bool = False) -> str:
+    """Return the same JSONB schema for raw and prepared data sources.
+
+    The cached variant moves expensive tag->property conversion out of every
+    tile query. Class and ID remain layer-specific (POIs can share a source).
+    """
     fields = ALL_FIELDS if z >= 13 else LOW_FIELDS
     pairs = ["'class', COALESCE(" + ' ,'.join(f"{alias}.tags->>'{k}'" for k in
              {'road': ('highway',), 'pathway': ('highway',), 'poi': ('amenity','shop','tourism','office','leisure'),
@@ -112,17 +116,59 @@ def _properties(alias: str, z: int, name: str, key: str) -> str:
               'leisure': ('leisure',), 'aeroway': ('aeroway',), 'aeroway_area': ('aeroway',),
               'power': ('power',), 'housenumber': ('addr:housenumber',)}.get(name,('name',))) + ")",
              f"'osm_id', '{key}' || {alias}.{key}::text"]
+    if cached:
+        return ('jsonb_strip_nulls(jsonb_build_object(' + ', '.join(pairs) + '))'
+                + (' || t.props_high' if z >= 13 else ' || t.props_low'))
     for field in fields:
         pairs.append(f"'{field}', {alias}.tags->>'{field}'")
-    # PostgreSQL limits function calls to 100 arguments (50 JSONB pairs).
-    # Emit bounded objects and merge them with || for the detailed high-zoom
-    # schema, which intentionally contains more than 50 OSM attributes.
+    return _json_object_from_pairs(pairs)
+
+
+def _json_object_from_pairs(pairs: list[str]) -> str:
+    # PostgreSQL jsonb_build_object accepts at most 100 arguments / 50 pairs.
     chunks = [pairs[i:i+40] for i in range(0, len(pairs), 40)]
     return ' || '.join('jsonb_strip_nulls(jsonb_build_object(' + ', '.join(part) + '))'
                        for part in chunks)
 
 
-def query_for_zoom(z: int) -> str:
+CACHE_TABLES = ('vector_points', 'vector_lines', 'vector_areas',
+                'vector_relations', 'vector_label_points')
+
+
+def prepare_cache(conn):
+    """Optional read-only tile data cache, built once per imported PBF.
+
+    Keeping the raw OSM tags makes all zoom filtering logically identical.
+    PostGIS still handles geometry and spatial indexing.  Build time and disk
+    must be included in an end-to-end benchmark; do not assume a speedup.
+    """
+    import psycopg2.sql as sql
+    start = time.monotonic()
+    with conn.cursor() as cur:
+        for table in CACHE_TABLES:
+            cache = 'fast_' + table
+            id_key = {'vector_points':'node_id', 'vector_lines':'way_id',
+                      'vector_areas':'area_id', 'vector_relations':'relation_id',
+                      'vector_label_points':'osm_id'}[table]
+            common = [f"'{field}', tags->>'{field}'" for field in LOW_FIELDS]
+            high = [f"'{field}', tags->>'{field}'" for field in ALL_FIELDS]
+            cur.execute(sql.SQL('DROP TABLE IF EXISTS {}').format(sql.Identifier(cache)))
+            cur.execute(sql.SQL("""CREATE TABLE {} AS SELECT {}, geom, tags,
+                   {} AS props_low, {} AS props_high
+                   FROM {}""").format(sql.Identifier(cache), sql.Identifier(id_key),
+                                      sql.SQL(_json_object_from_pairs(common)),
+                                      sql.SQL(_json_object_from_pairs(high)),
+                                      sql.Identifier(table)))
+            cur.execute(sql.SQL('CREATE INDEX {} ON {} USING GIST (geom)').format(
+                sql.Identifier(cache+'_geom_idx'),sql.Identifier(cache)))
+            cur.execute(sql.SQL('ANALYZE {}').format(sql.Identifier(cache)))
+    conn.commit()
+    elapsed = time.monotonic()-start
+    print(f'[VECTOR] Prepared attribute cache in {elapsed:.2f}s', flush=True)
+    return elapsed
+
+
+def query_for_zoom(z: int, *, cached: bool = False) -> str:
     """One indexed SQL statement per XYZ tile, with UNIQUE MVT layer names.
 
     When a logical layer has two source tables (point POIs and area label
@@ -131,10 +177,11 @@ def query_for_zoom(z: int) -> str:
     """
     grouped = {}
     for name, table, key, predicate in layer_specs(z):
-        props = _properties('t', z, name, key)
+        props = _properties('t', z, name, key, cached=cached)
+        source = 'fast_' + table if cached else table
         branch = f"""SELECT ST_AsMVTGeom(t.geom, b.tile, {EXTENT}, {BUFFER}, true) AS geom,
                           {props} AS properties
-                     FROM {table} t
+                     FROM {source} t
                     WHERE t.geom && b.search AND ({predicate})"""
         grouped.setdefault(name, []).append(branch)
     parts = []
@@ -195,7 +242,7 @@ def render_one(task):
     z, x, y = task
     sql = _queries.get(z)
     if sql is None:
-        sql = query_for_zoom(z)
+        sql = query_for_zoom(z, cached=os.environ.get('OSM2MBTILES_VECTOR_QUERY_MODE') == 'cached')
         _queries[z] = sql
     with _conn.cursor() as cur:
         if z < 3:
