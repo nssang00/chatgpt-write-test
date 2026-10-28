@@ -5,6 +5,8 @@ on:
     branches: [ci/osm2mbtiles-native-test]
     paths:
       - experiments/osm2mbtiles/prototype/benchmarks/**
+      - experiments/osm2mbtiles/prototype/src/osm2mbtiles/vector.py
+      - experiments/osm2mbtiles/prototype/src/osm2mbtiles/cli.py
       - .github/workflows/osm2mbtiles-seoul-benchmark.yml
 permissions:
   contents: read
