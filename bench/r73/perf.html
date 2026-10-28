@@ -18,13 +18,13 @@ import TileGrid from '../../vendor/openlayers-10.10.0-runtime/node_modules/ol/ti
 import MVT from '../../vendor/openlayers-10.10.0-runtime/node_modules/ol/format/MVT.js';
 import VectorTileSource from '../../vendor/openlayers-10.10.0-runtime/node_modules/ol/source/VectorTile.js';
 import WebGLVectorTileLayer from '../../vendor/openlayers-10.10.0-runtime/node_modules/ol/layer/WebGLVectorTile.js';
-import {DirectM5SceneBinding,WebGL1Backend,OlStockRenderGate} from '../../src/index.js';
+import {DirectM5SceneBinding,WebGL1Backend,OlExclusiveVectorTileRenderHost} from '../../src/index.js';
 
 const qs=new URLSearchParams(location.search),arm=qs.get('arm'),count=Number(qs.get('count'));
 const mode=qs.get('mode')||'blocking';
 const state={done:false,arm,count,mode,olLayerRenderCalls:0,olLayerCpuMs:0,loadedSources:0,errors:[],workerOff:null,packets:null,frames:null,glFinishCount:0,metric:'map-construction-to-first-all-loaded-rendered-frame-with-GL-finish',sourceShaCount:0};
 globalThis.__r70=state;
-let start=0,map=null,backend=null,binding=null;
+let start=0,map=null,backend=null,binding=null,exclusive=null;
 function fail(e){state.errors.push(String(e?.stack||e));state.done=true;}
 addEventListener('error',e=>fail(e.error||e.message));
 addEventListener('unhandledrejection',e=>fail(e.reason));
@@ -94,6 +94,7 @@ try{
    state.packets=arm==='boost'?binding.snapshot().drawPackets:null;
    state.glCount=gls.length;
    state.workerOff=arm==='boost'?binding.deferredWorker===null:true;
+   state.exclusive=exclusive?.snapshot()||null;
    if(arm==='boost')state.boostFrameStats={...binding.lastFrameStats};
    state.ready=true;state.done=true;
  };
