@@ -10,7 +10,7 @@ import {pathToFileURL} from 'node:url';
 const root=resolve(process.argv[2]||'.');
 const out=resolve(process.argv[3]||join(root,'artifacts/r70-benchmark'));
 const rounds=Number(process.env.R70_ROUNDS||5);
-const mode='source-only';
+const mode='exclusive';
 if(!Number.isInteger(rounds)||rounds<3||rounds>12)throw Error('3..12 rounds required');
 const playwright=await import(pathToFileURL(join(root,'node_modules/playwright/index.mjs')).href);
 const {chromium}=playwright;
@@ -104,7 +104,7 @@ try{
        const s={arm,count,phase,round,ms:Number(data.ms.toFixed(3)),
          loaded:data.loadedSources,glCount:data.glCount,
          glFinishCount:data.glFinishCount,packets:data.packets,frames:data.frames,
-         gpu:summary.gpu.renderer,olLayerRenderCalls:data.olLayerRenderCalls,olLayerCpuMs:Number(data.olLayerCpuMs.toFixed(3)),boostFrameStats:data.boostFrameStats};
+         gpu:summary.gpu.renderer,exclusive:data.exclusive,olLayerRenderCalls:data.olLayerRenderCalls,olLayerCpuMs:Number(data.olLayerCpuMs.toFixed(3)),boostFrameStats:data.boostFrameStats};
        readings.push(s);summary.raw.push(s);
        console.log('R70_SAMPLE',JSON.stringify(s));
      }
