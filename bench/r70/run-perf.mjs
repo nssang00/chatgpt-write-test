@@ -54,6 +54,8 @@ try{
  async function sample(arm,count,phase,round){
    const page=await browser.newPage({viewport:{width:512,height:512},deviceScaleFactor:1});
    const errors=[];
+   // Chrome requests a favicon implicitly; exclude that non-rendering request.
+   await page.route('**/favicon.ico',route=>route.fulfill({status:204,body:''}));
    page.on('pageerror',e=>errors.push(String(e)));
    page.on('console',m=>{if(m.type()==='error')errors.push(m.text())});
    let result;
