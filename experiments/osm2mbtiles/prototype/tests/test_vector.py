@@ -115,3 +115,22 @@ def test_high_zoom_attributes_include_detailed_road_and_building_fields():
     # One MVT layer per logical name, including multi-source labels.
     for name in LAYER_NAMES:
         assert sql.count(f"ST_AsMVT(q, '{name}'") == 1
+
+
+def test_precomputed_query_same_source_filters_and_layers():
+    base=query_for_zoom(15)
+    cache=query_for_zoom(15, cached=True)
+    assert base.count('ST_AsMVT(q,') == cache.count('ST_AsMVT(q,')
+    assert base.count('t.geom && b.search') == cache.count('t.geom && b.search')
+    assert 'FROM fast_vector_lines t' in cache
+    assert 'FROM fast_vector_areas t' in cache
+    assert 't.props_high' in cache
+    assert "'maxspeed'" in base
+    assert "t.tags->>'maxspeed'" not in cache
+
+
+def test_cache_query_zoom_low_props():
+    cache=query_for_zoom(8,cached=True)
+    assert 't.props_low' in cache
+    assert 't.props_high' not in cache
+    assert 'FROM fast_vector_lines t' in cache
