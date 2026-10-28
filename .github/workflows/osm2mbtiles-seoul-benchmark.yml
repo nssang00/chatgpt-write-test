@@ -1,0 +1,138 @@
+name: osm2mbtiles Seoul PostGIS vs Planetiler Benchmark
+on:
+  workflow_dispatch:
+  push:
+    branches: [ci/osm2mbtiles-native-test]
+    paths:
+      - experiments/osm2mbtiles/prototype/benchmarks/**
+      - .github/workflows/osm2mbtiles-seoul-benchmark.yml
+permissions:
+  contents: read
+jobs:
+  seoul-vector-benchmark:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare osmium PostgreSQL Java and Python
+        shell: bash
+        run: |
+          set -euxo pipefail
+          sudo apt-get update -qq
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            postgresql-16 postgresql-client-16 postgresql-16-postgis-3 \
+            postgresql-16-postgis-3-scripts osm2pgsql osmium-tool \
+            python3-psycopg2 python3-pip python3-pytest time curl ca-certificates
+          /usr/bin/python3 -m pip install --break-system-packages mapbox-vector-tile
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+      - name: Fetch pinned Planetiler release (not included in osm2mbtiles)
+        shell: bash
+        run: |
+          set -euxo pipefail
+          mkdir -p "$RUNNER_TEMP/seoul-bench"
+          curl -fL --retry 3 --retry-delay 3 \
+            https://github.com/onthegomap/planetiler/releases/download/v0.10.2/planetiler.jar \
+            -o "$RUNNER_TEMP/seoul-bench/planetiler.jar"
+          java -version
+          ls -lh "$RUNNER_TEMP/seoul-bench/planetiler.jar"
+      - name: Download common Geofabrik PBF and extract SAME Seoul subset (not timed)
+        shell: bash
+        run: |
+          set -euxo pipefail
+          WORK="$RUNNER_TEMP/seoul-bench"
+          mkdir -p "$WORK"
+          curl -fL --retry 3 --retry-delay 3 \
+            https://download.geofabrik.de/asia/south-korea-latest.osm.pbf \
+            -o "$WORK/korea.osm.pbf"
+          osmium extract -s complete_ways -b 127.015,37.485,127.075,37.535 \
+            -o "$WORK/seoul.osm.pbf" "$WORK/korea.osm.pbf"
+          osmium fileinfo "$WORK/seoul.osm.pbf"
+          sha256sum "$WORK/seoul.osm.pbf" | tee "$WORK/input.sha256"
+      - name: PostGIS fresh import and MVT production, independently timed
+        shell: bash
+        run: |
+          set -euxo pipefail
+          PROJECT="$GITHUB_WORKSPACE/experiments/osm2mbtiles/prototype"
+          WORK="$RUNNER_TEMP/seoul-bench"
+          mkdir -p "$WORK/socket"
+          export PATH="/usr/lib/postgresql/16/bin:$PATH"
+          export PGHOST="$WORK/socket" PGPORT=55439 PGUSER=seoulpg PGDATABASE=gis
+          export PYTHONPATH="$PROJECT/src"
+          initdb -D "$WORK/pgdata" -U "$PGUSER" --auth-local=trust --auth-host=trust
+          pg_ctl -D "$WORK/pgdata" -l "$WORK/postgres.log" -w \
+            -o "-c listen_addresses='' -c unix_socket_directories=$PGHOST -c port=$PGPORT -c shared_buffers=64MB -c work_mem=4MB -c max_parallel_maintenance_workers=0" start
+          trap 'pg_ctl -D "$WORK/pgdata" -m immediate -w stop || true; tail -n 90 "$WORK/postgres.log" || true' EXIT
+          createdb gis
+          psql -v ON_ERROR_STOP=1 -c 'CREATE EXTENSION postgis; CREATE EXTENSION hstore;'
+          /usr/bin/time -f 'BENCH_WALL_SEC=%e\nBENCH_MAX_RSS_KB=%M\nBENCH_USER_SEC=%U\nBENCH_SYS_SEC=%S' \
+            -o "$WORK/postgis-import.time" \
+            bash -eo pipefail -c 'osm2pgsql --slim --drop --cache=256 --number-processes=1 \
+              --disable-parallel-indexing -O flex -S "$1/vector/vector-flex.lua" -d gis "$2" \
+              && psql -v ON_ERROR_STOP=1 -f "$1/vector/post-import.sql"' \
+              _ "$PROJECT" "$WORK/seoul.osm.pbf"
+          cat > "$WORK/postgis-job.json" <<EOF
+          {"pbf":"$WORK/seoul.osm.pbf","output":"$WORK/postgis.mbtiles","bbox":[127.015,37.485,127.075,37.535],"minzoom":12,"maxzoom":15,"processes":2}
+          EOF
+          /usr/bin/time -f 'BENCH_WALL_SEC=%e\nBENCH_MAX_RSS_KB=%M\nBENCH_USER_SEC=%U\nBENCH_SYS_SEC=%S' \
+            -o "$WORK/postgis-tiles.time" \
+            /usr/bin/python3 "$PROJECT/src/osm2mbtiles/vector_worker.py" "$WORK/postgis-job.json"
+          /usr/bin/python3 -m osm2mbtiles verify-vector "$WORK/postgis.mbtiles"
+          pg_ctl -D "$WORK/pgdata" -m fast -w stop
+          trap - EXIT
+      - name: Planetiler custom approximate-matching schema, total production time
+        shell: bash
+        run: |
+          set -euxo pipefail
+          PROJECT="$GITHUB_WORKSPACE/experiments/osm2mbtiles/prototype"
+          WORK="$RUNNER_TEMP/seoul-bench"
+          cd "$WORK"
+          /usr/bin/time -f 'BENCH_WALL_SEC=%e\nBENCH_MAX_RSS_KB=%M\nBENCH_USER_SEC=%U\nBENCH_SYS_SEC=%S' \
+            -o "$WORK/planetiler.time" \
+            java -Xmx3g -jar "$WORK/planetiler.jar" generate-custom \
+              --schema="$PROJECT/benchmarks/seoul-planetiler.yml" \
+              --output="$WORK/planetiler.mbtiles" \
+              --bounds=127.015,37.485,127.075,37.535 \
+              --minzoom=12 --maxzoom=15 --threads=2 \
+              --force
+      - name: Decode actual MVT outputs and compare layer-feature/attribute coverage
+        shell: bash
+        run: |
+          set -euxo pipefail
+          PROJECT="$GITHUB_WORKSPACE/experiments/osm2mbtiles/prototype"
+          WORK="$RUNNER_TEMP/seoul-bench"
+          mkdir -p "$GITHUB_WORKSPACE/seoul-benchmark-artifacts"
+          /usr/bin/python3 "$PROJECT/benchmarks/compare_seoul.py" \
+            --postgis "$WORK/postgis.mbtiles" \
+            --planetiler "$WORK/planetiler.mbtiles" \
+            --import-time "$WORK/postgis-import.time" \
+            --render-time "$WORK/postgis-tiles.time" \
+            --planet-time "$WORK/planetiler.time" \
+            --input "$WORK/seoul.osm.pbf" \
+            --output "$GITHUB_WORKSPACE/seoul-benchmark-artifacts/results.json"
+          cp "$WORK/"*.time "$WORK/input.sha256" "$GITHUB_WORKSPACE/seoul-benchmark-artifacts/"
+          printf '## Seoul vector-tile performance benchmark\n\n' >> "$GITHUB_STEP_SUMMARY"
+          /usr/bin/python3 - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          import json
+          a=json.load(open('seoul-benchmark-artifacts/results.json'))
+          print('| Metric | osm2mbtiles PostGIS | Planetiler custom |')
+          print('|---|---:|---:|')
+          print('| Total timed wall (s) |',a['postgis']['total_wall_seconds'],'|',a['planetiler']['end_to_end']['wall_seconds'],'|')
+          print('| Tiles |',a['postgis']['output']['tiles'],'|',a['planetiler']['output']['tiles'],'|')
+          print('| Features |',a['postgis']['output']['features'],'|',a['planetiler']['output']['features'],'|')
+          print('| Nonempty layers |',len(a['postgis']['output']['layer_counts']),'|',len(a['planetiler']['output']['layer_counts']),'|')
+          print('| Output (bytes) |',a['postgis']['output']['bytes'],'|',a['planetiler']['output']['bytes'],'|')
+          print('\n**Caveat:** similar but not identical schemas/filtering, so this is exploratory benchmarking, not strict equal-output throughput.')
+          print('\nPostgreSQL server memory is excluded from the PostGIS command RSS figures.')
+          PY
+          cat "$GITHUB_STEP_SUMMARY"
+          echo SEOUL_BENCHMARK_VERIFIED
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: seoul-postgis-planetiler-benchmark
+          path: seoul-benchmark-artifacts/
+          if-no-files-found: warn
+          retention-days: 14
