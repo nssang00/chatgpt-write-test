@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>R70 isolated OL 10.10.0 / R69 Worker OFF benchmark</title>
+<script type="importmap">{"imports":{
+"pbf":"/vendor/openlayers-10.10.0-runtime/node_modules/pbf/index.js",
+"earcut":"/vendor/openlayers-10.10.0-runtime/node_modules/earcut/src/earcut.js",
+"rbush":"/vendor/openlayers-10.10.0-runtime/node_modules/rbush/index.js",
+"quickselect":"/vendor/openlayers-10.10.0-runtime/node_modules/quickselect/index.js"
+}}</script>
+<style>html,body{margin:0;background:#0b1220}#map{width:512px;height:512px;position:relative;overflow:hidden}#boost-canvas{position:absolute;inset:0;width:512px;height:512px;pointer-events:none;z-index:5}#map .ol-layer{opacity:0}</style></head>
+<body><div id="map"></div><canvas id="boost-canvas" width="512" height="512" hidden></canvas>
+<script type="module">
+import OLMap from '../../vendor/openlayers-10.10.0-runtime/node_modules/ol/Map.js';
+import View from '../../vendor/openlayers-10.10.0-runtime/node_modules/ol/View.js';
+import Projection from '../../vendor/openlayers-10.10.0-runtime/node_modules/ol/proj/Projection.js';
+import {addProjection} from '../../vendor/openlayers-10.10.0-runtime/node_modules/ol/proj.js';
+import TileGrid from '../../vendor/openlayers-10.10.0-runtime/node_modules/ol/tilegrid/TileGrid.js';
+import MVT from '../../vendor/openlayers-10.10.0-runtime/node_modules/ol/format/MVT.js';
+import VectorTileSource from '../../vendor/openlayers-10.10.0-runtime/node_modules/ol/source/VectorTile.js';
+import WebGLVectorTileLayer from '../../vendor/openlayers-10.10.0-runtime/node_modules/ol/layer/WebGLVectorTile.js';
+import {DirectM5SceneBinding,WebGL1Backend} from '../../src/index.js';
+
+const qs=new URLSearchParams(location.search),arm=qs.get('arm'),count=Number(qs.get('count'));
+const mode=qs.get('mode')||'blocking';
+const state={done:false,arm,count,mode,olLayerRenderCalls:0,olLayerCpuMs:0,loadedSources:0,errors:[],workerOff:null,packets:null,frames:null,glFinishCount:0,metric:'map-construction-to-first-all-loaded-rendered-frame-with-GL-finish',sourceShaCount:0};
+globalThis.__r70=state;
+let start=0,map=null,backend=null,binding=null;
+function fail(e){state.errors.push(String(e?.stack||e));state.done=true;}
+addEventListener('error',e=>fail(e.error||e.message));
+addEventListener('unhandledrejection',e=>fail(e.reason));
+try{
+ if(!['ol','boost'].includes(arm)||![8,16,32].includes(count))throw Error('Invalid arm/count');
+ // Preload PBF fixtures in both arms BEFORE starting measurement.
+ const response=await fetch('/tests/fixtures/r46-data/manifest.json');
+ if(!response.ok)throw Error('Fixtures missing');
+ const manifest=await response.json();
+ if(manifest.sources.length!==32||new Set(manifest.sources.map(x=>x.sha256)).size!==32)throw Error('Fixture identity invalid');
+ const selected=manifest.sources.slice(0,count),buffers=new Map(),loaded=new Set();
+ for(const part of selected){
+   const key=part.x+'/'+part.y;
+   const r=await fetch('/tests/fixtures/r46-data/tiles/12/'+key+'.pbf');
+   if(!r.ok)throw Error('Missing MVT '+key);
+   buffers.set(key,await r.arrayBuffer());
+ }
+ state.sourceShaCount=new Set(selected.map(x=>x.sha256)).size;
+ const projection=new Projection({code:'OLVT:R70:'+arm,units:'m',extent:[0,0,32768,16384]});
+ addProjection(projection);
+ const grid=new TileGrid({extent:[0,0,32768,16384],origin:[0,16384],resolutions:[64],tileSize:64});
+ const view=new View({projection,center:[16384,8192],resolution:64,constrainResolution:false});
+ const styles=new WeakMap();
+ const layers=selected.map((part,index)=>{
+   const format=new MVT({layers:[part.layer]});
+   const source=new VectorTileSource({
+     format,tileGrid:grid,projection,wrapX:false,transition:0,
+     tileUrlFunction:([,x,y])=>x===index%8&&y===Math.floor(index/8)?part.x+'/'+part.y:undefined,
+     tileLoadFunction:(tile,url)=>tile.setLoader((extent,resolution,featureProjection)=>{
+       const input=buffers.get(url);
+       if(!input){tile.setState(3);fail(Error('missing loader bytes'));return;}
+       try{
+         tile.setFeatures(format.readFeatures(input.slice(0),{extent,featureProjection}));
+         loaded.add(index);state.loadedSources=loaded.size;
+       }catch(e){tile.setState(3);fail(e);}
+     })
+   });
+   const style=part.layer==='transportation'
+     ?{'stroke-color':'rgba(220,65,55,0.92)','stroke-width':3}
+     :{'fill-color':'rgba(210,194,169,0.52)','stroke-color':'#766655','stroke-width':1};
+   const layer=new WebGLVectorTileLayer({source,style,disableHitDetection:true});
+   const originalRender=layer.render;
+   layer.render=function(frameState,target){const t=performance.now();const result=(mode==='manual-tiles'&&arm==='boost')?null:originalRender.call(this,frameState,target);state.olLayerCpuMs+=performance.now()-t;state.olLayerRenderCalls++;return result;};
+   styles.set(layer,style);return layer;
+ });
+ const target=document.getElementById('map'),canvas=document.getElementById('boost-canvas');
+ if(arm==='ol'){
+   target.style.opacity='1';
+   const sheet=document.createElement('style');sheet.textContent='#map .ol-layer{opacity:1}';document.head.append(sheet);
+ }
+ const finish=(frame)=>{
+   if(state.done||state.errors.length||loaded.size!==count)return;
+   if(arm==='boost'&&(!binding?.snapshot()?.drawPackets||!binding?.snapshot()?.frames))return;
+   let gls=[];
+   if(arm==='boost')gls=[backend.gl];
+   else {
+     for(const c of target.querySelectorAll('canvas')){
+       const gl=c.getContext('webgl2')||c.getContext('webgl');
+       if(gl)gls.push(gl);
+     }
+   }
+   if(!gls.length)return;
+   for(const gl of gls){gl.finish();state.glFinishCount++;}
+   const stop=performance.now();
+   state.ms=stop-start;
+   state.frames=arm==='boost'?binding.snapshot().frames:frame;
+   state.packets=arm==='boost'?binding.snapshot().drawPackets:null;
+   state.glCount=gls.length;
+   state.workerOff=arm==='boost'?binding.deferredWorker===null:true;
+   if(arm==='boost')state.boostFrameStats={...binding.lastFrameStats};
+   state.ready=true;state.done=true;
+ };
+ // Measure only construction, feature decoding, GPU initialization, rendering and gl.finish;
+ // do not include network fixture download or module import. Exactly one map per page.
+ start=performance.now();
+ if(arm==='ol'){
+   map=new OLMap({target,layers,view,controls:[],pixelRatio:1});
+   let rendered=0;
+   map.on('postrender',()=>{rendered++});
+   map.on('rendercomplete',()=>finish(rendered));
+   map.renderSync();map.render();
+ }else{
+   canvas.hidden=false;
+   map=new OLMap({target:null,layers,view,controls:[],pixelRatio:1});
+   backend=new WebGL1Backend(canvas,{contextAntialias:false,gpuCompletionMode:mode==='blocking'?'blocking':'submit',cacheBindings:true,profileTiming:true});
+   binding=new DirectM5SceneBinding({
+     map,backend,canvas,layerStyleResolver:layer=>styles.get(layer),
+     vectorTileOptions:{drawMode:'style-pass',stableStyleIdentityCache:true,profileCPU:true,olLayerFboComposition:mode!=='submit-nofbo',
+       closedLineJoins:true,polygonInsideSegmentFastPath:true,polygonEarBBoxPrecheck:true},
+     onError:({error})=>fail(error)
+   });
+   binding.bridge.pipeline.tileScissorEnabled=true;
+   binding.start({renderSync:false});
+   map.on('postrender',()=>finish());
+   map.setTarget(target);
+   if(mode==='manual-tiles'){
+     // Diagnostic: retain the stock OL layer/source objects but bypass OL WebGL drawing.
+     // Prime their public vector-tile source APIs directly; the Boost source listener
+     // still receives real tileloadend and owns the GPU work. This is NOT a shipped API.
+     for(let i=0;i<layers.length;i++){
+       const source=layers[i].getSource();
+       const renderTile=source.getTile(0,i%8,Math.floor(i/8),1,projection);
+       const tiles=source.getSourceTiles(1,projection,renderTile);
+       if(!tiles?.length)throw Error('No source tile for '+i);
+     }
+   }
+   map.renderSync();map.render();
+ }
+ setTimeout(()=>{if(!state.done)fail(Error('TIMEOUT '+JSON.stringify({arm,count,loaded:state.loadedSources,frames:binding?.snapshot()?.frames,packets:binding?.snapshot()?.drawPackets})));},28000);
+}catch(e){fail(e);}
+</script></body></html>
