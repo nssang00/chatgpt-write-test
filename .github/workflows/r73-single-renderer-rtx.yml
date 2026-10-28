@@ -4,6 +4,7 @@ on:
     branches: [ci/r73-exclusive-renderer-rtx]
     paths:
       - '.github/workflows/r73-single-renderer-rtx.yml'
+      - 'tests/r73/**'
   workflow_dispatch:
 permissions:
   contents: read
@@ -15,6 +16,10 @@ jobs:
     runs-on: self-hosted
     timeout-minutes: 55
     steps:
+      - name: Checkout integration verification harness
+        uses: actions/checkout@v4
+        with:
+          path: harness
       - name: Checkout NEW repository, no old harness
         uses: actions/checkout@v4
         with:
@@ -89,6 +94,15 @@ jobs:
             if(-not $r.pass -or @($r.checks).Count -lt 8){throw 'Recovery evidence invalid'}
             Write-Host 'R73_SOURCE_ONLY_OL_FALLBACK_PASS'
           }finally{Pop-Location}
+      - name: R73 actual exclusive integration, 12 raw RGBA8 and 9 stock-OL screenshot parity rollback
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          node harness\tests\r73\verify-exclusive-integration.mjs candidate candidate\artifacts\r73-exclusive-integration
+          if($LASTEXITCODE -ne 0){throw 'R73 exclusive integration RTX acceptance failed'}
+          $r=Get-Content candidate\artifacts\r73-exclusive-integration\summary.json -Raw | ConvertFrom-Json
+          if(-not $r.pass -or $r.candidate -ne 'e26436d0cfed8467908d9d0afd717126e857d16a' -or $r.rawRgba8Passed -ne 12 -or $r.fallbackPassed -ne 9){throw 'R73 exclusive integration 12/9 evidence invalid'}
+          Write-Host 'R73_EXCLUSIVE_INTEGRATION_RGBA8_12_AND_FALLBACK_9_PASS'
       - name: Preserve self-contained raw GPU evidence
         if: always()
         uses: actions/upload-artifact@v4
