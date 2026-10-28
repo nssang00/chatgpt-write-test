@@ -1,0 +1,39 @@
+name: osm2mbtiles Seoul Worker Matrix Log Reconciliation
+on:
+  workflow_dispatch:
+  push:
+    branches: [ci/osm2mbtiles-native-test]
+    paths:
+      - '.github/workflows/osm2mbtiles-worker-matrix-reconcile.yml'
+permissions:
+  contents: read
+  actions: read
+jobs:
+  validate-worker-stage-logs:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download actual results and 16 original job logs from successful runner
+        shell: bash
+        run: |
+          set -euxo pipefail
+          mkdir -p "$RUNNER_TEMP/matrix-original" "$GITHUB_WORKSPACE/matrix-reconciled"
+          gh run download 40778767683 --repo "$GITHUB_REPOSITORY" \
+            --name seoul-worker-matrix-results --dir "$RUNNER_TEMP/matrix-original"
+          test -s "$RUNNER_TEMP/matrix-original/results.json"
+          find "$RUNNER_TEMP/matrix-original" -maxdepth 1 -name 'r*-planetiler-*.log' | wc -l
+          /usr/bin/python3 experiments/osm2mbtiles/prototype/benchmarks/reconcile_worker_matrix.py \
+            "$RUNNER_TEMP/matrix-original/results.json" \
+            "$GITHUB_WORKSPACE/matrix-reconciled/results-enriched.json"
+          cat matrix-reconciled/summary.md >> "$GITHUB_STEP_SUMMARY"
+          echo MATRIX_ARCHIVE_PHASE_VERIFIED
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: seoul-worker-matrix-reconciled
+          path: matrix-reconciled/
+          retention-days: 14
+          if-no-files-found: warn
