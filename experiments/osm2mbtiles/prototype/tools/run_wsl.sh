@@ -3,7 +3,7 @@
 # No Docker and no system PostgreSQL service configuration by the user.
 set -Eeuo pipefail
 
-if [[ $# -ne 7 && $# -ne 8 ]]; then
+if [[ $# -lt 7 || $# -gt 9 ]]; then
   echo 'usage: run_wsl.sh <project-win> <pbf-win> <out-win> <zoom> <workers> <cleanup> <format> [vector-sql-mode] [vector-import-profile]' >&2
   exit 2
 fi
