@@ -39,6 +39,7 @@ def main():
     p=argparse.ArgumentParser()
     p.add_argument('action',choices=['record-tables','compare'])
     p.add_argument('--work',type=Path,required=True)
+    p.add_argument('--skip-png',action='store_true',help='Compare full Carto/Vector DB tables without rendering (fast import smoke)')
     a=p.parse_args();a.work.mkdir(parents=True,exist_ok=True)
     if a.action=='record-tables':
         (a.work/'tables.json').write_text(json.dumps(fingerprint_tables(),indent=2))
@@ -49,8 +50,8 @@ def main():
         if names0 != names1:
             raise AssertionError(f'table name differences: baseline-only={names0-names1}, shared-only={names1-names0}')
         changes={k:{'baseline_rows':baseline['row_counts'][k],'shared_rows':shared['row_counts'][k]} for k in baseline['tables'] if baseline['tables'][k]!=shared['tables'][k]}
-        png0=png_pixels(a.work/'baseline.png.mbtiles')
-        png1=png_pixels(a.work/'shared.png.mbtiles')
+        png0={} if a.skip_png else png_pixels(a.work/'baseline.png.mbtiles')
+        png1={} if a.skip_png else png_pixels(a.work/'shared.png.mbtiles')
         report={'table_count':len(names0),'changed_tables':changes,'png_tiles':len(png0),'different_png_tiles':sorted(k for k in png0.keys()|png1.keys() if png0.get(k)!=png1.get(k))}
         (a.work/'parity.json').write_text(json.dumps(report,indent=2))
         print('SHARED_IMPORT_CARTO_PNG_PARITY',json.dumps(report))
