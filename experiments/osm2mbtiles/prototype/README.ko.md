@@ -74,3 +74,11 @@ osm2mbtiles korea.osm.pbf -z 0-15 -o korea.mbtiles --processes 4 --metatile 8 --
 - `run.bat` 실행이 성공하면 기본적으로 WSL에 만들어진 **중복 MBTiles만 자동 제거**하고 다운로드 PBF와 PostGIS DB는 유지합니다.
 - 별도의 **`cleanup.bat`**을 더블클릭하면 WSL 캐시 용량을 확인하거나, 성공한 변환 후 보관 중인 PostGIS DB만 안전하게 정리할 수 있습니다.
 - `set OSM2MBTILES_CLEANUP=prune` 후 `run.bat`을 실행하면 이번 생성이 완료된 뒤 DB까지 정리합니다. 자세한 내용은 `WINDOWS-ONECLICK.md`를 참조하세요.
+
+## 고속 벡터 타일 생성 (PostGIS SQL 최적화)
+
+`run.bat vector`는 기본적으로 `projected` SQL 모드를 사용합니다. PostGIS를 유지한 상태에서 피처별로 **실제로 존재하는 JSONB 태그 키만 추출**해 반복 속성 처리 비용을 줄입니다. 별도의 캐시 테이블이나 디스크 전처리가 필요하지 않습니다.
+
+기존 쿼리를 기준 구현으로 실행하려면 Windows 명령 프롬프트에서 `set OSM2MBTILES_VECTOR_QUERY_MODE=baseline`을 설정한 뒤 `run.bat vector`를 실행할 수 있습니다. `cached`는 실험용 캐시 모드이며 처음 생성할 때 오히려 느릴 수 있습니다.
+
+서울 일부 지역 실측에서는 벡터 타일 생성 15.90초 → 4.69초, import 포함 30.14초 → 18.93초였습니다. 디코딩된 218,140개 피처의 지오메트리와 속성까지 같은 것을 확인했습니다. 세부 제한 사항과 재현 URL은 `POSTGIS-VECTOR-OPTIMIZATION.ko.md`를 참고하세요.
