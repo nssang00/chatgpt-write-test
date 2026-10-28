@@ -1,0 +1,82 @@
+name: R73 Physical RTX Source Only vs Stock OpenLayers 10.10.0 ABBA
+on:
+  push:
+    branches: [bench/r69-vs-ol1010-rtx-20261028]
+    paths:
+      - '.github/workflows/r73-source-only-vs-ol-rtx.yml'
+      - 'bench/r70/**'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: r73-source-only-perf-abba
+  cancel-in-progress: false
+jobs:
+  real-rtx-abba:
+    name: Physical RTX / isolated 8 16 32 source ABBA
+    runs-on: self-hosted
+    timeout-minutes: 65
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: harness
+      - name: Checkout pinned R69 stacked candidate
+        uses: actions/checkout@v4
+        with:
+          repository: rydolabs/ol-vt-gl-boost
+          ref: 751df635fbd31b732048fd47fb3e77deee54979a
+          path: candidate
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Require physical RTX and pinned R69 SHA
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $g=@(Get-CimInstance Win32_VideoController|Select-Object Name,DriverVersion)
+          if(-not ($g | Where-Object {$_.Name -match 'NVIDIA.*RTX 5060 Ti'})){throw 'Real physical RTX 5060 Ti required'}
+          $s=(git -C candidate rev-parse HEAD).Trim()
+          if($s -ne '751df635fbd31b732048fd47fb3e77deee54979a'){throw 'R69 candidate drift'}
+          New-Item -Type Directory -Force candidate\artifacts\r73-benchmark | Out-Null
+          $g | ConvertTo-Json -Depth 4 | Set-Content -Encoding utf8 candidate\artifacts\r73-benchmark\gpu.json
+          $s | Set-Content candidate\artifacts\r73-benchmark\candidate-sha.txt
+      - name: Recreate exact OL 10.10.0 runtime and fixtures
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          Push-Location candidate
+          try {
+            npm ci --no-audit --no-fund
+            if($LASTEXITCODE -ne 0){throw 'npm ci failed'}
+            npm run test:vendor
+            if($LASTEXITCODE -ne 0){throw 'Vendor version/patch mismatch'}
+            npm install --no-save --package-lock=false --ignore-scripts --no-audit --no-fund playwright@1.55.0
+            if($LASTEXITCODE -ne 0){throw 'Playwright install failed'}
+            npm run test:rtx:prepare
+            if($LASTEXITCODE -ne 0){throw 'Independent MVT tile fixture preparation failed'}
+          }finally{Pop-Location}
+      - name: R73 source-only versus stock OL ABBA, five measured cold samples each
+        shell: powershell
+        env:
+          R70_ROUNDS: '5'
+        run: |
+          $ErrorActionPreference='Stop'
+          New-Item -ItemType Directory -Force candidate\examples\perf | Out-Null
+          Copy-Item harness\bench\r73\perf.html candidate\examples\perf\index.html -Force
+          Copy-Item harness\bench\r73\run-perf.mjs candidate\examples\perf\run-perf.mjs -Force
+          node candidate\examples\perf\run-perf.mjs candidate candidate\artifacts\r73-benchmark
+          if($LASTEXITCODE -ne 0){throw 'R70 benchmark validity failed; see evidence'}
+          $r=Get-Content candidate\artifacts\r73-benchmark\summary.json -Raw | ConvertFrom-Json
+          if(-not $r.valid -or @($r.scenes).Count -ne 3 -or @($r.raw).Count -ne 60){throw 'Incomplete ABBA benchmark evidence'}
+          Write-Host 'R73_RTX_ABBA_60_RAW_SAMPLES_VALID'
+          if(-not $r.performanceGate -or @($r.scenes | Where-Object {$_.reductionPct -lt 50}).Count -gt 0){throw 'R73 less than 50 percent latency reduction at 8/16/32'}
+          Write-Host 'R73_RTX_AT_LEAST_50_PERCENT_ALL_THREE_PASS'
+          $r.scenes | Select-Object count,olMedianMs,boostMedianMs,reductionPct,boostFasterBothArms | Format-Table
+      - name: Upload all raw samples even if benchmark fails
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: r73-source-only-ol1010-physical-rtx-raw
+          path: candidate/artifacts/r73-benchmark/**
+          retention-days: 30
+          if-no-files-found: warn
