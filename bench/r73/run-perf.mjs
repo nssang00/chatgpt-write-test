@@ -113,7 +113,11 @@ try{
      record.samples[phase]=readings.map(s=>s.ms);
      record[phase+'OlLayerCpuMs']=Number(median(readings.map(s=>s.olLayerCpuMs)).toFixed(3));
      record[phase+'OlLayerCalls']=Number(median(readings.map(s=>s.olLayerRenderCalls)).toFixed(0));
-     if(arm==='boost')record[phase+'BoostLastFrame']=readings[0].boostFrameStats;
+     if(arm==='boost'){
+       record[phase+'BoostLastFrame']=readings[0].boostFrameStats;
+       if(mode==='exclusive'&&readings.some(x=>x.boostFrameStats?.layerFboBypassed!==true))
+         throw Error('R73 isolated-tile FBO optimization not activated for known disjoint tiles');
+     }
      record.armMedians[phase]=Number(median(readings.map(s=>s.ms)).toFixed(3));
      console.log('R70_PHASE',JSON.stringify({count,phase,warmMs:warm.ms,medianMs:record.armMedians[phase]}));
    }
