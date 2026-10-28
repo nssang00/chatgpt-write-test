@@ -1,0 +1,31 @@
+name: osm2mbtiles Shared Import Real Seoul DB and MVT Parity
+"on":
+  push:
+    branches: [ci/osm2mbtiles-native-test]
+    paths:
+      - experiments/osm2mbtiles/prototype/benchmarks/shared_db_seoul_e2e.sh
+      - .github/workflows/osm2mbtiles-shared-seoul.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  parity:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install PostGIS and dependencies
+        run: |
+          set -euxo pipefail
+          sudo apt-get update -qq
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends postgresql-16 postgresql-client-16 postgresql-16-postgis-3 postgresql-16-postgis-3-scripts osm2pgsql python3-psycopg2 python3-pip time curl
+          /usr/bin/python3 -m pip install --break-system-packages mapbox-vector-tile
+      - name: Real Seoul split import vs shared import with database and MVT parity
+        run: bash experiments/osm2mbtiles/prototype/benchmarks/shared_db_seoul_e2e.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: shared-seoul-database-and-mvt-parity
+          path: shared-seoul-artifacts/
+          retention-days: 14
+          if-no-files-found: warn
