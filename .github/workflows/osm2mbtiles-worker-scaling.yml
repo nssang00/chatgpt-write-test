@@ -1,70 +1,58 @@
-name: osm2mbtiles Seoul PostGIS and Planetiler Worker Scaling
+name: osm2mbtiles Seoul PostGIS Workers vs Planetiler Threads 4 8 16 32
 on:
   workflow_dispatch:
   push:
     branches: [ci/osm2mbtiles-native-test]
     paths:
-      - '.github/workflows/osm2mbtiles-worker-scaling.yml'
-      - 'experiments/osm2mbtiles/prototype/benchmarks/worker_scaling_seoul.py'
+      - .github/workflows/osm2mbtiles-worker-scaling.yml
+      - experiments/osm2mbtiles/prototype/ci/worker_scaling.py
 permissions:
   contents: read
 jobs:
-  scale-seoul:
+  worker-scaling:
     runs-on: ubuntu-24.04
     timeout-minutes: 50
     steps:
       - uses: actions/checkout@v4
-      - name: Install real PostGIS, Mapnik, osm2pgsql and Java
-        shell: bash
+      - name: Install real PostgreSQL 16 PostGIS osm2pgsql and metrics dependencies
         run: |
           set -euxo pipefail
           sudo apt-get update -qq
           sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
             postgresql-16 postgresql-client-16 postgresql-16-postgis-3 \
-            postgresql-16-postgis-3-scripts osm2pgsql python3-psycopg2 \
-            python3-pip curl time git
+            postgresql-16-postgis-3-scripts osm2pgsql osmium-tool \
+            python3-psycopg2 python3-psutil python3-pip ca-certificates curl
           /usr/bin/python3 -m pip install --break-system-packages mapbox-vector-tile
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '25'
-      - name: Fetch identical Seoul PBF, Carto v6 and Planetiler v0.10.2
-        shell: bash
+      - name: Fetch matching Seoul PBF and pinned Planetiler jar
         run: |
           set -euxo pipefail
-          WORK="$RUNNER_TEMP/worker-scaling"
-          mkdir -p "$WORK" "$GITHUB_WORKSPACE/worker-scaling-evidence"
-          curl -fL --retry 3 --retry-delay 2 --connect-timeout 20 --max-time 240 \
-            https://tiles.osm.kr/download/seoul-non-military.osm.pbf -o "$WORK/seoul.osm.pbf"
-          sha256sum "$WORK/seoul.osm.pbf" > worker-scaling-evidence/input.sha256
-          git clone -q --depth 1 --branch v6.0.0 \
-            https://github.com/openstreetmap-carto/openstreetmap-carto.git "$WORK/carto"
-          curl -fL --retry 3 --retry-delay 3 \
+          WORK="$RUNNER_TEMP/seoul-scaling"
+          mkdir -p "$WORK" seoul-scaling-evidence
+          curl -fL --retry 3 --retry-delay 2 --connect-timeout 20 --max-time 180 \
+            https://tiles.osm.kr/download/seoul-non-military.osm.pbf \
+            -o "$WORK/seoul.osm.pbf"
+          curl -fL --retry 3 --retry-delay 3 --connect-timeout 20 --max-time 200 \
             https://github.com/onthegomap/planetiler/releases/download/v0.10.2/planetiler.jar \
             -o "$WORK/planetiler.jar"
-      - name: One shared import then PostGIS vector workers 1/2/4/8 and Planetiler 1/2/4/8, 2 passes
-        shell: bash
+          sha256sum "$WORK/seoul.osm.pbf" "$WORK/planetiler.jar"
+          osmium fileinfo "$WORK/seoul.osm.pbf"
+      - name: Repeat 4 8 16 32 worker comparisons with process-tree CPU and memory sampling
         run: |
           set -euxo pipefail
-          WORK="$RUNNER_TEMP/worker-scaling"
-          export PATH="/usr/lib/postgresql/16/bin:$PATH"
-          export PYTHONPATH="$GITHUB_WORKSPACE/experiments/osm2mbtiles/prototype/src"
-          export SCALING_WORK="$WORK" SCALING_STYLE="$WORK/carto" \
-                 SCALING_PBF="$WORK/seoul.osm.pbf" \
-                 SCALING_PLANETILER="$WORK/planetiler.jar" \
-                 SCALING_EVIDENCE="$GITHUB_WORKSPACE/worker-scaling-evidence"
-          export PGHOST="$WORK/socket" PGPORT=55465 PGUSER=scaleosm PGDATABASE=gis
-          mkdir -p "$PGHOST"
-          initdb -D "$WORK/pgdata" -U "$PGUSER" --auth-local=trust --auth-host=trust
-          pg_ctl -D "$WORK/pgdata" -l "$WORK/postgres.log" -w \
-            -o "-c listen_addresses='' -c unix_socket_directories=$PGHOST -c port=$PGPORT -c shared_buffers=64MB -c work_mem=4MB -c max_parallel_maintenance_workers=0" start
-          trap 'cp "$WORK/postgres.log" "$GITHUB_WORKSPACE/worker-scaling-evidence/" || true; pg_ctl -D "$WORK/pgdata" -m fast -w stop || true' EXIT
-          /usr/bin/python3 experiments/osm2mbtiles/prototype/benchmarks/worker_scaling_seoul.py
-          cat worker-scaling-evidence/summary.md >> "$GITHUB_STEP_SUMMARY"
-      - uses: actions/upload-artifact@v4
+          PROJECT="$GITHUB_WORKSPACE/experiments/osm2mbtiles/prototype"
+          /usr/bin/python3 "$PROJECT/ci/worker_scaling.py" \
+            --project "$PROJECT" --work "$RUNNER_TEMP/seoul-scaling" \
+            --evidence "$GITHUB_WORKSPACE/seoul-scaling-evidence" --repeats 2
+          cat seoul-scaling-evidence/summary.md >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload full metrics including partial results on failures
         if: always()
+        uses: actions/upload-artifact@v4
         with:
-          name: osm2mbtiles-worker-scaling-seoul-evidence
-          path: worker-scaling-evidence/
-          retention-days: 14
+          name: seoul-postgis-planetiler-worker-scaling
+          path: seoul-scaling-evidence/
+          retention-days: 30
           if-no-files-found: warn
