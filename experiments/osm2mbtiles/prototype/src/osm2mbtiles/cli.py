@@ -163,29 +163,60 @@ def run_pipeline(pbf,out,bbox,lo,hi,args,work,runtime):
     vector_dir = Path(__file__).resolve().parents[2]/'vector'
     if vector and not (vector_dir/'vector-flex.lua').is_file():
         raise PipelineError(f'Missing vector flex source: {vector_dir}')
+    # Keys record the actual import recipe. Independently cached imports must
+    # never masquerade as a combined-import snapshot after a style/profile
+    # change (especially since raster import DROPs the private gis database).
+    vkey = (hashlib.sha256((pbf_digest+file_digest(vector_dir/'vector-flex.lua')+
+             file_digest(vector_dir/'post-import.sql')+
+             '|import-profile='+args.vector_import_profile).encode()).hexdigest()
+            if vector else None)
+    vstate = work/'vector-state.json'
     with LocalDatabase(runtime,work) as db:
-        if raster:
-            if previous.get('import_key') != key:
-                print('Importing PBF into private PostGIS for raster...',flush=True)
-                db.import_extract(pbf,style)
+        if raster and vector:
+            combined_key = hashlib.sha256((key+'|'+vkey+'|combined-flex-v1').encode()).hexdigest()
+            combined_state = work/'combined-import-state.json'
+            state = json.loads(combined_state.read_text()) if combined_state.is_file() else {}
+            if state.get('key') != combined_key:
+                # Invalidate state BEFORE destructive import. A failed import
+                # must never be silently reused on the next run.
+                combined_state.unlink(missing_ok=True)
+                state_file.unlink(missing_ok=True)
+                vstate.unlink(missing_ok=True)
+                (work/'vector-cache-state.json').unlink(missing_ok=True)
+                print('[BOTH] Single-pass Carto + detailed vector flex import...',flush=True)
+                db.import_both_extract(pbf,style,vector_dir,args.vector_import_profile)
                 db.prepare_external_data(style)
-                state_file.write_text(json.dumps({'import_key':key},indent=2),encoding='utf-8')
-                # Carto import drops gis. Invalidate any prior vector tables.
-                (work/'vector-state.json').unlink(missing_ok=True)
+                state_file.write_text(json.dumps({'import_key':key}),encoding='utf-8')
+                vstate.write_text(json.dumps({'import_key':vkey}),encoding='utf-8')
+                combined_state.write_text(json.dumps({'key':combined_key}),encoding='utf-8')
             else:
-                print('Reusing prior raster import.',flush=True)
-        if vector:
-            vkey = hashlib.sha256((pbf_digest+file_digest(vector_dir/'vector-flex.lua')+
-                     file_digest(vector_dir/'post-import.sql')+
-                     '|import-profile='+args.vector_import_profile).encode()).hexdigest()
-            vstate = work/'vector-state.json'
-            cached = json.loads(vstate.read_text()) if vstate.is_file() else {}
-            if cached.get('import_key') != vkey:
-                print('[VECTOR] Importing full OSM tags into private vector tables...',flush=True)
-                db.import_vector_extract(pbf,vector_dir,args.vector_import_profile)
-                vstate.write_text(json.dumps({'import_key':vkey},indent=2),encoding='utf-8')
-            else:
-                print('[VECTOR] Reusing detailed vector import.',flush=True)
+                print('[BOTH] Reusing combined Carto + vector import.',flush=True)
+        else:
+            # The old split paths remain for raster-only and vector-only runs.
+            # If raster drops gis, invalidate vector and combined cache stamps.
+            if raster:
+                if previous.get('import_key') != key:
+                    state_file.unlink(missing_ok=True)
+                    vstate.unlink(missing_ok=True)
+                    (work/'combined-import-state.json').unlink(missing_ok=True)
+                    (work/'vector-cache-state.json').unlink(missing_ok=True)
+                    print('Importing PBF into private PostGIS for raster...',flush=True)
+                    db.import_extract(pbf,style)
+                    db.prepare_external_data(style)
+                    state_file.write_text(json.dumps({'import_key':key}),encoding='utf-8')
+                else:
+                    print('Reusing prior raster import.',flush=True)
+            if vector:
+                cached = json.loads(vstate.read_text()) if vstate.is_file() else {}
+                if cached.get('import_key') != vkey:
+                    vstate.unlink(missing_ok=True)
+                    (work/'combined-import-state.json').unlink(missing_ok=True)
+                    (work/'vector-cache-state.json').unlink(missing_ok=True)
+                    print('[VECTOR] Importing full OSM tags into private vector tables...',flush=True)
+                    db.import_vector_extract(pbf,vector_dir,args.vector_import_profile)
+                    vstate.write_text(json.dumps({'import_key':vkey}),encoding='utf-8')
+                else:
+                    print('[VECTOR] Reusing detailed vector import.',flush=True)
         if raster:
             worker = _worker_path()
             if not worker.is_file():
