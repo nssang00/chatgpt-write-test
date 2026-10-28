@@ -110,6 +110,18 @@ jobs:
           /usr/bin/python3 -m osm2mbtiles verify-vector \
             "$GITHUB_WORKSPACE/vector-artifacts/monaco.cli.vector.mbtiles"
           echo REAL_OSM2MBTILES_VECTOR_CLI_SUCCESS
+          # Run optional fast importer through the real end-user CLI and verify
+          # full MVT semantic equality with the safe importer (Monaco).
+          /usr/bin/python3 -m osm2mbtiles "$WORK/monaco.osm.pbf" -z 12-14 \
+            --bbox 7.40,43.71,7.46,43.75 --format vector \
+            --vector-import-profile fast \
+            -o "$GITHUB_WORKSPACE/vector-artifacts/monaco.fast.vector.mbtiles" \
+            --runtime "$RUNTIME" --workdir "$WORK/cli-work" --processes 2
+          /usr/bin/python3 "$PROJECT/benchmarks/compare_postgis_modes.py" \
+            "$GITHUB_WORKSPACE/vector-artifacts/monaco.cli.vector.mbtiles" \
+            "$GITHUB_WORKSPACE/vector-artifacts/monaco.fast.vector.mbtiles" \
+            --output "$GITHUB_WORKSPACE/vector-artifacts/fast-import-parity.json"
+          echo REAL_OSM2MBTILES_FAST_IMPORT_CLI_PARITY_SUCCESS
           pg_ctl -D "$WORK/pgdata" -m fast -w stop
           trap - EXIT
       - name: Python unit regression tests
