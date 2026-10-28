@@ -3,8 +3,8 @@
 # No Docker and no system PostgreSQL service configuration by the user.
 set -Eeuo pipefail
 
-if [[ $# -ne 7 ]]; then
-  echo 'usage: run_wsl.sh <project-win> <pbf-win> <out-win> <zoom> <workers> <cleanup> <format>' >&2
+if [[ $# -ne 7 && $# -ne 8 ]]; then
+  echo 'usage: run_wsl.sh <project-win> <pbf-win> <out-win> <zoom> <workers> <cleanup> <format> [vector-sql-mode]' >&2
   exit 2
 fi
 PROJECT="$(wslpath -a "$1")"
@@ -22,6 +22,7 @@ ZOOM="$4"
 WORKERS="$5"
 CLEANUP="$6"
 FORMAT="$7"
+QUERY_MODE="${8:-projected}"
 if [[ ! -f "$PROJECT/pyproject.toml" ]] || { [[ "$AUTO_DOWNLOAD" != 1 ]] && [[ ! -f "$PBF" ]]; }; then
   echo '[ERROR] WSL cannot locate PBF or project files.' >&2
   exit 2
@@ -31,6 +32,7 @@ if [[ ! "$ZOOM" =~ ^[0-9]+(-[0-9]+)?$ || ! "$WORKERS" =~ ^[0-9]+$ ]]; then
   exit 2
 fi
 
+case "$QUERY_MODE" in projected|baseline|cached) ;; *) echo '[ERROR] Vector SQL mode must be projected/baseline/cached' >&2; exit 2 ;; esac
 case "$FORMAT" in raster|vector|both) ;; *) echo '[ERROR] Format must be raster/vector/both' >&2; exit 2 ;; esac
 case "$CLEANUP" in keep|compact|prune) ;; *) echo '[ERROR] Unknown cache policy (keep/compact/prune).' >&2; exit 2 ;; esac
 
@@ -199,7 +201,7 @@ LOCAL_OUT="$EXPORTDIR/$EXPORT_NAME"
 echo "[RUN] Converting PBF to $FORMAT MBTiles."
 /usr/bin/python3 -m osm2mbtiles "$PBF" -z "$ZOOM" -o "$LOCAL_OUT" \
   --runtime "$RUNTIME" --workdir "$WORKDIR" --processes "$WORKERS" \
-  --metatile 8 --encoding png --format "$FORMAT" --force
+  --metatile 8 --encoding png --format "$FORMAT" --vector-query-mode "$QUERY_MODE" --force
 
 # For both, CLI adds raster/vector suffixes. Never copy an unverified file.
 BASE_OUT="${OUTPUT%.mbtiles}"
