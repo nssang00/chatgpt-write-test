@@ -113,7 +113,7 @@ try{
    backend=new WebGL1Backend(canvas,{contextAntialias:false,gpuCompletionMode:mode==='blocking'?'blocking':'submit',cacheBindings:true,profileTiming:false});
    binding=new DirectM5SceneBinding({
      map,backend,canvas,layerStyleResolver:layer=>styles.get(layer),
-     vectorTileOptions:{drawMode:'style-pass',stableStyleIdentityCache:true,profileCPU:false,olLayerFboComposition:mode!=='submit-nofbo',
+     vectorTileOptions:{drawMode:'style-pass',stableStyleIdentityCache:true,profileCPU:false,olLayerFboComposition:mode!=='submit-nofbo',isolatedTileFboFastPath:mode==='exclusive',
        closedLineJoins:true,polygonInsideSegmentFastPath:true,polygonEarBBoxPrecheck:true},
      onError:({error})=>fail(error)
    });
