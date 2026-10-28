@@ -1,1 +1,44 @@
-The requested file reference is not currently visible. Use files.search or files.list to rediscover the file, then retry with a returned ref_id or file_id.
+name: osm2mbtiles Single-pass Carto PNG + Vector PBF Parity
+"on":
+  workflow_dispatch:
+  push:
+    branches: [ci/osm2mbtiles-native-test]
+    paths:
+      - experiments/osm2mbtiles/prototype/benchmarks/shared_*
+      - experiments/osm2mbtiles/prototype/benchmarks/render_carto_parity.py
+      - experiments/osm2mbtiles/prototype/src/osm2mbtiles/runtime.py
+      - .github/workflows/osm2mbtiles-shared-e2e.yml
+permissions:
+  contents: read
+jobs:
+  shared-import-parity:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install real Carto v6 Mapnik PostgreSQL and vector decoder
+        shell: bash
+        run: |
+          set -euxo pipefail
+          sudo apt-get update -qq
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            postgresql-16 postgresql-client-16 postgresql-16-postgis-3 \
+            postgresql-16-postgis-3-scripts osm2pgsql gdal-bin \
+            python3-mapnik python3-psycopg2 python3-requests python3-yaml \
+            python3-pil python3-pip fonts-hanazono time fontconfig curl
+          /usr/bin/python3 -m pip install --break-system-packages mapbox-vector-tile
+          sudo npm install --global carto@1.2.0
+      - name: Full real-data separate vs one-pass comparison including Carto PNG pixels
+        shell: bash
+        run: bash experiments/osm2mbtiles/prototype/benchmarks/shared_import_e2e.sh
+      - name: Python regression suite
+        run: |
+          cd experiments/osm2mbtiles/prototype
+          /usr/bin/python3 -m pytest -q tests/test_shared_import.py tests/test_vector.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: shared-import-real-parity-evidence
+          path: shared-import-artifacts/
+          if-no-files-found: warn
+          retention-days: 14
