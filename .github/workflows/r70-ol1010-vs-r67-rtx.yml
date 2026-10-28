@@ -1,0 +1,76 @@
+name: R70 Baseline Physical RTX R67 Worker OFF vs Stock OL 10.10.0 ABBA
+on:
+  push:
+    branches: [bench/r69-vs-ol1010-rtx-20261028]
+    paths:
+      - '.github/workflows/r70-ol1010-vs-r67-rtx.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: r70-ol1010-r67-perf-abba
+  cancel-in-progress: false
+jobs:
+  real-rtx-abba-r67:
+    runs-on: self-hosted
+    timeout-minutes: 65
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: harness
+      - uses: actions/checkout@v4
+        with:
+          repository: rydolabs/ol-vt-gl-boost
+          ref: 536b9ce92be9dfd016066437a15d87b24e4b9706
+          path: candidate
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Require NVIDIA RTX 5060 Ti and original R67 SHA
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $g=@(Get-CimInstance Win32_VideoController|Select-Object Name,DriverVersion)
+          if(-not ($g|Where-Object {$_.Name -match 'NVIDIA.*RTX 5060 Ti'})){throw 'Physical RTX 5060 Ti required'}
+          $s=(git -C candidate rev-parse HEAD).Trim()
+          if($s -ne '536b9ce92be9dfd016066437a15d87b24e4b9706'){throw 'Source drift'}
+          New-Item -Type Directory -Force candidate\artifacts\r70-r67-benchmark | Out-Null
+          $g | ConvertTo-Json -Depth 4 | Set-Content -Encoding utf8 candidate\artifacts\r70-r67-benchmark\gpu.json
+          $s | Set-Content candidate\artifacts\r70-r67-benchmark\candidate-sha.txt
+      - name: Install browser and reconstruct 32 independent PBF fixtures
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          Push-Location candidate
+          try {
+            npm install --no-save --package-lock=false --ignore-scripts --no-audit --no-fund playwright@1.55.0
+            if($LASTEXITCODE -ne 0){throw 'Playwright installation failed'}
+            npm run test:rtx:prepare
+            if($LASTEXITCODE -ne 0){throw '32 PBF fixture generation failed'}
+          }finally{Pop-Location}
+      - name: Run R67 vs OL isolated ABBA with same benchmark harness
+        shell: powershell
+        env:
+          R70_ROUNDS: '5'
+        run: |
+          $ErrorActionPreference='Stop'
+          New-Item -Type Directory -Force candidate\examples\perf | Out-Null
+          Copy-Item harness\bench\r70\perf.html candidate\examples\perf\index.html -Force
+          $path='candidate\examples\perf\run-perf.mjs'
+          $txt=(Get-Content harness\bench\r70\run-perf.mjs -Raw)
+          $txt=$txt.Replace('ef70e86dac6dcaa079ee156f635417ef97a7e388','536b9ce92be9dfd016066437a15d87b24e4b9706').Replace('R69 Worker-OFF','R67 Worker-OFF').Replace('R69 Worker OFF','R67 Worker OFF')
+          [System.IO.File]::WriteAllText((Join-Path (Get-Location) $path),$txt,(New-Object System.Text.UTF8Encoding($false)))
+          node $path candidate candidate\artifacts\r70-r67-benchmark
+          if($LASTEXITCODE -ne 0){throw 'R67 benchmark validity failed'}
+          $r=Get-Content candidate\artifacts\r70-r67-benchmark\summary.json -Raw | ConvertFrom-Json
+          if(-not $r.valid -or @($r.scenes).Count -ne 3 -or @($r.raw).Count -ne 60){throw 'Incomplete R67 baseline'}
+          Write-Host 'R70_R67_ABBA_60_SAMPLES_VALID'
+          $r.scenes | Select-Object count,olMedianMs,boostMedianMs,reductionPct | Format-Table
+      - name: Preserve R67 isolated performance samples and screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: r70-r67-versus-stock-ol-rtx-raw
+          path: candidate/artifacts/r70-r67-benchmark/**
+          retention-days: 30
+          if-no-files-found: warn
