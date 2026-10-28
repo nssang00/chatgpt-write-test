@@ -67,7 +67,7 @@ try{
      :{'fill-color':'rgba(210,194,169,0.52)','stroke-color':'#766655','stroke-width':1};
    const layer=new WebGLVectorTileLayer({source,style,disableHitDetection:true});
    const originalRender=layer.render;
-   layer.render=function(frameState,target){const t=performance.now();const result=originalRender.call(this,frameState,target);state.olLayerCpuMs+=performance.now()-t;state.olLayerRenderCalls++;return result;};
+   if(arm==='ol')layer.render=function(frameState,target){const t=performance.now();const result=originalRender.call(this,frameState,target);state.olLayerCpuMs+=performance.now()-t;state.olLayerRenderCalls++;return result;};
    styles.set(layer,style);return layer;
  });
  const target=document.getElementById('map'),canvas=document.getElementById('boost-canvas');
@@ -119,7 +119,7 @@ try{
    });
    binding.bridge.pipeline.tileScissorEnabled=true;
    binding.start({renderSync:false});
-   if(mode==='source-only')new OlStockRenderGate({map,scene:binding,onError:({error})=>fail(error)}).start();
+   if(mode==='exclusive')exclusive=new OlExclusiveVectorTileRenderHost({map,layers,onError:fail}).start();
    map.on('postrender',()=>finish());
    map.setTarget(target);
    map.renderSync();map.render();
