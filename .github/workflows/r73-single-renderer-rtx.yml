@@ -1,7 +1,7 @@
 name: R73 Candidate Single Renderer RTX 12 Oracle Fallback
 on:
   push:
-    branches: [bench/r69-vs-ol1010-rtx-20261028]
+    branches: [ci/r73-exclusive-renderer-rtx]
     paths:
       - '.github/workflows/r73-single-renderer-rtx.yml'
   workflow_dispatch:
@@ -19,7 +19,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: rydolabs/ol-vt-gl-boost
-          ref: fde50715eb683934d664fc912f91b8daa11dca9b
+          ref: 807e927bd9c1bbd37ec441d432df4836d50cba08
           path: candidate
       - uses: actions/setup-node@v4
         with:
@@ -31,7 +31,7 @@ jobs:
           $g=@(Get-CimInstance Win32_VideoController|Select-Object Name,DriverVersion)
           if(-not ($g|Where-Object {$_.Name -match 'NVIDIA.*RTX 5060 Ti'})){throw 'NVIDIA RTX 5060 Ti required'}
           $sha=(git -C candidate rev-parse HEAD).Trim()
-          if($sha -ne 'fde50715eb683934d664fc912f91b8daa11dca9b'){throw 'Source drift'}
+          if($sha -ne '807e927bd9c1bbd37ec441d432df4836d50cba08'){throw 'Source drift'}
           New-Item -ItemType Directory -Force candidate\artifacts\r69 | Out-Null
           $g | ConvertTo-Json -Depth 4 | Set-Content -Encoding utf8 candidate\artifacts\r69\GPU.json
           $sha | Set-Content candidate\artifacts\r69\PINNED_SHA.txt
