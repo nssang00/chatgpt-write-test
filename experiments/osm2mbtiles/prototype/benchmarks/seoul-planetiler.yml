@@ -14,7 +14,9 @@ layers:
         geometry: line
         min_zoom: 6
         include_when:
-          'highway': '%'
+          'highway': __any__
+        exclude_when:
+          'highway': [footway, cycleway, path, steps, pedestrian, bridleway]
         attributes:
           - key: class
             tag_value: 'highway'
@@ -46,7 +48,7 @@ layers:
         geometry: line
         min_zoom: 12
         include_when:
-          'highway': '%'
+          'highway': [footway, cycleway, path, steps, pedestrian, bridleway]
         attributes:
           - key: class
             tag_value: 'highway'
@@ -282,192 +284,23 @@ layers:
     features:
       - source: osm
         geometry: point
-        min_zoom: 12
+        min_zoom:
+          default_value: 14
+          overrides:
+            12:
+              amenity: [hospital, university, school, townhall, police, fire_station]
+              tourism: [museum, attraction]
         include_when:
-          'amenity': '%'
+          amenity: __any__
+          shop: __any__
+          tourism: __any__
+          office: __any__
+          craft: __any__
+          historic: __any__
+          leisure: __any__
         attributes:
           - key: class
-            tag_value: 'amenity'
-          - key: 'name'
-            tag_value: 'name'
-          - key: 'name:ko'
-            tag_value: 'name:ko'
-          - key: 'name:en'
-            tag_value: 'name:en'
-          - key: 'brand'
-            tag_value: 'brand'
-          - key: 'operator'
-            tag_value: 'operator'
-          - key: 'opening_hours'
-            tag_value: 'opening_hours'
-          - key: 'amenity'
-            tag_value: 'amenity'
-          - key: 'shop'
-            tag_value: 'shop'
-          - key: 'tourism'
-            tag_value: 'tourism'
-          - key: 'office'
-            tag_value: 'office'
-          - key: 'craft'
-            tag_value: 'craft'
-      - source: osm
-        geometry: point
-        min_zoom: 12
-        include_when:
-          'shop': '%'
-        attributes:
-          - key: class
-            tag_value: 'shop'
-          - key: 'name'
-            tag_value: 'name'
-          - key: 'name:ko'
-            tag_value: 'name:ko'
-          - key: 'name:en'
-            tag_value: 'name:en'
-          - key: 'brand'
-            tag_value: 'brand'
-          - key: 'operator'
-            tag_value: 'operator'
-          - key: 'opening_hours'
-            tag_value: 'opening_hours'
-          - key: 'amenity'
-            tag_value: 'amenity'
-          - key: 'shop'
-            tag_value: 'shop'
-          - key: 'tourism'
-            tag_value: 'tourism'
-          - key: 'office'
-            tag_value: 'office'
-          - key: 'craft'
-            tag_value: 'craft'
-      - source: osm
-        geometry: point
-        min_zoom: 12
-        include_when:
-          'tourism': '%'
-        attributes:
-          - key: class
-            tag_value: 'tourism'
-          - key: 'name'
-            tag_value: 'name'
-          - key: 'name:ko'
-            tag_value: 'name:ko'
-          - key: 'name:en'
-            tag_value: 'name:en'
-          - key: 'brand'
-            tag_value: 'brand'
-          - key: 'operator'
-            tag_value: 'operator'
-          - key: 'opening_hours'
-            tag_value: 'opening_hours'
-          - key: 'amenity'
-            tag_value: 'amenity'
-          - key: 'shop'
-            tag_value: 'shop'
-          - key: 'tourism'
-            tag_value: 'tourism'
-          - key: 'office'
-            tag_value: 'office'
-          - key: 'craft'
-            tag_value: 'craft'
-      - source: osm
-        geometry: point
-        min_zoom: 12
-        include_when:
-          'office': '%'
-        attributes:
-          - key: class
-            tag_value: 'office'
-          - key: 'name'
-            tag_value: 'name'
-          - key: 'name:ko'
-            tag_value: 'name:ko'
-          - key: 'name:en'
-            tag_value: 'name:en'
-          - key: 'brand'
-            tag_value: 'brand'
-          - key: 'operator'
-            tag_value: 'operator'
-          - key: 'opening_hours'
-            tag_value: 'opening_hours'
-          - key: 'amenity'
-            tag_value: 'amenity'
-          - key: 'shop'
-            tag_value: 'shop'
-          - key: 'tourism'
-            tag_value: 'tourism'
-          - key: 'office'
-            tag_value: 'office'
-          - key: 'craft'
-            tag_value: 'craft'
-      - source: osm
-        geometry: point
-        min_zoom: 12
-        include_when:
-          'craft': '%'
-        attributes:
-          - key: class
-            tag_value: 'craft'
-          - key: 'name'
-            tag_value: 'name'
-          - key: 'name:ko'
-            tag_value: 'name:ko'
-          - key: 'name:en'
-            tag_value: 'name:en'
-          - key: 'brand'
-            tag_value: 'brand'
-          - key: 'operator'
-            tag_value: 'operator'
-          - key: 'opening_hours'
-            tag_value: 'opening_hours'
-          - key: 'amenity'
-            tag_value: 'amenity'
-          - key: 'shop'
-            tag_value: 'shop'
-          - key: 'tourism'
-            tag_value: 'tourism'
-          - key: 'office'
-            tag_value: 'office'
-          - key: 'craft'
-            tag_value: 'craft'
-      - source: osm
-        geometry: point
-        min_zoom: 12
-        include_when:
-          'historic': '%'
-        attributes:
-          - key: class
-            tag_value: 'historic'
-          - key: 'name'
-            tag_value: 'name'
-          - key: 'name:ko'
-            tag_value: 'name:ko'
-          - key: 'name:en'
-            tag_value: 'name:en'
-          - key: 'brand'
-            tag_value: 'brand'
-          - key: 'operator'
-            tag_value: 'operator'
-          - key: 'opening_hours'
-            tag_value: 'opening_hours'
-          - key: 'amenity'
-            tag_value: 'amenity'
-          - key: 'shop'
-            tag_value: 'shop'
-          - key: 'tourism'
-            tag_value: 'tourism'
-          - key: 'office'
-            tag_value: 'office'
-          - key: 'craft'
-            tag_value: 'craft'
-      - source: osm
-        geometry: point
-        min_zoom: 12
-        include_when:
-          'leisure': '%'
-        attributes:
-          - key: class
-            tag_value: 'leisure'
+            type: match_value
           - key: 'name'
             tag_value: 'name'
           - key: 'name:ko'
@@ -492,72 +325,23 @@ layers:
             tag_value: 'craft'
       - source: osm
         geometry: polygon_point_on_surface
-        min_zoom: 12
+        min_zoom:
+          default_value: 14
+          overrides:
+            12:
+              amenity: [hospital, university, school, townhall, police, fire_station]
+              tourism: [museum, attraction]
         include_when:
-          'amenity': '%'
+          amenity: __any__
+          shop: __any__
+          tourism: __any__
+          office: __any__
+          craft: __any__
+          historic: __any__
+          leisure: __any__
         attributes:
           - key: class
-            tag_value: 'amenity'
-          - key: 'name'
-            tag_value: 'name'
-          - key: 'name:ko'
-            tag_value: 'name:ko'
-          - key: 'name:en'
-            tag_value: 'name:en'
-          - key: 'brand'
-            tag_value: 'brand'
-          - key: 'operator'
-            tag_value: 'operator'
-          - key: 'opening_hours'
-            tag_value: 'opening_hours'
-          - key: 'amenity'
-            tag_value: 'amenity'
-          - key: 'shop'
-            tag_value: 'shop'
-          - key: 'tourism'
-            tag_value: 'tourism'
-          - key: 'office'
-            tag_value: 'office'
-          - key: 'craft'
-            tag_value: 'craft'
-      - source: osm
-        geometry: polygon_point_on_surface
-        min_zoom: 12
-        include_when:
-          'shop': '%'
-        attributes:
-          - key: class
-            tag_value: 'shop'
-          - key: 'name'
-            tag_value: 'name'
-          - key: 'name:ko'
-            tag_value: 'name:ko'
-          - key: 'name:en'
-            tag_value: 'name:en'
-          - key: 'brand'
-            tag_value: 'brand'
-          - key: 'operator'
-            tag_value: 'operator'
-          - key: 'opening_hours'
-            tag_value: 'opening_hours'
-          - key: 'amenity'
-            tag_value: 'amenity'
-          - key: 'shop'
-            tag_value: 'shop'
-          - key: 'tourism'
-            tag_value: 'tourism'
-          - key: 'office'
-            tag_value: 'office'
-          - key: 'craft'
-            tag_value: 'craft'
-      - source: osm
-        geometry: polygon_point_on_surface
-        min_zoom: 12
-        include_when:
-          'tourism': '%'
-        attributes:
-          - key: class
-            tag_value: 'tourism'
+            type: match_value
           - key: 'name'
             tag_value: 'name'
           - key: 'name:ko'
