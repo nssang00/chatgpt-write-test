@@ -15,7 +15,7 @@ if(!Number.isInteger(rounds)||rounds<3||rounds>12)throw Error('3..12 rounds requ
 const playwright=await import(pathToFileURL(join(root,'node_modules/playwright/index.mjs')).href);
 const {chromium}=playwright;
 await mkdir(out,{recursive:true});
-const summary={suite:'R70 isolated OL10.10.0 vs R73 Source-Only Worker OFF physical RTX',candidate:'cbfd1f874e65df75cf93b134eac0d04ae857f1e8',
+const summary={suite:'R70 isolated OL10.10.0 vs R73 Source-Only Worker OFF physical RTX',candidate:'03ac83377b3362f207289b58692bc3617a910fca',
  metric:'milliseconds from map construction through first all-selected-tiles-rendered frame and gl.finish',
  limitations:['preloaded real PBF fixtures, not a network or full page bootstrap benchmark',
  'Boost arm retains hidden OL layers for live stock-OL fallback, as in product demo',
