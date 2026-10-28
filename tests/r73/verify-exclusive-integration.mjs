@@ -76,7 +76,9 @@ try{
     'source demo exclusive-host/fallback integration contract changed');
   const modified=original.replace(needle,
     "const selected=manifest.sources.slice(0,Number(new URLSearchParams(location.search).get('count')||8));")
-    .replace(hostNeedle,hostNeedle+'\n  globalThis.__r73ExclusiveSnapshot=()=>exclusive.snapshot();');
+    .replace(hostNeedle,hostNeedle+'\n  globalThis.__r73ExclusiveSnapshot=()=>exclusive.snapshot();'+
+      '\n  globalThis.__r73ViewSnapshot=()=>({center:boostMap.getView().getCenter().slice(),resolution:boostMap.getView().getResolution(),rotation:boostMap.getView().getRotation()});'+
+      '\n  globalThis.__r73GlError=()=>backend.gl.getError();');
   await mkdir(join(root,'examples/r73-exclusive-test'),{recursive:true});
   await writeFile(join(root,'examples/r73-exclusive-test/index.html'),modified);
   const playwright=await import(pathToFileURL(join(root,'node_modules/playwright/index.mjs')).href);
@@ -122,9 +124,11 @@ try{
         return {report:{...r},exclusive:e,
           gpu:ext?gl.getParameter(ext.UNMASKED_RENDERER_WEBGL):null,
           stockCanvases:document.querySelectorAll('#stock-map canvas').length,
-          boostStockCanvases:document.querySelectorAll('#boost-map canvas').length};
+          boostStockCanvases:document.querySelectorAll('#boost-map canvas').length,
+          glError:globalThis.__r73GlError?.()};
       });
       assert(/NVIDIA.*RTX 5060 Ti/i.test(before.gpu||''),id+' nonphysical GPU '+before.gpu);
+      assert(before.glError===0,id+' GL error '+before.glError);
       assert(before.report.workerDefaultOff===true&&before.report.errors.length===0,
         id+' Worker ON or source errors '+JSON.stringify(before.report));
       assert(before.report.sourceLoads>=count*2&&before.stockCanvases>0,
@@ -149,7 +153,12 @@ try{
         const restored=await page.evaluate(()=>globalThis.__r73ExclusiveSnapshot?.());
         assert(restored?.active===false&&restored?.restored===true,
           id+' exclusive host not restored '+JSON.stringify(restored));
+        const viewBefore=await page.evaluate(()=>globalThis.__r73ViewSnapshot());
         await input(page);
+        const viewAfter=await page.evaluate(()=>globalThis.__r73ViewSnapshot());
+        assert(Math.hypot(viewAfter.center[0]-viewBefore.center[0],viewAfter.center[1]-viewBefore.center[1])>10&&
+          Math.abs(viewAfter.resolution-viewBefore.resolution)>0.01,
+          id+' fallback pointer/wheel failed to move stock OL view '+JSON.stringify({viewBefore,viewAfter}));
         const stock=await capture(page,'#stock-map',join(out,id+'-stock-after-input.png'));
         const fallback=await capture(page,'#boost-map',join(out,id+'-fallback-after-input.png'));
         const parity=await audit(page,stock,fallback);
