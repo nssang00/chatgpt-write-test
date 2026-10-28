@@ -1,0 +1,96 @@
+name: Seoul MapLibre First Idle Transition AB Physical RTX
+on:
+  push:
+    branches: [bench/seoul-maplibre-idle-ab-20261028]
+    paths:
+      - 'bench/seoul-extended/run-transition-ab.mjs'
+      - 'bench/seoul-extended/transition-probe.js'
+      - '.github/workflows/seoul-maplibre-transition-ab.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: seoul-maplibre-transition-ab
+  cancel-in-progress: false
+jobs:
+  check:
+    name: MapLibre Default vs Zero Transition
+    runs-on: self-hosted
+    timeout-minutes: 65
+    defaults:
+      run:
+        shell: powershell
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+      - name: Validate source and physical RTX
+        run: |
+          $ErrorActionPreference='Stop'
+          $gpu=@(Get-CimInstance Win32_VideoController | Select-Object Name,DriverVersion)
+          if(-not ($gpu | Where-Object {$_.Name -match 'NVIDIA.*RTX'})){throw 'Physical NVIDIA RTX required'}
+          $candidates=@(
+            (Join-Path $env:ProgramFiles 'Google\Chrome\Application\chrome.exe'),
+            (Join-Path $env:LOCALAPPDATA 'Google\Chrome\Application\chrome.exe')
+          )
+          $chrome=$candidates|Where-Object {Test-Path $_}|Select-Object -First 1
+          if(-not $chrome){throw 'Installed Chrome required'}
+          "CHROME_PATH=$chrome"|Out-File $env:GITHUB_ENV -Append -Encoding utf8
+          Copy-Item bench/seoul-extended/transition-probe.js bench/seoul-render/src/transition-probe.js -Force
+          Copy-Item bench/seoul-extended/run-transition-ab.mjs bench/seoul-render/run-transition-ab.mjs -Force
+          Push-Location bench/seoul-render
+          try {
+            node --check src/transition-probe.js
+            if($LASTEXITCODE -ne 0){throw 'Invalid probe syntax'}
+            node --check run-transition-ab.mjs
+            if($LASTEXITCODE -ne 0){throw 'Invalid harness syntax'}
+            npm install --no-audit --no-fund --ignore-scripts
+            if($LASTEXITCODE -ne 0){throw 'npm install failed'}
+          }finally{Pop-Location}
+      - name: Acquire identical real Seoul MVT fixture
+        run: |
+          $ErrorActionPreference='Stop'
+          $work=Join-Path $env:RUNNER_TEMP 'seoul-style-transition-ab'
+          New-Item -ItemType Directory -Force $work | Out-Null
+          $source=Join-Path $work 'seoul.osm.pbf'
+          $jar=Join-Path $work 'planetiler.jar'
+          Invoke-WebRequest -Uri 'https://tiles.osm.kr/download/seoul-non-military.osm.pbf' -OutFile $source -MaximumRedirection 5
+          Invoke-WebRequest -Uri 'https://github.com/onthegomap/planetiler/releases/download/v0.10.2/planetiler.jar' -OutFile $jar -MaximumRedirection 5
+          if((Get-Item $source).Length -lt 1000000 -or (Get-Item $jar).Length -lt 1000000){throw 'Invalid sources'}
+          "TRANSITION_WORK=$work"|Out-File $env:GITHUB_ENV -Append -Encoding utf8
+      - name: Generate Planetiler vector tiles 18 sources
+        run: |
+          $ErrorActionPreference='Stop'
+          Push-Location $env:TRANSITION_WORK
+          try{
+            $schema=Join-Path $env:GITHUB_WORKSPACE 'bench/seoul-render/schema.yml'
+            $out=Join-Path $env:TRANSITION_WORK 'seoul.mbtiles'
+            & java -Xmx6g -jar planetiler.jar generate-custom "--schema=$schema" "--output=$out" '--bounds=126.76,37.38,127.20,37.72' '--minzoom=12' '--maxzoom=16' '--threads=4' '--force'
+            if($LASTEXITCODE -ne 0){throw 'Planetiler failed'}
+            if(-not (Test-Path $out)){throw 'No real tiles'}
+          }finally{Pop-Location}
+      - name: Run controlled default versus zero-transition MapLibre first idle A/B
+        working-directory: bench/seoul-render
+        run: |
+          $ErrorActionPreference='Stop'
+          $env:MBTILES_PATH=Join-Path $env:TRANSITION_WORK 'seoul.mbtiles'
+          $env:TRANSITION_OUTPUT=Join-Path $env:GITHUB_WORKSPACE 'seoul-transition-results'
+          node run-transition-ab.mjs
+          if($LASTEXITCODE -ne 0){throw 'No valid A/B result'}
+      - name: Upload raw timing evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: seoul-maplibre-transition-ab
+          retention-days: 30
+          if-no-files-found: warn
+          path: |
+            seoul-transition-results/**
