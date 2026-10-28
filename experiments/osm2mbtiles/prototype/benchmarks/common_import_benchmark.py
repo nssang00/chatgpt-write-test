@@ -25,7 +25,7 @@ CARTO_TABLES = ('planet_osm_point','planet_osm_line','planet_osm_roads','planet_
 VECTOR_TABLES = ('vector_points','vector_lines','vector_areas','vector_relations','vector_label_points')
 
 
-def table_snapshot(db):
+def table_snapshot(db, sample_limit=0):
     import psycopg2
     conn=psycopg2.connect(dbname='gis',host=db.env['PGHOST'],port=db.env['PGPORT'],
                           user=db.env['PGUSER'],password=db.env['PGPASSWORD'])
@@ -33,14 +33,25 @@ def table_snapshot(db):
     with conn:
       with conn.cursor() as cur:
         for table in CARTO_TABLES + VECTOR_TABLES:
-          # Sorted digest makes the check independent of SQL row return order,
-          # parallel index creation, and physical CLUSTER layout. Duplicate
-          # rows are counted. PostgreSQL's canonical JSONB representation
-          # includes all column values, including OSM Carto and geometry.
-          cur.execute(f'''SELECT COUNT(*),md5(COALESCE(string_agg(h, '' ORDER BY h),''))
-                         FROM (SELECT md5(to_jsonb(t)::text) AS h
-                               FROM {table} t) q''')
-          count,digest=cur.fetchone()
+          # Monaco: full row hash; Seoul: choose deterministic first N IDs,
+          # plus whole-table row count to avoid expensive multi-minute hashing.
+          # The FULL MVT tile payload is always checked, independently.
+          if sample_limit:
+            id_col = {'vector_points':'node_id','vector_lines':'way_id',
+                      'vector_areas':'area_id','vector_relations':'relation_id',
+                      'vector_label_points':'osm_id'}.get(table,'osm_id')
+            cur.execute(f'SELECT COUNT(*) FROM {table}')
+            count = cur.fetchone()[0]
+            cur.execute(f'''SELECT md5(COALESCE(string_agg(h, '' ORDER BY h),''))
+                            FROM (SELECT md5(to_jsonb(t)::text) AS h FROM
+                             (SELECT * FROM {table} ORDER BY {id_col} LIMIT %s) t) q''',
+                        (sample_limit,))
+            digest = cur.fetchone()[0]
+          else:
+            cur.execute(f'''SELECT COUNT(*),md5(COALESCE(string_agg(h, '' ORDER BY h),''))
+                           FROM (SELECT md5(to_jsonb(t)::text) AS h
+                                 FROM {table} t) q''')
+            count,digest=cur.fetchone()
           result[table]={'rows':count,'hash':digest}
     conn.close()
     return result
@@ -69,6 +80,7 @@ def main():
     p.add_argument('--zoom',default='12-15')
     p.add_argument('--profile',choices=('safe','fast'),default='safe')
     p.add_argument('--sequence',default='split,common,common,split')
+    p.add_argument('--snapshot-limit',type=int,default=0,help='0=full-table hashes; N=first N IDs + all row counts')
     args=p.parse_args()
     args.work.mkdir(exist_ok=True,parents=True)
     bbox=[float(x) for x in args.bbox.split(',')]
@@ -79,7 +91,7 @@ def main():
     report={'input':str(args.pbf),'input_size':args.pbf.stat().st_size,
             'input_sha256':input_sha,'bbox':bbox,'zoom':args.zoom,'profile':args.profile,
             'excludes':'downloads, dependencies, PostgreSQL startup, rendered PNG, vector export and validation',
-            'runs':[]}
+            'snapshot_limit':args.snapshot_limit,'runs':[]}
     first_snapshot=None
     first_vec=None
     with LocalDatabase(Runtime(args.runtime),args.work/'pg') as db:
@@ -96,7 +108,7 @@ def main():
           db.import_both_extract(args.pbf,args.carto,args.vector,args.profile)
           elapsed=time.perf_counter()-start
           segments={}
-        snapshot=table_snapshot(db)
+        snapshot=table_snapshot(db,args.snapshot_limit)
         for t in CARTO_TABLES+VECTOR_TABLES:
           if snapshot[t]['rows']==0 and t in ('planet_osm_line','planet_osm_polygon','vector_lines','vector_areas'):
             raise AssertionError(f'Empty required table: {t}')
