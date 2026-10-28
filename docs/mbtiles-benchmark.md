@@ -2,7 +2,7 @@
 
 This independent benchmark is run by GitHub Actions. It does not change NativeWeb build steps.
 
-- A push that adds/updates the workflow on branch `benchmark/planetiler-vs-tilemaker` triggers a one-round Luxembourg smoke benchmark.
+- Opening or updating the PR with workflow-file changes triggers a one-round Luxembourg smoke benchmark.
 - After merging the workflow to main, open **Actions → Geofabrik PBF to MBTiles Benchmark → Run workflow** to choose the dataset and 1–3 rounds.
 - Defaults: `europe/luxembourg` / `luxembourg`. South Korea: `asia/south-korea` / `south-korea` (start with one round and a larger runner).
 - Planetiler 0.10.2 (Java 25) and tilemaker v3.2.0 (C++), both pinned.
