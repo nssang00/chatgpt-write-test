@@ -1,0 +1,114 @@
+name: Seoul RTX GPU Timer Query 18-128 Style Layers
+on:
+  push:
+    branches: [bench/seoul-webgl-gpu-timer-20261028]
+    paths:
+      - 'bench/seoul-gpu-timer/**'
+      - '.github/workflows/seoul-gpu-timer-rtx.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: seoul-gpu-timer-rtx
+  cancel-in-progress: false
+jobs:
+  extended-rtx:
+    name: Hardware GPU timer query on settled frame at 18 32 64 128 styles
+    runs-on: self-hosted
+    timeout-minutes: 120
+    defaults:
+      run:
+        shell: powershell
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+      - name: Ensure physical RTX and Chrome, not SwiftShader
+        run: |
+          $ErrorActionPreference='Stop'
+          $gpu=@(Get-CimInstance Win32_VideoController | Select-Object Name,DriverVersion)
+          if (-not ($gpu | Where-Object {$_.Name -match 'NVIDIA.*RTX'})) {throw 'NVIDIA RTX hardware required'}
+          $gpu | Format-Table | Out-String | Write-Host
+          $paths=@(
+            (Join-Path $env:ProgramFiles 'Google\Chrome\Application\chrome.exe'),
+            (Join-Path ${env:ProgramFiles(x86)} 'Google\Chrome\Application\chrome.exe'),
+            (Join-Path $env:LOCALAPPDATA 'Google\Chrome\Application\chrome.exe')
+          )
+          $chrome=$paths | Where-Object {Test-Path $_} | Select-Object -First 1
+          if(-not $chrome){throw 'Chrome not installed on runner'}
+          "CHROME_PATH=$chrome" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+          $gpu | ConvertTo-Json | Set-Content -Encoding utf8 bench/seoul-gpu-timer/hardware.json
+      - name: Prepare exact benchmark code and pinned dependencies
+        run: |
+          $ErrorActionPreference='Stop'
+          Copy-Item bench/seoul-gpu-timer/timer.js bench/seoul-render/src/timer.js -Force
+          Copy-Item bench/seoul-gpu-timer/scene.js bench/seoul-render/src/scene.js -Force
+          Copy-Item bench/seoul-gpu-timer/run-gpu-timer.mjs bench/seoul-render/run-gpu-timer.mjs -Force
+          Push-Location bench/seoul-render
+          try {
+            npm install --no-audit --no-fund --ignore-scripts
+            if($LASTEXITCODE -ne 0){throw 'npm install failed'}
+            node --check src/timer.js
+            if($LASTEXITCODE -ne 0){throw 'Timer syntax invalid'}
+            node --check src/scene.js
+            if($LASTEXITCODE -ne 0){throw 'Scene syntax invalid'}
+            node --check run-gpu-timer.mjs
+            if($LASTEXITCODE -ne 0){throw 'runner syntax failed'}
+          } finally { Pop-Location }
+      - name: Download exact Seoul extract and Planetiler v0.10.2
+        run: |
+          $ErrorActionPreference='Stop'
+          $work=Join-Path $env:RUNNER_TEMP 'seoul-gpu-timer-20261028'
+          New-Item -Type Directory -Force $work | Out-Null
+          $source=Join-Path $work 'seoul.osm.pbf'
+          $jar=Join-Path $work 'planetiler.jar'
+          Invoke-WebRequest -Uri 'https://tiles.osm.kr/download/seoul-non-military.osm.pbf' -OutFile $source -MaximumRedirection 5
+          Invoke-WebRequest -Uri 'https://github.com/onthegomap/planetiler/releases/download/v0.10.2/planetiler.jar' -OutFile $jar -MaximumRedirection 5
+          if((Get-Item $source).Length -lt 1000000 -or (Get-Item $jar).Length -lt 1000000){throw 'Downloaded file invalid'}
+          Get-FileHash -Algorithm SHA256 $source,$jar | Format-Table | Out-String | Set-Content -Encoding utf8 bench/seoul-gpu-timer/input-hashes.txt
+          "EXT_BENCH_WORK=$work" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+      - name: Generate identical 18 source-layer MBTiles for both renderers
+        run: |
+          $ErrorActionPreference='Stop'
+          $work=$env:EXT_BENCH_WORK
+          Push-Location $work
+          try {
+            $schema=Join-Path $env:GITHUB_WORKSPACE 'bench/seoul-render/schema.yml'
+            & java -Xmx6g -jar (Join-Path $work 'planetiler.jar') generate-custom `
+              "--schema=$schema" "--output=$(Join-Path $work 'seoul.mbtiles')" `
+              '--bounds=126.76,37.38,127.20,37.72' '--minzoom=12' '--maxzoom=16' '--threads=4' '--force'
+            if($LASTEXITCODE -ne 0){throw 'Planetiler failed'}
+            if(-not (Test-Path (Join-Path $work 'seoul.mbtiles'))){throw 'No MBTiles generated'}
+            Get-FileHash -Algorithm SHA256 (Join-Path $work 'seoul.mbtiles') | Format-Table | Out-String | Add-Content bench-hashes.txt
+            Copy-Item bench-hashes.txt (Join-Path $env:GITHUB_WORKSPACE 'bench/seoul-gpu-timer/tile-hashes.txt') -Force
+          } finally {Pop-Location}
+      - name: Run 128 scenes with 640 real GPU elapsed-time queries
+        working-directory: bench/seoul-render
+        env:
+          PYTHON_CMD: python
+        run: |
+          $ErrorActionPreference='Stop'
+          $env:MBTILES_PATH=Join-Path $env:EXT_BENCH_WORK 'seoul.mbtiles'
+          $env:GPU_TIMER_OUTPUT=Join-Path $env:GITHUB_WORKSPACE 'seoul-gpu-timer-artifacts'
+          node run-gpu-timer.mjs
+          if($LASTEXITCODE -ne 0){throw 'Extended benchmark invalid; inspect artifact/logs'}
+      - name: Preserve raw results, summaries and screenshot samples
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: seoul-gpu-timer-rtx-measurements
+          retention-days: 30
+          if-no-files-found: warn
+          path: |
+            seoul-gpu-timer-artifacts/**
+            bench/seoul-extended/hardware.json
+            bench/seoul-extended/input-hashes.txt
+            bench/seoul-extended/tile-hashes.txt
