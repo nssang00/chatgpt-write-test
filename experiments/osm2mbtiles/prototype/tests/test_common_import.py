@@ -71,3 +71,41 @@ def test_combined_fast_keeps_original_carto_cluster_policy(tmp_path, monkeypatch
     assert '--number-processes=4' in cmd
     assert '--disable-parallel-indexing' not in cmd
     assert 'cluster = "no"' not in (tmp_path/'work/combined-carto-vector-flex.lua').read_text()
+
+
+def test_both_cli_uses_one_import_and_reuses_common_state(tmp_path, monkeypatch):
+    import json
+    from .test_pipeline import make_runtime, sample_pbf, FAKE_MAPNIK
+    from osm2mbtiles import cli
+    from osm2mbtiles.runtime import LocalDatabase
+
+    runtime = make_runtime(tmp_path/'runtime')
+    pbf = sample_pbf(tmp_path/'source.pbf',(7.40,43.71,7.46,43.75))
+    fake = tmp_path/'fake_python';fake.mkdir()
+    (fake/'mapnik.py').write_text(FAKE_MAPNIK)
+    monkeypatch.setenv('PYTHONPATH',str(fake))
+    monkeypatch.setenv('OSM_FAKE_LOG',str(tmp_path/'fake-commands.log'))
+    calls={'both':0,'raster':0,'vector':0}
+    def common(db,pbf,style,vector,profile):calls['both']+=1
+    def raster(db,pbf,style):calls['raster']+=1
+    def vector(db,pbf,style,profile):calls['vector']+=1
+    monkeypatch.setattr(LocalDatabase,'import_both_extract',common)
+    monkeypatch.setattr(LocalDatabase,'import_extract',raster)
+    monkeypatch.setattr(LocalDatabase,'import_vector_extract',vector)
+    monkeypatch.setattr(LocalDatabase,'prepare_external_data',lambda *a:None)
+    orig=cli.run
+    def intercept(cmd,env=None,cwd=None):
+        if len(cmd)>1 and str(cmd[1]).endswith('vector_worker.py'):
+            job=json.loads(Path(cmd[2]).read_text());Path(job['output']).write_bytes(b'fake-vector')
+            return
+        return orig(cmd,env=env,cwd=cwd)
+    monkeypatch.setattr(cli,'run',intercept)
+    work=tmp_path/'work'
+    for suffix in ('a','b'):
+        output=tmp_path/f'{suffix}.mbtiles'
+        assert cli.main([str(pbf),'-z','0','-o',str(output),'--format','both',
+                         '--runtime',str(runtime),'--workdir',str(work)])==0
+        assert (tmp_path/f'{suffix}.raster.mbtiles').exists()
+        assert (tmp_path/f'{suffix}.vector.mbtiles').read_bytes()==b'fake-vector'
+    assert calls=={'both':1,'raster':0,'vector':0}
+    assert (work/'combined-import-state.json').is_file()
