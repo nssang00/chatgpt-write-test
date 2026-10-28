@@ -69,6 +69,19 @@ python3 -m osm2mbtiles south-korea-latest.osm.pbf \
 - 검증 실행: https://github.com/nssang00/chatgpt-write-test/actions/runs/40645840600
 - Vector-only Planetiler 서울 참고: https://github.com/nssang00/chatgpt-write-test/actions/runs/40634312587
 
+추가 재검증: https://github.com/nssang00/chatgpt-write-test/actions/runs/40647735659
+
+| 데이터셋 | 추가 실험 분리 import 중앙값 | 추가 실험 공통 import 중앙값 | 향상 배율 |
+|---|---:|---:|---:|
+| Monaco | 2.497초 | 1.714초 | 1.457배 |
+| 서울 | 31.556초 | 24.776초 | 1.274배 |
+
+추가 실험에서는 Monaco의 Mapnik에 Carto 테이블을 연결하는 간단한
+PNG 스모크를 수행했고, 분리/공통 import 결과의 PNG SHA-256이 일치했습니다.
+서울 추가 실험은 전 테이블 건수 + 각 테이블 첫 1,200개 행의 결정적 속성 해시,
+그리고 전 타일 MVT의 기하·속성·중복 피처를 검증했습니다. 이전 전체 테이블
+해시 실험(40645840600)도 성공했습니다.
+
 **해석:** 중복 OSM PBF 순회와 middle-table 준비를 줄였지만, Carto와 상세
 벡터 결과 테이블을 모두 PostgreSQL에 저장하고 각 인덱스를 준비하는 비용은
 남습니다. 약 21% 향상은 실측으로 입증됐으나 Planetiler보다 반드시 빠른
