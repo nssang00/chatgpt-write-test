@@ -1,0 +1,103 @@
+name: Seoul Planetiler MapLibre vs OpenLayers WebGL RTX benchmark
+on:
+  push:
+    branches: [bench/seoul-planetiler-ol-maplibre-20261028]
+    paths:
+      - 'bench/seoul-render/**'
+      - '.github/workflows/seoul-planetiler-render-compare.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: seoul-planetiler-ol-maplibre-selfhosted
+  cancel-in-progress: false
+jobs:
+  seoul-render:
+    runs-on: self-hosted
+    timeout-minutes: 120
+    defaults:
+      run:
+        shell: powershell
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+      - name: Fail closed unless physical NVIDIA RTX and installed Chrome
+        run: |
+          $ErrorActionPreference='Stop'
+          $g=@(Get-CimInstance Win32_VideoController | Select-Object Name,DriverVersion)
+          $g | Format-Table | Out-String | Write-Host
+          if (-not ($g | Where-Object { $_.Name -match 'NVIDIA.*RTX' })) { throw 'Physical NVIDIA RTX GPU is required' }
+          $paths=@(
+            (Join-Path $env:ProgramFiles 'Google\Chrome\Application\chrome.exe'),
+            (Join-Path ${env:ProgramFiles(x86)} 'Google\Chrome\Application\chrome.exe'),
+            (Join-Path $env:LOCALAPPDATA 'Google\Chrome\Application\chrome.exe')
+          )
+          $chrome=$paths | Where-Object {Test-Path $_} | Select-Object -First 1
+          if (-not $chrome) { throw 'Installed Chrome binary not found on selfhosted runner' }
+          "CHROME_PATH=$chrome" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+          $g | ConvertTo-Json | Set-Content -Encoding utf8 bench/seoul-render/gpu-hardware.json
+          & $chrome --version
+      - name: Install pinned benchmark dependencies
+        working-directory: bench/seoul-render
+        run: |
+          npm install --no-audit --no-fund --ignore-scripts
+          if ($LASTEXITCODE -ne 0) {throw 'npm install failed'}
+          npm ls --depth=0
+          if ($LASTEXITCODE -ne 0) {throw 'npm dependencies not satisfied'}
+      - name: Fetch same Seoul OSM extract and pinned Planetiler
+        run: |
+          $ErrorActionPreference='Stop'
+          $work=Join-Path $env:RUNNER_TEMP 'seoul-browser-bench'
+          New-Item -Type Directory -Force $work | Out-Null
+          $source=Join-Path $work 'seoul.osm.pbf'
+          $jar=Join-Path $work 'planetiler.jar'
+          Invoke-WebRequest -Uri 'https://tiles.osm.kr/download/seoul-non-military.osm.pbf' -OutFile $source -MaximumRedirection 5
+          Invoke-WebRequest -Uri 'https://github.com/onthegomap/planetiler/releases/download/v0.10.2/planetiler.jar' -OutFile $jar -MaximumRedirection 5
+          if ((Get-Item $source).Length -lt 1000000 -or (Get-Item $jar).Length -lt 1000000) { throw 'Source input too small' }
+          Get-FileHash -Algorithm SHA256 $source,$jar | Format-Table | Out-String | Tee-Object -FilePath (Join-Path $work 'input-hashes.txt')
+          "BENCH_WORK=$work" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+          Write-Host 'SEOUL_OSM_DOWNLOADED'
+      - name: Generate actual 18-layer Planetiler Seoul MBTiles
+        run: |
+          $ErrorActionPreference='Stop'
+          $work=$env:BENCH_WORK
+          Push-Location $work
+          try {
+            $schema=Join-Path $env:GITHUB_WORKSPACE 'bench/seoul-render/schema.yml'
+            & java -Xmx6g -jar (Join-Path $work 'planetiler.jar') generate-custom `
+              "--schema=$schema" "--output=$(Join-Path $work 'seoul.mbtiles')" `
+              '--bounds=126.76,37.38,127.20,37.72' '--minzoom=12' '--maxzoom=16' '--threads=4' '--force'
+            if ($LASTEXITCODE -ne 0) { throw 'Planetiler generation failed' }
+            if (-not (Test-Path (Join-Path $work 'seoul.mbtiles'))) {throw 'Planetiler output missing'}
+            Get-FileHash -Algorithm SHA256 (Join-Path $work 'seoul.mbtiles') | Format-Table | Out-String | Add-Content -Path (Join-Path $work 'input-hashes.txt')
+            Write-Host 'REAL_SEOUL_PLANETILER_MBTILES_READY'
+          } finally {Pop-Location}
+      - name: Measure MapLibre and OpenLayers in physical RTX Chromium
+        working-directory: bench/seoul-render
+        env:
+          PYTHON_CMD: python
+        run: |
+          $ErrorActionPreference='Stop'
+          $env:MBTILES_PATH=Join-Path $env:BENCH_WORK 'seoul.mbtiles'
+          $env:BENCH_OUTPUT=Join-Path $env:GITHUB_WORKSPACE 'seoul-render-artifacts'
+          node run.mjs
+          if ($LASTEXITCODE -ne 0) {throw 'Benchmark failed, do not claim comparative performance'}
+      - name: Upload raw evidence and screenshots (including failures)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: seoul-planetiler-maplibre-vs-ol-rtx-raw
+          retention-days: 14
+          if-no-files-found: warn
+          path: |
+            seoul-render-artifacts/**
+            bench/seoul-render/gpu-hardware.json
