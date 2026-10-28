@@ -22,6 +22,23 @@
 - 실험은 **서울 일부 출력** 기준이며, 한국 전체 줌 0~15 완료나 PNG 렌더링 시간 개선은 주장하지 않음.
 - Planetiler 대비 동일 레이어명/유사 속성 구성이나 줌별 객체 선택·일반화·스키마가 달라 엄밀한 출력 동등성 성능 측정은 아님.
 
+## 반복 검증 (GitHub Actions 40634312587)
+동일한 서울 PBF SHA-256, 동일 BBOX·줌·2개 워커로 별도 GitHub Actions runner에서 재실행했습니다.
+
+| 측정 | 기준 SQL | JSONB 키 투영 | 속성 캐시 | Planetiler |
+|---|---:|---:|---:|---:|
+| OSM import | 14.39s | 14.39s | 14.39s | 없음 |
+| 캐시 전처리 | 0s | 0s | 17.99s | 없음 |
+| 타일 생성 | 15.45s | **4.87s** | 6.36s | 12.54s (전체) |
+| 최초 전체 처리 | 29.84s | **19.26s** | 38.74s | **12.54s** |
+
+- 타일 생성 속도 재현: **3.17배**, 최초 전체 작업 약 **35.5% 단축**.
+- 기준/투영/캐시 모드 모두 생성된 58개 타일의 218,140개 디코딩 피처를 기하·속성·중복 개수까지 비교해 일치.
+- 실험별 Planetiler와 PostGIS 사이의 피처 수는 일치하지 않음(218,140 대 188,202). 따라서 엔진간 성능은 참고 지표.
+- 재현 로그: https://github.com/nssang00/chatgpt-write-test/actions/runs/40634312587
+- 결과 JSON/시간 파일: https://github.com/nssang00/chatgpt-write-test/actions/runs/40634312587/artifacts/12792154100
+- PostGIS `time` RSS 수치에는 PostgreSQL 서버 메모리/프로세스 합계가 포함되지 않으며 Planetiler Java RSS와 동등 비교 불가.
+
 ## 사용
 `run.bat vector`는 기본 `projected` 모드. 기존 SQL 재현은 Windows에서 `set OSM2MBTILES_VECTOR_QUERY_MODE=baseline` 실행 후 `run.bat vector`.
 Python CLI: `osm2mbtiles ... --format vector --vector-query-mode projected`.
