@@ -78,6 +78,17 @@ jobs:
             -o "$WORK/postgis-tiles.time" \
             /usr/bin/python3 "$PROJECT/src/osm2mbtiles/vector_worker.py" "$WORK/postgis-job.json"
           /usr/bin/python3 -m osm2mbtiles verify-vector "$WORK/postgis.mbtiles"
+          # No extra table: filter present OSM tag keys in one JSONB walk.
+          cat > "$WORK/postgis-projected-job.json" <<EOF
+          {"pbf":"$WORK/seoul.osm.pbf","output":"$WORK/postgis-projected.mbtiles","bbox":[127.015,37.485,127.075,37.535],"minzoom":12,"maxzoom":15,"processes":2}
+          EOF
+          /usr/bin/time -f 'BENCH_WALL_SEC=%e\nBENCH_MAX_RSS_KB=%M\nBENCH_USER_SEC=%U\nBENCH_SYS_SEC=%S' \
+            -o "$WORK/postgis-projected-tiles.time" \
+            env OSM2MBTILES_VECTOR_QUERY_MODE=projected \
+            /usr/bin/python3 "$PROJECT/src/osm2mbtiles/vector_worker.py" "$WORK/postgis-projected-job.json"
+          /usr/bin/python3 "$PROJECT/benchmarks/compare_postgis_modes.py" \
+            "$WORK/postgis.mbtiles" "$WORK/postgis-projected.mbtiles" \
+            --output "$WORK/postgis-projected-parity.json"
           # Experimental PostGIS-native optimization: precompute JSONB properties
           # once per OSM object instead of rebuilding all field pairs per tile.
           /usr/bin/time -f 'BENCH_WALL_SEC=%e\nBENCH_MAX_RSS_KB=%M\nBENCH_USER_SEC=%U\nBENCH_SYS_SEC=%S' \
@@ -126,7 +137,7 @@ jobs:
             --planet-time "$WORK/planetiler.time" \
             --input "$WORK/seoul.osm.pbf" \
             --output "$GITHUB_WORKSPACE/seoul-benchmark-artifacts/results.json"
-          cp "$WORK/"*.time "$WORK/input.sha256" "$WORK/postgis-parity.json" "$GITHUB_WORKSPACE/seoul-benchmark-artifacts/"
+          cp "$WORK/"*.time "$WORK/input.sha256" "$WORK/postgis-parity.json" "$WORK/postgis-projected-parity.json" "$GITHUB_WORKSPACE/seoul-benchmark-artifacts/"
           printf '## Seoul vector-tile performance benchmark\n\n' >> "$GITHUB_STEP_SUMMARY"
           /usr/bin/python3 - <<'PY' >> "$GITHUB_STEP_SUMMARY"
           import json
@@ -139,16 +150,20 @@ jobs:
           def sec(filename):
               raw=Path('seoul-benchmark-artifacts/'+filename).read_text()
               return float(re.search(r'BENCH_WALL_SEC=([0-9.]+)', raw).group(1))
+          projected_tiles=sec('postgis-projected-tiles.time')
           cache_pre=sec('postgis-cache-prepare.time')
           cache_tiles=sec('postgis-cache-tiles.time')
           print('\n#### PostGIS SQL optimization (same imported database)')
           print('| Mode | Preprocessing | Tile generation | Extra total |')
           print('|---|---:|---:|---:|')
           print(f'| Baseline | 0 | {a["postgis"]["tile_generation"]["wall_seconds"]:.2f}s | {a["postgis"]["tile_generation"]["wall_seconds"]:.2f}s |')
+          print(f'| Project present JSONB keys | 0 | {projected_tiles:.2f}s | {projected_tiles:.2f}s |')
           print(f'| Cached properties | {cache_pre:.2f}s | {cache_tiles:.2f}s | {cache_pre+cache_tiles:.2f}s |')
           import json as js
           parity=js.load(open('seoul-benchmark-artifacts/postgis-parity.json'))
           print('\nSemantic parity (decoded geometry, properties, multiplicity):', parity['equal'], 'on', parity['tiles_baseline'], 'tiles')
+          projected_parity=js.load(open('seoul-benchmark-artifacts/postgis-projected-parity.json'))
+          print('Projected query semantic parity:',projected_parity['equal'],'on',projected_parity['tiles_baseline'],'tiles')
           print('| Tiles |',a['postgis']['output']['tiles'],'|',a['planetiler']['output']['tiles'],'|')
           print('| Features |',a['postgis']['output']['features'],'|',a['planetiler']['output']['features'],'|')
           print('| Nonempty layers |',len(a['postgis']['output']['layer_counts']),'|',len(a['planetiler']['output']['layer_counts']),'|')
