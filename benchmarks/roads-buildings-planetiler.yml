@@ -24,6 +24,8 @@ layers:
         tolerance_at_max_zoom: 0
         include_when:
           highway: __any__
+        exclude_when:
+          area: yes
         attributes:
           - key: highway
   - id: buildings
