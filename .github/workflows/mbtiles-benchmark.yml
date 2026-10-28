@@ -1,0 +1,194 @@
+name: Geofabrik PBF to MBTiles Benchmark
+
+on:
+  push:
+    branches:
+      - benchmark/planetiler-vs-tilemaker
+    paths:
+      - .github/workflows/mbtiles-benchmark.yml
+  workflow_dispatch:
+    inputs:
+      geofabrik_path:
+        description: "Geofabrik path, e.g. europe/luxembourg or asia/south-korea"
+        required: true
+        default: "europe/luxembourg"
+        type: string
+      planetiler_area:
+        description: "Matching Planetiler area slug"
+        required: true
+        default: "luxembourg"
+        type: string
+      repetitions:
+        description: "Alternating-order benchmark rounds"
+        required: true
+        type: choice
+        default: "3"
+        options: ["1", "2", "3"]
+
+permissions:
+  contents: read
+
+jobs:
+  compare:
+    name: Compare Planetiler and tilemaker
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    env:
+      GEOFABRIK_PATH: ${{ inputs.geofabrik_path || 'europe/luxembourg' }}
+      PLANETILER_AREA: ${{ inputs.planetiler_area || 'luxembourg' }}
+      REPETITIONS: ${{ inputs.repetitions || '1' }}
+      PLANETILER_VERSION: "0.10.2"
+      TILEMAKER_VERSION: "v3.2.0"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Runner resources
+        shell: bash
+        run: |
+          set -euo pipefail
+          nproc
+          free -h
+          df -h .
+
+      - name: Install C++ build and measurement dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
+            build-essential git curl unzip time sqlite3 \
+            libboost-dev libboost-filesystem-dev libboost-program-options-dev \
+            libboost-system-dev lua5.3 liblua5.3-dev libshp-dev \
+            libsqlite3-dev rapidjson-dev
+
+      - name: Set up Java 25
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "25"
+
+      - name: Build tilemaker outside the measured section
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone --depth 1 --branch "$TILEMAKER_VERSION" \
+            https://github.com/systemed/tilemaker.git tilemaker-src
+          make -C tilemaker-src tilemaker -j2
+          install -m 755 tilemaker-src/tilemaker ./tilemaker
+          ./tilemaker --help | head -n 12 || true
+
+      - name: Download tilemaker auxiliary datasets outside measurement
+        shell: bash
+        run: |
+          set -euo pipefail
+          (
+            cd tilemaker-src
+            ./get-coastline.sh
+            ./get-landcover.sh
+          )
+          df -h .
+
+      - name: Download pinned Planetiler outside measurement
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fL --retry 3 \
+            "https://github.com/onthegomap/planetiler/releases/download/v${PLANETILER_VERSION}/planetiler.jar" \
+            -o planetiler.jar
+          java -version
+          java -jar planetiler.jar --help >/dev/null
+
+      - name: Download and hash a single Geofabrik input
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$GEOFABRIK_PATH" =~ ^[a-z0-9][a-z0-9/-]*$ ]] || exit 2
+          [[ "$PLANETILER_AREA" =~ ^[a-z0-9][a-z0-9-]*$ ]] || exit 2
+          mkdir -p work metrics
+          curl -fL --retry 3 \
+            "https://download.geofabrik.de/${GEOFABRIK_PATH}-latest.osm.pbf" \
+            -o work/input.osm.pbf
+          test -s work/input.osm.pbf
+          sha256sum work/input.osm.pbf | tee metrics/pbf-sha256.txt
+          stat -c 'PBF bytes: %s' work/input.osm.pbf
+          df -h .
+
+      - name: Prefetch Planetiler auxiliary datasets outside measurement
+        shell: bash
+        run: |
+          set -euo pipefail
+          java -Xmx3g -jar planetiler.jar \
+            "--area=${PLANETILER_AREA}" \
+            "--osm-path=$(pwd)/work/input.osm.pbf" \
+            "--output=$(pwd)/work/prefetch-unused.mbtiles" \
+            --download --only-download
+          df -h .
+
+      - name: Execute benchmark (alternate run order)
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p work/outputs metrics
+          for round in $(seq 1 "$REPETITIONS"); do
+            if (( round % 2 == 1 )); then
+              order=(planetiler tilemaker)
+            else
+              order=(tilemaker planetiler)
+            fi
+            for engine in "${order[@]}"; do
+              echo "::group::${engine} round ${round}"
+              out="$(pwd)/work/outputs/${engine}-${round}.mbtiles"
+              metric="$(pwd)/metrics/${engine}-${round}.time"
+              pbf="$(pwd)/work/input.osm.pbf"
+              rm -f "$out"
+              if [[ "$engine" == planetiler ]]; then
+                /usr/bin/time \
+                  -f 'wall_seconds=%e\nuser_seconds=%U\nsystem_seconds=%S\npeak_rss_kb=%M\nexit_code=%x' \
+                  -o "$metric" \
+                  java -Xmx3g -jar planetiler.jar \
+                    "--area=${PLANETILER_AREA}" \
+                    "--osm-path=${pbf}" \
+                    "--output=${out}" \
+                    --force
+              else
+                (
+                  cd tilemaker-src
+                  /usr/bin/time \
+                    -f 'wall_seconds=%e\nuser_seconds=%U\nsystem_seconds=%S\npeak_rss_kb=%M\nexit_code=%x' \
+                    -o "$metric" \
+                    ../tilemaker \
+                      --input "$pbf" \
+                      --output "$out" \
+                      --config resources/config-openmaptiles.json \
+                      --process resources/process-openmaptiles.lua
+                )
+              fi
+              python3 scripts/mbtiles_report.py record \
+                --tool "$engine" --round "$round" \
+                --time "$metric" --mbtiles "$out" --dir metrics
+              rm -f "$out"
+              echo "::endgroup::"
+            done
+          done
+
+      - name: Create GitHub Actions Job Summary
+        if: always()
+        shell: bash
+        run: |
+          python3 scripts/mbtiles_report.py summarize \
+            --dir metrics \
+            --pbf "${GEOFABRIK_PATH}-latest.osm.pbf" \
+            --planetiler-version "$PLANETILER_VERSION" \
+            --tilemaker-version "$TILEMAKER_VERSION" \
+            --cpu-count "$(nproc)"
+          cat metrics/summary.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload metrics without giant MBTiles artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mbtiles-benchmark-report
+          path: metrics/
+          if-no-files-found: warn
