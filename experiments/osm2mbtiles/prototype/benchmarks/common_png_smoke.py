@@ -58,3 +58,16 @@ def render(db,bbox,output):
     output=Path(output);output.write_bytes(png)
     assert png.startswith(b'\x89PNG\r\n\x1a\n')
     return hashlib.sha256(png).hexdigest()
+
+
+if __name__ == '__main__':
+    import argparse,os
+    from pathlib import Path
+    a=argparse.ArgumentParser()
+    a.add_argument('--bbox',required=True)
+    a.add_argument('--output',type=Path,required=True)
+    args=a.parse_args()
+    class EnvironmentDB:
+        env = os.environ
+    bbox=tuple(float(x) for x in args.bbox.split(','))
+    print('MAPNIK_CARTO_TABLE_PNG_SHA256',render(EnvironmentDB(),bbox,args.output))
