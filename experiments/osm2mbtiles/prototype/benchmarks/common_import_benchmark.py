@@ -126,6 +126,17 @@ def main():
         if args.png_smoke:
           from common_png_smoke import render as render_png
           png_sha=render_png(db,bbox,args.work/f'carto-smoke-{i}-{mode}.png')
+          # Mapnik's PostGIS pool can retain a read-only session after render.
+          # This is a private throwaway benchmark DB and the next step drops it;
+          # terminate only those idle sessions, never in the production runner.
+          import psycopg2, gc
+          gc.collect()
+          conn=psycopg2.connect(dbname='postgres',host=db.env['PGHOST'],
+              port=db.env['PGPORT'],user=db.env['PGUSER'],password=db.env['PGPASSWORD'])
+          conn.autocommit=True
+          with conn.cursor() as cur:
+            cur.execute("SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname='gis' AND pid<>pg_backend_pid()")
+          conn.close()
           if first_png is None: first_png=png_sha
           assert png_sha==first_png, ('Mapnik PNG pixel difference',first_png,png_sha)
         row={'kind':mode,'import_total_s':round(elapsed,3),'segments':segments,
