@@ -18,7 +18,7 @@ import TileGrid from '../../vendor/openlayers-10.10.0-runtime/node_modules/ol/ti
 import MVT from '../../vendor/openlayers-10.10.0-runtime/node_modules/ol/format/MVT.js';
 import VectorTileSource from '../../vendor/openlayers-10.10.0-runtime/node_modules/ol/source/VectorTile.js';
 import WebGLVectorTileLayer from '../../vendor/openlayers-10.10.0-runtime/node_modules/ol/layer/WebGLVectorTile.js';
-import {DirectM5SceneBinding,WebGL1Backend,OlExclusiveVectorTileRenderHost} from '../../src/index.js';
+import {OLVectorTileBoost,WebGL1Backend} from '../../src/index.js';
 
 const qs=new URLSearchParams(location.search),arm=qs.get('arm'),count=Number(qs.get('count'));
 const mode=qs.get('mode')||'blocking';
@@ -111,15 +111,18 @@ try{
    canvas.hidden=false;
    map=new OLMap({target:null,layers,view,controls:[],pixelRatio:1});
    backend=new WebGL1Backend(canvas,{contextAntialias:false,gpuCompletionMode:mode==='blocking'?'blocking':'submit',cacheBindings:true,profileTiming:false});
-   binding=new DirectM5SceneBinding({
-     map,backend,canvas,layerStyleResolver:layer=>styles.get(layer),
-     vectorTileOptions:{drawMode:'style-pass',stableStyleIdentityCache:true,profileCPU:false,olLayerFboComposition:mode!=='submit-nofbo',isolatedTileFboFastPath:mode==='exclusive',
+   const boost=new OLVectorTileBoost({
+     map,backend,canvas,stockOlRenderMode:mode==='exclusive'?'exclusive':'normal',
+     layerStyleResolver:layer=>styles.get(layer),
+     vectorTileOptions:{drawMode:'style-pass',stableStyleIdentityCache:true,profileCPU:false,
+       olLayerFboComposition:mode!=='submit-nofbo',
+       isolatedTileFboFastPath:mode==='exclusive',
        closedLineJoins:true,polygonInsideSegmentFastPath:true,polygonEarBBoxPrecheck:true},
      onError:({error})=>fail(error)
    });
-   binding.bridge.pipeline.tileScissorEnabled=true;
-   binding.start({renderSync:false});
-   if(mode==='exclusive')exclusive=new OlExclusiveVectorTileRenderHost({map,layers,onError:fail}).start();
+   binding=boost.scene;
+   boost.start({renderSync:false});
+   exclusive=boost.exclusiveHost;
    map.on('postrender',()=>finish());
    map.setTarget(target);
    map.renderSync();map.render();
