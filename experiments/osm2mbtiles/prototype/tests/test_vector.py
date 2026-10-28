@@ -157,3 +157,30 @@ def test_vector_query_default_is_projected():
     args,_=arguments(['test.osm.pbf','-o','test.mbtiles','--format','vector',
                        '--vector-query-mode','baseline'])
     assert args.vector_query_mode == 'baseline'
+
+
+def test_import_profile_config_and_lua_style(monkeypatch, tmp_path):
+    from osm2mbtiles.runtime import LocalDatabase, Runtime, PipelineError
+    vector = tmp_path/'vector'
+    vector.mkdir()
+    (vector/'vector-flex.lua').write_text(('local a = define({\n})\n')*4)
+    (vector/'post-import.sql').write_text('SELECT 1;')
+    commands = []
+    monkeypatch.setattr('osm2mbtiles.runtime.run', lambda cmd, env=None, cwd=None: commands.append([str(v) for v in cmd]))
+    db = LocalDatabase(Runtime(tmp_path/'runtime'),tmp_path/'work')
+    db.work.mkdir()
+    monkeypatch.setattr(db,'ensure_gis_database',lambda:None)
+    monkeypatch.setattr(db,'psql',lambda *args,**kwargs:None)
+    monkeypatch.setattr(Runtime,'bin',lambda self,name: tmp_path/name)
+    db.import_vector_extract(tmp_path/'map.pbf',vector,'safe')
+    assert '--number-processes=1' in commands[0]
+    assert '--disable-parallel-indexing' in commands[0]
+    commands.clear()
+    db.import_vector_extract(tmp_path/'map.pbf',vector,'fast')
+    assert '--number-processes=4' in commands[0]
+    assert '--disable-parallel-indexing' not in commands[0]
+    assert 'cluster = "no"' in (db.work/'vector-fast-flex.lua').read_text()
+    assert 'cluster' not in (vector/'vector-flex.lua').read_text()
+    import pytest
+    with pytest.raises(PipelineError):
+        db.import_vector_extract(tmp_path/'map.pbf',vector,'invalid')
