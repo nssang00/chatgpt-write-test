@@ -33,6 +33,8 @@ def arguments(argv=None):
     export.add_argument('-z','--zoom',default='0-15',help='zoom range, e.g. 0-15')
     export.add_argument('-o','--output',type=Path,required=True)
     export.add_argument('--format', choices=('raster','vector','both'),default='raster',help='output format, or both separate MBTiles files')
+    export.add_argument('--vector-import-profile',choices=('safe','fast'),default='safe',
+                        help='vector OSM import: safe (default) or fast (4 threads, parallel indexes, no cluster)')
     export.add_argument('--vector-query-mode',choices=('baseline','cached','projected'),default='projected',
                         help='vector SQL: projected (default), baseline (reference), cached (experimental precompute)')
     export.add_argument('--bbox',help='west,south,east,north (otherwise from PBF header)')
@@ -174,12 +176,13 @@ def run_pipeline(pbf,out,bbox,lo,hi,args,work,runtime):
                 print('Reusing prior raster import.',flush=True)
         if vector:
             vkey = hashlib.sha256((pbf_digest+file_digest(vector_dir/'vector-flex.lua')+
-                     file_digest(vector_dir/'post-import.sql')).encode()).hexdigest()
+                     file_digest(vector_dir/'post-import.sql')+
+                     '|import-profile='+args.vector_import_profile).encode()).hexdigest()
             vstate = work/'vector-state.json'
             cached = json.loads(vstate.read_text()) if vstate.is_file() else {}
             if cached.get('import_key') != vkey:
                 print('[VECTOR] Importing full OSM tags into private vector tables...',flush=True)
-                db.import_vector_extract(pbf,vector_dir)
+                db.import_vector_extract(pbf,vector_dir,args.vector_import_profile)
                 vstate.write_text(json.dumps({'import_key':vkey},indent=2),encoding='utf-8')
             else:
                 print('[VECTOR] Reusing detailed vector import.',flush=True)
