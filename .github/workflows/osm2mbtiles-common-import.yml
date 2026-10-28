@@ -19,9 +19,11 @@ jobs:
       matrix:
         include:
           - region: monaco
+            sample: '0'
             bbox: '7.40,43.71,7.46,43.75'
             pbf_url: 'https://download.geofabrik.de/europe/monaco-latest.osm.pbf'
           - region: seoul
+            sample: '1200'
             bbox: '127.015,37.485,127.075,37.535'
             pbf_url: 'https://tiles.osm.kr/download/seoul-non-military.osm.pbf'
     runs-on: ubuntu-24.04
@@ -57,6 +59,7 @@ jobs:
         env:
           BBOX: ${{ matrix.bbox }}
           REGION: ${{ matrix.region }}
+          SNAPSHOT_LIMIT: ${{ matrix.sample }}
         run: |
           set -euxo pipefail
           WORK="$RUNNER_TEMP/common-import"
@@ -75,7 +78,7 @@ jobs:
             --vector "$PROJECT/vector" \
             --work "$WORK/bench" \
             --bbox "$BBOX" --zoom 12-15 \
-            --sequence split,common,common,split
+            --sequence split,common,common,split --snapshot-limit "$SNAPSHOT_LIMIT"
           cp "$WORK/bench/results.json" "$GITHUB_WORKSPACE/common-import-artifacts/$REGION-results.json"
           /usr/bin/python3 - "$WORK/bench/results.json" <<'PY' >> "$GITHUB_STEP_SUMMARY"
           import json,sys
@@ -85,6 +88,7 @@ jobs:
           print('|---|---:|---|---|')
           for r in a['runs']:
             print('|',r['kind'],'|',r['import_total_s'],'|',r['carto_vector_rows_equal'],'|',r['mvt_semantic_equal'],'|')
+          print('Row-content snapshot sampling limit:',a['snapshot_limit'],'(0 means all rows)')
           print('**Median split:**',a['median_split_s'],'s; **median common:**',a['median_common_s'],'s; **speedup:**',a['speedup'])
           print('\nExcludes asset downloads, rendering and validations; benchmarks OSM data import only.')
           PY
