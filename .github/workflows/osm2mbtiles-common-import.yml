@@ -39,7 +39,7 @@ jobs:
           sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
             postgresql-16 postgresql-client-16 postgresql-16-postgis-3 \
             postgresql-16-postgis-3-scripts osm2pgsql python3-psycopg2 \
-            python3-pip python3-pytest python3-mapnik git time curl
+            python3-pip python3-pytest python3-mapnik python3-pil git time curl
           /usr/bin/python3 -m pip install --break-system-packages mapbox-vector-tile
       - name: Download exact input PBF and pinned OSM Carto style
         shell: bash
