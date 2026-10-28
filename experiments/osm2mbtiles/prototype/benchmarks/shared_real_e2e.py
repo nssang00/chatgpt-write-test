@@ -99,7 +99,7 @@ def render_mapnik_png(prefix):
     layers = []
     for name,table,key in [('polygons','planet_osm_polygon','building'),
                            ('roads','planet_osm_line','highway')]:
-        layers.append(f"""<Layer name="{name}" srs="+init=epsg:3857">
+        layers.append(f"""<Layer name="{name}" srs="EPSG:3857">
           <StyleName>{name}</StyleName><Datasource>
           <Parameter name="type">postgis</Parameter>
           <Parameter name="host">{host}</Parameter>
@@ -111,7 +111,7 @@ def render_mapnik_png(prefix):
           <Parameter name="srid">3857</Parameter>
           <Parameter name="table">(SELECT way FROM {table} WHERE {key} IS NOT NULL) AS {name}</Parameter>
           </Datasource></Layer>""")
-    xml='''<Map srs="+init=epsg:3857" background-color="#f4f2ec">
+    xml='''<Map srs="EPSG:3857" background-color="#f4f2ec">
       <Style name="polygons"><Rule><PolygonSymbolizer fill="#c5b9a5" /></Rule></Style>
       <Style name="roads"><Rule><LineSymbolizer stroke="#b38064" stroke-width="2.5" /></Rule></Style>
       ''' + ''.join(layers) + '</Map>'
