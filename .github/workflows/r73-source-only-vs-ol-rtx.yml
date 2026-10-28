@@ -10,7 +10,7 @@ permissions:
   contents: read
 concurrency:
   group: r73-source-only-perf-abba
-  cancel-in-progress: false
+  cancel-in-progress: true
 jobs:
   real-rtx-abba:
     name: Physical RTX / isolated 8 16 32 source ABBA
@@ -67,6 +67,7 @@ jobs:
           node candidate\examples\perf\run-perf.mjs candidate candidate\artifacts\r73-benchmark
           if($LASTEXITCODE -ne 0){throw 'R70 benchmark validity failed; see evidence'}
           $r=Get-Content candidate\artifacts\r73-benchmark\summary.json -Raw | ConvertFrom-Json
+          if($r.candidate -ne '9afc96b57533799ce61e37729a212392f716c88b'){throw 'ABBA metadata candidate SHA drift'}
           if(-not $r.valid -or @($r.scenes).Count -ne 3 -or @($r.raw).Count -ne 60){throw 'Incomplete ABBA benchmark evidence'}
           Write-Host 'R73_RTX_ABBA_60_RAW_SAMPLES_VALID'
           if(-not $r.performanceGate -or @($r.scenes | Where-Object {$_.reductionPct -lt 50}).Count -gt 0){throw 'R73 less than 50 percent latency reduction at 8/16/32'}
