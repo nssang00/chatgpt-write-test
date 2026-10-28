@@ -1,0 +1,85 @@
+name: osm2mbtiles Seoul Worker Scaling Matrix
+on:
+  workflow_dispatch:
+  push:
+    branches: [ci/osm2mbtiles-native-test]
+    paths:
+      - '.github/workflows/osm2mbtiles-worker-matrix.yml'
+      - 'experiments/osm2mbtiles/prototype/benchmarks/seoul_worker_matrix.py'
+permissions:
+  contents: read
+jobs:
+  seoul-workers:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install PostgreSQL 16 PostGIS osm2pgsql MVT and monitoring packages
+        shell: bash
+        run: |
+          set -euxo pipefail
+          sudo apt-get update -qq
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            postgresql-16 postgresql-client-16 postgresql-16-postgis-3 \
+            postgresql-16-postgis-3-scripts osm2pgsql \
+            python3-psycopg2 python3-pip python3-psutil time curl ca-certificates
+          /usr/bin/python3 -m pip install --break-system-packages mapbox-vector-tile
+          /usr/bin/python3 -c 'import psutil, psycopg2, mapbox_vector_tile;print("BENCH_PREREQUISITES_OK")'
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+      - name: Download pinned Planetiler and the exact same Seoul extract
+        shell: bash
+        run: |
+          set -euxo pipefail
+          mkdir -p "$RUNNER_TEMP/seoul-worker-matrix" "$GITHUB_WORKSPACE/worker-matrix-evidence"
+          curl -fL --retry 3 --retry-delay 2 \
+            https://github.com/onthegomap/planetiler/releases/download/v0.10.2/planetiler.jar \
+            -o "$RUNNER_TEMP/seoul-worker-matrix/planetiler.jar"
+          curl -fL --retry 3 --retry-delay 2 --connect-timeout 20 --max-time 180 \
+            https://tiles.osm.kr/download/seoul-non-military.osm.pbf \
+            -o "$RUNNER_TEMP/seoul-worker-matrix/seoul.osm.pbf"
+          sha256sum "$RUNNER_TEMP/seoul-worker-matrix/seoul.osm.pbf" | tee "$GITHUB_WORKSPACE/worker-matrix-evidence/input.sha256"
+          nproc; free -h; df -h "$RUNNER_TEMP"
+          cat /sys/fs/cgroup/cpu.max || true
+      - name: Fresh PostGIS imports and Planetiler 4-8-16-32 worker repeats
+        shell: bash
+        run: |
+          set -euxo pipefail
+          PROJECT="$GITHUB_WORKSPACE/experiments/osm2mbtiles/prototype"
+          WORK="$RUNNER_TEMP/seoul-worker-matrix"
+          export PATH="/usr/lib/postgresql/16/bin:$PATH"
+          export PGHOST="$WORK/socket" PGPORT=55468 PGUSER=matrixosm PGDATABASE=gis
+          mkdir -p "$PGHOST"
+          initdb -D "$WORK/pgdata" -U "$PGUSER" --auth-local=trust --auth-host=trust
+          pg_ctl -D "$WORK/pgdata" -l "$WORK/postgres.log" -w \
+            -o "-c listen_addresses='' -c unix_socket_directories=$PGHOST -c port=$PGPORT -c shared_buffers=64MB -c work_mem=4MB -c maintenance_work_mem=64MB -c max_parallel_maintenance_workers=0" start
+          trap 'cp "$WORK/postgres.log" "$GITHUB_WORKSPACE/worker-matrix-evidence/postgres.log" || true; pg_ctl -D "$WORK/pgdata" -m fast -w stop || true' EXIT
+          /usr/bin/python3 "$PROJECT/benchmarks/seoul_worker_matrix.py" \
+            --project "$PROJECT" --work "$WORK" --planetiler "$WORK/planetiler.jar" \
+            --input "$WORK/seoul.osm.pbf" --repeats 2
+          cp "$WORK/results.json" "$GITHUB_WORKSPACE/worker-matrix-evidence/"
+          /usr/bin/python3 "$PROJECT/benchmarks/summarize_worker_matrix.py" \
+            "$WORK/results.json" "$GITHUB_WORKSPACE/worker-matrix-evidence/summary.md"
+          cat "$GITHUB_WORKSPACE/worker-matrix-evidence/summary.md" >> "$GITHUB_STEP_SUMMARY"
+          echo SEOUL_WORKER_MATRIX_VERIFIED
+      - name: Collect partial results and logs even if a run fails
+        if: always()
+        shell: bash
+        run: |
+          WORK="$RUNNER_TEMP/seoul-worker-matrix"
+          mkdir -p worker-matrix-evidence
+          cp "$WORK/results.json" worker-matrix-evidence/ 2>/dev/null || true
+          cp "$WORK/"*.time worker-matrix-evidence/ 2>/dev/null || true
+          for logfile in "$WORK/"*.log; do
+            [ -e "$logfile" ] || continue
+            cp "$logfile" worker-matrix-evidence/ || true
+          done
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: seoul-worker-matrix-results
+          path: worker-matrix-evidence/
+          retention-days: 14
+          if-no-files-found: warn
