@@ -127,6 +127,13 @@ def render_mapnik_png(prefix):
             'unique_colors':len(img.getcolors(512*512) or []),'file':str(out)}
 
 
+def render_isolated(prefix):
+    # Mapnik's PostGIS datasource pools connections within a Python process.
+    # After dropdb --force, using the old pool fails even though new DB is healthy.
+    subprocess.run([sys.executable, __file__, 'render', prefix], check=True, env=os.environ)
+    return json.loads((WORK / f'{prefix}.png.json').read_text())
+
+
 def create_vector(prefix):
     from osm2mbtiles.vector import export
     path=WORK/f'{prefix}.vector.mbtiles'
@@ -178,12 +185,12 @@ def main():
     print('BASELINE_SEPARATE_IMPORT_START',flush=True)
     all_report['separate']=baseline()
     all_report['separate']['carto_tables']=table_fingerprints()
-    all_report['separate']['png']=render_mapnik_png('separate')
+    all_report['separate']['png']=render_isolated('separate')
     all_report['separate']['vector']=create_vector('separate')
     print('SHARED_SINGLE_IMPORT_START',flush=True)
     all_report['shared']=shared()
     all_report['shared']['carto_tables']=table_fingerprints()
-    all_report['shared']['png']=render_mapnik_png('shared')
+    all_report['shared']['png']=render_isolated('shared')
     all_report['shared']['vector']=create_vector('shared')
     same_tables=all_report['separate']['carto_tables']==all_report['shared']['carto_tables']
     same_png=all_report['separate']['png']['sha256']==all_report['shared']['png']['sha256']
@@ -203,4 +210,10 @@ def main():
     print('SHARED_IMPORT_REAL_OSM_AND_MAPNIK_PASS',flush=True)
 
 if __name__=='__main__':
-    main()
+    if len(sys.argv)==3 and sys.argv[1]=='render':
+        name=sys.argv[2]
+        result=render_mapnik_png(name)
+        (WORK/f'{name}.png.json').write_text(json.dumps(result,indent=2)+'\n')
+        print('INDEPENDENT_MAPNIK_RENDER',name,result['sha256'],flush=True)
+    else:
+        main()
