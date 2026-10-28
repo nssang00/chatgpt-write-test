@@ -61,6 +61,7 @@ jobs:
           set -euxo pipefail
           WORK="$RUNNER_TEMP/common-import"
           PROJECT="$GITHUB_WORKSPACE/experiments/osm2mbtiles/prototype"
+          export PYTHONPATH="$PROJECT/src"
           mkdir -p "$WORK/runtime/bin" "$GITHUB_WORKSPACE/common-import-artifacts"
           export PATH="/usr/lib/postgresql/16/bin:$PATH"
           for tool in initdb pg_ctl createdb psql osm2pgsql; do
