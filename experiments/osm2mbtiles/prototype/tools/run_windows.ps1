@@ -72,6 +72,8 @@ if ([string]::IsNullOrWhiteSpace($PbfPath)) {
 if ($format -eq 'vector') { $output = [IO.Path]::ChangeExtension($output, $null).TrimEnd('.') + '.vector.mbtiles' }
 $zoom = if ($ZoomOverride) { $ZoomOverride } elseif ($env:OSM2MBTILES_ZOOM) { $env:OSM2MBTILES_ZOOM } else { '0-15' }
 $workers = if ($env:OSM2MBTILES_PROCESSES) { $env:OSM2MBTILES_PROCESSES } else { '4' }
+$queryMode = if ($env:OSM2MBTILES_VECTOR_QUERY_MODE) { $env:OSM2MBTILES_VECTOR_QUERY_MODE.ToLowerInvariant() } else { 'projected' }
+if ($queryMode -notin @('projected', 'baseline', 'cached')) { Fail 'OSM2MBTILES_VECTOR_QUERY_MODE must be projected, baseline, or cached.' }
 $cachePolicy = if ($env:OSM2MBTILES_CLEANUP) { $env:OSM2MBTILES_CLEANUP.ToLowerInvariant() } else { 'compact' }
 if ($cachePolicy -notin @('keep', 'compact', 'prune')) { Fail 'OSM2MBTILES_CLEANUP must be keep, compact, or prune.' }
 if ($zoom -notmatch '^(?:\d+)(?:-\d+)?$') { Fail "Invalid zoom: $zoom" }
@@ -80,7 +82,7 @@ if ($workers -notmatch '^\d+$' -or [int]$workers -lt 1 -or [int]$workers -gt 64)
 Write-Host "`n=== osm2mbtiles - Docker-free one-click launcher ===" -ForegroundColor Cyan
 Write-Host "Input : $inputLabel"
 Write-Host "Output: $output"
-Write-Host "Zoom  : $zoom   Workers: $workers   Cache: $cachePolicy   Format: $format"
+Write-Host "Zoom  : $zoom   Workers: $workers   Cache: $cachePolicy   Format: $format   Vector SQL: $queryMode"
 Write-Host 'Backend: Linux tools inside WSL (no Docker)' -ForegroundColor DarkCyan
 
 $outputs = if ($format -eq 'both') {
@@ -112,7 +114,7 @@ $script = Join-Path $PSScriptRoot 'run_wsl.sh'
 $scriptUnix = (& wsl.exe --exec wslpath -a $script 2>&1 | Out-String).Trim()
 if ($LASTEXITCODE -ne 0 -or -not $scriptUnix) { Fail 'Unable to translate launcher path into WSL.' }
 Write-Host "`n[INFO] Starting native Mapnik/PostGIS pipeline..." -ForegroundColor Cyan
-& wsl.exe --exec bash $scriptUnix $project $pbf $output $zoom $workers $cachePolicy $format
+& wsl.exe --exec bash $scriptUnix $project $pbf $output $zoom $workers $cachePolicy $format $queryMode
 $code = $LASTEXITCODE
 if ($code -ne 0) { Fail "WSL rendering failed (exit $code). See output above." $code }
 foreach ($produced in $outputs) {
