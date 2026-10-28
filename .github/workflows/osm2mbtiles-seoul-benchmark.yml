@@ -80,19 +80,19 @@ jobs:
           /usr/bin/python3 -m osm2mbtiles verify-vector "$WORK/postgis.mbtiles"
           # Experimental PostGIS-native optimization: precompute JSONB properties
           # once per OSM object instead of rebuilding all field pairs per tile.
-          /usr/bin/time -f 'BENCH_WALL_SEC=%e\\nBENCH_MAX_RSS_KB=%M\\nBENCH_USER_SEC=%U\\nBENCH_SYS_SEC=%S' \\
-            -o "$WORK/postgis-cache-prepare.time" \\
+          /usr/bin/time -f 'BENCH_WALL_SEC=%e\nBENCH_MAX_RSS_KB=%M\nBENCH_USER_SEC=%U\nBENCH_SYS_SEC=%S' \
+            -o "$WORK/postgis-cache-prepare.time" \
             /usr/bin/python3 -m osm2mbtiles.vector_cache prepare
           cat > "$WORK/postgis-cached-job.json" <<EOF
           {"pbf":"$WORK/seoul.osm.pbf","output":"$WORK/postgis-cached.mbtiles","bbox":[127.015,37.485,127.075,37.535],"minzoom":12,"maxzoom":15,"processes":2}
           EOF
-          /usr/bin/time -f 'BENCH_WALL_SEC=%e\\nBENCH_MAX_RSS_KB=%M\\nBENCH_USER_SEC=%U\\nBENCH_SYS_SEC=%S' \\
-            -o "$WORK/postgis-cache-tiles.time" \\
-            env OSM2MBTILES_VECTOR_QUERY_MODE=cached \\
+          /usr/bin/time -f 'BENCH_WALL_SEC=%e\nBENCH_MAX_RSS_KB=%M\nBENCH_USER_SEC=%U\nBENCH_SYS_SEC=%S' \
+            -o "$WORK/postgis-cache-tiles.time" \
+            env OSM2MBTILES_VECTOR_QUERY_MODE=cached \
             /usr/bin/python3 "$PROJECT/src/osm2mbtiles/vector_worker.py" "$WORK/postgis-cached-job.json"
           /usr/bin/python3 -m osm2mbtiles verify-vector "$WORK/postgis-cached.mbtiles"
-          /usr/bin/python3 "$PROJECT/benchmarks/compare_postgis_modes.py" \\
-            "$WORK/postgis.mbtiles" "$WORK/postgis-cached.mbtiles" \\
+          /usr/bin/python3 "$PROJECT/benchmarks/compare_postgis_modes.py" \
+            "$WORK/postgis.mbtiles" "$WORK/postgis-cached.mbtiles" \
             --output "$WORK/postgis-parity.json"
           pg_ctl -D "$WORK/pgdata" -m fast -w stop
           trap - EXIT
@@ -141,14 +141,14 @@ jobs:
               return float(re.search(r'BENCH_WALL_SEC=([0-9.]+)', raw).group(1))
           cache_pre=sec('postgis-cache-prepare.time')
           cache_tiles=sec('postgis-cache-tiles.time')
-          print('\\n#### PostGIS SQL optimization (same imported database)')
+          print('\n#### PostGIS SQL optimization (same imported database)')
           print('| Mode | Preprocessing | Tile generation | Extra total |')
           print('|---|---:|---:|---:|')
           print(f'| Baseline | 0 | {a["postgis"]["tile_generation"]["wall_seconds"]:.2f}s | {a["postgis"]["tile_generation"]["wall_seconds"]:.2f}s |')
           print(f'| Cached properties | {cache_pre:.2f}s | {cache_tiles:.2f}s | {cache_pre+cache_tiles:.2f}s |')
           import json as js
           parity=js.load(open('seoul-benchmark-artifacts/postgis-parity.json'))
-          print('\\nSemantic parity (decoded geometry, properties, multiplicity):', parity['equal'], 'on', parity['tiles_baseline'], 'tiles')
+          print('\nSemantic parity (decoded geometry, properties, multiplicity):', parity['equal'], 'on', parity['tiles_baseline'], 'tiles')
           print('| Tiles |',a['postgis']['output']['tiles'],'|',a['planetiler']['output']['tiles'],'|')
           print('| Features |',a['postgis']['output']['features'],'|',a['planetiler']['output']['features'],'|')
           print('| Nonempty layers |',len(a['postgis']['output']['layer_counts']),'|',len(a['planetiler']['output']['layer_counts']),'|')
