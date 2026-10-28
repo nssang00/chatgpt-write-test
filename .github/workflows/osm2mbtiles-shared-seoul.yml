@@ -20,6 +20,10 @@ jobs:
           sudo apt-get update -qq
           sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends postgresql-16 postgresql-client-16 postgresql-16-postgis-3 postgresql-16-postgis-3-scripts osm2pgsql python3-psycopg2 python3-pip time curl
           /usr/bin/python3 -m pip install --break-system-packages mapbox-vector-tile
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "25"
       - name: Real Seoul split import vs shared import with database and MVT parity
         run: bash experiments/osm2mbtiles/prototype/benchmarks/shared_db_seoul_e2e.sh
       - uses: actions/upload-artifact@v4
