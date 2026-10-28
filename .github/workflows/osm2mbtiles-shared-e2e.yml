@@ -25,7 +25,7 @@ jobs:
             postgresql-16 postgresql-client-16 postgresql-16-postgis-3 \
             postgresql-16-postgis-3-scripts osm2pgsql gdal-bin \
             python3-mapnik python3-psycopg2 python3-requests python3-yaml \
-            python3-pil python3-pip fonts-hanazono time fontconfig curl
+            python3-pil python3-pip python3-pytest fonts-hanazono time fontconfig curl
           /usr/bin/python3 -m pip install --break-system-packages mapbox-vector-tile
           sudo npm install --global carto@1.2.0
       - name: Full real-data separate vs one-pass comparison including Carto PNG pixels
