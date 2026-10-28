@@ -33,8 +33,8 @@ def arguments(argv=None):
     export.add_argument('-z','--zoom',default='0-15',help='zoom range, e.g. 0-15')
     export.add_argument('-o','--output',type=Path,required=True)
     export.add_argument('--format', choices=('raster','vector','both'),default='raster',help='output format, or both separate MBTiles files')
-    export.add_argument('--vector-query-mode',choices=('baseline','cached'),default='baseline',
-                        help='baseline tile SQL or precomputed PostGIS JSONB cache (experimental)')
+    export.add_argument('--vector-query-mode',choices=('baseline','cached','projected'),default='baseline',
+                        help='baseline, cached precomputed JSONB, or on-demand JSONB key projection (experimental)')
     export.add_argument('--bbox',help='west,south,east,north (otherwise from PBF header)')
     export.add_argument('--runtime',type=Path,help='prepared native runtime folder')
     export.add_argument('--workdir',type=Path,help='persist intermediate database for subsequent runs')
