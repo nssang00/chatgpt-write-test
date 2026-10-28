@@ -1,9 +1,7 @@
 name: Geofabrik PBF to MBTiles Benchmark
 
 on:
-  push:
-    branches:
-      - benchmark/planetiler-vs-tilemaker
+  pull_request:
     paths:
       - .github/workflows/mbtiles-benchmark.yml
   workflow_dispatch:
