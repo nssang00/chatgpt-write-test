@@ -68,7 +68,7 @@ async function waitHealth(){
 async function sample(engine,region,count,round){
   const context=await browser.newContext({
     viewport:{width:1280,height:720},deviceScaleFactor:1,
-    serviceWorkers:'block',reducedMotion:'reduce'
+    serviceWorkers:'block',reducedMotion:'no-preference'
   });
   let tiles200=0,tilesOther=0;
   const page=await context.newPage(),errors=[];
