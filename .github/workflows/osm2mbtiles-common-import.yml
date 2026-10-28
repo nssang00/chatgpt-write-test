@@ -1,0 +1,97 @@
+name: osm2mbtiles Common Carto+Vector Import Real E2E
+on:
+  workflow_dispatch:
+  push:
+    branches: [ci/osm2mbtiles-native-test]
+    paths:
+      - experiments/osm2mbtiles/prototype/src/osm2mbtiles/runtime.py
+      - experiments/osm2mbtiles/prototype/src/osm2mbtiles/cli.py
+      - experiments/osm2mbtiles/prototype/vector/vector-flex.lua
+      - experiments/osm2mbtiles/prototype/benchmarks/common_import_benchmark.py
+      - experiments/osm2mbtiles/prototype/tests/test_common_import.py
+      - .github/workflows/osm2mbtiles-common-import.yml
+permissions:
+  contents: read
+jobs:
+  parity-performance:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - region: monaco
+            bbox: '7.40,43.71,7.46,43.75'
+            pbf_url: 'https://download.geofabrik.de/europe/monaco-latest.osm.pbf'
+          - region: seoul
+            bbox: '127.015,37.485,127.075,37.535'
+            pbf_url: 'https://tiles.osm.kr/download/seoul-non-military.osm.pbf'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install PostgreSQL PostGIS osm2pgsql MVT decoder
+        run: |
+          set -euxo pipefail
+          sudo apt-get update -qq
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            postgresql-16 postgresql-client-16 postgresql-16-postgis-3 \
+            postgresql-16-postgis-3-scripts osm2pgsql python3-psycopg2 \
+            python3-pip python3-pytest git time curl
+          /usr/bin/python3 -m pip install --break-system-packages mapbox-vector-tile
+      - name: Download exact input PBF and pinned OSM Carto style
+        shell: bash
+        env:
+          PBF_URL: ${{ matrix.pbf_url }}
+          REGION: ${{ matrix.region }}
+        run: |
+          set -euxo pipefail
+          mkdir -p "$RUNNER_TEMP/common-import"
+          curl -fL --retry 3 --retry-delay 2 --connect-timeout 20 --max-time 180 \
+            "$PBF_URL" -o "$RUNNER_TEMP/common-import/input.osm.pbf"
+          sha256sum "$RUNNER_TEMP/common-import/input.osm.pbf"
+          git clone -q --depth 1 --branch v6.0.0 \
+            https://github.com/openstreetmap-carto/openstreetmap-carto.git \
+            "$RUNNER_TEMP/common-import/carto"
+          test -s "$RUNNER_TEMP/common-import/carto/openstreetmap-carto-flex.lua"
+      - name: Set up isolated runtime and compare two imports with one combined import
+        shell: bash
+        env:
+          BBOX: ${{ matrix.bbox }}
+          REGION: ${{ matrix.region }}
+        run: |
+          set -euxo pipefail
+          WORK="$RUNNER_TEMP/common-import"
+          PROJECT="$GITHUB_WORKSPACE/experiments/osm2mbtiles/prototype"
+          mkdir -p "$WORK/runtime/bin" "$GITHUB_WORKSPACE/common-import-artifacts"
+          export PATH="/usr/lib/postgresql/16/bin:$PATH"
+          for tool in initdb pg_ctl createdb psql osm2pgsql; do
+            ln -s "$(command -v "$tool")" "$WORK/runtime/bin/$tool"
+          done
+          /usr/bin/python3 -m pytest -q "$PROJECT/tests/test_common_import.py"
+          /usr/bin/python3 "$PROJECT/benchmarks/common_import_benchmark.py" \
+            --pbf "$WORK/input.osm.pbf" \
+            --carto "$WORK/carto" \
+            --runtime "$WORK/runtime" \
+            --vector "$PROJECT/vector" \
+            --work "$WORK/bench" \
+            --bbox "$BBOX" --zoom 12-15 \
+            --sequence split,common,common,split
+          cp "$WORK/bench/results.json" "$GITHUB_WORKSPACE/common-import-artifacts/$REGION-results.json"
+          /usr/bin/python3 - "$WORK/bench/results.json" <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          import json,sys
+          a=json.load(open(sys.argv[1]));print('## Carto + detailed vector common import')
+          print('Input SHA256:',a['input_sha256'])
+          print('| Mode | Import wall time (s) | All Carto and vector tables | MVT parity |')
+          print('|---|---:|---|---|')
+          for r in a['runs']:
+            print('|',r['kind'],'|',r['import_total_s'],'|',r['carto_vector_rows_equal'],'|',r['mvt_semantic_equal'],'|')
+          print('**Median split:**',a['median_split_s'],'s; **median common:**',a['median_common_s'],'s; **speedup:**',a['speedup'])
+          print('\nExcludes asset downloads, rendering and validations; benchmarks OSM data import only.')
+          PY
+          echo COMMON_IMPORT_AND_VECTOR_PARITY_SUCCESS
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: common-import-${{ matrix.region }}
+          path: common-import-artifacts/
+          if-no-files-found: warn
+          retention-days: 14
