@@ -25,9 +25,11 @@ PY
 snapshot(){ local name="$1"; /usr/bin/python3 "$PROJECT/benchmarks/shared_parity.py" record-tables --work "$WORK/$name"; cp "$WORK/$name/tables.json" "$WORK/$name.tables.json"; }
 reset_db
 /usr/bin/time -f 'WALL=%e\nMAX_RSS_KB=%M' -o "$WORK/separate-carto.time" osm2pgsql --slim --drop --cache=256 --number-processes=1 --disable-parallel-indexing -O flex -S openstreetmap-carto-flex.lua -d gis "$WORK/seoul.osm.pbf"
-for sql in indexes.sql functions.sql common-values.sql;do psql -v ON_ERROR_STOP=1 -f "$sql" >/dev/null;done
+/usr/bin/time -f 'WALL=%e\nMAX_RSS_KB=%M' -o "$WORK/separate-carto-post.time" \
+ bash -eo pipefail -c 'for sql in indexes.sql functions.sql common-values.sql;do psql -v ON_ERROR_STOP=1 -f "$sql" >/dev/null;done' 
 /usr/bin/time -f 'WALL=%e\nMAX_RSS_KB=%M' -o "$WORK/separate-vector.time" osm2pgsql --slim --drop --cache=256 --number-processes=1 --disable-parallel-indexing -O flex -S "$PROJECT/vector/vector-flex.lua" -d gis "$WORK/seoul.osm.pbf"
-psql -v ON_ERROR_STOP=1 -f "$PROJECT/vector/post-import.sql" >/dev/null
+/usr/bin/time -f 'WALL=%e\nMAX_RSS_KB=%M' -o "$WORK/separate-vector-post.time" \
+ psql -v ON_ERROR_STOP=1 -f "$PROJECT/vector/post-import.sql" >/dev/null
 snapshot baseline
 render_mvt baseline
 /usr/bin/time -f 'WALL=%e\nMAX_RSS_KB=%M' -o "$WORK/shared-safe.time" /usr/bin/python3 - "$PROJECT" "$WORK" safe <<'PY'
@@ -45,12 +47,48 @@ snapshot shared
 render_mvt shared
 /usr/bin/python3 "$PROJECT/benchmarks/compare_postgis_modes.py" "$WORK/baseline.vector.mbtiles" "$WORK/shared.vector.mbtiles" --output "$WORK/vector-parity.json"
 /usr/bin/python3 "$PROJECT/benchmarks/shared_parity.py" compare --work "$WORK" --skip-png
-/usr/bin/python3 - "$WORK" <<'PY'
+cp "$WORK/parity.json" "$WORK/safe-table-parity.json"
+# Test high-throughput common import independently and enforce identical outputs.
+/usr/bin/time -f 'WALL=%e\nMAX_RSS_KB=%M' -o "$WORK/shared-fast.time" /usr/bin/python3 - "$PROJECT" "$WORK" fast <<'PYFAST'
+from pathlib import Path
+import os,sys,shutil
+from osm2mbtiles.runtime import LocalDatabase,Runtime
+pr=Path(sys.argv[1]);w=Path(sys.argv[2]);r=w/'runtime';db=LocalDatabase(Runtime(r),w)
+db.env=os.environ.copy();db.import_shared_extract(w/'seoul.osm.pbf',w/'carto',pr/'vector','fast')
+PYFAST
+snapshot fast
+render_mvt fast
+/usr/bin/python3 "$PROJECT/benchmarks/compare_postgis_modes.py" "$WORK/baseline.vector.mbtiles" "$WORK/fast.vector.mbtiles" --output "$WORK/fast-vector-parity.json"
+cp "$WORK/shared.tables.json" "$WORK/safe.tables.json"
+cp "$WORK/fast.tables.json" "$WORK/shared.tables.json"
+/usr/bin/python3 "$PROJECT/benchmarks/shared_parity.py" compare --work "$WORK" --skip-png
+cp "$WORK/parity.json" "$WORK/fast-table-parity.json"
+mv "$WORK/safe.tables.json" "$WORK/shared.tables.json"
+# Planetiler is a comparison ONLY. It is not a dependency of osm2mbtiles.
+curl -fL --retry 3 --retry-delay 2 https://github.com/onthegomap/planetiler/releases/download/v0.10.2/planetiler.jar -o "$WORK/planetiler.jar"
+cd "$WORK"
+/usr/bin/time -f 'WALL=%e\nMAX_RSS_KB=%M' -o "$WORK/planetiler.time" \
+ java -Xmx3g -jar "$WORK/planetiler.jar" generate-custom \
+   --schema="$PROJECT/benchmarks/seoul-planetiler.yml" \
+   --output="$WORK/planetiler.mbtiles" \
+   --bounds=127.015,37.485,127.075,37.535 \
+   --minzoom=12 --maxzoom=15 --threads=2 --force
+/usr/bin/python3 - "$WORK" <<'PY' 
 import json,re,sys,pathlib
 w=pathlib.Path(sys.argv[1]);seconds=lambda p:float(re.search(r'WALL=([0-9.]+)',(w/p).read_text()).group(1))
-a=seconds('separate-carto.time');b=seconds('separate-vector.time');c=seconds('shared-safe.time')
-report={'input_bytes':(w/'seoul.osm.pbf').stat().st_size,'separate_import_sec':a+b,'carto_import_sec':a,'vector_import_sec':b,'shared_import_sec':c,'shared_vs_separate_ratio':round(c/(a+b),4),'mvt':json.loads((w/'vector-parity.json').read_text()),'tables':json.loads((w/'parity.json').read_text())}
-assert report['mvt']['equal'] and not report['tables']['changed_tables']
+a=seconds('separate-carto.time');b=seconds('separate-vector.time');c=seconds('shared-safe.time');d=seconds('shared-fast.time');pl=seconds('planetiler.time');e=seconds('separate-carto-post.time');f=seconds('separate-vector-post.time')
+report={'input_bytes':(w/'seoul.osm.pbf').stat().st_size,'separate_import_sec':round(a+b+e+f,2),'separate_raw_osm2pgsql_sec':a+b,'separate_postprocess_sec':round(e+f,2),'carto_import_sec':a,'vector_import_sec':b,'shared_import_sec':c,'shared_fast_sec':d,'planetiler_vector_all_sec':pl,'shared_vs_separate_ratio':round(c/(a+b+e+f),4),'mvt':json.loads((w/'vector-parity.json').read_text()),'tables':json.loads((w/'safe-table-parity.json').read_text()),'fast_tables':json.loads((w/'fast-table-parity.json').read_text()),'fast_mvt':json.loads((w/'fast-vector-parity.json').read_text())}
+assert report['mvt']['equal'] and report['fast_mvt']['equal'] and not report['tables']['changed_tables'] and not report['fast_tables']['changed_tables']
+import sqlite3,gzip,mapbox_vector_tile
+with sqlite3.connect(w/'planetiler.mbtiles') as db:
+ rows=db.execute('SELECT tile_data FROM tiles').fetchall()
+ layers=set();count=0
+ for (blob,) in rows:
+  data=mapbox_vector_tile.decode(gzip.decompress(blob))
+  for key,layer in data.items():
+   if layer['features']: layers.add(key);count+=len(layer['features'])
+ report['planetiler']={'tile_count':len(rows),'features':count,'nonempty_layers':len(layers),'bytes':(w/'planetiler.mbtiles').stat().st_size}
+ assert rows
 (w/'results.json').write_text(json.dumps(report,indent=2))
 print('SEOUL_SHARED_IMPORT_PARITY_SUCCESS',json.dumps(report))
 PY
