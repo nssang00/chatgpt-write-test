@@ -1,0 +1,22 @@
+{
+  "layers": {
+    "roads": {
+      "minzoom": 14,
+      "maxzoom": 14
+    },
+    "buildings": {
+      "minzoom": 14,
+      "maxzoom": 14
+    }
+  },
+  "settings": {
+    "minzoom": 14,
+    "maxzoom": 14,
+    "basezoom": 14,
+    "include_ids": false,
+    "compress": "gzip",
+    "name": "Controlled Roads Buildings",
+    "version": "1.0",
+    "description": "OSM highway lines and building polygons at z14"
+  }
+}
