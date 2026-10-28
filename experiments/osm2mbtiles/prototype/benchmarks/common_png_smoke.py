@@ -48,7 +48,8 @@ def render(db,bbox,output):
             host=db.env['PGHOST'],port=int(db.env['PGPORT']),
             dbname='gis',user=db.env['PGUSER'],password=db.env['PGPASSWORD'],
             table=f'(SELECT osm_id, way FROM {table} ORDER BY osm_id) AS {name}_query',
-            geometry_field='way',srid=3857,extent_from_subquery=True)
+            geometry_field='way',srid=3857,extent_from_subquery=True,
+            persist_connection=False)
         m.layers.append(layer)
     m.zoom_to_box(bounds)
     img=mapnik.Image(256,256)
