@@ -43,7 +43,7 @@ function mlStyle(layers) {
     layers:layers.map(d=>{
       const type=d.kind==='point'?'circle':d.kind;
       const entry={id:d.styleId,type,source:'osm','source-layer':d.id};
-      if(type==='fill') entry.paint={'fill-color':d.color,'fill-opacity':0.88,'fill-antialias':false};
+      if(type==='fill') entry.paint={'fill-color':d.color,'fill-opacity':1,'fill-antialias':false};
       if(type==='line') entry.paint={'line-color':d.color,'line-width':1.5,'line-opacity':1};
       if(type==='circle') entry.paint={'circle-color':d.color,'circle-radius':3,'circle-opacity':1};
       return entry;
