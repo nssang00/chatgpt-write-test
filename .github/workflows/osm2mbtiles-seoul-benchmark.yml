@@ -38,17 +38,15 @@ jobs:
             -o "$RUNNER_TEMP/seoul-bench/planetiler.jar"
           java -version
           ls -lh "$RUNNER_TEMP/seoul-bench/planetiler.jar"
-      - name: Download common Geofabrik PBF and extract SAME Seoul subset (not timed)
+      - name: Download the SAME Seoul regional OSM PBF for both engines (not timed)
         shell: bash
         run: |
           set -euxo pipefail
           WORK="$RUNNER_TEMP/seoul-bench"
           mkdir -p "$WORK"
-          curl -fL --retry 3 --retry-delay 3 \
-            https://download.geofabrik.de/asia/south-korea-latest.osm.pbf \
-            -o "$WORK/korea.osm.pbf"
-          osmium extract -s complete_ways -b 127.015,37.485,127.075,37.535 \
-            -o "$WORK/seoul.osm.pbf" "$WORK/korea.osm.pbf"
+          curl -fL --retry 3 --retry-delay 2 --connect-timeout 20 --max-time 180 \
+            https://tiles.osm.kr/download/seoul-non-military.osm.pbf \
+            -o "$WORK/seoul.osm.pbf"
           osmium fileinfo "$WORK/seoul.osm.pbf"
           sha256sum "$WORK/seoul.osm.pbf" | tee "$WORK/input.sha256"
       - name: PostGIS fresh import and MVT production, independently timed
