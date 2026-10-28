@@ -1,0 +1,120 @@
+name: osm2mbtiles Shared Import Seoul + Planetiler Benchmark
+on:
+  workflow_dispatch:
+  push:
+    branches: [ci/osm2mbtiles-native-test]
+    paths:
+      - .github/workflows/osm2mbtiles-shared-seoul-benchmark.yml
+permissions:
+  contents: read
+jobs:
+  shared-seoul-comparison:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 48
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install native import, Mapnik and Java requirements
+        run: |
+          set -euxo pipefail
+          sudo apt-get update -qq
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            postgresql-16 postgresql-client-16 postgresql-16-postgis-3 \
+            postgresql-16-postgis-3-scripts osm2pgsql python3-mapnik \
+            python3-psycopg2 python3-pil python3-pip curl time git
+          /usr/bin/python3 -m pip install --break-system-packages mapbox-vector-tile
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+      - name: Fetch same South Korean Seoul PBF, Carto flex, and Planetiler binary
+        shell: bash
+        run: |
+          set -euxo pipefail
+          WORK="$RUNNER_TEMP/shared-seoul"
+          mkdir -p "$WORK" "$GITHUB_WORKSPACE/shared-seoul-evidence"
+          curl -fL --retry 3 --retry-delay 2 --connect-timeout 20 --max-time 240 \
+            https://tiles.osm.kr/download/seoul-non-military.osm.pbf \
+            -o "$WORK/seoul.osm.pbf"
+          sha256sum "$WORK/seoul.osm.pbf" | tee shared-seoul-evidence/input.sha256
+          git clone -q --depth 1 --branch v6.0.0 \
+            https://github.com/openstreetmap-carto/openstreetmap-carto.git "$WORK/carto"
+          curl -fL --retry 3 --retry-delay 3 \
+            https://github.com/onthegomap/planetiler/releases/download/v0.10.2/planetiler.jar \
+            -o "$WORK/planetiler.jar"
+      - name: Compare split vs shared on same Seoul PostGIS and Mapnik PNG subset
+        shell: bash
+        run: |
+          set -euxo pipefail
+          WORK="$RUNNER_TEMP/shared-seoul"
+          export PATH="/usr/lib/postgresql/16/bin:$PATH"
+          export SHARED_CI_WORK="$WORK" SHARED_CI_STYLE="$WORK/carto" SHARED_CI_PBF="$WORK/seoul.osm.pbf"
+          export SHARED_CI_BBOX="127.015,37.485,127.075,37.535" SHARED_CI_MINZOOM=12 SHARED_CI_MAXZOOM=15
+          export SHARED_CI_RENDER_ZOOM=14
+          export PYTHONPATH="$GITHUB_WORKSPACE/experiments/osm2mbtiles/prototype/src"
+          export PGHOST="$WORK/socket" PGPORT=55459 PGUSER=sharedseoul PGDATABASE=gis
+          mkdir -p "$PGHOST"
+          initdb -D "$WORK/pgdata" -U "$PGUSER" --auth-local=trust --auth-host=trust
+          pg_ctl -D "$WORK/pgdata" -l "$WORK/postgres.log" -w \
+            -o "-c listen_addresses='' -c unix_socket_directories=$PGHOST -c port=$PGPORT -c shared_buffers=64MB -c work_mem=4MB -c max_parallel_maintenance_workers=0" start
+          trap 'cp "$WORK/postgres.log" "$GITHUB_WORKSPACE/shared-seoul-evidence/" || true; pg_ctl -D "$WORK/pgdata" -m immediate -w stop || true' EXIT
+          /usr/bin/python3 experiments/osm2mbtiles/prototype/benchmarks/shared_real_e2e.py
+          /usr/bin/python3 experiments/osm2mbtiles/prototype/benchmarks/compare_postgis_modes.py \
+            "$WORK/separate.vector.mbtiles" "$WORK/shared.vector.mbtiles" \
+            --output shared-seoul-evidence/vector-parity.json
+          cp "$WORK/shared_report.json" "$WORK/"*.png shared-seoul-evidence/
+          echo SEOUL_SHARED_IMPORT_AND_MVT_MAPNIK_PARITY_PASS
+          pg_ctl -D "$WORK/pgdata" -m fast -w stop
+          trap - EXIT
+      - name: Time Planetiler custom 18-layer Seoul PBF vector-only baseline
+        shell: bash
+        run: |
+          set -euxo pipefail
+          WORK="$RUNNER_TEMP/shared-seoul"
+          cd "$WORK"
+          /usr/bin/time -f 'WALL_SEC=%e\nMAX_RSS_KB=%M' -o "$GITHUB_WORKSPACE/shared-seoul-evidence/planetiler.time" \
+            java -Xmx3g -jar "$WORK/planetiler.jar" generate-custom \
+              --schema="$GITHUB_WORKSPACE/experiments/osm2mbtiles/prototype/benchmarks/seoul-planetiler.yml" \
+              --output="$WORK/planetiler.mbtiles" \
+              --bounds=127.015,37.485,127.075,37.535 \
+              --minzoom=12 --maxzoom=15 --threads=2 --force
+      - name: Collect results including distinct scope warning
+        shell: bash
+        run: |
+          set -euxo pipefail
+          /usr/bin/python3 - <<'PY'
+          import json,re
+          from pathlib import Path
+          p=Path('shared-seoul-evidence')
+          r=json.loads((p/'shared_report.json').read_text())
+          v=json.loads((p/'vector-parity.json').read_text())
+          planet_time=float(re.search(r'WALL_SEC=([0-9.]+)',(p/'planetiler.time').read_text()).group(1))
+          assert v['equal'] and r['carto_tables_equal'] and r['mapnik_png_pixels_equal']
+          data={'input':'Seoul regional OSM PBF (identical input file in all modes)',
+                'bbox':[127.015,37.485,127.075,37.535],'zooms':[12,15],
+                'separate_import_sec':r['separate']['total_import_seconds'],
+                'shared_import_sec':r['shared']['total_import_seconds'],
+                'separate_vector_sec':r['separate']['vector']['seconds'],
+                'shared_vector_sec':r['shared']['vector']['seconds'],
+                'planetiler_vector_only_sec':planet_time,
+                'carto_table_parity':r['carto_tables_equal'],
+                'mapnik_png_pixels_parity':r['mapnik_png_pixels_equal'],
+                'pbf_semantic_parity':v['equal'],
+                'pbf_feature_count':v['features'],
+                'caveat':'PostGIS import plus vector and Planetiler vector-only differ in schemas; PNG subset is not complete OSM Carto style. All timings exclude input download and Mapnik render unless stated.'}
+          (p/'summary.json').write_text(json.dumps(data,indent=2)+'\n')
+          print('SEOUL_SHARED_WITH_PLANETILER_COMPARISON',json.dumps(data))
+          with open(__import__('os').environ['GITHUB_STEP_SUMMARY'],'a') as f:
+              f.write('## Seoul shared-import performance\n\n')
+              f.write('| Benchmark | Seconds |\n|---|---:|\n')
+              for k in ('separate_import_sec','shared_import_sec','separate_vector_sec','shared_vector_sec','planetiler_vector_only_sec'):
+                  f.write(f'| {k} | {data[k]:.3f} |\n')
+              f.write('\nAll PostGIS vector tiles, Carto database contents, and controlled Mapnik PNG pixels match between shared and separate imports. Planetiler output schema differs.\n')
+          print('SEOUL_SHARED_PLANETILER_BENCHMARK_SUCCESS')
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: shared-seoul-planetiler-evidence
+          path: shared-seoul-evidence/
+          retention-days: 14
+          if-no-files-found: warn
