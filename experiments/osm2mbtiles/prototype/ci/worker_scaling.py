@@ -113,6 +113,21 @@ def measured(cmd, *, cwd, logpath, timeout, pgdata=None, env=None):
     start = time.monotonic()
     max_rss = max_pss = max_procs = 0
     tracked_cpu = {}
+    # PostgreSQL survives across variants; subtract CPU accrued before each run.
+    # Otherwise later variants inherit accumulated PostgreSQL CPU from earlier ones.
+    preexisting_cpu = {}
+    if pgdata is not None:
+        pgroot = pg_pid(pgdata)
+        if pgroot is not None:
+            try:
+                root = psutil.Process(pgroot)
+                for child in [root, *root.children(recursive=True)]:
+                    try:
+                        preexisting_cpu[(child.pid, child.create_time())] = cpu_usage(child)
+                    except (psutil.NoSuchProcess, psutil.AccessDenied):
+                        pass
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                pass
     proc = None
     code = None
     timed_out = False
@@ -144,7 +159,8 @@ def measured(cmd, *, cwd, logpath, timeout, pgdata=None, env=None):
                 os.killpg(proc.pid, signal.SIGKILL)
                 proc.wait()
     wall = round(time.monotonic() - start, 3)
-    cpu_total = round(sum(tracked_cpu.values()), 3)
+    cpu_total = round(sum(max(0.0, seconds - preexisting_cpu.get(key, 0.0))
+                          for key, seconds in tracked_cpu.items()), 3)
     return {'wall_seconds': wall, 'cpu_seconds_sampled': cpu_total,
             'avg_cpu_cores_sampled': round(cpu_total/max(wall, .001), 3),
             'peak_pss_mib_sampled': round(max_pss/1048576, 2),
