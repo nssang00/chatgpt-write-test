@@ -85,7 +85,7 @@ async function sample(engine,region,count,round){
     if(frameTimes.some(x=>!Number.isFinite(x)||x<=0))throw Error('INVALID_WHOLE_GPU_TIMES '+JSON.stringify(frameTimes));
     const samples=result.detailed.flatMap(x=>x.result.values);
     if(samples.length!==drawSamples*profileRounds)throw Error('MISSING_DRAW_QUERIES '+samples.length);
-    if(samples.some(x=>!Number.isFinite(x.gpuNanoseconds)||x.gpuNanoseconds<=0))throw Error('INVALID_INDIVIDUAL_GPU_QUERY');
+    if(samples.some(x=>!Number.isFinite(x.gpuNanoseconds)||x.gpuNanoseconds<0))throw Error('INVALID_INDIVIDUAL_GPU_QUERY');
     if(!result.info.programs.length || result.census.drawCalls<10)throw Error('NO_SHADER_PROGRAM_CENSUS');
     row.profileCount=samples.length;
     if(round===0&&(count===18||count===128)){
@@ -115,6 +115,9 @@ function summarize(){
         gpuFrameP50:median(frameMs),gpuFrameP95:p95(frameMs),
         gpuSceneP50:median(framePerScene),
         sampledDrawGpuP50:median(drawMs),sampledDrawGpuP95:p95(drawMs),
+        sampledDrawZeroQueries:drawMs.filter(x=>x===0).length,
+        sampledDrawZeroPercent:Math.round(drawMs.filter(x=>x===0).length/Math.max(drawMs.length,1)*1e4)/100,
+        sampledDrawPositiveP50:median(drawMs.filter(x=>x>0)),
         drawCountP50:median(drawCount),programCountP50:median(programCount),
         uniqueProgramSignatures:([...new Set(rows.flatMap(x=>x.info.programs.map(p=>
           p.shaders.map(s=>s.type+':'+s.hash).sort().join(';'))))]).length,
@@ -130,6 +133,7 @@ function summarize(){
     cells,notes:[
       'Hardware disjoint timer queries around individually sampled WebGL draw calls; no gl.finish.',
       'Whole-frame timings are separate query scopes with instrumented GL methods.',
+      'Per-draw timer results of zero nanoseconds are retained and flagged as resolution-censored values, not counted as disjoint/failures.',
       'Individual draw sample P50 is NOT sum of all GPU draw costs; sampling can perturb the graphics pipeline.',
       'MapLibre has N style layers and WebGL2; OL has one WebGLVectorTileLayer with N rules and WebGL1.',
       'Above 18, original MVT source layers are reused; synthetic style rules not independent data.',
@@ -143,11 +147,11 @@ function summarize(){
     '# Seoul per-draw GPU timer and program profile',
     'Valid: '+valid+'; '+raw.length+'/'+expected+' scenes; '+totalQueries+'/'+expectedQueries+' GPU timer queries',
     'GPU: '+gpu.renderer,'',
-    '|Style rules|ML frame P50|OL frame P50|ML per-draw sampled P50|OL per-draw sampled P50|ML draw count P50|OL draw count P50|ML program count|OL program count|',
+    '|Styles|ML GPU full frame P50|OL GPU full frame P50|ML sampled draw P50|OL sampled draw P50|ML 0ns percent|OL 0ns percent|ML programs|OL programs|',
     '|---:|---:|---:|---:|---:|---:|---:|---:|---:|',
     ...cells.map(x=>'|'+[x.count,x.maplibre.gpuFrameP50,x.openlayers.gpuFrameP50,
-      x.maplibre.sampledDrawGpuP50,x.openlayers.sampledDrawGpuP50,x.maplibre.drawCountP50,
-      x.openlayers.drawCountP50,x.maplibre.programCountP50,x.openlayers.programCountP50].join('|')+'|'),
+      x.maplibre.sampledDrawGpuP50,x.openlayers.sampledDrawGpuP50,x.maplibre.sampledDrawZeroPercent,
+      x.openlayers.sampledDrawZeroPercent,x.maplibre.programCountP50,x.openlayers.programCountP50].join('|')+'|'),
     '',
     'Individual GPU draw queries include timer-query instrumentation overhead and do not sum to exact frame time.'
   ];
