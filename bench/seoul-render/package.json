@@ -1,0 +1,16 @@
+{
+  "name": "seoul-planetiler-render-compare",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "benchmark": "node run.mjs",
+    "dev": "vite"
+  },
+  "dependencies": {
+    "maplibre-gl": "5.9.0",
+    "ol": "10.10.0",
+    "playwright": "1.55.0",
+    "pngjs": "7.0.0",
+    "vite": "7.1.2"
+  }
+}
