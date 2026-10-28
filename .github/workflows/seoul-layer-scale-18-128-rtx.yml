@@ -1,0 +1,111 @@
+name: Seoul 18-128 Style Layer Scaling RTX
+on:
+  push:
+    branches: [bench/seoul-style-scale-18-128-20261028]
+    paths:
+      - 'bench/seoul-layer-scale/**'
+      - '.github/workflows/seoul-layer-scale-18-128-rtx.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: seoul-18-128-style-scale-rtx
+  cancel-in-progress: false
+jobs:
+  extended-rtx:
+    name: Physical RTX cold warm and frame scaling 18-128 style entries
+    runs-on: self-hosted
+    timeout-minutes: 120
+    defaults:
+      run:
+        shell: powershell
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+      - name: Ensure physical RTX and Chrome, not SwiftShader
+        run: |
+          $ErrorActionPreference='Stop'
+          $gpu=@(Get-CimInstance Win32_VideoController | Select-Object Name,DriverVersion)
+          if (-not ($gpu | Where-Object {$_.Name -match 'NVIDIA.*RTX'})) {throw 'NVIDIA RTX hardware required'}
+          $gpu | Format-Table | Out-String | Write-Host
+          $paths=@(
+            (Join-Path $env:ProgramFiles 'Google\Chrome\Application\chrome.exe'),
+            (Join-Path ${env:ProgramFiles(x86)} 'Google\Chrome\Application\chrome.exe'),
+            (Join-Path $env:LOCALAPPDATA 'Google\Chrome\Application\chrome.exe')
+          )
+          $chrome=$paths | Where-Object {Test-Path $_} | Select-Object -First 1
+          if(-not $chrome){throw 'Chrome not installed on runner'}
+          "CHROME_PATH=$chrome" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+          $gpu | ConvertTo-Json | Set-Content -Encoding utf8 bench/seoul-layer-scale/hardware.json
+      - name: Prepare exact benchmark code and pinned dependencies
+        run: |
+          $ErrorActionPreference='Stop'
+          Copy-Item bench/seoul-layer-scale/stress.js bench/seoul-render/src/stress.js -Force
+          Copy-Item bench/seoul-layer-scale/run-scale.mjs bench/seoul-render/run-scale.mjs -Force
+          Push-Location bench/seoul-render
+          try {
+            npm install --no-audit --no-fund --ignore-scripts
+            if($LASTEXITCODE -ne 0){throw 'npm install failed'}
+            node --check src/stress.js
+            if($LASTEXITCODE -ne 0){throw 'extended.js syntax failed'}
+            node --check run-scale.mjs
+            if($LASTEXITCODE -ne 0){throw 'runner syntax failed'}
+          } finally { Pop-Location }
+      - name: Download exact Seoul extract and Planetiler v0.10.2
+        run: |
+          $ErrorActionPreference='Stop'
+          $work=Join-Path $env:RUNNER_TEMP 'seoul-style-scale-20261028'
+          New-Item -Type Directory -Force $work | Out-Null
+          $source=Join-Path $work 'seoul.osm.pbf'
+          $jar=Join-Path $work 'planetiler.jar'
+          Invoke-WebRequest -Uri 'https://tiles.osm.kr/download/seoul-non-military.osm.pbf' -OutFile $source -MaximumRedirection 5
+          Invoke-WebRequest -Uri 'https://github.com/onthegomap/planetiler/releases/download/v0.10.2/planetiler.jar' -OutFile $jar -MaximumRedirection 5
+          if((Get-Item $source).Length -lt 1000000 -or (Get-Item $jar).Length -lt 1000000){throw 'Downloaded file invalid'}
+          Get-FileHash -Algorithm SHA256 $source,$jar | Format-Table | Out-String | Set-Content -Encoding utf8 bench/seoul-layer-scale/input-hashes.txt
+          "EXT_BENCH_WORK=$work" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+      - name: Generate identical 18 source-layer MBTiles for both renderers
+        run: |
+          $ErrorActionPreference='Stop'
+          $work=$env:EXT_BENCH_WORK
+          Push-Location $work
+          try {
+            $schema=Join-Path $env:GITHUB_WORKSPACE 'bench/seoul-render/schema.yml'
+            & java -Xmx6g -jar (Join-Path $work 'planetiler.jar') generate-custom `
+              "--schema=$schema" "--output=$(Join-Path $work 'seoul.mbtiles')" `
+              '--bounds=126.76,37.38,127.20,37.72' '--minzoom=12' '--maxzoom=16' '--threads=4' '--force'
+            if($LASTEXITCODE -ne 0){throw 'Planetiler failed'}
+            if(-not (Test-Path (Join-Path $work 'seoul.mbtiles'))){throw 'No MBTiles generated'}
+            Get-FileHash -Algorithm SHA256 (Join-Path $work 'seoul.mbtiles') | Format-Table | Out-String | Add-Content bench-hashes.txt
+            Copy-Item bench-hashes.txt (Join-Path $env:GITHUB_WORKSPACE 'bench/seoul-layer-scale/tile-hashes.txt') -Force
+          } finally {Pop-Location}
+      - name: Run 224 physical-GPU 18-128 style-count scenes
+        working-directory: bench/seoul-render
+        env:
+          PYTHON_CMD: python
+        run: |
+          $ErrorActionPreference='Stop'
+          $env:MBTILES_PATH=Join-Path $env:EXT_BENCH_WORK 'seoul.mbtiles'
+          $env:EXTENDED_OUTPUT=Join-Path $env:GITHUB_WORKSPACE 'seoul-layer-scale-artifacts'
+          node run-scale.mjs
+          if($LASTEXITCODE -ne 0){throw 'Extended benchmark invalid; inspect artifact/logs'}
+      - name: Preserve raw results, summaries and screenshot samples
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: seoul-style-scale-18-128-rtx-measurements
+          retention-days: 30
+          if-no-files-found: warn
+          path: |
+            seoul-layer-scale-artifacts/**
+            bench/seoul-extended/hardware.json
+            bench/seoul-extended/input-hashes.txt
+            bench/seoul-extended/tile-hashes.txt
