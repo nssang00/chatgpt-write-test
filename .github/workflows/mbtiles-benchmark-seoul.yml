@@ -1,0 +1,218 @@
+name: Seoul OSM PBF MBTiles Benchmark
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/mbtiles-benchmark-seoul.yml
+  workflow_dispatch:
+    inputs:
+      repetitions:
+        description: "4 is preferred for balanced ABBA"
+        type: choice
+        required: true
+        default: "4"
+        options: ["1", "2", "3", "4"]
+
+permissions:
+  contents: read
+
+jobs:
+  compare:
+    name: Compare Seoul controlled and full conversions
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    env:
+      GEOFABRIK_PATH: asia/south-korea
+      PLANETILER_AREA: south-korea
+      SEOUL_BBOX: '126.75,37.42,127.19,37.72'
+      REPETITIONS: ${{ inputs.repetitions || '4' }}
+      PLANETILER_VERSION: "0.10.2"
+      TILEMAKER_VERSION: "v3.2.0"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Show hardware and disk
+        run: |
+          nproc
+          free -h
+          df -h .
+
+      - name: Install C++ and timing requirements outside measurements
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
+            build-essential git curl unzip time sqlite3 osmium-tool \
+            libboost-dev libboost-filesystem-dev libboost-program-options-dev \
+            libboost-system-dev lua5.3 liblua5.3-dev libshp-dev \
+            libsqlite3-dev rapidjson-dev
+          luac5.3 -p benchmarks/roads-buildings-tilemaker.lua
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "25"
+
+      - name: Build pinned tilemaker outside measurements
+        run: |
+          set -euo pipefail
+          git clone --depth 1 --branch "$TILEMAKER_VERSION" \
+            https://github.com/systemed/tilemaker.git tilemaker-src
+          make -C tilemaker-src tilemaker -j2
+          install -m 755 tilemaker-src/tilemaker ./tilemaker
+
+      - name: Fetch tilemaker extra shapefiles outside measurements
+        run: |
+          set -euo pipefail
+          (
+            cd tilemaker-src
+            ./get-coastline.sh
+            ./get-landcover.sh
+          )
+
+      - name: Download pinned Planetiler outside measurements
+        run: |
+          set -euo pipefail
+          curl -fL --retry 3 \
+            "https://github.com/onthegomap/planetiler/releases/download/v${PLANETILER_VERSION}/planetiler.jar" \
+            -o planetiler.jar
+
+      - name: Download and hash same Geofabrik PBF
+        run: |
+          set -euo pipefail
+          [[ "$GEOFABRIK_PATH" =~ ^[a-z0-9][a-z0-9/-]*$ ]] || exit 2
+          [[ "$PLANETILER_AREA" =~ ^[a-z0-9][a-z0-9-]*$ ]] || exit 2
+          mkdir -p work/outputs metrics/controlled metrics/full
+          curl -fL --retry 3 \
+            "https://download.geofabrik.de/${GEOFABRIK_PATH}-latest.osm.pbf" \
+            -o work/south-korea-source.osm.pbf
+          test -s work/south-korea-source.osm.pbf
+          sha256sum work/south-korea-source.osm.pbf | tee metrics/parent-pbf-sha256.txt
+          # Extract Seoul metropolitan bounding rectangle, preserving full multipolygon member ways.
+          # The exact same resulting input.osm.pbf is consumed by both engines.
+          /usr/bin/time -v osmium extract \
+            --bbox "$SEOUL_BBOX" --strategy smart --set-bounds \
+            -o work/input.osm.pbf work/south-korea-source.osm.pbf
+          test -s work/input.osm.pbf
+          osmium fileinfo -e work/input.osm.pbf | head -n 45
+          osmium check-refs work/input.osm.pbf
+          sha256sum work/input.osm.pbf | tee metrics/pbf-sha256.txt
+          echo "scope=seoul_bbox" > metrics/scope.txt
+          echo "bbox=$SEOUL_BBOX" >> metrics/scope.txt
+          echo "source=asia/south-korea" >> metrics/scope.txt
+          # The parent download is not included in converter time, and no longer needed.
+          rm -f work/south-korea-source.osm.pbf
+          df -h .
+          cp metrics/pbf-sha256.txt metrics/controlled/
+          cp metrics/scope.txt metrics/controlled/
+          cp metrics/pbf-sha256.txt metrics/full/
+          cp metrics/scope.txt metrics/full/
+          stat -c 'Seoul input PBF bytes: %s' work/input.osm.pbf
+
+      - name: Prefetch Planetiler full-profile sources outside measurements
+        run: |
+          set -euo pipefail
+          java -Xmx3g -jar planetiler.jar \
+            "--area=${PLANETILER_AREA}" \
+            "--osm-path=$(pwd)/work/input.osm.pbf" \
+            "--output=$(pwd)/work/prefetch-unused.mbtiles" \
+            --download --only-download
+          df -h .
+
+      - name: Test controlled and full conversions (paired and alternating)
+        shell: bash
+        run: |
+          set -euo pipefail
+          repo_root="$(pwd)"
+          pbf="$repo_root/work/input.osm.pbf"
+          for mode in controlled full; do
+            for round in $(seq 1 "$REPETITIONS"); do
+              # Balanced ABBA when repetitions=4.
+              if (( round == 1 || round == 4 )); then
+                order=(planetiler tilemaker)
+              else
+                order=(tilemaker planetiler)
+              fi
+              for engine in "${order[@]}"; do
+                echo "::group::${mode} ${engine} round ${round}"
+                out="$repo_root/work/outputs/${mode}-${engine}-${round}.mbtiles"
+                metric="$repo_root/metrics/${mode}/${engine}-${round}.time"
+                rm -f "$out"
+                if [[ "$engine" == planetiler && "$mode" == controlled ]]; then
+                  /usr/bin/time \
+                    -f 'wall_seconds=%e\nuser_seconds=%U\nsystem_seconds=%S\npeak_rss_kb=%M\nexit_code=%x' \
+                    -o "$metric" \
+                    java -Xmx3g -jar "$repo_root/planetiler.jar" generate-custom \
+                      --schema="$repo_root/benchmarks/roads-buildings-planetiler.yml" \
+                      "--osm-path=$pbf" \
+                      "--output=$out" \
+                      --minzoom=14 --maxzoom=14 --force
+                elif [[ "$engine" == planetiler ]]; then
+                  /usr/bin/time \
+                    -f 'wall_seconds=%e\nuser_seconds=%U\nsystem_seconds=%S\npeak_rss_kb=%M\nexit_code=%x' \
+                    -o "$metric" \
+                    java -Xmx3g -jar "$repo_root/planetiler.jar" \
+                      "--area=${PLANETILER_AREA}" \
+                      "--osm-path=$pbf" \
+                      "--output=$out" --force
+                elif [[ "$mode" == controlled ]]; then
+                  (
+                    cd tilemaker-src
+                    /usr/bin/time \
+                      -f 'wall_seconds=%e\nuser_seconds=%U\nsystem_seconds=%S\npeak_rss_kb=%M\nexit_code=%x' \
+                      -o "$metric" \
+                      "$repo_root/tilemaker" \
+                        --input "$pbf" --output "$out" \
+                        --config "$repo_root/benchmarks/roads-buildings-tilemaker.json" \
+                        --process "$repo_root/benchmarks/roads-buildings-tilemaker.lua"
+                  )
+                else
+                  (
+                    cd tilemaker-src
+                    /usr/bin/time \
+                      -f 'wall_seconds=%e\nuser_seconds=%U\nsystem_seconds=%S\npeak_rss_kb=%M\nexit_code=%x' \
+                      -o "$metric" \
+                      "$repo_root/tilemaker" \
+                        --input "$pbf" --output "$out" \
+                        --config resources/config-openmaptiles.json \
+                        --process resources/process-openmaptiles.lua
+                  )
+                fi
+                python3 benchmarks/inspect_mbtiles.py \
+                  --mode "$mode" --tool "$engine" --round "$round" \
+                  --mbtiles "$out" --dir "metrics/$mode"
+                python3 scripts/mbtiles_report.py record \
+                  --tool "$engine" --round "$round" \
+                  --time "$metric" --mbtiles "$out" --dir "metrics/$mode"
+                rm -f "$out"
+                echo "::endgroup::"
+              done
+            done
+          done
+
+      - name: Publish comparisons and raw CSV data
+        if: always()
+        run: |
+          for mode in controlled full; do
+            python3 scripts/mbtiles_report.py summarize \
+              --dir "metrics/$mode" \
+              --pbf "seoul-bbox-extracted.osm.pbf" \
+              --planetiler-version "$PLANETILER_VERSION" \
+              --tilemaker-version "$TILEMAKER_VERSION" \
+              --cpu-count "$(nproc)" || true
+          done
+          python3 benchmarks/compare_results.py || true
+          if [[ -f metrics/comparison.md ]]; then
+            cat metrics/comparison.md >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload reports and decoded feature counts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: seoul-mbtiles-benchmark-report
+          path: metrics/
+          if-no-files-found: warn
