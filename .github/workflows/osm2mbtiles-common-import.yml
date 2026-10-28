@@ -8,6 +8,7 @@ on:
       - experiments/osm2mbtiles/prototype/src/osm2mbtiles/cli.py
       - experiments/osm2mbtiles/prototype/vector/vector-flex.lua
       - experiments/osm2mbtiles/prototype/benchmarks/common_import_benchmark.py
+      - experiments/osm2mbtiles/prototype/benchmarks/common_png_smoke.py
       - experiments/osm2mbtiles/prototype/tests/test_common_import.py
       - .github/workflows/osm2mbtiles-common-import.yml
 permissions:
