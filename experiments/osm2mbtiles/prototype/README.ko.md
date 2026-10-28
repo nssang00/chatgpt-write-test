@@ -83,17 +83,10 @@ osm2mbtiles korea.osm.pbf -z 0-15 -o korea.mbtiles --processes 4 --metatile 8 --
 
 서울 일부 지역 실측에서는 벡터 타일 생성 15.90초 → 4.69초, import 포함 30.14초 → 18.93초였습니다. 디코딩된 218,140개 피처의 지오메트리와 속성까지 같은 것을 확인했습니다. 세부 제한 사항과 재현 URL은 `POSTGIS-VECTOR-OPTIMIZATION.ko.md`를 참고하세요.
 
+## PNG + Vector 공통 Import (실데이터 검증)
 
-## PNG + 상세 벡터 공통 import (2026-10-28)
+`run.bat both`는 **OSM PBF를 한 번 읽는 `osm2pgsql` 공통 flex import**를 사용합니다. OSM Carto PNG용 테이블과 상세 MVT Vector용 테이블을 동시에 준비한 뒤 Mapnik PNG 및 PostGIS `ST_AsMVT` PBF MBTiles를 각각 생성합니다. PNG만 출력하는 `run.bat`과 Vector만 출력하는 `run.bat vector`는 기존 전용 import 경로를 유지합니다.
 
-`run.bat both`는 이제 OSM Carto v6.0.0과 상세 Vector flex의 객체 콜백을
-결합하여 **osm2pgsql을 한 번만 실행**합니다. OSM 원본 태그 테이블을
-변경하지 않으므로 PNG 테이블 처리와 벡터 상세 태그 처리가 서로 간섭하지
-않습니다. 재실행 시 `combined-import-state.json` 캐시를 검증해 재사용합니다.
+기본은 WSL2 안정성을 위한 `safe` import 프로필입니다. RAM/CPU 여유가 있고 실측 결과가 적절한 환경에서는 Windows 명령 프롬프트에서 `set OSM2MBTILES_VECTOR_IMPORT_PROFILE=fast` 후 `run.bat both`를 실행할 수 있습니다. `fast`는 PostgreSQL 서버 메모리까지 고려할 때 저메모리 PC에 권장되지 않습니다.
 
-Monaco 및 서울 실데이터에서 공통 import와 분리 import의 Carto·벡터
-테이블 내용 및 모든 생성 MVT 타일이 일치했습니다. 서울 import 총시간은
-31.072초 → 24.472초(약 21% 절약)였습니다. 더 자세한 재현 절차·한계는
-`COMMON-IMPORT-VALIDATION.ko.md`에서 확인할 수 있습니다.
-
-Windows 실행 시 WSL 래퍼에 9개 인수가 전달되어도 정상 처리하도록 수정했습니다.
+실제 Carto 스타일과 Geofabrik Monaco OSM 데이터로 PNG 픽셀과 Vector 속성 동일성을 검증했고, 별도의 서울 PBF 테스트에서는 Carto/Vector 데이터 9개 테이블 및 벡터 58타일 전체를 비교했습니다. 측정/제약/비교 범위는 [SHARED-IMPORT-VALIDATION.ko.md](SHARED-IMPORT-VALIDATION.ko.md)를 참조하세요. 실제 Windows 11 + WSL2 및 한국 전체 줌 0–15 종단 간 검증은 아직 별도입니다.
