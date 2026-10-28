@@ -22,6 +22,9 @@ s=s.replace('\n})\n', '\n}, { cluster = "no" })\n',4)
 pathlib.Path(sys.argv[2]).write_text(s)
 PY
 variants=(baseline threads2 parallelidx2 nocluster2 nocluster4)
+if [[ "${TUNING_ORDER:-}" == reverse ]]; then
+  variants=(baseline nocluster4 parallelidx2 threads2 nocluster2)
+fi
 for variant in "${variants[@]}"; do
   echo "::group::IMPORT_TUNING $variant"
   dropdb --if-exists gis
@@ -67,12 +70,17 @@ def wall(v,p):
     m=re.search(r'WALL=([0-9.]+)',(w/f'{v}.{p}.time').read_text())
     assert m,(v,p)
     return float(m.group(1))
+def rss(v,p):
+    m=re.search(r'RSS_KB=([0-9.]+)',(w/f'{v}.{p}.time').read_text())
+    assert m,(v,p)
+    return int(float(m.group(1)))
 for v in variants:
     a=wall(v,'import');b=wall(v,'post');c=wall(v,'tiles')
     parity=json.loads((w/f'{v}.parity.json').read_text()) if v!='baseline' else {}
     result[v]={'import_sec':a,'post_sec':b,'tile_sec':c,'total_sec':round(a+b+c,2),
                'mvt_semantic_equal':parity.get('equal',True),
-               'mismatch_tiles':parity.get('different_tiles',0)}
+               'mismatch_tiles':parity.get('different_tiles',0),
+               'osm2pgsql_max_rss_kb':rss(v,'import')}
 assert all(x['mvt_semantic_equal'] for x in result.values()),result
 (out/'results.json').write_text(json.dumps(result,ensure_ascii=False,indent=2)+'\n')
 (out/'input.sha256').write_text((w/'input.sha256').read_text())
