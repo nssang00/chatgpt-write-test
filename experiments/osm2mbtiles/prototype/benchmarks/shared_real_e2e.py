@@ -91,27 +91,31 @@ def render_mapnik_png(prefix):
     m.background=mapnik.Color('#f4f2ec')
     # Rendering actual Carto flex-produced PostGIS rows with Mapnik; same
     # datasource/style both times ensures controlled pixel parity.
-    recipes=[
-      ('polygons','planet_osm_polygon','way','building',mapnik.Color('#c5b9a5'),'polygon'),
-      ('roads','planet_osm_line','way','highway',mapnik.Color('#b38064'),'line'),
-    ]
-    for name,table,geom,key,color,kind in recipes:
-        style=mapnik.Style()
-        rule=mapnik.Rule()
-        if kind=='polygon':
-            rule.symbols.append(mapnik.PolygonSymbolizer(color))
-        else:
-            stroke=mapnik.Stroke(color,2.5)
-            rule.symbols.append(mapnik.LineSymbolizer(stroke))
-        style.rules.append(rule)
-        m.append_style(name,style)
-        lay=mapnik.Layer(name,'+init=epsg:3857')
-        lay.datasource=mapnik.PostGIS(host=os.environ['PGHOST'],port=int(os.environ['PGPORT']),
-            dbname='gis',user=os.environ['PGUSER'],password=os.environ.get('PGPASSWORD',''),
-            table=f'(SELECT {geom} FROM {table} WHERE {key} IS NOT NULL) AS {name}',
-            geometry_field=geom,srid=3857)
-        lay.styles.append(name)
-        m.layers.append(lay)
+    from xml.sax.saxutils import escape
+    host = escape(os.environ['PGHOST'])
+    port = escape(os.environ['PGPORT'])
+    user = escape(os.environ['PGUSER'])
+    pwd = escape(os.environ.get('PGPASSWORD',''))
+    layers = []
+    for name,table,key in [('polygons','planet_osm_polygon','building'),
+                           ('roads','planet_osm_line','highway')]:
+        layers.append(f"""<Layer name="{name}" srs="+init=epsg:3857">
+          <StyleName>{name}</StyleName><Datasource>
+          <Parameter name="type">postgis</Parameter>
+          <Parameter name="host">{host}</Parameter>
+          <Parameter name="port">{port}</Parameter>
+          <Parameter name="dbname">gis</Parameter>
+          <Parameter name="user">{user}</Parameter>
+          <Parameter name="password">{pwd}</Parameter>
+          <Parameter name="geometry_field">way</Parameter>
+          <Parameter name="srid">3857</Parameter>
+          <Parameter name="table">(SELECT way FROM {table} WHERE {key} IS NOT NULL) AS {name}</Parameter>
+          </Datasource></Layer>""")
+    xml='''<Map srs="+init=epsg:3857" background-color="#f4f2ec">
+      <Style name="polygons"><Rule><PolygonSymbolizer fill="#c5b9a5" /></Rule></Style>
+      <Style name="roads"><Rule><LineSymbolizer stroke="#b38064" stroke-width="2.5" /></Rule></Style>
+      ''' + ''.join(layers) + '</Map>'
+    mapnik.load_map_from_string(m,xml,True)
     m.zoom_to_box(bounds)
     bitmap=mapnik.Image(512,512)
     mapnik.render(m,bitmap)
