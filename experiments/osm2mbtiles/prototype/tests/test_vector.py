@@ -148,3 +148,12 @@ def test_projected_query_preserves_filtering_and_attributes():
         assert 'jsonb_object_agg' in projected
         assert "'name:ko'" in projected
         if z==15: assert "'opening_hours'" in projected
+
+
+def test_vector_query_default_is_projected():
+    from osm2mbtiles.cli import arguments
+    args,_=arguments(['test.osm.pbf','-o','test.mbtiles','--format','vector'])
+    assert args.vector_query_mode == 'projected'
+    args,_=arguments(['test.osm.pbf','-o','test.mbtiles','--format','vector',
+                       '--vector-query-mode','baseline'])
+    assert args.vector_query_mode == 'baseline'
