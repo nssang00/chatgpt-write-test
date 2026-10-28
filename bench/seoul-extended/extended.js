@@ -36,6 +36,8 @@ function selectedLayers(count) {
 function mlStyle(layers) {
   return {
     version:8,
+    // Match OpenLayers' immediate style application; exclude MapLibre's default 300ms transition from idle timing.
+    transition:{duration:0,delay:0},
     sources:{osm:{
       type:'vector',tiles:[location.origin+'/tiles/{z}/{x}/{y}.pbf'],
       minzoom:12,maxzoom:16,bounds:[126.76,37.38,127.20,37.72]
