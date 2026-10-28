@@ -15,7 +15,7 @@ if(!Number.isInteger(rounds)||rounds<3||rounds>12)throw Error('3..12 rounds requ
 const playwright=await import(pathToFileURL(join(root,'node_modules/playwright/index.mjs')).href);
 const {chromium}=playwright;
 await mkdir(out,{recursive:true});
-const summary={suite:'R70 isolated OL10.10.0 vs R73 Source-Only Worker OFF physical RTX',candidate:'fde50715eb683934d664fc912f91b8daa11dca9b',
+const summary={suite:'R70 isolated OL10.10.0 vs R73 Source-Only Worker OFF physical RTX',candidate:'e26436d0cfed8467908d9d0afd717126e857d16a',
  metric:'milliseconds from map construction through first all-selected-tiles-rendered frame and gl.finish',
  limitations:['preloaded real PBF fixtures, not a network or full page bootstrap benchmark',
  'Boost arm retains hidden OL layers for live stock-OL fallback, as in product demo',
@@ -68,7 +68,9 @@ try{
      if(errors.length||!result.ready||result.errors.length||result.loadedSources!==count||
        result.sourceShaCount!==count||result.glFinishCount<1||result.glCount<1||
        !result.workerOff||!Number.isFinite(result.ms)||result.ms<=0||
-       (arm==='boost'&&result.packets<=0))
+       (arm==='boost'&&(result.packets<=0||result.boostFrameStats?.glError!==0||
+         result.olLayerRenderCalls!==0||!result.exclusive?.active||
+         result.exclusive.suppressedDraws<count||result.exclusive.tileRequests<count)))
        throw Error('invalid sample '+JSON.stringify({result,errors}));
      if(round===0){
        const shot=await page.screenshot({path:join(out,'sample-'+arm+'-'+count+'-'+phase+'.png')});
@@ -124,7 +126,7 @@ try{
    console.log('R70_SCENE_RESULT',JSON.stringify({count,stockOlMs:record.olMedianMs,boostMs:record.boostMedianMs,reductionPct:record.reductionPct,boostFasterBothArms:record.boostFasterBothArms}));
  }
  summary.valid=summary.errors.length===0&&summary.scenes.length===3&&summary.raw.length===rounds*12;
- summary.performanceGate=summary.valid&&summary.scenes.every(x=>x.boostFasterBothArms&&x.reductionPct>0);
+ summary.performanceGate=summary.valid&&summary.scenes.every(x=>x.boostFasterBothArms&&x.reductionPct>=50);
 }catch(e){summary.errors.push(String(e?.stack||e));console.error('R70_BENCH_FAIL',summary.errors.at(-1));}
 finally{
  await writeFile(join(out,'summary.json'),JSON.stringify(summary,null,2)+'\n');
