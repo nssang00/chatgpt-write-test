@@ -80,6 +80,7 @@ def main():
     p.add_argument('--zoom',default='12-15')
     p.add_argument('--profile',choices=('safe','fast'),default='safe')
     p.add_argument('--sequence',default='split,common,common,split')
+    p.add_argument('--png-smoke',action='store_true',help='also compare native Mapnik PNG from actual Carto tables')
     p.add_argument('--snapshot-limit',type=int,default=0,help='0=full-table hashes; N=first N IDs + all row counts')
     args=p.parse_args()
     args.work.mkdir(exist_ok=True,parents=True)
@@ -94,6 +95,7 @@ def main():
             'snapshot_limit':args.snapshot_limit,'runs':[]}
     first_snapshot=None
     first_vec=None
+    first_png=None
     with LocalDatabase(Runtime(args.runtime),args.work/'pg') as db:
       for i,mode in enumerate(sequence):
         start=time.perf_counter()
@@ -120,9 +122,16 @@ def main():
         parity=compare_vector(first_vec,vecout) if first_vec else None
         if first_vec is None:first_vec=vecout
         else:assert parity['equal'],parity
+        png_sha=None
+        if args.png_smoke:
+          from common_png_smoke import render as render_png
+          png_sha=render_png(db,bbox,args.work/f'carto-smoke-{i}-{mode}.png')
+          if first_png is None: first_png=png_sha
+          assert png_sha==first_png, ('Mapnik PNG pixel difference',first_png,png_sha)
         row={'kind':mode,'import_total_s':round(elapsed,3),'segments':segments,
              'carto_vector_rows_equal':True,'mvt_semantic_equal':parity['equal'] if parity else True,
-             'mvt_feature_count':parity['features'] if parity else None,**out}
+             'mvt_feature_count':parity['features'] if parity else None,
+             'mapnik_png_sha256':png_sha,**out}
         report['runs'].append(row)
         print('COMMON_IMPORT_CASE',json.dumps(row,sort_keys=True),flush=True)
     from statistics import median
