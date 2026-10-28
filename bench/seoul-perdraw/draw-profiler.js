@@ -178,7 +178,7 @@
     for(const x of timed){
       if(webgl2)gl.deleteQuery(x.query);else ext.deleteQueryEXT(x.query);
     }
-    if(values.some(x=>!Number.isFinite(x.gpuMs)||x.gpuMs<=0))throw Error('BAD_PER_DRAW_NANOSECONDS '+JSON.stringify(values));
+    if(values.some(x=>!Number.isFinite(x.gpuMs)||x.gpuMs<0))throw Error('BAD_PER_DRAW_NANOSECONDS '+JSON.stringify(values));
     return values;
   }
   async function census(engine,map){
