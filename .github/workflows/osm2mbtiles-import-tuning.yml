@@ -27,7 +27,7 @@ jobs:
       - name: Compare 5 import strategies and assert exact MVT feature parity
         shell: bash
         run: |
-          bash experiments/osm2mbtiles/prototype/benchmarks/import_tuning.sh
+          TUNING_ORDER=reverse bash experiments/osm2mbtiles/prototype/benchmarks/import_tuning.sh
       - uses: actions/upload-artifact@v4
         if: always()
         with:
