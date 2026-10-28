@@ -24,8 +24,8 @@ P = Path(__file__).resolve().parents[1]
 WORK = Path(os.environ['SHARED_CI_WORK'])
 STYLE = Path(os.environ['SHARED_CI_STYLE'])
 OSM = Path(os.environ['SHARED_CI_PBF'])
-ZOOM = 14
-BBOX = (7.400, 43.710, 7.460, 43.750)
+ZOOM = int(os.environ.get('SHARED_CI_RENDER_ZOOM', '14'))
+BBOX = tuple(map(float,os.environ.get('SHARED_CI_BBOX','7.400,43.710,7.460,43.750').split(',')))
 WORK.mkdir(parents=True, exist_ok=True)
 
 
@@ -138,7 +138,8 @@ def create_vector(prefix):
     from osm2mbtiles.vector import export
     path=WORK/f'{prefix}.vector.mbtiles'
     start=time.monotonic()
-    export(OSM,path,BBOX,12,14,2)
+    export(OSM,path,BBOX,int(os.environ.get('SHARED_CI_MINZOOM','12')),
+           int(os.environ.get('SHARED_CI_MAXZOOM','14')),2)
     sec=round(time.monotonic()-start,3)
     with sqlite3.connect(path) as db:
         tiles=db.execute('SELECT count(*) FROM tiles').fetchone()[0]
