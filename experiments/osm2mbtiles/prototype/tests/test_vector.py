@@ -134,3 +134,17 @@ def test_cache_query_zoom_low_props():
     assert 't.props_low' in cache
     assert 't.props_high' not in cache
     assert 'FROM fast_vector_lines t' in cache
+
+
+
+def test_projected_query_preserves_filtering_and_attributes():
+    for z in (8,12,15):
+        baseline=query_for_zoom(z)
+        projected=query_for_zoom(z,projected=True)
+        assert baseline.count('ST_AsMVT(q,') == projected.count('ST_AsMVT(q,')
+        assert baseline.count('FROM vector_') == projected.count('FROM vector_')
+        assert baseline.count('t.geom && b.search') == projected.count('t.geom && b.search')
+        assert 'jsonb_each(t.tags)' in projected
+        assert 'jsonb_object_agg' in projected
+        assert "'name:ko'" in projected
+        if z==15: assert "'opening_hours'" in projected
