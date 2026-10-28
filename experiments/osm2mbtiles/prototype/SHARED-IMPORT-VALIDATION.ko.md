@@ -9,7 +9,7 @@
 ## 확인된 실데이터 검증
 
 - 2026-10-28: [서울 분리/공통 import 검증](https://github.com/nssang00/chatgpt-write-test/actions/runs/40661385812), 성공. 동일한 서울 PBF(22,454,346바이트)를 바탕으로 Carto/Vector DB 테이블 **9개 전체 행 값**과 MVT **58개 타일, 218,138 피처**의 기하·속성·중복 개수를 비교했다. 차이 0건. 별도 osm2pgsql 2회 24.57초, 공통 import + 후처리 20.21초. **두 측정의 SQL 후처리 포함 범위가 달라 정밀 속도 결론에는 아래 공정 비교를 사용해야 함**.
-- 2026-10-28: [Monaco Carto 실영상 및 MVT 검증](https://github.com/nssang00/chatgpt-write-test/actions/runs/40661032099). 데이터 처리 자체는 성공: Carto+Vector DB 테이블 9개 동등, MVT 44타일/30,083피처 동일, 실제 Mapnik OSM Carto PNG 4타일의 디코딩 픽셀 동일. 해당 Actions 실행은 마지막 Python 테스트 설치 누락으로 전체 결과가 failure로 표시됨(데이터·렌더링 불일치 아님).
+- 2026-10-28: [Monaco Carto 실영상 및 MVT 검증](https://github.com/nssang00/chatgpt-write-test/actions/runs/40661032099). 데이터 처리 자체는 성공: Carto+Vector DB 테이블 9개 동등, MVT 44타일/30,083피처 동일, 실제 Mapnik OSM Carto PNG 4타일의 디코딩 픽셀 동일. 이후 CI 환경에 `python3-pytest`를 설치하도록 수정했고, [전체 검증 성공 실행 #40662128800](https://github.com/nssang00/chatgpt-write-test/actions/runs/40662128800)에서 같은 9테이블·MVT 44타일/30,083피처·PNG 4타일 전부 동일하며 Python 회귀 테스트도 통과했다.
 - 단위 테스트: 로컬 70개 통과 (`python -m pytest -q tests`).
 
 ## 서울 동일 입력 재측정 (실측)
