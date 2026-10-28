@@ -33,6 +33,8 @@ def arguments(argv=None):
     export.add_argument('-z','--zoom',default='0-15',help='zoom range, e.g. 0-15')
     export.add_argument('-o','--output',type=Path,required=True)
     export.add_argument('--format', choices=('raster','vector','both'),default='raster',help='output format, or both separate MBTiles files')
+    export.add_argument('--vector-query-mode',choices=('baseline','cached'),default='baseline',
+                        help='baseline tile SQL or precomputed PostGIS JSONB cache (experimental)')
     export.add_argument('--bbox',help='west,south,east,north (otherwise from PBF header)')
     export.add_argument('--runtime',type=Path,help='prepared native runtime folder')
     export.add_argument('--workdir',type=Path,help='persist intermediate database for subsequent runs')
@@ -194,6 +196,20 @@ def run_pipeline(pbf,out,bbox,lo,hi,args,work,runtime):
             os.replace(job['partial'],raster_out)
             print(f'DONE Raster: {raster_out} ({raster_out.stat().st_size:,} bytes)',flush=True)
         if vector:
+            # An optional on-disk property cache moves JSONB conversion from each
+            # metatile query into one preparation pass over the imported OSM rows.
+            if args.vector_query_mode == 'cached':
+                cachekey = hashlib.sha256((vkey+'|cache-v1|'+file_digest(Path(__file__).with_name('vector.py'))).encode()).hexdigest()
+                cache_state = work/'vector-cache-state.json'
+                cache_meta = json.loads(cache_state.read_text()) if cache_state.is_file() else {}
+                if cache_meta.get('key') != cachekey:
+                    print('[VECTOR] Preparing per-object PostGIS property cache...',flush=True)
+                    prep_env = db.env.copy()
+                    prep_env['PYTHONPATH'] = str(Path(__file__).resolve().parents[1])
+                    run([runtime.python,'-m','osm2mbtiles.vector_cache','prepare'],env=prep_env)
+                    cache_state.write_text(json.dumps({'key':cachekey}),encoding='utf-8')
+                else:
+                    print('[VECTOR] Reusing PostGIS property cache.',flush=True)
             # Invoke using the Mapnik-enabled system Python whose psycopg2 is
             # already installed by the WSL setup; vector renderer doesn't use Mapnik.
             vector_script = Path(__file__).with_name('vector_worker.py')
@@ -201,7 +217,9 @@ def run_pipeline(pbf,out,bbox,lo,hi,args,work,runtime):
             vector_job.write_text(json.dumps({
                 'pbf':str(pbf),'output':str(vector_out),'bbox':bbox,'minzoom':lo,
                 'maxzoom':hi,'processes':args.processes},indent=2),encoding='utf-8')
-            run([runtime.python,vector_script,vector_job],env=db.env)
+            vector_env=db.env.copy()
+            vector_env['OSM2MBTILES_VECTOR_QUERY_MODE'] = args.vector_query_mode
+            run([runtime.python,vector_script,vector_job],env=vector_env)
             print(f'DONE Vector: {vector_out} ({vector_out.stat().st_size:,} bytes)',flush=True)
 
 
