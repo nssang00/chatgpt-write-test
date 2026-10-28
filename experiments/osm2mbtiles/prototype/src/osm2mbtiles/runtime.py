@@ -211,17 +211,32 @@ class LocalDatabase:
             run([self.runtime.bin('createdb'), 'gis'], self.env)
         self.psql('-c', 'CREATE EXTENSION IF NOT EXISTS postgis; CREATE EXTENSION IF NOT EXISTS hstore;')
 
-    def import_vector_extract(self, pbf: Path, vector_dir: Path) -> None:
+    def import_vector_extract(self, pbf: Path, vector_dir: Path, profile: str = "safe") -> None:
         """Independent all-tag vector import into vector_* tables.
 
         Raster tables in gis are preserved. Drops only own vector tables.
         """
         self.ensure_gis_database()
         self.psql('-c', 'DROP TABLE IF EXISTS vector_label_points, vector_points, vector_lines, vector_areas, vector_relations CASCADE;')
+        if profile not in ('safe', 'fast'):
+            raise PipelineError('Vector import profile must be safe or fast')
+        style = vector_dir / 'vector-flex.lua'
         command = [self.runtime.bin('osm2pgsql'), '--slim', '--drop',
-                   '--cache=256', '--number-processes=1',
-                   '--disable-parallel-indexing', '-O', 'flex', '-S',
-                   vector_dir/'vector-flex.lua', '-d', 'gis', pbf]
+                   '--cache=256']
+        if profile == 'fast':
+            # Benchmarked on Seoul 2026-10-28. Only opt in on sufficiently
+            # provisioned machines: parallel indexers can increase PostgreSQL
+            # server memory pressure beyond the importer process RSS.
+            source = style.read_text(encoding='utf-8')
+            if source.count('\n})\n') < 4:
+                raise PipelineError('Unexpected vector flex table definitions; refusing unsafe style rewrite')
+            style = self.work / 'vector-fast-flex.lua'
+            style.write_text(source.replace('\n})\n',
+                             '\n}, { cluster = "no" })\n', 4), encoding='utf-8')
+            command += ['--number-processes=4']
+        else:
+            command += ['--number-processes=1', '--disable-parallel-indexing']
+        command += ['-O', 'flex', '-S', style, '-d', 'gis', pbf]
         try:
             run(command, self.env, cwd=vector_dir)
             self.psql('-f', str(vector_dir/'post-import.sql'))
