@@ -10,7 +10,7 @@ import {pathToFileURL} from 'node:url';
 
 const root=resolve(process.argv[2]||'candidate');
 const out=resolve(process.argv[3]||join(root,'artifacts/r73-exclusive-integration'));
-const expected='e26436d0cfed8467908d9d0afd717126e857d16a';
+const expected='2442a75ab22e31cfed3137d19dcf0a8a1784656f';
 const summary={schema:'r73-exclusive-integration-physical-rtx-v1',candidate:expected,
   olVersion:'10.10.0',matrix:'8/16/32 x DPR1/2 x two fresh pages',
   rawRgba8Passed:0,fallbackPassed:0,raw:[],fallback:[],errors:[],pass:false,
