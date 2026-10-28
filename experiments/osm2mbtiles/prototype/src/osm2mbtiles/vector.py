@@ -100,7 +100,7 @@ def layer_specs(z: int):
         yield name, table, id_col, restricted
 
 
-def _properties(alias: str, z: int, name: str, key: str, *, cached: bool = False) -> str:
+def _properties(alias: str, z: int, name: str, key: str, *, cached: bool = False, projected: bool = False) -> str:
     """Return the same JSONB schema for raw and prepared data sources.
 
     The cached variant moves expensive tag->property conversion out of every
@@ -119,6 +119,16 @@ def _properties(alias: str, z: int, name: str, key: str, *, cached: bool = False
     if cached:
         return ('jsonb_strip_nulls(jsonb_build_object(' + ', '.join(pairs) + '))'
                 + (' || t.props_high' if z >= 13 else ' || t.props_low'))
+    if projected:
+        # Most OSM features possess only a few of the ~60 selected tag keys.
+        # Enumerate present JSONB keys and retain the allowlist instead of
+        # executing ~60 separate absent-key lookups for every tile hit.
+        allowed = 'ARRAY[' + ','.join("'" + f.replace("'", "''") + "'" for f in fields) + ']::text[]'
+        header = _json_object_from_pairs(pairs)
+        projection = (f"(SELECT COALESCE(jsonb_object_agg(p.key,p.value), '{{}}'::jsonb) "
+                      f"FROM jsonb_each({alias}.tags) AS p(key,value) "
+                      f"WHERE p.key = ANY({allowed}))")
+        return header + ' || ' + projection
     for field in fields:
         pairs.append(f"'{field}', {alias}.tags->>'{field}'")
     return _json_object_from_pairs(pairs)
@@ -168,7 +178,7 @@ def prepare_cache(conn):
     return elapsed
 
 
-def query_for_zoom(z: int, *, cached: bool = False) -> str:
+def query_for_zoom(z: int, *, cached: bool = False, projected: bool = False) -> str:
     """One indexed SQL statement per XYZ tile, with UNIQUE MVT layer names.
 
     When a logical layer has two source tables (point POIs and area label
@@ -177,7 +187,7 @@ def query_for_zoom(z: int, *, cached: bool = False) -> str:
     """
     grouped = {}
     for name, table, key, predicate in layer_specs(z):
-        props = _properties('t', z, name, key, cached=cached)
+        props = _properties('t', z, name, key, cached=cached, projected=projected)
         source = 'fast_' + table if cached else table
         branch = f"""SELECT ST_AsMVTGeom(t.geom, b.tile, {EXTENT}, {BUFFER}, true) AS geom,
                           {props} AS properties
@@ -242,7 +252,8 @@ def render_one(task):
     z, x, y = task
     sql = _queries.get(z)
     if sql is None:
-        sql = query_for_zoom(z, cached=os.environ.get('OSM2MBTILES_VECTOR_QUERY_MODE') == 'cached')
+        mode = os.environ.get('OSM2MBTILES_VECTOR_QUERY_MODE', 'baseline')
+        sql = query_for_zoom(z, cached=mode == 'cached', projected=mode == 'projected')
         _queries[z] = sql
     with _conn.cursor() as cur:
         if z < 3:
