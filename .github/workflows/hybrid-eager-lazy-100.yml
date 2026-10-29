@@ -1,0 +1,38 @@
+name: Hybrid Eager Tree Plus Lazy Gossip Trial
+on:
+  push:
+    branches: [benchmark/pubsub-hybrid-lazy-repair-20261029]
+    paths:
+      - .github/workflows/hybrid-eager-lazy-100.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  hybrid-vs-baselines:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Network setup capabilities
+        run: |
+          ip -V && tc -V && free -m
+          sudo ip netns add probe-hybrid
+          sudo ip netns delete probe-hybrid
+      - name: Compare tree mesh multicast and hybrid in 100 nodes
+        run: |
+          set -euxo pipefail
+          sudo -E "$(which python)" bench/discovery/pubsub_run.py \
+            --sizes 100 --modes multicast,tree,mesh,hybrid --losses 0,10 \
+            --discovery 10 --timeout 34 --messages 2 \
+            --output hybrid-100-results
+          cat hybrid-100-results/results.csv
+      - name: Upload measurements
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: hybrid-eager-lazy-100-results
+          path: hybrid-100-results/
+          if-no-files-found: warn
