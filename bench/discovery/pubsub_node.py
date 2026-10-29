@@ -32,6 +32,7 @@ def main():
     ap.add_argument('--repair-interval', type=float, default=1.0)
     ap.add_argument('--publish-interval',type=float,default=.28)
     ap.add_argument('--payload-bytes',type=int,default=32)
+    ap.add_argument('--sequence-payload',action='store_true',help='unique content for each origin/sequence, validate actual byte equality')
     ap.add_argument('--ablation',choices=['full','no_anti_entropy','no_hello','no_nack_suppression','unicast_repair'],default='full')
     ap.add_argument('--incremental-repair',action='store_true')
     ap.add_argument('--nack-batch-limit',type=int,default=32)
@@ -124,6 +125,12 @@ def main():
         except (OSError, ValueError):
             send_errors += 1
 
+    def payload_for(origin,sequence):
+        if not args.sequence_payload:
+            return PAYLOAD
+        prefix=f'{origin:05d}:{sequence:05d}:'
+        return (prefix + 'x'*args.payload_bytes)[:args.payload_bytes]
+
     def backup_peers(origin, sequence):
         # Fixed global benchmark IDs allow deterministic replica selection.
         start=((origin*1103515245+sequence*12345+7919)&0x7fffffff)%n
@@ -164,7 +171,7 @@ def main():
                      (ip, GROUP[1]), 'ihave_sent')
 
     def relay(origin, sequence):
-        msg = {'t': 'p', 'i': origin, 's': sequence, 'k': TOPIC, 'v': PAYLOAD}
+        msg = {'t': 'p', 'i': origin, 's': sequence, 'k': TOPIC, 'v': payload_for(origin,sequence)}
         if args.mode == 'multicast':
             if origin == i:
                 send(msg, GROUP, 'data_sent')
@@ -362,13 +369,13 @@ def main():
                 elif typ == 'w':
                     src, seq = item.get('src'), item.get('s')
                     if (args.mode == 'hybrid' or (args.v4 and args.mode=='mesh')) and (src,seq) in received:
-                        send({'t':'p','i':src,'s':seq,'k':TOPIC,'v':PAYLOAD},
+                        send({'t':'p','i':src,'s':seq,'k':TOPIC,'v':payload_for(src,seq)},
                              address,'repair_sent')
                 elif typ == 'p':
                     src,seq = item.get('i'),item.get('s')
                     if (not isinstance(src,int) or not isinstance(seq,int)
                         or not 0 <= src < n or not 0 <= seq < m
-                        or item.get('k') != TOPIC or item.get('v') != PAYLOAD):
+                        or item.get('k') != TOPIC or item.get('v') != payload_for(src,seq)):
                         continue
                     if first_data is None and src != i:
                         first_data = elapsed
@@ -423,7 +430,7 @@ def main():
                                 # Deduplicate NACKs across receivers and pace repair.
                                 if (elapsed-source_repair_last.get(key,-10)>0.7
                                     and source_repair_count.get(key,0)<32):
-                                    send({'t':'p','i':i,'s':seq,'k':TOPIC,'v':PAYLOAD},
+                                    send({'t':'p','i':i,'s':seq,'k':TOPIC,'v':payload_for(i,seq)},
                                          address if args.ablation=='unicast_repair' else GROUP,
                                          'repair_sent')
                                     source_repair_last[key]=elapsed
@@ -433,7 +440,7 @@ def main():
                     elif src == i:
                         for seq in item.get('seqs',[])[:m]:
                             if isinstance(seq,int) and seq in sent_orig:
-                                send({'t':'p','i':i,'s':seq,'k':TOPIC,'v':PAYLOAD},
+                                send({'t':'p','i':i,'s':seq,'k':TOPIC,'v':payload_for(i,seq)},
                                      address,'repair_sent')
             except (OSError,ValueError,TypeError,KeyError):
                 continue
@@ -487,6 +494,7 @@ def main():
         'samples_at_repair_limit':sum(v>=32 for v in source_repair_count.values()),
         'ablation':args.ablation,'sent_original':len(sent_orig),
         'peer_repair':args.peer_repair,'durable_publishers':durable_count,
+        'sequence_payload':args.sequence_payload,
         'peer_cache_entries':len(peer_cache),
         'backup_acked_sequences':sum(len(backup_acks.get(seq,set()))>=args.backup_quorum for seq in range(m)) if i<publisher_count else 0,
         'backup_durable_at_s':backup_durable_at,
