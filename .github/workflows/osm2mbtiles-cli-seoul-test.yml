@@ -1,0 +1,161 @@
+name: osm2mbtiles CLI Tile Types and Real Seoul Vector Output
+
+on:
+  push:
+    branches: [ci/osm2mbtiles-cli-seoul-test]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  seoul-vector-and-cli:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install native tools and regression dependencies
+        shell: bash
+        run: |
+          set -euxo pipefail
+          sudo apt-get update -qq
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            postgresql-16 postgresql-client-16 postgresql-16-postgis-3 \
+            postgresql-16-postgis-3-scripts osm2pgsql \
+            python3-psycopg2 python3-pip python3-pytest curl ca-certificates
+          /usr/bin/python3 -m pip install --break-system-packages mapbox-vector-tile
+      - name: Unit tests for new options and previous vector modes
+        shell: bash
+        run: |
+          set -euxo pipefail
+          export PROJECT="$GITHUB_WORKSPACE/experiments/osm2mbtiles/prototype"
+          export PYTHONPATH="$PROJECT/src"
+          bash -n "$PROJECT/tools/run_wsl.sh"
+          /usr/bin/python3 -m compileall -q "$PROJECT/src/osm2mbtiles"
+          /usr/bin/python3 -m pytest -q \
+            "$PROJECT/tests/test_tile_type_cli.py" \
+            "$PROJECT/tests/test_vector_batch.py" \
+            "$PROJECT/tests/test_vector_incremental.py"
+      - name: Download real Seoul PBF and initialize vector-only runtime
+        shell: bash
+        run: |
+          set -euxo pipefail
+          WORK="$RUNNER_TEMP/seoul-cli-e2e"
+          PROJECT="$GITHUB_WORKSPACE/experiments/osm2mbtiles/prototype"
+          mkdir -p "$WORK" "$GITHUB_WORKSPACE/seoul-cli-evidence"
+          curl -fL --retry 3 --retry-delay 2 --connect-timeout 20 --max-time 240 \
+            https://tiles.osm.kr/download/seoul-non-military.osm.pbf \
+            -o "$WORK/seoul-non-military.osm.pbf"
+          sha256sum "$WORK/seoul-non-military.osm.pbf" > "$WORK/pbf.sha256"
+          # The real vector style comes from PROJECT/vector. Dummy Carto files
+          # satisfy shared Runtime.validate; they are NEVER used for raster
+          # production in this vector-only CI job.
+          mkdir -p "$WORK/runtime/bin" "$WORK/runtime/python/bin" "$WORK/runtime/styles/osm-carto"
+          ln -s /usr/bin/python3 "$WORK/runtime/python/bin/python3"
+          for tool in initdb pg_ctl createdb psql osm2pgsql; do
+            ln -s "$(command -v "$tool")" "$WORK/runtime/bin/$tool"
+          done
+          for file in project.xml openstreetmap-carto-flex.lua indexes.sql functions.sql common-values.sql; do
+            echo 'CLI vector-only smoke placeholder; not a renderable Carto style' > "$WORK/runtime/styles/osm-carto/$file"
+          done
+          ls -lh "$WORK/seoul-non-military.osm.pbf"
+      - name: Real Seoul batch vector + original projected vector and strict content parity
+        shell: bash
+        run: |
+          set -euxo pipefail
+          export PROJECT="$GITHUB_WORKSPACE/experiments/osm2mbtiles/prototype"
+          export WORK="$RUNNER_TEMP/seoul-cli-e2e"
+          export PYTHONPATH="$PROJECT/src:$PROJECT/benchmarks"
+          export PATH="/usr/lib/postgresql/16/bin:$PATH"
+          PBF="$WORK/seoul-non-military.osm.pbf"
+          RUNTIME="$WORK/runtime"
+          BBOX="126.95,37.47,127.13,37.62"
+          /usr/bin/python3 -m osm2mbtiles convert "$PBF" \
+            --tile-type both --raster-format png \
+            --zoom 12-15 --bbox "$BBOX" -o "$WORK/plan.mbtiles" \
+            --max-tiles 500 --dry-run | tee "$WORK/dry-run.log"
+          /usr/bin/python3 -m osm2mbtiles convert "$PBF" \
+            --tile-type vector --vector-tiler batch --vector-batch-side 2 \
+            --zoom 12-15 --bbox "$BBOX" --processes 4 \
+            --max-tiles 500 --runtime "$RUNTIME" --workdir "$WORK/workspace" \
+            -o "$WORK/seoul-batch.mbtiles" | tee "$WORK/batch.log"
+          /usr/bin/python3 -m osm2mbtiles verify-vector "$WORK/seoul-batch.mbtiles" \
+            | tee "$WORK/vector-verify.json"
+          /usr/bin/python3 -m osm2mbtiles convert "$PBF" \
+            --format vector --vector-tiler postgis --vector-query-mode projected \
+            --zoom 12-15 --bbox "$BBOX" --processes 4 \
+            --max-tiles 500 --runtime "$RUNTIME" --workdir "$WORK/workspace" \
+            -o "$WORK/seoul-original.mbtiles" | tee "$WORK/legacy.log"
+          /usr/bin/python3 - "$WORK" <<'PY'
+          import json, sys
+          from pathlib import Path
+          from postgis_batch_parity import compare_strict
+          work = Path(sys.argv[1])
+          parity = compare_strict(work / 'seoul-original.mbtiles',
+                                  work / 'seoul-batch.mbtiles')
+          (work / 'parity.json').write_text(json.dumps(parity, indent=2) + chr(10))
+          assert parity['equal'], parity['first_mismatches']
+          assert parity['baseline_stats']['tiles'] > 0
+          assert parity['baseline_stats']['features'] > 0
+          assert '[TIME] Total convert elapsed:' in (work / 'batch.log').read_text()
+          assert '[TIME] Total convert elapsed:' in (work / 'legacy.log').read_text()
+          summary = [
+              '# Real Seoul CLI and tile-type validation',
+              '',
+              'Real Seoul OSM PBF; zoom 12-15; vector batch vs legacy projected.',
+              'Decoded layer, ID, geometry, properties and duplicates compared tile by tile.',
+              'Strict parity passed: ' + str(parity['equal']),
+              'Nonempty tiles: ' + str(parity['baseline_stats']['tiles']),
+              'Decoded features: ' + str(parity['baseline_stats']['features']),
+              'Full timings appear in batch.log and legacy.log.',
+              '',
+              'This job does NOT render PNG: the Windows test-seoul.bat does so',
+              'through the complete OSM Carto/Mapnik WSL launcher on user machines.',
+          ]
+          (work / 'summary.md').write_text(chr(10).join(summary) + chr(10))
+          print('SEOUL_NEW_CLI_REAL_VECTOR_PARITY_PASS', json.dumps({
+              'tiles': parity['baseline_stats']['tiles'],
+              'features': parity['baseline_stats']['features']
+          }))
+          PY
+          cat "$WORK/summary.md" >> "$GITHUB_STEP_SUMMARY"
+      - name: Keep test evidence even on failure
+        if: always()
+        shell: bash
+        run: |
+          mkdir -p seoul-cli-evidence
+          WORK="$RUNNER_TEMP/seoul-cli-e2e"
+          for f in pbf.sha256 dry-run.log batch.log legacy.log vector-verify.json parity.json summary.md; do
+            cp "$WORK/$f" seoul-cli-evidence/ 2>/dev/null || true
+          done
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: osm2mbtiles-seoul-cli-evidence
+          path: seoul-cli-evidence/
+          retention-days: 14
+          if-no-files-found: warn
+
+  windows-script-syntax:
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Parse actual Windows launchers without requiring WSL on hosted runner
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $root = Join-Path $env:GITHUB_WORKSPACE 'experiments/osm2mbtiles/prototype'
+          foreach ($relative in @('tools/run_windows.ps1', 'tools/test_seoul.ps1')) {
+            $file = Join-Path $root $relative
+            $tokens = $null
+            $errors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile(
+              $file, [ref]$tokens, [ref]$errors) | Out-Null
+            if (@($errors).Count -gt 0) { throw "PowerShell parse failed for $file : $errors" }
+            Write-Host "WINDOWS_SCRIPT_SYNTAX_OK $file"
+          }
+          foreach ($name in @('run.bat', 'test-seoul.bat')) {
+            if (-not (Test-Path (Join-Path $root $name))) { throw "Missing $name" }
+          }
+          Write-Host 'SEOUL_BATCH_LAUNCHER_PRESENT'
