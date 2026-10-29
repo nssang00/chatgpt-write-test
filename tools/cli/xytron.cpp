@@ -75,11 +75,17 @@ static void desktop(const std::string& id,const std::string& lang) {
     q(entry)+"},\n \"modules\": []\n}\n");
   file(id+"/ui/index.html","<!doctype html><html><body><h1>Xytron</h1>"
     "<p>Native desktop C++ bridge demo (requires explicit engine host).</p>"
-    "<button id=\"xytron-ping\">Call native C++</button>"
+    "<button id=\"xytron-ping\">Call user C++ backend</button>"
     "<output id=\"xytron-result\">idle</output>"
+    "<button id=\"xytron-feature\">Call native feature plugin</button>"
+    "<output id=\"xytron-feature-result\">idle</output>"
     "<script>document.getElementById('xytron-ping').onclick=async function(){"
     "const output=document.getElementById('xytron-result');"
     "try{output.textContent=await xytron.app.ping();}"
+    "catch(error){output.textContent='error:'+String(error);}"
+    "};document.getElementById('xytron-feature').onclick=async function(){"
+    "const output=document.getElementById('xytron-feature-result');"
+    "try{output.textContent=await xytron.feature.hello();}"
     "catch(error){output.textContent='error:'+String(error);}"
     "};</script></body></html>\n");
   if(lang=="cpp")
@@ -680,7 +686,7 @@ static void help() {
     "  validate (inside a generated desktop project)\n"
     "  restore --sdk INSTALLED_CORE_SDK (desktop project; Core only)\n"
     "  build / test / doctor (desktop project; backend-only)\n"
-    "  run --host ABSOLUTE_ENGINE_HOST [--smoke] (C++ desktop project)\n"
+    "  run --host ABSOLUTE_ENGINE_HOST [--plugin PROJECT_PLUGIN_PATH] [--smoke] (C++ app)\n"
     "  automatic browser host restore / desktop publish: NOT IMPLEMENTED\n";
 }
 int main(int argc,char** argv) {
@@ -759,10 +765,15 @@ int main(int argc,char** argv) {
     if(argc==2 && std::string(argv[1])=="doctor" && exists("xytron.json")) {
       xytron_cli::appDoctor();return 0;
     }
-    if((argc==4 || argc==5) && std::string(argv[1])=="run" &&
+    if((argc==4 || argc==5 || argc==6 || argc==7) &&
+       std::string(argv[1])=="run" &&
        std::string(argv[2])=="--host" &&
-       (argc==4 || std::string(argv[4])=="--smoke")) {
-      xytron_cli::appRunHost(argv[3],argc==5);
+       ((argc<=5 && (argc==4 || std::string(argv[4])=="--smoke")) ||
+        (argc>=6 && std::string(argv[4])=="--plugin" &&
+         (argc==6 || std::string(argv[6])=="--smoke")))) {
+      xytron_cli::appRunHost(argv[3],
+                             argc==5 || argc==7,
+                             argc>=6?argv[5]:"");
       return 0;
     }
     if(argc==2 && std::string(argv[1])=="run" && exists("xytron.json")) {
