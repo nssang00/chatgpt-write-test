@@ -1,0 +1,71 @@
+name: Aplus V2 200 Node Heavy Loss Five Seeds
+on:
+  push:
+    branches: [experiment/a-plus-v2-repair-20261030]
+    paths: [.github/workflows/a-plus-v2-200-heavy-gate.yml]
+  workflow_dispatch:
+permissions: {contents: read}
+jobs:
+  gate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 16
+    strategy:
+      fail-fast: false
+      max-parallel: 6
+      matrix:
+        include:
+          - {nodes: 100, messages: 100, loss: 10, seed: 1}
+          - {nodes: 200, messages: 100, loss: 0, seed: 1}
+          - {nodes: 200, messages: 100, loss: 10, seed: 1}
+          - {nodes: 200, messages: 100, loss: 10, seed: 2}
+          - {nodes: 200, messages: 100, loss: 10, seed: 3}
+          - {nodes: 200, messages: 100, loss: 10, seed: 4}
+          - {nodes: 200, messages: 100, loss: 10, seed: 5}
+    name: 'V2 n${{ matrix.nodes }} m${{ matrix.messages }} loss${{ matrix.loss }} seed${{ matrix.seed }}'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - name: Validate source and exact Linux qdisc conditions
+        run: |
+          set -euo pipefail
+          python -m py_compile bench/discovery/a_plus_v2_node.py bench/discovery/pubsub_run.py
+          sudo sysctl -w net.core.rmem_max=16777216
+          sudo sysctl -w net.core.wmem_max=16777216
+          free -m
+      - name: Strict all subscribers and 100 messages from each publisher, original deadline
+        shell: bash
+        run: |
+          set -euo pipefail
+          case '${{ matrix.nodes }}' in
+            100) discovery=18; timeout=105; spread=12 ;;
+            200) discovery=27; timeout=125; spread=18 ;;
+          esac
+          sudo -E "$(which python)" bench/discovery/pubsub_run.py \
+            --impl v2 --sizes '${{ matrix.nodes }}' --modes multicast \
+            --losses '${{ matrix.loss }}' \
+            --messages '${{ matrix.messages }}' --payload-bytes 128 \
+            --publish-interval 0.06 --publishers '${{ matrix.nodes }}' \
+            --discovery "$discovery" --timeout "$timeout" \
+            --publish-spread "$spread" \
+            --repair-fanout 2 --repair-interval 0.9 \
+            --repair-pps 20 --nack-period 0.8 \
+            --gap-grace 1.5 --nack-suppress-seconds 2.0 \
+            --seeds '${{ matrix.seed }}' --output v2-heavy
+          cat v2-heavy/results.csv
+          python - <<'PY'
+          import json
+          r=json.load(open('v2-heavy/results.json'))[0]
+          print('V2_HEAVY_RESULT '+json.dumps(r))
+          assert r['status'] in ('PASS','FAIL'),r
+          n=r['nodes'];m=r['messages_per_publisher']
+          assert r['reported']==n,r
+          assert r['all_published_marker_count']==n,r
+          assert r['total_expected_remote']==n*(n-1)*m,r
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: 'v2-heavy-n${{ matrix.nodes }}-loss${{ matrix.loss }}-seed${{ matrix.seed }}'
+          path: v2-heavy/
+          if-no-files-found: warn
