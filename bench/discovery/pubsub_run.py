@@ -26,7 +26,7 @@ def netem(n,loss):
            'dev','eth0','root',*opts)
 
 
-def execute(n,mode,loss,seconds,disc,m,spread,out):
+def execute(n,mode,loss,seconds,disc,m,spread,publishers,out):
     wd=out/f'{mode}-n{n}-loss{loss:g}'
     wd.mkdir(parents=True,exist_ok=True)
     procs=[]
@@ -38,6 +38,7 @@ def execute(n,mode,loss,seconds,disc,m,spread,out):
                 '--id',str(i),'--count',str(n),'--mode',mode,
                 '--messages',str(m),'--discovery-seconds',str(disc),
                 '--timeout',str(seconds),'--publish-spread',str(spread),
+                '--publishers',str(publishers),
                 '--workdir',str(wd)],
                 stdout=log,stderr=subprocess.STDOUT)
             log.close()
@@ -76,7 +77,8 @@ def execute(n,mode,loss,seconds,disc,m,spread,out):
         everyone=all(r['remote_received']==r['remote_expected'] for r in rows) and len(rows)==n
         full_disc=all(r['known_nodes']==n for r in rows) and len(rows)==n
         first_pub=disc
-        result={'mode':mode,'nodes':n,'loss_percent_per_direction':loss,
+        result={'mode':mode,'nodes':n,'publishers':publishers or n,
+            'loss_percent_per_direction':loss,
             'reported':len(rows),'discovery_success':full_disc,
             'fully_discovered_nodes':sum(r['known_nodes']==n for r in rows),
             'pubsub_success':everyone,
@@ -121,6 +123,7 @@ def main():
     ap.add_argument('--timeout',type=float,default=24)
     ap.add_argument('--messages',type=int,default=2)
     ap.add_argument('--publish-spread',type=float,default=3)
+    ap.add_argument('--publishers',type=int,default=0)
     ap.add_argument('--output',default='pubsub-results')
     args=ap.parse_args()
     if os.geteuid()!=0:
@@ -146,7 +149,7 @@ def main():
                 for mode in args.modes.split(','):
                     print(f'START n={n} mode={mode} loss={loss}%',flush=True)
                     try:
-                        r=execute(n,mode,loss,args.timeout,args.discovery,args.messages,args.publish_spread,out)
+                        r=execute(n,mode,loss,args.timeout,args.discovery,args.messages,args.publish_spread,args.publishers,out)
                         r['status']='PASS' if r['pubsub_success'] and r['discovery_success'] else 'FAIL'
                     except Exception as exc:
                         r={'nodes':n,'mode':mode,'loss_percent_per_direction':loss,
