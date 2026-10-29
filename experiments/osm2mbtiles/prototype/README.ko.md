@@ -113,3 +113,50 @@ python3 -m osm2mbtiles convert seoul.osm.pbf --format vector --zoom 12-15 \
 - 실제 CI 자료: `.github/workflows/osm2mbtiles-batch-parity.yml`.
   Planetiler 벤치마크는 동일 PBF/BBOX/zoom이지만 출력 스타일과 피처 수가 달라
   의미적으로 동일한 출력 처리량 비교가 아닙니다.
+
+
+## PostGIS Vector 증분 업데이트 (실험용, 별도 CLI)
+
+기존 `convert` 경로는 여전히 최초 변환용으로 `--slim --drop`을 사용합니다.
+**증분 업데이트를 원하면 처음부터** 아래의 update 전용 경로로 DB를 준비해야 합니다.
+이미 `--drop`으로 만든 DB에 `append`를 실행하는 것은 지원하지 않습니다.
+
+전제: 별도 애플리케이션 소유의 빈 PostgreSQL/PostGIS DB `gis`에
+접속 가능한 환경 변수 `PGHOST`, `PGPORT`, `PGUSER`, `PGDATABASE` 설정.
+`osm2pgsql`, `psql`, Python `psycopg2` 설치. 네트워크 공개 DB, 운영 DB에
+곧바로 실험하지 마세요. 최초 import에서 OSM middle 저장소를 계속 보존하므로
+원본 데이터 저장 공간이 더 필요합니다.
+
+```bash
+# 1) 최초 생성: PostGIS middle 유지 및 모든 Vector MBTiles 작성
+python3 -m osm2mbtiles.vector_incremental init \
+  --pbf initial.osm.pbf --output region.mbtiles \
+  --bbox 126.97,37.48,127.03,37.53 --zoom 12-15 --processes 4
+
+# 2) OSC 변경 파일 적용: PostGIS append, expire tiles, MBTiles UPSERT/DELETE
+python3 -m osm2mbtiles.vector_incremental append \
+  --diff change.osc.gz --output region.mbtiles
+
+# 3) OS 오류 등으로 타일 기록에 실패했을 때 재적용 없이 flush만 재시도
+python3 -m osm2mbtiles.vector_incremental flush --output region.mbtiles
+```
+
+- 초기 import는 기존 `vector-flex.lua`에서 3857 Geometry 네 곳에
+  osm2pgsql expire 출력 설정을 덧붙인 스타일을 사용합니다. 파일은
+  `region.mbtiles.update-flex.lua`로 고정 저장됩니다.
+- append 시 `--slim --append`로 원본을 갱신하고, 현재 구현에서는
+  `vector_label_points`를 전부 재작성한 뒤 변경 타일만 다시 생성합니다.
+  이 전체 라벨 재작성은 큰 데이터에서 업데이트 성능의 병목이므로 최적화 예정입니다.
+- dirty tile 목록은 `vector_expired_tiles` PostGIS 테이블에 유지되며,
+  MBTiles는 하나의 SQLite 트랜잭션으로 UPSERT/DELETE합니다. SQLite
+  커밋 후 PostGIS 큐 정리에 실패해도 `flush` 재시도가 가능합니다.
+- 미확정 osm2pgsql 실패(`phase=applying`) 후에는 `append`를 자동
+  재시도하지 않습니다. DB에 일부 변경만 적용되었을 수 있으므로 상태 확인 또는
+  별도 재구축이 필요합니다. 여러 독립 프로세스가 DB에 직접 쓰지 않는
+  단일 업데이트 운영을 전제로 합니다.
+- GitHub Actions: `.github/workflows/osm2mbtiles-incremental-parity.yml`.
+  CI는 합성 OSM 변경(추가/이동/속성수정/삭제) -> `--append` ->
+  영향 타일만 재생성 -> 새 DB의 전체 재생성 결과를 디코딩된 MVT로 비교합니다.
+- 아직 **PNG 증분 업데이트, 원격 replication sequence 수집/검증, 전국 규모,
+  프로파일/줌 변경을 동반한 무중단 갱신은 지원/검증하지 않습니다.**
+  유효 범위 밖의 변경이나 스타일 변경에는 전체 재생성이 필요합니다.
