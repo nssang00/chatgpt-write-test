@@ -90,22 +90,22 @@ def fixtures(directory: Path):
     # Osmium requires GLOBAL type/id ordering even across action blocks:
     # every node before every way, monotonically increasing IDs.
     diff.write_text(
-        '<osmChange version="0.6" generator="osm2mbtiles-ci">\\n'
-        '<modify>\\n' +
+        '<osmChange version="0.6" generator="osm2mbtiles-ci">\n'
+        '<modify>\n' +
         node(100, 127.015, 37.514, {"amenity": "school", "name": "Moved School"}, 2) +
-        '\\n</modify>\\n<delete>\\n' +
+        '\n</modify>\n<delete>\n' +
         node(101, 126.993, 37.505, version=2) +
-        '\\n</delete>\\n<modify>\\n' +
+        '\n</delete>\n<modify>\n' +
         node(103, 127.005, 37.501, {"amenity": "restaurant", "name": "New Name"}, 2) +
-        '\\n</modify>\\n<create>\\n' +
+        '\n</modify>\n<create>\n' +
         node(105, 127.008, 37.511, {"amenity": "pharmacy", "name": "Added Pharmacy"}) +
-        '\\n</create>\\n<modify>\\n' +
+        '\n</create>\n<modify>\n' +
         node(210, 126.979, 37.488, version=2) +
-        '\\n' + way(3000, [210, 211, 212, 213, 210],
+        '\n' + way(3000, [210, 211, 212, 213, 210],
                       {"building": "retail", "name": "New Building", "shop": "books"}, 2) +
-        '\\n</modify>\\n<delete>\\n' +
+        '\n</modify>\n<delete>\n' +
         way(4000, [310, 311, 312], version=2) +
-        '\\n</delete>\\n</osmChange>\\n'
+        '\n</delete>\n</osmChange>\n'
     )
     return initial, diff, final
 
