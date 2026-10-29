@@ -1,0 +1,68 @@
+name: Aplus 50-100-200 Message Load Boundary
+on:
+  push:
+    branches: [experiment/a-plus-stress-fault-ablation-20261029]
+    paths: [.github/workflows/a-plus-load-boundary.yml]
+  workflow_dispatch:
+permissions: {contents: read}
+jobs:
+  load:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 17
+    strategy:
+      fail-fast: false
+      max-parallel: 8
+      matrix:
+        nodes: [50, 100, 200]
+        messages: [20, 100]
+        loss: [0, 10]
+    name: 'A+ N=${{ matrix.nodes }} m=${{ matrix.messages }} loss=${{ matrix.loss }}'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Build/test environment
+        run: |
+          python -m py_compile bench/discovery/pubsub_node.py bench/discovery/pubsub_run.py
+          sudo sysctl -w net.core.rmem_max=16777216
+          sudo sysctl -w net.core.wmem_max=16777216
+          free -m
+      - name: All publishers × all subscribers delivery
+        shell: bash
+        run: |
+          set -euo pipefail
+          case '${{ matrix.nodes }}' in
+            50) discovery=12; timeout=75; spread=7 ;;
+            100) discovery=18; timeout=105; spread=12 ;;
+            200) discovery=27; timeout=125; spread=18 ;;
+          esac
+          if [ '${{ matrix.messages }}' = '100' ]; then
+            interval=0.06
+            payload=128
+          else
+            interval=0.08
+            payload=256
+          fi
+          sudo -E "$(which python)" bench/discovery/pubsub_run.py \
+            --sizes '${{ matrix.nodes }}' --modes multicast \
+            --losses '${{ matrix.loss }}' --v4 --messages '${{ matrix.messages }}' \
+            --payload-bytes "$payload" --publish-interval "$interval" \
+            --publishers '${{ matrix.nodes }}' --discovery "$discovery" \
+            --timeout "$timeout" --publish-spread "$spread" \
+            --repair-fanout 6 --repair-interval 0.9 --seeds 1 \
+            --output load-results
+          cat load-results/results.csv
+          python - <<'PY'
+          import json
+          r=json.load(open('load-results/results.json'))[0]
+          print('STRICT_DELIVERY '+json.dumps(r))
+          assert r['status'] in ('PASS','FAIL'),r
+          assert r['total_expected_remote']==r['nodes']*(r['nodes']-1)*r['messages_per_publisher'],r
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: 'load-N${{ matrix.nodes }}-messages${{ matrix.messages }}-loss${{ matrix.loss }}'
+          path: load-results/
+          if-no-files-found: warn
