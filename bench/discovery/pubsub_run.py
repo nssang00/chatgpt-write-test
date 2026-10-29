@@ -29,7 +29,7 @@ def netem(n,loss):
 
 def execute(n,mode,loss,seconds,disc,m,spread,publishers,seed,fanout,interval,out,v4=False,
             payload_bytes=32,publish_interval=.28,ablation='full',fault='none',burst_seconds=3,
-            impl='v1',repair_pps=12,nack_period=.45):
+            impl='v1',repair_pps=20,nack_period=.8,gap_grace=1.5,nack_suppress=2.0):
     wd=out/f'{impl}-{mode}-n{n}-loss{loss:g}-seed{seed}'
     wd.mkdir(parents=True,exist_ok=True)
     procs=[]
@@ -60,7 +60,9 @@ def execute(n,mode,loss,seconds,disc,m,spread,publishers,seed,fanout,interval,ou
                 '--ablation',ablation,
                 '--workdir',str(wd)]
             if v4: command.append('--v4')
-            if impl=='v2':command+=['--repair-pps',str(repair_pps),'--nack-period',str(nack_period)]
+            if impl=='v2':command+=['--repair-pps',str(repair_pps),
+                     '--nack-period',str(nack_period),'--gap-grace',str(gap_grace),
+                     '--nack-suppress-seconds',str(nack_suppress)]
             p=subprocess.Popen(command,stdout=log,stderr=subprocess.STDOUT)
             log.close()
             procs.append(p)
@@ -127,6 +129,8 @@ def execute(n,mode,loss,seconds,disc,m,spread,publishers,seed,fanout,interval,ou
             'loss_percent_per_direction':loss,'seed':seed,'v4':v4,
             'implementation':impl,'repair_pps':repair_pps if impl=='v2' else None,
             'nack_period_s':nack_period if impl=='v2' else None,
+            'gap_grace_s':gap_grace if impl=='v2' else None,
+            'nack_suppress_s':nack_suppress if impl=='v2' else None,
             'payload_bytes':payload_bytes,'publish_interval_s':publish_interval,
             'messages_per_publisher':m,'ablation':ablation,'fault':fault,
             'fault_events':events,'crashed_nodes':sorted(crashed),
@@ -211,8 +215,10 @@ def main():
     ap.add_argument('--output',default='pubsub-results')
     ap.add_argument('--v4',action='store_true')
     ap.add_argument('--impl',choices=['v1','v2'],default='v1')
-    ap.add_argument('--repair-pps',type=float,default=12)
-    ap.add_argument('--nack-period',type=float,default=.45)
+    ap.add_argument('--repair-pps',type=float,default=20)
+    ap.add_argument('--gap-grace',type=float,default=1.5)
+    ap.add_argument('--nack-suppress-seconds',type=float,default=2.0)
+    ap.add_argument('--nack-period',type=float,default=.8)
     ap.add_argument('--payload-bytes',type=int,default=32)
     ap.add_argument('--publish-interval',type=float,default=.28)
     ap.add_argument('--ablation',choices=['full','no_anti_entropy','no_hello','no_nack_suppression','unicast_repair'],default='full')
@@ -247,7 +253,8 @@ def main():
                                 args.publish_spread,args.publishers,seed,args.repair_fanout,
                                 args.repair_interval,out,args.v4,args.payload_bytes,
                                 args.publish_interval,args.ablation,args.fault,args.burst_seconds,
-                                args.impl,args.repair_pps,args.nack_period)
+                                args.impl,args.repair_pps,args.nack_period,
+                                args.gap_grace,args.nack_suppress_seconds)
                             r['status']='PASS' if r['pubsub_success'] and r['discovery_success'] else 'FAIL'
                         except Exception as exc:
                             r={'nodes':n,'mode':mode,'loss_percent_per_direction':loss,
