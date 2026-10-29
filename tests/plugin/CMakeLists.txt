@@ -211,3 +211,22 @@ add_test(NAME plugin.typed_bindings COMMAND ${CMAKE_COMMAND}
     -DLEGACY_PLUGIN=$<TARGET_FILE:nativeweb_test_plugin>
     -DROOT=${PROJECT_BINARY_DIR}/s2-bindings-check
     -P ${PROJECT_SOURCE_DIR}/tools/cli/test_bindings.cmake)
+
+
+# ABI v1 optional native->JS event publication; runs in Core CTest on
+# Windows/Linux/macOS ARM64/Intel without a browser SDK.
+add_library(nativeweb_test_event_plugin SHARED native_event_plugin.cpp)
+target_include_directories(nativeweb_test_event_plugin PRIVATE ${PROJECT_SOURCE_DIR}/include)
+target_compile_definitions(nativeweb_test_event_plugin PRIVATE
+    XYTRON_PLUGIN_ID=\"eventfixture\"
+    XYTRON_PLUGIN_VERSION=\"1.0.0\")
+set_target_properties(nativeweb_test_event_plugin PROPERTIES
+    CXX_STANDARD 11 CXX_STANDARD_REQUIRED YES CXX_EXTENSIONS NO)
+add_executable(nativeweb_plugin_native_event_regression plugin_native_event_regression.cpp)
+target_link_libraries(nativeweb_plugin_native_event_regression PRIVATE NativeWeb::Core)
+target_include_directories(nativeweb_plugin_native_event_regression PRIVATE ${PROJECT_SOURCE_DIR}/src)
+set_target_properties(nativeweb_plugin_native_event_regression PROPERTIES
+    CXX_STANDARD 11 CXX_STANDARD_REQUIRED YES CXX_EXTENSIONS NO)
+add_test(NAME plugin.native_event_lifecycle COMMAND
+    nativeweb_plugin_native_event_regression
+    $<TARGET_FILE:nativeweb_test_event_plugin>)
