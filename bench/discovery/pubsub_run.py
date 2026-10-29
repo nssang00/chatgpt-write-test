@@ -26,8 +26,8 @@ def netem(n,loss):
            'dev','eth0','root',*opts)
 
 
-def execute(n,mode,loss,seconds,disc,m,spread,out):
-    wd=out/f'{mode}-n{n}-loss{loss:g}'
+def execute(n,mode,loss,seconds,disc,m,spread,publishers,seed,fanout,interval,out):
+    wd=out/f'{mode}-n{n}-loss{loss:g}-seed{seed}'
     wd.mkdir(parents=True,exist_ok=True)
     procs=[]
     try:
@@ -38,6 +38,9 @@ def execute(n,mode,loss,seconds,disc,m,spread,out):
                 '--id',str(i),'--count',str(n),'--mode',mode,
                 '--messages',str(m),'--discovery-seconds',str(disc),
                 '--timeout',str(seconds),'--publish-spread',str(spread),
+                '--publishers',str(publishers),
+                '--seed',str(seed),'--repair-fanout',str(fanout),
+                '--repair-interval',str(interval),
                 '--workdir',str(wd)],
                 stdout=log,stderr=subprocess.STDOUT)
             log.close()
@@ -76,7 +79,10 @@ def execute(n,mode,loss,seconds,disc,m,spread,out):
         everyone=all(r['remote_received']==r['remote_expected'] for r in rows) and len(rows)==n
         full_disc=all(r['known_nodes']==n for r in rows) and len(rows)==n
         first_pub=disc
-        result={'mode':mode,'nodes':n,'loss_percent_per_direction':loss,
+        result={'mode':mode,'nodes':n,'publishers':publishers or n,
+            'loss_percent_per_direction':loss,'seed':seed,
+            'publish_spread_s':spread, 'repair_fanout':fanout,
+            'repair_interval_s':interval,
             'reported':len(rows),'discovery_success':full_disc,
             'fully_discovered_nodes':sum(r['known_nodes']==n for r in rows),
             'pubsub_success':everyone,
@@ -93,6 +99,10 @@ def execute(n,mode,loss,seconds,disc,m,spread,out):
             'total_duplicate_deliveries':sum(r['duplicates'] for r in rows),
             'total_nacks':sum(r['stats']['nack_sent'] for r in rows),
             'total_repairs':sum(r['stats']['repair_sent'] for r in rows),
+            'udp_rcvbuf_errors':sum(r.get('udp_rcvbuf_errors',0) for r in rows),
+            'udp_in_errors':sum(r.get('udp_in_errors',0) for r in rows),
+            'socket_rx_overflow':sum(r.get('socket_rx_overflow',0) for r in rows),
+            'send_errors':sum(r.get('send_errors',0) for r in rows),
             'total_ihave':sum(r['stats']['ihave_sent'] for r in rows),
             'total_iwant':sum(r['stats']['iwant_sent'] for r in rows),
             'total_control_packets':sum(r['stats']['hello_sent']+r['stats']['digest_sent']+
@@ -121,6 +131,10 @@ def main():
     ap.add_argument('--timeout',type=float,default=24)
     ap.add_argument('--messages',type=int,default=2)
     ap.add_argument('--publish-spread',type=float,default=3)
+    ap.add_argument('--publishers',type=int,default=0)
+    ap.add_argument('--seeds',default='1')
+    ap.add_argument('--repair-fanout',type=int,default=4)
+    ap.add_argument('--repair-interval',type=float,default=1.0)
     ap.add_argument('--output',default='pubsub-results')
     args=ap.parse_args()
     if os.geteuid()!=0:
@@ -144,22 +158,26 @@ def main():
             for loss in [float(x) for x in args.losses.split(',')]:
                 netem(n,loss)
                 for mode in args.modes.split(','):
-                    print(f'START n={n} mode={mode} loss={loss}%',flush=True)
-                    try:
-                        r=execute(n,mode,loss,args.timeout,args.discovery,args.messages,args.publish_spread,out)
-                        r['status']='PASS' if r['pubsub_success'] and r['discovery_success'] else 'FAIL'
-                    except Exception as exc:
-                        r={'nodes':n,'mode':mode,'loss_percent_per_direction':loss,
-                           'status':'ERROR','reason':str(exc)}
-                    results.append(r)
-                    print('RESULT '+json.dumps(r),flush=True)
+                    for seed in [int(x) for x in args.seeds.split(',')]:
+                        print(f'START n={n} mode={mode} loss={loss}% seed={seed}',flush=True)
+                        try:
+                            r=execute(n,mode,loss,args.timeout,args.discovery,args.messages,
+                                args.publish_spread,args.publishers,seed,args.repair_fanout,
+                                args.repair_interval,out)
+                            r['status']='PASS' if r['pubsub_success'] and r['discovery_success'] else 'FAIL'
+                        except Exception as exc:
+                            r={'nodes':n,'mode':mode,'loss_percent_per_direction':loss,
+                               'seed':seed,'status':'ERROR','reason':str(exc)}
+                        results.append(r)
+                        print('RESULT '+json.dumps(r),flush=True)
         finally:
             cleanup(n)
     (out/'results.json').write_text(json.dumps(results,indent=2)+'\n')
-    keys=['mode','nodes','loss_percent_per_direction','status','discovery_success',
+    keys=['mode','nodes','seed','loss_percent_per_direction','status','discovery_success',
           'pubsub_success','fully_delivered_nodes','remote_delivery_rate',
           'pubsub_all_complete_after_pub_s','discovery_all_complete_s','total_nacks',
-          'total_repairs','bridge_rx_bytes','bridge_tx_bytes','aggregate_cpu_s','reason']
+          'total_repairs','udp_rcvbuf_errors','socket_rx_overflow',
+          'send_errors','bridge_rx_bytes','bridge_tx_bytes','aggregate_cpu_s','reason']
     with (out/'results.csv').open('w',newline='') as fh:
         w=csv.DictWriter(fh,fieldnames=keys,extrasaction='ignore')
         w.writeheader()
