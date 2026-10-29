@@ -73,6 +73,10 @@ jobs:
           dest.parent.mkdir(parents=True,exist_ok=True)
           dest.write_bytes(src.read_bytes())
           print('ORIGINAL_CEF_WEBVIEW_WRAPPER_PRESENT')
+          patched=pathlib.Path('companywebview-p01/Validation/ProductPanelCompile.csproj')
+          targetproj=pathlib.Path('companywebview-p01/FullManagedSource/Validation/ProductPanelCompile.csproj')
+          targetproj.write_bytes(patched.read_bytes())
+          print('PRODUCT_PANEL_COMPILE_PROJECT_FIX_APPLIED')
           '@ | python -
           if ($LASTEXITCODE -ne 0) { throw 'CEF managed facade restoration failed' }
       - name: Actual C# Roslyn compile of full C# panel with Unity stubs
