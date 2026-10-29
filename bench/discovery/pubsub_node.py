@@ -33,10 +33,13 @@ def main():
     ap.add_argument('--publish-interval',type=float,default=.28)
     ap.add_argument('--payload-bytes',type=int,default=32)
     ap.add_argument('--ablation',choices=['full','no_anti_entropy','no_hello','no_nack_suppression','unicast_repair'],default='full')
+    ap.add_argument('--incremental-repair',action='store_true')
+    ap.add_argument('--nack-batch-limit',type=int,default=32)
     args = ap.parse_args()
 
     i, n, m = args.id, args.count, args.messages
     assert 1<=args.payload_bytes<=1200 and 0<args.publish_interval<=5
+    assert 1<=args.nack_batch_limit<=64
     PAYLOAD='x'*args.payload_bytes
     publisher_count = args.publishers if args.publishers > 0 else n
     workdir = Path(args.workdir)
@@ -158,6 +161,8 @@ def main():
     last_nack = -10.0
     startup_nack_offset = rnd.uniform(0, args.repair_interval)
     repair_start_at = args.discovery_seconds + args.publish_spread + m*args.publish_interval + .7 + startup_nack_offset
+    if args.incremental_repair:
+        repair_start_at=args.discovery_seconds + 1.5 + startup_nack_offset
     stop_at = args.discovery_seconds + args.timeout
 
     while not (workdir / 'stop').exists():
@@ -209,6 +214,8 @@ def main():
                 if args.v4:
                     unsuppressed=(seqs if args.ablation=='no_nack_suppression' else
                                   [seq for seq in seqs if suppressed.get((src,seq),-1)<elapsed])
+                    if args.incremental_repair:
+                        unsuppressed=unsuppressed[:args.nack_batch_limit]
                     if not unsuppressed:
                         stats['nack_suppressed']+=len(seqs)
                         continue
@@ -355,6 +362,7 @@ def main():
         'max_repairs_per_sequence':max(source_repair_count.values(),default=0),
         'samples_at_repair_limit':sum(v>=32 for v in source_repair_count.values()),
         'ablation':args.ablation,'sent_original':len(sent_orig),
+        'incremental_repair':args.incremental_repair,'nack_batch_limit':args.nack_batch_limit,
         'discovery_s':discovery_time,'ready_at_publish':ready_at_publish,
         'received':len(received),'expected':expected,
         'remote_received':len(received)-len(sent_orig),
