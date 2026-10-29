@@ -166,6 +166,9 @@ def main():
             'host_link_drops':link_drop_end-link_drop_start,
             'tc_nonzero_evidence':drop_end['nonzero_samples'],
             'user_data_sent':sum(r['user_data_sent'] for r in rows),
+            'transient_builtin_errors':sum(r.get('transient_errors',{}).get('builtin',0) for r in rows),
+            'transient_matched_read_errors':sum(r.get('transient_errors',{}).get('matched_read',0) for r in rows),
+            'transient_matched_write_errors':sum(r.get('transient_errors',{}).get('matched_write',0) for r in rows),
             'seconds_observed':round(time.monotonic()-started,3),
         })
         report.update({f'bridge_{k}':after[k]-before[k] for k in before})
