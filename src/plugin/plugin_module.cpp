@@ -765,7 +765,11 @@ int32_t PluginModule::publishEventThunk(
 int32_t PluginModule::publishEvent(
     const char* relative, const nw_value_v1* payload)
 {
-    if (!relative || !payload || !validPluginId(relative))
+    if (!relative || !payload || !validPluginId(relative) ||
+        payload->struct_size < sizeof(nw_value_v1) ||
+        payload->type != NW_VALUE_STRING_V1 ||
+        payload->data.string_value.size > 4096 ||
+        (payload->data.string_value.size && !payload->data.string_value.data))
         return -1;
 
     std::function<void(const std::string&,const Any&)> publish;
