@@ -4,6 +4,7 @@ import argparse
 import csv
 import json
 import os
+import random
 from pathlib import Path
 import subprocess
 import sys
@@ -26,10 +27,22 @@ def netem(n,loss):
            'dev','eth0','root',*opts)
 
 
-def execute(n,mode,loss,seconds,disc,m,spread,publishers,seed,fanout,interval,out,v4=False):
+def execute(n,mode,loss,seconds,disc,m,spread,publishers,seed,fanout,interval,out,v4=False,
+            payload_bytes=32,publish_interval=.28,ablation='full',fault='none',burst_seconds=3):
     wd=out/f'{mode}-n{n}-loss{loss:g}-seed{seed}'
     wd.mkdir(parents=True,exist_ok=True)
     procs=[]
+    events=[]
+    crashed=set()
+    burst_active=False
+    burst_finished=False
+    burst_targets=sorted(random.Random(seed*787+7).sample(range(n),max(1,n//20)))
+    def set_link_loss(ids,rate):
+        opts=['netem','delay','2ms']
+        if rate:opts.extend(['loss',f'{rate}%'])
+        for j in ids:
+            sh('tc','qdisc','replace','dev',f'db{j:03d}h','root',*opts)
+            sh('ip','netns','exec',ns(j),'tc','qdisc','replace','dev','eth0','root',*opts)
     try:
         for i in range(n):
             log=(wd/f'log-{i}.txt').open('w')
@@ -41,6 +54,9 @@ def execute(n,mode,loss,seconds,disc,m,spread,publishers,seed,fanout,interval,ou
                 '--publishers',str(publishers),
                 '--seed',str(seed),'--repair-fanout',str(fanout),
                 '--repair-interval',str(interval),
+                '--publish-interval',str(publish_interval),
+                '--payload-bytes',str(payload_bytes),
+                '--ablation',ablation,
                 '--workdir',str(wd)]
             if v4: command.append('--v4')
             p=subprocess.Popen(command,stdout=log,stderr=subprocess.STDOUT)
@@ -57,12 +73,34 @@ def execute(n,mode,loss,seconds,disc,m,spread,publishers,seed,fanout,interval,ou
         before=counters(n)
         started=time.monotonic()
         (wd/'go').touch()
+        burst_begin=disc+spread*.5
+        burst_end=burst_begin+burst_seconds
         while time.monotonic()-started < (disc+seconds+3):
-            if len(list(wd.glob('done-*')))==n:
+            elapsed=time.monotonic()-started
+            if fault=='burst' and not burst_active and not burst_finished and elapsed>=burst_begin:
+                set_link_loss(burst_targets,100)
+                burst_active=True
+                events.append({'event':'burst_start','at_s':round(elapsed,3),'targets':burst_targets})
+            if fault=='burst' and burst_active and elapsed>=burst_end:
+                set_link_loss(burst_targets,loss)
+                burst_active=False
+                burst_finished=True
+                events.append({'event':'burst_end','at_s':round(elapsed,3)})
+            if fault=='crash' and 0 not in crashed and (wd/'published-0').exists():
+                procs[0].kill()
+                procs[0].wait()
+                crashed.add(0)
+                events.append({'event':'publisher_killed','at_s':round(elapsed,3),'id':0})
+            active_count=n-len(crashed)
+            if len(list(wd.glob('done-*')))>=active_count:
                 break
-            if any(p.poll() is not None for p in procs):
+            if any(p.poll() is not None and i not in crashed for i,p in enumerate(procs)):
+                events.append({'event':'unexpected_process_exit','at_s':round(elapsed,3)})
                 break
             time.sleep(.08)
+        if burst_active:
+            set_link_loss(burst_targets,loss)
+            events.append({'event':'burst_restored_on_shutdown','at_s':round(time.monotonic()-started,3)})
         (wd/'stop').touch()
         for p in procs:
             try:
@@ -77,11 +115,15 @@ def execute(n,mode,loss,seconds,disc,m,spread,publishers,seed,fanout,interval,ou
         expected=n
         if len(rows)!=n:
             print(f'WARN {len(rows)}/{n} reports',flush=True)
-        everyone=all(r['remote_received']==r['remote_expected'] for r in rows) and len(rows)==n
-        full_disc=all(r['known_nodes']==n for r in rows) and len(rows)==n
+        survivors=n-len(crashed)
+        everyone=all(r['remote_received']==r['remote_expected'] for r in rows) and len(rows)==survivors
+        full_disc=all(r['known_nodes']==n for r in rows) and len(rows)==survivors
         first_pub=disc
         result={'mode':mode,'nodes':n,'publishers':publishers or n,
             'loss_percent_per_direction':loss,'seed':seed,'v4':v4,
+            'payload_bytes':payload_bytes,'publish_interval_s':publish_interval,
+            'messages_per_publisher':m,'ablation':ablation,'fault':fault,
+            'fault_events':events,'crashed_nodes':sorted(crashed),
             'publish_spread_s':spread, 'repair_fanout':fanout,
             'repair_interval_s':interval,
             'reported':len(rows),'discovery_success':full_disc,
@@ -89,6 +131,8 @@ def execute(n,mode,loss,seconds,disc,m,spread,publishers,seed,fanout,interval,ou
             'pubsub_success':everyone,
             'fully_delivered_nodes':sum(r['remote_received']==r['remote_expected'] for r in rows),
             'total_expected_remote':sum(r['remote_expected'] for r in rows),
+            'expected_live_receives':(n-len(crashed))*(n-1)*m,
+            'all_published_marker_count':len(list(wd.glob('published-*'))),
             'total_delivered_remote':sum(r['remote_received'] for r in rows),
             'remote_delivery_rate':round(sum(r['remote_received'] for r in rows)/
               max(1,sum(r['remote_expected'] for r in rows)),6),
@@ -141,6 +185,11 @@ def main():
     ap.add_argument('--repair-interval',type=float,default=1.0)
     ap.add_argument('--output',default='pubsub-results')
     ap.add_argument('--v4',action='store_true')
+    ap.add_argument('--payload-bytes',type=int,default=32)
+    ap.add_argument('--publish-interval',type=float,default=.28)
+    ap.add_argument('--ablation',choices=['full','no_anti_entropy','no_hello','no_nack_suppression','unicast_repair'],default='full')
+    ap.add_argument('--fault',choices=['none','burst','crash'],default='none')
+    ap.add_argument('--burst-seconds',type=float,default=3)
     args=ap.parse_args()
     if os.geteuid()!=0:
         raise SystemExit('root needed for network namespaces')
@@ -168,7 +217,8 @@ def main():
                         try:
                             r=execute(n,mode,loss,args.timeout,args.discovery,args.messages,
                                 args.publish_spread,args.publishers,seed,args.repair_fanout,
-                                args.repair_interval,out,args.v4)
+                                args.repair_interval,out,args.v4,args.payload_bytes,
+                                args.publish_interval,args.ablation,args.fault,args.burst_seconds)
                             r['status']='PASS' if r['pubsub_success'] and r['discovery_success'] else 'FAIL'
                         except Exception as exc:
                             r={'nodes':n,'mode':mode,'loss_percent_per_direction':loss,
@@ -178,7 +228,7 @@ def main():
         finally:
             cleanup(n)
     (out/'results.json').write_text(json.dumps(results,indent=2)+'\n')
-    keys=['mode','nodes','seed','loss_percent_per_direction','status','discovery_success',
+    keys=['mode','nodes','seed','loss_percent_per_direction','status','ablation','fault','payload_bytes','messages_per_publisher','discovery_success',
           'pubsub_success','fully_delivered_nodes','remote_delivery_rate',
           'pubsub_all_complete_after_pub_s','discovery_all_complete_s','total_nacks',
           'total_repairs','udp_rcvbuf_errors','socket_rx_overflow',
