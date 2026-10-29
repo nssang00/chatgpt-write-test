@@ -29,7 +29,8 @@ def netem(n,loss):
 
 def execute(n,mode,loss,seconds,disc,m,spread,publishers,seed,fanout,interval,out,v4=False,
             payload_bytes=32,publish_interval=.28,ablation='full',fault='none',burst_seconds=3,
-            incremental_repair=False,nack_batch_limit=32):
+            incremental_repair=False,nack_batch_limit=32,
+            peer_repair=False,peer_replicas=6,peer_cache_limit=2048,backup_quorum=2):
     wd=out/f'{mode}-n{n}-loss{loss:g}-seed{seed}'
     wd.mkdir(parents=True,exist_ok=True)
     procs=[]
@@ -59,6 +60,10 @@ def execute(n,mode,loss,seconds,disc,m,spread,publishers,seed,fanout,interval,ou
                 '--payload-bytes',str(payload_bytes),
                 '--ablation',ablation,
                 '--nack-batch-limit',str(nack_batch_limit),
+                '--peer-replicas',str(peer_replicas),
+                '--peer-cache-limit',str(peer_cache_limit),
+                '--backup-quorum',str(backup_quorum),
+                *(['--peer-repair'] if peer_repair else []),
                 *(['--incremental-repair'] if incremental_repair else []),
                 '--workdir',str(wd)]
             if v4: command.append('--v4')
@@ -89,7 +94,7 @@ def execute(n,mode,loss,seconds,disc,m,spread,publishers,seed,fanout,interval,ou
                 burst_active=False
                 burst_finished=True
                 events.append({'event':'burst_end','at_s':round(elapsed,3)})
-            if fault=='crash' and 0 not in crashed and (wd/'published-0').exists():
+            if fault in ('crash','crash_confirmed') and 0 not in crashed and (wd/('backed-0' if fault=='crash_confirmed' else 'published-0')).exists():
                 procs[0].kill()
                 procs[0].wait()
                 crashed.add(0)
@@ -130,6 +135,9 @@ def execute(n,mode,loss,seconds,disc,m,spread,publishers,seed,fanout,interval,ou
             'messages_per_publisher':m,'ablation':ablation,'fault':fault,
             'fault_events':events,'crashed_nodes':sorted(crashed),
             'incremental_repair':incremental_repair,'nack_batch_limit':nack_batch_limit,
+            'peer_repair':peer_repair,'peer_replicas':peer_replicas,
+            'backup_quorum':backup_quorum,
+            'backup_confirmed_origins':len(list(wd.glob('backed-*'))),
             'publish_spread_s':spread, 'repair_fanout':fanout,
             'repair_interval_s':interval,
             'reported':len(rows),'discovery_success':full_disc,
@@ -152,6 +160,10 @@ def execute(n,mode,loss,seconds,disc,m,spread,publishers,seed,fanout,interval,ou
             'minimum_known':min((r['known_nodes'] for r in rows),default=0),
             'total_duplicate_deliveries':sum(r['duplicates'] for r in rows),
             'total_nacks':sum(r['stats']['nack_sent'] for r in rows),
+            'total_peer_repairs':sum(r['stats'].get('peer_repairs_sent',0) for r in rows),
+            'total_backup_ack_sent':sum(r['stats'].get('backup_ack_sent',0) for r in rows),
+            'total_backup_ack_received':sum(r['stats'].get('backup_ack_received',0) for r in rows),
+            'total_peer_cache_evictions':sum(r['stats'].get('peer_cache_evictions',0) for r in rows),
             'total_repairs':sum(r['stats']['repair_sent'] for r in rows),
             'total_nack_suppressed':sum(r['stats'].get('nack_suppressed',0) for r in rows),
             'total_nack_heard':sum(r['stats'].get('nack_heard',0) for r in rows),
@@ -204,10 +216,14 @@ def main():
     ap.add_argument('--payload-bytes',type=int,default=32)
     ap.add_argument('--publish-interval',type=float,default=.28)
     ap.add_argument('--ablation',choices=['full','no_anti_entropy','no_hello','no_nack_suppression','unicast_repair'],default='full')
-    ap.add_argument('--fault',choices=['none','burst','crash'],default='none')
+    ap.add_argument('--fault',choices=['none','burst','crash','crash_confirmed'],default='none')
     ap.add_argument('--burst-seconds',type=float,default=3)
     ap.add_argument('--incremental-repair',action='store_true')
     ap.add_argument('--nack-batch-limit',type=int,default=32)
+    ap.add_argument('--peer-repair',action='store_true')
+    ap.add_argument('--peer-replicas',type=int,default=6)
+    ap.add_argument('--peer-cache-limit',type=int,default=2048)
+    ap.add_argument('--backup-quorum',type=int,default=2)
     args=ap.parse_args()
     if os.geteuid()!=0:
         raise SystemExit('root needed for network namespaces')
@@ -237,7 +253,9 @@ def main():
                                 args.publish_spread,args.publishers,seed,args.repair_fanout,
                                 args.repair_interval,out,args.v4,args.payload_bytes,
                                 args.publish_interval,args.ablation,args.fault,args.burst_seconds,
-                                args.incremental_repair,args.nack_batch_limit)
+                                args.incremental_repair,args.nack_batch_limit,
+                                args.peer_repair,args.peer_replicas,args.peer_cache_limit,
+                                args.backup_quorum)
                             r['status']='PASS' if r['pubsub_success'] and r['discovery_success'] else 'FAIL'
                         except Exception as exc:
                             r={'nodes':n,'mode':mode,'loss_percent_per_direction':loss,
