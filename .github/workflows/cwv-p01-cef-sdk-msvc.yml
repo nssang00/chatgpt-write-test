@@ -1,0 +1,62 @@
+name: CompanyWebView P0-1 / CEF Windows SDK and MSVC integration gate
+on:
+  push:
+    branches: [verify/cwv-p01-windows-20261029]
+    paths:
+      - '.github/workflows/cwv-p01-cef-sdk-msvc.yml'
+      - 'companywebview-p01/cef/**'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  cef-windows-sdk:
+    runs-on: windows-2022
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - name: Cache official SHA1-pinned CEF Windows SDK 144
+        uses: actions/cache@v4
+        with:
+          path: |
+            .cache/cef/windows/archive
+            .cache/cef/windows/extracted
+          key: cwv-p01-cef-144-0-36-sdk-windows-v1
+      - name: Fetch and SHA1 verify official CEF SDK (not CompanyWebView product)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $root = & ./tools/cef/bootstrap_windows.ps1 -CacheDir "$env:GITHUB_WORKSPACE/.cache/cef/windows/archive" -ExtractDir "$env:GITHUB_WORKSPACE/.cache/cef/windows/extracted" | Select-Object -Last 1
+          if (-not (Test-Path -LiteralPath "$root/include/cef_app.h")) { throw 'CEF SDK headers missing' }
+          if (-not (Test-Path -LiteralPath "$root/Release/libcef.dll")) { throw 'CEF runtime DLL missing' }
+          "CWV_CEF_SDK_ROOT=$root" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+      - name: Compile real CEF libcef wrapper and CEF integration with MSVC
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          cmake -S tests/integration/cef -B "$env:RUNNER_TEMP/cwv-cef-msvc" -G 'Visual Studio 17 2022' -A x64 "-DCEF_ROOT=$env:CWV_CEF_SDK_ROOT" -DUSE_SANDBOX=OFF
+          if ($LASTEXITCODE -ne 0) { throw 'CEF SDK MSVC configure failed' }
+          cmake --build "$env:RUNNER_TEMP/cwv-cef-msvc" --config Release --target nativeweb_cef_bridge_integration --parallel 2
+          if ($LASTEXITCODE -ne 0) { throw 'CEF SDK MSVC compile/link failed' }
+          $exe=Join-Path $env:RUNNER_TEMP 'cwv-cef-msvc/bin/nativeweb_cef_bridge_integration.exe'
+          if (-not (Test-Path $exe)) { throw 'NativeWeb CEF integration binary missing' }
+          $proof=[ordered]@{
+            gate='CEF Windows MSVC toolchain and official CEF SDK'
+            status='PASS'
+            cefSdkVersion='144.0.36+g78619fd+chromium-144.0.7559.264'
+            cefSdkArchiveSha1='ce9d951914e79f179e224f3ba9d55d9363696efe'
+            integrationBinarySha256=(Get-FileHash $exe -Algorithm SHA256).Hash.ToLowerInvariant()
+            source='NativeWeb integration code already in public repository'
+            companyWebViewCefNativeDllCompiled=$false
+            companyWebViewCefSubprocessCompiled=$false
+            upmAssembled=$false
+            unityPlayerExecuted=$false
+          }
+          $proof | ConvertTo-Json | Set-Content "./cwv-cef-sdk-proof.json" -Encoding UTF8
+      - name: Publish non-product compile evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cwv-p01-cef-sdk-msvc-proof
+          if-no-files-found: warn
+          retention-days: 7
+          path: ./cwv-cef-sdk-proof.json
