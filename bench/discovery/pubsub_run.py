@@ -28,8 +28,9 @@ def netem(n,loss):
 
 
 def execute(n,mode,loss,seconds,disc,m,spread,publishers,seed,fanout,interval,out,v4=False,
-            payload_bytes=32,publish_interval=.28,ablation='full',fault='none',burst_seconds=3):
-    wd=out/f'{mode}-n{n}-loss{loss:g}-seed{seed}'
+            payload_bytes=32,publish_interval=.28,ablation='full',fault='none',burst_seconds=3,
+            impl='v1',repair_pps=12,nack_period=.45):
+    wd=out/f'{impl}-{mode}-n{n}-loss{loss:g}-seed{seed}'
     wd.mkdir(parents=True,exist_ok=True)
     procs=[]
     events=[]
@@ -47,7 +48,7 @@ def execute(n,mode,loss,seconds,disc,m,spread,publishers,seed,fanout,interval,ou
         for i in range(n):
             log=(wd/f'log-{i}.txt').open('w')
             command=['ip','netns','exec',ns(i),sys.executable,
-                str(Path(__file__).resolve().parent/'pubsub_node.py'),
+                str(Path(__file__).resolve().parent/('a_plus_v2_node.py' if impl=='v2' else 'pubsub_node.py')),
                 '--id',str(i),'--count',str(n),'--mode',mode,
                 '--messages',str(m),'--discovery-seconds',str(disc),
                 '--timeout',str(seconds),'--publish-spread',str(spread),
@@ -59,6 +60,7 @@ def execute(n,mode,loss,seconds,disc,m,spread,publishers,seed,fanout,interval,ou
                 '--ablation',ablation,
                 '--workdir',str(wd)]
             if v4: command.append('--v4')
+            if impl=='v2':command+=['--repair-pps',str(repair_pps),'--nack-period',str(nack_period)]
             p=subprocess.Popen(command,stdout=log,stderr=subprocess.STDOUT)
             log.close()
             procs.append(p)
@@ -123,6 +125,8 @@ def execute(n,mode,loss,seconds,disc,m,spread,publishers,seed,fanout,interval,ou
         first_pub=disc
         result={'mode':mode,'nodes':n,'publishers':publishers or n,
             'loss_percent_per_direction':loss,'seed':seed,'v4':v4,
+            'implementation':impl,'repair_pps':repair_pps if impl=='v2' else None,
+            'nack_period_s':nack_period if impl=='v2' else None,
             'payload_bytes':payload_bytes,'publish_interval_s':publish_interval,
             'messages_per_publisher':m,'ablation':ablation,'fault':fault,
             'fault_events':events,'crashed_nodes':sorted(crashed),
@@ -150,6 +154,9 @@ def execute(n,mode,loss,seconds,disc,m,spread,publishers,seed,fanout,interval,ou
             'total_nacks':sum(r['stats']['nack_sent'] for r in rows),
             'total_repairs':sum(r['stats']['repair_sent'] for r in rows),
             'total_nack_suppressed':sum(r['stats'].get('nack_suppressed',0) for r in rows),
+            'total_bitmap_bits_requested':sum(r['stats'].get('bitmap_bits_requested',0) for r in rows),
+            'total_progress_beacons':sum(r['stats'].get('progress_sent',0)+r['stats'].get('end_sent',0) for r in rows),
+            'max_repair_pending':max((r.get('repair_queue_max',0) for r in rows),default=0),
             'total_nack_heard':sum(r['stats'].get('nack_heard',0) for r in rows),
             'total_repair_suppressed':sum(r['stats'].get('repair_suppressed',0) for r in rows),
             'udp_rcvbuf_errors':sum(r.get('udp_rcvbuf_errors',0) for r in rows),
@@ -167,9 +174,14 @@ def execute(n,mode,loss,seconds,disc,m,spread,publishers,seed,fanout,interval,ou
             'seconds_observed':round(time.monotonic()-started,3)}
         missing_src={}
         for row in rows:
-            for item in row.get('missing_by_origin',[]):
-                key=str(item['origin'])
-                missing_src[key]=missing_src.get(key,0)+item['count']
+            info=row.get('missing_by_origin',[])
+            if isinstance(info,dict):
+                for key,count in info.items():
+                    missing_src[key]=missing_src.get(key,0)+count
+            else:
+                for item in info:
+                    key=str(item['origin'])
+                    missing_src[key]=missing_src.get(key,0)+item['count']
         result['total_missing_by_source']={k:v for k,v in sorted(
             missing_src.items(),key=lambda kv:-kv[1])[:20]}
         result.update({f'bridge_{k}':after[k]-before[k] for k in before})
@@ -197,6 +209,9 @@ def main():
     ap.add_argument('--repair-interval',type=float,default=1.0)
     ap.add_argument('--output',default='pubsub-results')
     ap.add_argument('--v4',action='store_true')
+    ap.add_argument('--impl',choices=['v1','v2'],default='v1')
+    ap.add_argument('--repair-pps',type=float,default=12)
+    ap.add_argument('--nack-period',type=float,default=.45)
     ap.add_argument('--payload-bytes',type=int,default=32)
     ap.add_argument('--publish-interval',type=float,default=.28)
     ap.add_argument('--ablation',choices=['full','no_anti_entropy','no_hello','no_nack_suppression','unicast_repair'],default='full')
@@ -230,7 +245,8 @@ def main():
                             r=execute(n,mode,loss,args.timeout,args.discovery,args.messages,
                                 args.publish_spread,args.publishers,seed,args.repair_fanout,
                                 args.repair_interval,out,args.v4,args.payload_bytes,
-                                args.publish_interval,args.ablation,args.fault,args.burst_seconds)
+                                args.publish_interval,args.ablation,args.fault,args.burst_seconds,
+                                args.impl,args.repair_pps,args.nack_period)
                             r['status']='PASS' if r['pubsub_success'] and r['discovery_success'] else 'FAIL'
                         except Exception as exc:
                             r={'nodes':n,'mode':mode,'loss_percent_per_direction':loss,
@@ -240,7 +256,7 @@ def main():
         finally:
             cleanup(n)
     (out/'results.json').write_text(json.dumps(results,indent=2)+'\n')
-    keys=['mode','nodes','seed','loss_percent_per_direction','status','ablation','fault','payload_bytes','messages_per_publisher','discovery_success',
+    keys=['implementation','mode','nodes','seed','loss_percent_per_direction','status','ablation','fault','payload_bytes','messages_per_publisher','discovery_success',
           'pubsub_success','fully_delivered_nodes','remote_delivery_rate',
           'pubsub_all_complete_after_pub_s','discovery_all_complete_s','total_nacks',
           'total_repairs','udp_rcvbuf_errors','socket_rx_overflow',
