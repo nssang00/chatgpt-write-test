@@ -60,6 +60,15 @@ jobs:
             echo 'CLI vector-only smoke placeholder; not a renderable Carto style' > "$WORK/runtime/styles/osm-carto/$file"
           done
           ls -lh "$WORK/seoul-non-military.osm.pbf"
+          export PYTHONPATH="$PROJECT/src"
+          /usr/bin/python3 - "$WORK/seoul-non-military.osm.pbf" <<'PY'
+          import sys
+          from osm2mbtiles.pbf import read_bbox, PBFError
+          try:
+              print("SEOUL_PBF_HEADER_BBOX", read_bbox(sys.argv[1]), flush=True)
+          except PBFError as exc:
+              print("SEOUL_PBF_HEADER_BBOX_UNAVAILABLE", str(exc), flush=True)
+          PY
       - name: Real Seoul batch vector + original projected vector and strict content parity
         shell: bash
         run: |
@@ -75,6 +84,12 @@ jobs:
             --tile-type both --raster-format png \
             --zoom 12-15 --bbox "$BBOX" -o "$WORK/plan.mbtiles" \
             --max-tiles 500 --dry-run | tee "$WORK/dry-run.log"
+          # The one-click Seoul launcher uses an explicit bounding box
+          # and must not depend on the optional PBF HeaderBBox field.
+          /usr/bin/python3 -m osm2mbtiles convert "$PBF" \
+            --tile-type both --raster-format png --zoom 12-14 \
+            --bbox "126.75,37.40,127.20,37.72" -o "$WORK/seoul-plan.mbtiles" \
+            --dry-run | tee "$WORK/seoul-full-bbox-preflight.log"
           /usr/bin/python3 -m osm2mbtiles convert "$PBF" \
             --tile-type vector --vector-tiler batch --vector-batch-side 2 \
             --zoom 12-15 --bbox "$BBOX" --processes 4 \
@@ -126,7 +141,7 @@ jobs:
         run: |
           mkdir -p seoul-cli-evidence
           WORK="$RUNNER_TEMP/seoul-cli-e2e"
-          for f in pbf.sha256 dry-run.log batch.log legacy.log vector-verify.json parity.json summary.md; do
+          for f in pbf.sha256 dry-run.log seoul-full-bbox-preflight.log batch.log legacy.log vector-verify.json parity.json summary.md; do
             cp "$WORK/$f" seoul-cli-evidence/ 2>/dev/null || true
           done
       - uses: actions/upload-artifact@v4
