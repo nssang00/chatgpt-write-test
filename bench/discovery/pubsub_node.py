@@ -33,6 +33,8 @@ def main():
     ap.add_argument('--publish-interval',type=float,default=.28)
     ap.add_argument('--payload-bytes',type=int,default=32)
     ap.add_argument('--sequence-payload',action='store_true',help='unique content for each origin/sequence, validate actual byte equality')
+    ap.add_argument('--force-miss-receiver',type=int,default=-1,help='fault injection: this node drops origin samples until source is killed')
+    ap.add_argument('--force-miss-origin',type=int,default=-1)
     ap.add_argument('--ablation',choices=['full','no_anti_entropy','no_hello','no_nack_suppression','unicast_repair'],default='full')
     ap.add_argument('--incremental-repair',action='store_true')
     ap.add_argument('--nack-batch-limit',type=int,default=32)
@@ -86,7 +88,8 @@ def main():
                  nack_heard=0, repair_suppressed=0, completed_ack_sent=0,
                  backup_ack_sent=0, backup_ack_received=0,
                  peer_repairs_sent=0, peer_cache_evictions=0,
-                 backup_ack_retry_sent=0, backup_need_hello=0)
+                 backup_ack_retry_sent=0, backup_need_hello=0,
+                 fault_dropped_initial=0)
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 4 * 1024 * 1024)
@@ -377,6 +380,12 @@ def main():
                         or not 0 <= src < n or not 0 <= seq < m
                         or item.get('k') != TOPIC or item.get('v') != payload_for(src,seq)):
                         continue
+                    if (args.force_miss_receiver==i and args.force_miss_origin==src
+                        and not (workdir/f'origin-killed-{src}').exists()):
+                        # No sample from the targeted origin can enter Received
+                        # or backup cache before the source has actually died.
+                        stats['fault_dropped_initial']+=1
+                        continue
                     if first_data is None and src != i:
                         first_data = elapsed
                     key=(src,seq)
@@ -494,6 +503,8 @@ def main():
         'samples_at_repair_limit':sum(v>=32 for v in source_repair_count.values()),
         'ablation':args.ablation,'sent_original':len(sent_orig),
         'peer_repair':args.peer_repair,'durable_publishers':durable_count,
+        'force_miss_receiver':args.force_miss_receiver,
+        'force_miss_origin':args.force_miss_origin,
         'sequence_payload':args.sequence_payload,
         'peer_cache_entries':len(peer_cache),
         'backup_acked_sequences':sum(len(backup_acks.get(seq,set()))>=args.backup_quorum for seq in range(m)) if i<publisher_count else 0,
