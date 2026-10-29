@@ -247,7 +247,22 @@ inline void appTest() {
   std::cout<<"Backend-only smoke test PASS; JS/browser E2E NOT exercised.\n";
 }
 
-inline void appRunHost(const std::string& path, bool smoke) {
+inline std::string appBackendPlugin() {
+#ifdef _WIN32
+  const std::string path=
+    appExists(".xytron-build/out/Release/xytron_app_backend.dll")?
+    ".xytron-build/out/Release/xytron_app_backend.dll":
+    ".xytron-build/out/xytron_app_backend.dll";
+#elif defined(__APPLE__)
+  const std::string path=".xytron-build/out/libxytron_app_backend.dylib";
+#else
+  const std::string path=".xytron-build/out/libxytron_app_backend.so";
+#endif
+  projectPath(path,false);
+  return path;
+}
+inline void appRunHost(const std::string& path, bool smoke,
+                       const std::string& featurePath) {
   if(appMainLanguage()!="cpp")
     throw std::runtime_error("Real browser host currently supports generated C++ apps only");
   restoredSdk();
@@ -255,6 +270,8 @@ inline void appRunHost(const std::string& path, bool smoke) {
   // executable here is still a backend smoke preflight, not JS backend wiring.
   appTest();
   projectPath("ui/index.html",false);
+  const std::string backendPath=appBackendPlugin();
+  if(!featurePath.empty()) projectPath(featurePath,false);
   const std::string host=normalizeSdk(path);
   struct stat st;
   if(stat(host.c_str(),&st)!=0)
@@ -273,15 +290,19 @@ inline void appRunHost(const std::string& path, bool smoke) {
     throw std::runtime_error("Cannot resolve app project directory");
 #endif
   const std::string ui=std::string("--ui=")+project+"/ui/index.html";
+  const std::string backendArg=std::string("--backend-plugin=")+project+"/"+backendPath;
+  const std::string featureArg=featurePath.empty()?std::string():
+    std::string("--plugin-path=")+project+"/"+featurePath;
   const std::size_t slash=host.find_last_of("/\\");
   if(slash==std::string::npos)
     throw std::runtime_error("Native browser host path must be absolute");
   const std::string hostDir=host.substr(0,slash);
-  std::cout<<"Launching real browser app:// host; user backend JS bindings are not yet integrated.\n";
+  std::cout<<"Launching real browser app:// with user-owned C++ ABI plugin.\n";
 #ifdef _WIN32
   // Paths are canonical, contain no command-line quote characters, and are
   // passed directly to CreateProcess (never via cmd.exe).
-  std::string command="\""+host+"\" \""+ui+"\"";
+  std::string command="\""+host+"\" \""+ui+"\" \""+backendArg+"\"";
+  if(!featureArg.empty()) command+=" \""+featureArg+"\"";
   if(smoke) command+=" --smoke";
   std::vector<char> mutableCmd(command.begin(),command.end());
   mutableCmd.push_back('\0');
@@ -303,9 +324,19 @@ inline void appRunHost(const std::string& path, bool smoke) {
   if(child<0) throw std::runtime_error("Cannot fork desktop browser host");
   if(child==0) {
     if(chdir(hostDir.c_str())!=0) _exit(127);
-    execl(host.c_str(),host.c_str(),"--no-sandbox",
-          ui.c_str(),smoke?"--smoke":static_cast<const char*>(nullptr),
-          static_cast<char*>(nullptr));
+    if(smoke && featureArg.empty())
+      execl(host.c_str(),host.c_str(),"--no-sandbox",
+            ui.c_str(),backendArg.c_str(),"--smoke",static_cast<char*>(nullptr));
+    else if(smoke)
+      execl(host.c_str(),host.c_str(),"--no-sandbox",
+            ui.c_str(),backendArg.c_str(),featureArg.c_str(),"--smoke",
+            static_cast<char*>(nullptr));
+    else if(featureArg.empty())
+      execl(host.c_str(),host.c_str(),"--no-sandbox",
+            ui.c_str(),backendArg.c_str(),static_cast<char*>(nullptr));
+    else
+      execl(host.c_str(),host.c_str(),"--no-sandbox",
+            ui.c_str(),backendArg.c_str(),featureArg.c_str(),static_cast<char*>(nullptr));
     _exit(127);
   }
   int status=0;
