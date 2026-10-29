@@ -1,0 +1,73 @@
+name: Real Gossipsub Bootstrap Retest
+on:
+  push:
+    branches: [benchmark/pubsub-a-plus-b-plus-real-gossipsub-20261029]
+    paths: [.github/workflows/gossipsub-bootstrap-retest.yml]
+  workflow_dispatch:
+permissions: {contents: read}
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with: {go-version: '1.26', cache: false}
+      - name: Compile maintained go-libp2p and go-libp2p-pubsub
+        working-directory: bench/gossipsub
+        run: |
+          set -euxo pipefail
+          go mod tidy
+          CGO_ENABLED=0 go build -trimpath -o "$RUNNER_TEMP/gossipsub-gate" .
+      - name: Eight peers sanity test with retried libp2p transport setup
+        run: |
+          sudo -E "$(which python)" bench/gossipsub/run.py \
+            --binary "$RUNNER_TEMP/gossipsub-gate" --nodes 8 \
+            --loss 0 --messages 2 --warmup 18 --spread 3 \
+            --duration 32 --output gossipsub-retry-smoke
+          cat gossipsub-retry-smoke/summary.json
+          python - <<'PY'
+          import json
+          r=json.load(open('gossipsub-retry-smoke/summary.json'))
+          assert r['status']=='PASS',r
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: gossipsub-retry-smoke-logs
+          path: gossipsub-retry-smoke/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: gossipsub-retry-binary
+          path: ${{ runner.temp }}/gossipsub-gate
+  retry:
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 14
+    strategy: {fail-fast: false, max-parallel: 4}
+    matrix: {nodes: [50, 100, 200], loss: [0, 10]}
+    name: 'Real Gossipsub retry N=${{ matrix.nodes }} loss=${{ matrix.loss }}%'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with: {name: gossipsub-retry-binary, path: bin}
+      - name: Run all publisher all subscriber with improved bootstrap
+        run: |
+          chmod +x bin/gossipsub-gate
+          case '${{ matrix.nodes }}' in
+            50) warmup=18; duration=72; spread=8 ;;
+            100) warmup=28; duration=102; spread=12 ;;
+            200) warmup=50; duration=148; spread=20 ;;
+          esac
+          sudo -E "$(which python)" bench/gossipsub/run.py \
+            --binary bin/gossipsub-gate --nodes '${{ matrix.nodes }}' \
+            --loss '${{ matrix.loss }}' --seed 2 \
+            --warmup "$warmup" --duration "$duration" --spread "$spread" \
+            --messages 2 --output gossipsub-retry-results
+          cat gossipsub-retry-results/summary.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: 'gossipsub-retry-N${{ matrix.nodes }}-loss${{ matrix.loss }}'
+          path: gossipsub-retry-results/
+          if-no-files-found: warn
