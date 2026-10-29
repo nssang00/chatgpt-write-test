@@ -1,0 +1,60 @@
+name: CompanyWebView P0-1 / real public v8 WebView2 MSVC
+on:
+  push:
+    branches: [verify/cwv-p01-windows-20261029]
+    paths:
+      - 'companywebview-p01/**'
+      - '.github/workflows/cwv-p01-public-webview2.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  v8-webview2:
+    runs-on: windows-2022
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Get official pinned Microsoft WebView2 NuGet SDK
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $version='1.0.4258.31'
+          $url="https://www.nuget.org/api/v2/package/Microsoft.Web.WebView2/$version"
+          $zip=Join-Path $env:RUNNER_TEMP 'Microsoft.Web.WebView2.nupkg'
+          $root=Join-Path $env:RUNNER_TEMP 'wv2-sdk'
+          New-Item -ItemType Directory -Force $root | Out-Null
+          curl.exe -L --fail --retry 3 $url -o $zip
+          if ($LASTEXITCODE -ne 0) { throw 'WebView2 SDK download failed' }
+          $hash=(Get-FileHash -Algorithm SHA256 -LiteralPath $zip).Hash
+          Write-Host "Downloaded Microsoft.Web.WebView2 $version SHA256=$hash"
+          Copy-Item $zip ($zip+'.zip')
+          Expand-Archive -LiteralPath ($zip+'.zip') -DestinationPath $root
+          if (-not (Test-Path (Join-Path $root 'build/native/include/WebView2.h'))) { throw 'Official WebView2 SDK header missing' }
+          if (-not (Test-Path (Join-Path $root 'build/native/x64/WebView2LoaderStatic.lib'))) { throw 'Official WebView2 x64 import library missing' }
+          "WV2_SDK_ROOT=$root" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+      - name: Real C++17 MSVC compile of unchanged v8 native adapter
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $root='companywebview-p01/NativeSource/WebView2V8'
+          $out=Join-Path $env:RUNNER_TEMP 'cwv-v8-public-build'
+          cmake -S $root -B $out -G "Visual Studio 17 2022" -A x64 "-DWEBVIEW2_SDK_ROOT=$env:WV2_SDK_ROOT"
+          if ($LASTEXITCODE -ne 0) { throw 'CMake configure failed' }
+          cmake --build $out --config Release --parallel 2
+          if ($LASTEXITCODE -ne 0) { throw 'Real WebView2 adapter MSVC compilation failed' }
+          $dll=Join-Path $out 'Release/CompanyWebView2SecureV8.dll'
+          if (-not (Test-Path $dll)) { throw 'Compiled v8 native DLL missing' }
+          $bytes=(Get-Item $dll).Length
+          if ($bytes -lt 8192) { throw 'Native DLL unexpectedly small' }
+          $proof=[ordered]@{status='PASS';kind='Actual v8 WebView2 MSVC C++17 native DLL';version='1.0.4258.31';commit=$env:GITHUB_SHA;dllSha256=(Get-FileHash $dll -Algorithm SHA256).Hash.ToLowerInvariant();dllBytes=$bytes;unityPlayerExecuted=$false;cefCompiled=$false}
+          $proof|ConvertTo-Json|Set-Content -Encoding utf8 (Join-Path $env:RUNNER_TEMP 'cwv-v8-public-msvc-evidence.json')
+      - name: Publish compile evidence and native DLL
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cwv-p01-webview2-native
+          retention-days: 7
+          if-no-files-found: warn
+          path: |
+            ${{ runner.temp }}/cwv-v8-public-build/Release/CompanyWebView2SecureV8.dll
+            ${{ runner.temp }}/cwv-v8-public-msvc-evidence.json
