@@ -58,9 +58,9 @@ jobs:
               throw 'The exact P0-1 archive is not staged in the private kit configuration'
             }
             & ./companywebview/ci/Fetch-VerifiedKit.ps1 -Url $env:KIT_URL -Sha256 $env:KIT_SHA -Destination "$env:RUNNER_TEMP/cwv-private-p01" *> $logPath
-            if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($env:CWV_KIT_ROOT)) {
-              throw 'Private kit retrieval failed'
-            }
+            $kitCandidate=@(Get-ChildItem -LiteralPath "$env:RUNNER_TEMP/cwv-private-p01" -Filter Build-Native-Rpc.ps1 -Recurse -File)
+            if ($kitCandidate.Count -ne 1) { throw 'Private kit root was not found' }
+            $env:CWV_KIT_ROOT=$kitCandidate[0].DirectoryName
             $report.verifiedExactP01Archive=$true
             $report.failedGate='managed_compile'
             Push-Location $env:CWV_KIT_ROOT
@@ -85,6 +85,11 @@ jobs:
               & ./CI/Fetch-VerifiedSdk.ps1 -Url $env:CEF_URL -Sha256 $env:CEF_SHA -Destination "$env:RUNNER_TEMP/cwv-cef" -Kind CEF *>> $logPath
               & ./CI/Fetch-VerifiedSdk.ps1 -Url $env:UNITY_URL -Sha256 $env:UNITY_SHA -Destination "$env:RUNNER_TEMP/cwv-unity-api" -Kind UNITY_API *>> $logPath
 
+              $cefHeader=Get-ChildItem -LiteralPath "$env:RUNNER_TEMP/cwv-cef" -Filter cef_app.h -Recurse -File | Select-Object -First 1
+              $unityHeader=Get-ChildItem -LiteralPath "$env:RUNNER_TEMP/cwv-unity-api" -Filter IUnityInterface.h -Recurse -File | Select-Object -First 1
+              if (-not $cefHeader -or -not $unityHeader) { throw 'SDK extraction did not produce required headers' }
+              $env:CWV_CEF_ROOT=Split-Path (Split-Path $cefHeader.FullName -Parent) -Parent
+              $env:CWV_UNITY_PLUGIN_API=Split-Path $unityHeader.FullName -Parent
               $report.failedGate='cef_msvc'
               & ./Build-Native-Rpc.ps1 -CefRoot $env:CWV_CEF_ROOT -UnityPluginApi $env:CWV_UNITY_PLUGIN_API -OutputStage "$env:RUNNER_TEMP/cwv-native-stage" -BuildDir "$env:RUNNER_TEMP/cwv-native-build" *>> $logPath
               if (-not (Test-Path "$env:RUNNER_TEMP/cwv-native-stage/rpc-bridge-build.json")) { throw 'CEF build evidence missing' }
