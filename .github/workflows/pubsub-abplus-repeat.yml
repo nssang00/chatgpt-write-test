@@ -1,0 +1,59 @@
+name: Aplus Bplus Reliability Repeat Seeds
+on:
+  push:
+    branches: [benchmark/pubsub-a-plus-b-plus-real-gossipsub-20261029]
+    paths: [.github/workflows/pubsub-abplus-repeat.yml]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  repeat:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 14
+    strategy:
+      fail-fast: false
+      max-parallel: 6
+      matrix:
+        include:
+          - {mode: multicast, nodes: 100, loss: 10, seed: 2}
+          - {mode: multicast, nodes: 100, loss: 10, seed: 3}
+          - {mode: mesh, nodes: 100, loss: 10, seed: 2}
+          - {mode: mesh, nodes: 100, loss: 10, seed: 3}
+          - {mode: multicast, nodes: 200, loss: 10, seed: 2}
+          - {mode: multicast, nodes: 200, loss: 10, seed: 3}
+          - {mode: mesh, nodes: 200, loss: 10, seed: 2}
+          - {mode: mesh, nodes: 200, loss: 10, seed: 3}
+          - {mode: multicast, nodes: 200, loss: 0, seed: 2}
+          - {mode: mesh, nodes: 200, loss: 0, seed: 2}
+    name: '${{ matrix.mode }} N=${{ matrix.nodes }} loss=${{ matrix.loss }} seed=${{ matrix.seed }}'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: UDP buffers and environment
+        run: |
+          sudo sysctl -w net.core.rmem_max=16777216
+          sudo sysctl -w net.core.wmem_max=16777216
+      - name: Repeat strict 100% reliability benchmark
+        run: |
+          set -euo pipefail
+          case '${{ matrix.nodes }}' in
+            100) disc=25; timeout=65; spread=12 ;;
+            200) disc=45; timeout=95; spread=20 ;;
+          esac
+          sudo -E "$(which python)" bench/discovery/pubsub_run.py \
+            --sizes '${{ matrix.nodes }}' --modes '${{ matrix.mode }}' \
+            --losses '${{ matrix.loss }}' --messages 2 \
+            --publishers '${{ matrix.nodes }}' --discovery "$disc" \
+            --timeout "$timeout" --publish-spread "$spread" \
+            --repair-fanout 6 --repair-interval 1.0 \
+            --seeds '${{ matrix.seed }}' --v4 \
+            --output abplus-repeat
+          cat abplus-repeat/results.csv
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: 'repeat-${{ matrix.mode }}-N${{ matrix.nodes }}-loss${{ matrix.loss }}-seed${{ matrix.seed }}'
+          path: abplus-repeat/
+          if-no-files-found: warn
