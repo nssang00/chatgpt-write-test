@@ -14,18 +14,23 @@ def main():
     ap.add_argument('--id',type=int,required=True)
     ap.add_argument('--count',type=int,required=True)
     ap.add_argument('--batch',type=int,default=1)
-    ap.add_argument('--config',choices=['default','eth0','eth0-fastspdp'],default='default')
+    ap.add_argument('--config',choices=['default','eth0','eth0-fastspdp','auto-fastspdp','eth0-multicast','eth0-250ms'],default='default')
     ap.add_argument('--workdir',required=True)
     ap.add_argument('--timeout',type=float,default=30)
     ap.add_argument('--seed',type=int,default=1)
     a=ap.parse_args()
     if a.config!='default':
-        disc='<SPDPInterval>1s</SPDPInterval>' if a.config=='eth0-fastspdp' else ''
+        disc = ('<SPDPInterval>250ms</SPDPInterval>' if a.config=='eth0-250ms'
+                else '<SPDPInterval>1s</SPDPInterval>' if a.config in
+                ('eth0-fastspdp','auto-fastspdp') else '')
+        iface = '' if a.config=='auto-fastspdp' else (
+            '<General><Interfaces><NetworkInterface name="eth0" multicast="true"/>'
+            '</Interfaces><AllowMulticast>' +
+            ('true' if a.config=='eth0-multicast' else 'spdp') +
+            '</AllowMulticast></General>')
         os.environ['CYCLONEDDS_URI']=(
             '<CycloneDDS xmlns="https://cdds.io/config"><Domain id="any">'
-            '<General><Interfaces><NetworkInterface name="eth0" multicast="true"/>'
-            '</Interfaces><AllowMulticast>spdp</AllowMulticast></General>'
-            f'<Discovery>{disc}</Discovery></Domain></CycloneDDS>')
+            +iface+f'<Discovery>{disc}</Discovery></Domain></CycloneDDS>')
     from cyclonedds.domain import DomainParticipant
     from cyclonedds.topic import Topic
     from cyclonedds.pub import DataWriter
