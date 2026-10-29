@@ -233,3 +233,24 @@ test-seoul.bat 12-14 both
   근거가 없음을 뜻할 뿐 다른 오류를 배제하지 않습니다.
 - 수정된 `tools/run_wsl.sh`와 `tools/run_windows.ps1` 및
   `tools/test_seoul.ps1`를 모두 같은 버전으로 교체해야 합니다.
+
+
+### 2026-10-29 Python Mapnik `register_fonts` 오류 수정
+
+Ubuntu/WSL의 `python3-mapnik`에서 `mapnik.register_fonts(path, True)`는
+`TypeError: argument of type 'bool' is not iterable`를 일으킵니다.
+두 번째 인자는 재귀 여부가 아니라 허용할 폰트 확장자 집합입니다.
+`src/osm2mbtiles/worker.py`에서 `mapnik.register_fonts(str(fonts))`로
+수정했습니다. Python Mapnik은 폰트 하위 폴더를 기본으로 순회합니다.
+
+검증: `.github/workflows/osm2mbtiles-raster-mapnik-smoke.yml`은 Ubuntu 24.04의
+**실제 Python Mapnik 3.1.0**과 DejaVu 폰트를 설치해 폰트 등록, 미니멀
+Web Mercator XML 스타일 PNG 렌더링, SQLite MBTiles(9개 PNG)의 파일 시그니처와
+무결성을 검사합니다. 이는 Mapnik 렌더러 자체의 실제 실행 확인이며
+**전체 OSM Carto 스타일 또는 Windows+WSL에서의 서울 PNG+Vector 동시 생성
+검증과 동일하지 않습니다.**
+
+기존 WSL PostGIS 데이터는 이 수정 때문에 삭제할 필요가 없습니다.
+프로젝트 소스의 `worker.py`만 수정한 경우에는 기존 `--workdir`
+DB를 재사용할 수 있습니다. 새 압축본을 기존 폴더에 덮어쓰는 경우에도
+`test-output/seoul-non-military.osm.pbf` PBF 파일은 그대로 보관하세요.
