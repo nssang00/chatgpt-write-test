@@ -87,6 +87,18 @@ install(FILES tools/cli/dotnet_reflector/Program.cs
               tools/cli/dotnet_reflector/Xytron.Metadata.csproj
   DESTINATION ${CMAKE_INSTALL_DATADIR}/xytron/cli/dotnet_reflector)
 
+# Managed Main backends use the existing reviewed private JSONL hosts.
+# Install sources under the Core SDK prefix so no private checkout or
+# arbitrary PYTHONPATH is required at application run time.
+install(DIRECTORY bindings/python/xytron/
+  DESTINATION ${CMAKE_INSTALL_DATADIR}/xytron/python/xytron
+  FILES_MATCHING PATTERN "*.py")
+install(FILES bindings/python/app_worker.py
+  DESTINATION ${CMAKE_INSTALL_DATADIR}/xytron/python)
+install(DIRECTORY bindings/dotnet/Xytron.Binding/
+  DESTINATION ${CMAKE_INSTALL_DATADIR}/xytron/dotnet/Xytron.Binding
+  FILES_MATCHING PATTERN "*.cs" PATTERN "*.csproj")
+
 install(TARGETS xytron RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 if(NATIVEWEB_BUILD_TESTS)
   add_executable(xytron_cli_output_guard_regression tools/cli/test_existing_output_guard.cpp)

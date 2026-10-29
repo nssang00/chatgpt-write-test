@@ -126,6 +126,56 @@ def run():
             if rc==0: raise AssertionError("Missing application UI accepted")
         finally:
             backup.rename(ui)
+        # Real managed Main is user source, not a hardcoded host ping.
+        # Both workers speak the existing bounded private JSONL protocol.
+        for language, source, before, after in (
+            ("python","backend/main.py",
+             "pong-from-user-python","pong-edited-in-project"),
+            ("csharp","backend/Program.cs",
+             "pong-from-user-csharp","pong-edited-in-project"),
+        ):
+            name="hello_"+language
+            rc,_=execute(base+["new","desktop",name,"--backend",language],folder)
+            if rc: raise AssertionError("Cannot scaffold "+language+" app")
+            app=folder/name
+            authored_file=app/source
+            authored=authored_file.read_text(encoding="utf-8")
+            if authored.count(before)!=1:
+                raise AssertionError("Generated "+language+" method is not editable")
+            authored_file.write_text(authored.replace(before,after),encoding="utf-8")
+            for step in (["restore","--sdk",str(sdk)], ["build"], ["test"]):
+                rc,_=execute(base+step,app)
+                if rc: raise AssertionError(language+" app "+step[0]+" failed")
+            # A missing worker / assembly must fail closed before browser use.
+            if language=="csharp":
+                required=app/".xytron-build/dotnet/MainBackend.dll"
+            else:
+                required=app/"backend/main.py"
+            backup=required.with_name(required.name+".bak")
+            required.rename(backup)
+            try:
+                rc,_=execute(base+["run","--host",str(host),"--smoke"],app)
+                if rc==0: raise AssertionError(language+" missing Main accepted")
+            finally:
+                backup.rename(required)
+            args_managed=base+["run","--host",str(host),"--smoke"]
+            if args.engine=="cef" and sys.platform.startswith("linux") and not os.getenv("DISPLAY"):
+                args_managed=["xvfb-run","-a"]+args_managed
+            rc,output=execute(args_managed,app,timeout=140)
+            checkpoints=[
+                "checkpoint: native-app-window-created",
+                "checkpoint: native-app-ui-loaded app://desktop/index.html",
+                "checkpoint: managed-main-worker-granted-"+language,
+                "checkpoint: user-managed-main-js-verified-"+language,
+                "Real browser app:// host completed successfully."
+            ]
+            missing=[item for item in checkpoints if item not in output]
+            if rc or missing or "bridge-fail:" in output:
+                raise AssertionError(language+" actual browser worker failed: "+
+                                     str((rc,missing)))
+            print("Generated {} Main real {} JS E2E: PASS".format(
+                language,args.engine),flush=True)
+
         print("Generated app real {} browser E2E: PASS".format(args.engine),
               flush=True)
     return 0

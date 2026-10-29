@@ -73,21 +73,34 @@ static void desktop(const std::string& id,const std::string& lang) {
     q(id)+", \"mode\":\"desktop\", \"engine\":\"auto\"},\n \"ui\": {\"entry\":\"app://desktop/index.html\", \"resources\":\"ui\"},\n \"main\": "+
     "{\"id\":\"app\", \"language\": "+q(lang)+", \"entry\": "+
     q(entry)+"},\n \"modules\": []\n}\n");
-  file(id+"/ui/index.html","<!doctype html><html><body><h1>Xytron</h1>"
-    "<p>Native desktop C++ bridge demo (requires explicit engine host).</p>"
-    "<button id=\"xytron-ping\">Call user C++ backend</button>"
-    "<output id=\"xytron-result\">idle</output>"
-    "<button id=\"xytron-feature\">Call native feature plugin</button>"
-    "<output id=\"xytron-feature-result\">idle</output>"
-    "<script>document.getElementById('xytron-ping').onclick=async function(){"
-    "const output=document.getElementById('xytron-result');"
-    "try{output.textContent=await xytron.app.ping();}"
-    "catch(error){output.textContent='error:'+String(error);}"
-    "};document.getElementById('xytron-feature').onclick=async function(){"
-    "const output=document.getElementById('xytron-feature-result');"
-    "try{output.textContent=await xytron.feature.hello();}"
-    "catch(error){output.textContent='error:'+String(error);}"
-    "};</script></body></html>\n");
+  if(lang=="cpp")
+    file(id+"/ui/index.html","<!doctype html><html><body><h1>Xytron</h1>"
+      "<p>Native desktop C++ bridge demo (requires explicit engine host).</p>"
+      "<button id=\"xytron-ping\">Call user C++ backend</button>"
+      "<output id=\"xytron-result\">idle</output>"
+      "<button id=\"xytron-feature\">Call native feature plugin</button>"
+      "<output id=\"xytron-feature-result\">idle</output>"
+      "<script>document.getElementById('xytron-ping').onclick=async function(){"
+      "const output=document.getElementById('xytron-result');"
+      "try{output.textContent=await xytron.app.ping();}"
+      "catch(error){output.textContent='error:'+String(error);}"
+      "};document.getElementById('xytron-feature').onclick=async function(){"
+      "const output=document.getElementById('xytron-feature-result');"
+      "try{output.textContent=await xytron.feature.hello();}"
+      "catch(error){output.textContent='error:'+String(error);}"
+      "};</script></body></html>\n");
+  else
+    file(id+"/ui/index.html","<!doctype html><html><body><h1>Xytron</h1>"
+      "<p>Managed Main runs through private JSONL worker and trusted app:// bridge.</p>"
+      "<button id=\"xytron-managed\">Call managed Main</button>"
+      "<output id=\"xytron-managed-result\">idle</output>"
+      "<script>document.getElementById('xytron-managed').onclick=async function(){"
+      "const output=document.getElementById('xytron-managed-result');"
+      "try{const h=await xytron.app.Main.create();"
+      "try{output.textContent=await xytron.app.Main.method.ping(h);}"
+      "finally{await xytron.app.Main.dispose(h);}}"
+      "catch(error){output.textContent='error:'+String(error);}"
+      "};</script></body></html>\n");
   if(lang=="cpp")
     file(id+"/"+entry,
       "// A single user-owned C++ source backs both the CLI smoke executable\n"
@@ -102,15 +115,39 @@ static void desktop(const std::string& id,const std::string& lang) {
       "int main() { std::cout << \"cpp backend smoke\\n\"; return 0; }\n"
       "#endif\n");
   else if(lang=="python")
-    file(id+"/"+entry,"# Placeholder until JS bridge host is integrated.\n"
-      "async def initialize():\n    return 'backend placeholder'\n");
+    file(id+"/"+entry,
+      "from xytron import export\n"
+      "@export\n"
+      "class Main:\n"
+      "    @export\n"
+      "    def ping(self):\n"
+      "        return 'pong-from-user-python'\n");
   else {
-    file(id+"/"+entry,"// Placeholder until JS bridge host is integrated.\n"
-      "using System;\nConsole.WriteLine(\"backend placeholder\");\n");
+    file(id+"/"+entry,
+      "using System;\n"
+      "using Xytron;\n"
+      "[Export]\n"
+      "public sealed class Main\n"
+      "{\n"
+      "    [Export] public string ping() => \"pong-from-user-csharp\";\n"
+      "}\n"
+      "internal static class Program\n"
+      "{\n"
+      "    static int Main()\n"
+      "    {\n"
+      "        var host = new ObjectHost(\"app\", new[] { typeof(Main) },\n"
+      "            (owner, operation) => owner == \"app_session\" &&\n"
+      "                operation.StartsWith(\"app.Main.\", StringComparison.Ordinal));\n"
+      "        JsonLineHost.Run(Console.In, Console.Out, host, \"app_session\");\n"
+      "        return 0;\n"
+      "    }\n"
+      "}\n");
     file(id+"/backend/MainBackend.csproj",
       "<Project Sdk=\"Microsoft.NET.Sdk\"><PropertyGroup>"
       "<OutputType>Exe</OutputType><TargetFramework>net8.0</TargetFramework>"
-      "</PropertyGroup></Project>\n");
+      "<Nullable>enable</Nullable></PropertyGroup><ItemGroup>"
+      "<ProjectReference Include=\"$(XytronSdkPrefix)/share/xytron/dotnet/"
+      "Xytron.Binding/Xytron.Binding.csproj\" /></ItemGroup></Project>\n");
   }
   std::cout<<"Created scaffold: "<<id<<" (Main "<<lang<<")\n";
 }
@@ -693,7 +730,7 @@ static void help() {
     "  validate (inside a generated desktop project)\n"
     "  restore --sdk INSTALLED_CORE_SDK (desktop project; Core only)\n"
     "  build / test / doctor (desktop project; backend-only)\n"
-    "  run --host ABSOLUTE_ENGINE_HOST [--plugin PROJECT_PLUGIN_PATH] [--smoke] (C++ app)\n"
+    "  run --host ABSOLUTE_ENGINE_HOST [--plugin PROJECT_PLUGIN_PATH] [--smoke] (C++/Python/C# app)\n"
     "  automatic browser host restore / desktop publish: NOT IMPLEMENTED\n";
 }
 int main(int argc,char** argv) {
