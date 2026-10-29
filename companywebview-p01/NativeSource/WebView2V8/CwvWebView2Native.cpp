@@ -1,6 +1,9 @@
 // CompanyWebView v8: WebView2 Native Adapter, source-only preview pending Windows product compile.
 // Uses ONLY browser-native event metadata for sender origin, never untrusted JSON metadata.
 #define WIN32_LEAN_AND_MEAN
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
 #include "CwvWebView2Native.h"
 #include "../SecureRegistry/CwvSecureViewRegistry.h"
 #include <WebView2.h>
