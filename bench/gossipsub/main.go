@@ -133,14 +133,21 @@ func main() {
 			if err!=nil {mu.Lock();connectErr++;mu.Unlock();return}
 			pi,err:=peer.AddrInfoFromP2pAddr(addr)
 			if err!=nil {mu.Lock();connectErr++;mu.Unlock();return}
-			for attempt:=0;attempt<6;attempt++ {
-				cctx,cancel:=context.WithTimeout(ctx,1200*time.Millisecond)
+			// Retry throughout the warmup: initial simultaneous dials can trigger
+			// libp2p's connection backoff even when the peer is now reachable.
+			deadline:=start.Add(time.Duration(*warmup*float64(time.Second)))
+			firstError:=""
+			for attempt:=0;time.Now().Before(deadline) && ctx.Err()==nil;attempt++ {
+				cctx,cancel:=context.WithTimeout(ctx,1800*time.Millisecond)
 				err=host.Connect(cctx,*pi)
 				cancel()
 				if err==nil {mu.Lock();connectOK++;mu.Unlock();return}
-				time.Sleep(time.Duration(100+attempt*200)*time.Millisecond)
+				if firstError=="" {firstError=err.Error()}
+				sleepMs:=300+attempt*180
+				if sleepMs>1800 {sleepMs=1800}
+				time.Sleep(time.Duration(sleepMs)*time.Millisecond)
 			}
-			mu.Lock();connectErr++;errs=append(errs,fmt.Sprintf("connect %d: %v",j,err));mu.Unlock()
+			mu.Lock();connectErr++;errs=append(errs,fmt.Sprintf("connect %d initial=%s final=%v",j,firstError,err));mu.Unlock()
 		}(j)
 	}
 	go wg.Wait()
