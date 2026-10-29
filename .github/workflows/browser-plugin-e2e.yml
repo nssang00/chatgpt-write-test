@@ -114,7 +114,7 @@ jobs:
           cmake --build build/app-core --config Release --parallel 3
           cmake --install build/app-core --config Release --prefix build/app-sdk
       - name: Real xytron new/restore/build/run through CEF app:// host
-        run: python tools/run_generated_desktop_e2e.py --engine cef --xytron build/app-core/xytron --sdk build/app-sdk --host build/cef/bin/xytron_desktop_host
+        run: python tools/run_generated_desktop_e2e.py --engine cef --xytron build/app-core/Release/xytron.exe --sdk build/app-sdk --host build/cef/bin/xytron_desktop_host.exe
       - name: Measure real browser JS-Native RTT (diagnostic only)
         run: python tools/run_bridge_benchmark.py --engine cef --build-dir build/cef --output-dir build/bridge-benchmark --warmup 20 --samples 100 --timeout 130
       - name: Upload raw bridge latency samples
