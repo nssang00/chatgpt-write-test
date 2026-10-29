@@ -31,7 +31,8 @@ def execute(n,mode,loss,seconds,disc,m,spread,publishers,seed,fanout,interval,ou
             payload_bytes=32,publish_interval=.28,ablation='full',fault='none',burst_seconds=3,
             incremental_repair=False,nack_batch_limit=32,
             peer_repair=False,peer_replicas=6,peer_cache_limit=2048,backup_quorum=2,
-            durable_publishers=0,sequence_payload=False):
+            durable_publishers=0,sequence_payload=False,
+            force_miss_receiver=-1,force_miss_origin=-1):
     wd=out/f'{mode}-n{n}-loss{loss:g}-seed{seed}'
     wd.mkdir(parents=True,exist_ok=True)
     procs=[]
@@ -65,6 +66,8 @@ def execute(n,mode,loss,seconds,disc,m,spread,publishers,seed,fanout,interval,ou
                 '--peer-cache-limit',str(peer_cache_limit),
                 '--backup-quorum',str(backup_quorum),
                 '--durable-publishers',str(durable_publishers),
+                '--force-miss-receiver',str(force_miss_receiver),
+                '--force-miss-origin',str(force_miss_origin),
                 *(['--sequence-payload'] if sequence_payload else []),
                 *(['--peer-repair'] if peer_repair else []),
                 *(['--incremental-repair'] if incremental_repair else []),
@@ -101,6 +104,7 @@ def execute(n,mode,loss,seconds,disc,m,spread,publishers,seed,fanout,interval,ou
                 procs[0].kill()
                 procs[0].wait()
                 crashed.add(0)
+                (wd/'origin-killed-0').touch()
                 events.append({'event':'publisher_killed','at_s':round(elapsed,3),'id':0})
             active_count=n-len(crashed)
             # A durability trial cannot stop merely because all data arrived:
@@ -144,6 +148,9 @@ def execute(n,mode,loss,seconds,disc,m,spread,publishers,seed,fanout,interval,ou
             'peer_repair':peer_repair,'peer_replicas':peer_replicas,
             'durable_publishers':durable_publishers or publishers or n,
             'sequence_payload':sequence_payload,
+            'force_miss_receiver':force_miss_receiver,
+            'force_miss_origin':force_miss_origin,
+            'forced_initial_packets_dropped':sum(r['stats'].get('fault_dropped_initial',0) for r in rows),
             'backup_quorum':backup_quorum,
             'backup_confirmed_origins':len(list(wd.glob('backed-*'))),
             'publish_spread_s':spread, 'repair_fanout':fanout,
@@ -245,6 +252,8 @@ def main():
     ap.add_argument('--backup-quorum',type=int,default=2)
     ap.add_argument('--durable-publishers',type=int,default=0)
     ap.add_argument('--sequence-payload',action='store_true')
+    ap.add_argument('--force-miss-receiver',type=int,default=-1)
+    ap.add_argument('--force-miss-origin',type=int,default=-1)
     args=ap.parse_args()
     if os.geteuid()!=0:
         raise SystemExit('root needed for network namespaces')
@@ -276,7 +285,8 @@ def main():
                                 args.publish_interval,args.ablation,args.fault,args.burst_seconds,
                                 args.incremental_repair,args.nack_batch_limit,
                                 args.peer_repair,args.peer_replicas,args.peer_cache_limit,
-                                args.backup_quorum,args.durable_publishers,args.sequence_payload)
+                                args.backup_quorum,args.durable_publishers,args.sequence_payload,
+                                args.force_miss_receiver,args.force_miss_origin)
                             r['status']='PASS' if r['pubsub_success'] and r['discovery_success'] else 'FAIL'
                         except Exception as exc:
                             r={'nodes':n,'mode':mode,'loss_percent_per_direction':loss,
