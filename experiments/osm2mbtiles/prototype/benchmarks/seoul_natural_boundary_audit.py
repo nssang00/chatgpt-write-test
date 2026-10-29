@@ -146,6 +146,23 @@ def main(work):
             },
             "geometry": geometry_overlap(left, right, "line" if layer == "boundary" else "polygon"),
         }
+    # For administrative vs legal boundary way segments, quantify linework
+    # independently; aggregated feature counts mix different classifications.
+    osm_boundary = tiles["osm2mbtiles"].get("boundary", {}).get("features", [])
+    planet_boundary = tiles["planetiler"].get("boundary", {}).get("features", [])
+    categories = sorted(set(
+        str(f.get("properties", {}).get("boundary", "<missing>"))
+        for f in planet_boundary
+    ))
+    output["layers"]["boundary"]["geometry_by_planetiler_class"] = {
+        category: geometry_overlap(
+            osm_boundary,
+            [f for f in planet_boundary
+             if str(f.get("properties", {}).get("boundary", "<missing>")) == category],
+            "line",
+        )
+        for category in categories
+    }
     pw = tiles["planetiler"].get("water", {}).get("features", [])
     pl = tiles["planetiler"].get("landcover", {}).get("features", [])
     pwids = set(ids(pw, "planetiler"))
@@ -184,6 +201,15 @@ def main(work):
                       "**Planetiler**: " + json.dumps(a["planetiler"]["class_histogram"], ensure_ascii=False),
                       ""])
     lines += [
+        "### Planetiler legal vs administrative boundary geometries",
+        "",
+        json.dumps(
+            output["layers"]["boundary"]["geometry_by_planetiler_class"],
+            ensure_ascii=False, indent=2
+        ),
+        "",
+    ]
+    lines += [
         "### Planetiler shared IDs across water and landcover", "",
         json.dumps(output["planetiler_cross_layer"], ensure_ascii=False, indent=2),
         "", "## Boundary linework overlap (MVT tile-coordinate units)", "",
@@ -203,6 +229,10 @@ def main(work):
             output["planetiler_cross_layer"]["water_and_landcover_shared_source_ids"],
         "boundary_line_coverage":
             output["layers"]["boundary"]["geometry"]["coverage_by_tolerance_mvt_units"]["8"],
+        "admin_boundary_line_coverage":
+            output["layers"]["boundary"]["geometry_by_planetiler_class"].get(
+                "administrative", {}
+            ).get("coverage_by_tolerance_mvt_units", {}).get("8"),
     }), flush=True)
 
 
