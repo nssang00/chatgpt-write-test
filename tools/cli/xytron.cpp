@@ -664,7 +664,8 @@ static void help() {
     "  validate (inside a generated desktop project)\n"
     "  restore --sdk INSTALLED_CORE_SDK (desktop project; Core only)\n"
     "  build / test / doctor (desktop project; backend-only)\n"
-    "  run / desktop publish / engine restore: NOT IMPLEMENTED\n";
+    "  run --host ABSOLUTE_ENGINE_HOST [--smoke] (C++ desktop project)\n"
+    "  automatic browser host restore / desktop publish: NOT IMPLEMENTED\n";
 }
 int main(int argc,char** argv) {
   try {
@@ -741,6 +742,12 @@ int main(int argc,char** argv) {
     }
     if(argc==2 && std::string(argv[1])=="doctor" && exists("xytron.json")) {
       xytron_cli::appDoctor();return 0;
+    }
+    if((argc==4 || argc==5) && std::string(argv[1])=="run" &&
+       std::string(argv[2])=="--host" &&
+       (argc==4 || std::string(argv[4])=="--smoke")) {
+      xytron_cli::appRunHost(argv[3],argc==5);
+      return 0;
     }
     if(argc==2 && std::string(argv[1])=="run" && exists("xytron.json")) {
       std::cerr<<"Desktop run unavailable: native shell and browser engine not integrated\n";
