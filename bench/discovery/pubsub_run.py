@@ -29,7 +29,8 @@ def netem(n,loss):
 
 def execute(n,mode,loss,seconds,disc,m,spread,publishers,seed,fanout,interval,out,v4=False,
             payload_bytes=32,publish_interval=.28,ablation='full',fault='none',burst_seconds=3,
-            impl='v1',repair_pps=20,nack_period=.8,gap_grace=1.5,nack_suppress=2.0):
+            impl='v1',repair_pps=20,nack_period=.8,gap_grace=1.5,nack_suppress=2.0,
+            stream_early=False):
     wd=out/f'{impl}-{mode}-n{n}-loss{loss:g}-seed{seed}'
     wd.mkdir(parents=True,exist_ok=True)
     procs=[]
@@ -48,7 +49,8 @@ def execute(n,mode,loss,seconds,disc,m,spread,publishers,seed,fanout,interval,ou
         for i in range(n):
             log=(wd/f'log-{i}.txt').open('w')
             command=['ip','netns','exec',ns(i),sys.executable,
-                str(Path(__file__).resolve().parent/('a_plus_v2_node.py' if impl=='v2' else 'pubsub_node.py')),
+                str(Path(__file__).resolve().parent/({'v2':'a_plus_v2_node.py',
+                  'v2c':'a_plus_v2_conservative_node.py'}.get(impl,'pubsub_node.py'))),
                 '--id',str(i),'--count',str(n),'--mode',mode,
                 '--messages',str(m),'--discovery-seconds',str(disc),
                 '--timeout',str(seconds),'--publish-spread',str(spread),
@@ -60,6 +62,7 @@ def execute(n,mode,loss,seconds,disc,m,spread,publishers,seed,fanout,interval,ou
                 '--ablation',ablation,
                 '--workdir',str(wd)]
             if v4: command.append('--v4')
+            if impl=='v2c' and stream_early:command.append('--stream-early')
             if impl=='v2':command+=['--repair-pps',str(repair_pps),
                      '--nack-period',str(nack_period),'--gap-grace',str(gap_grace),
                      '--nack-suppress-seconds',str(nack_suppress)]
@@ -127,7 +130,8 @@ def execute(n,mode,loss,seconds,disc,m,spread,publishers,seed,fanout,interval,ou
         first_pub=disc
         result={'mode':mode,'nodes':n,'publishers':publishers or n,
             'loss_percent_per_direction':loss,'seed':seed,'v4':v4,
-            'implementation':impl,'repair_pps':repair_pps if impl=='v2' else None,
+            'implementation':impl,'stream_early':stream_early if impl=='v2c' else None,
+            'repair_pps':repair_pps if impl=='v2' else None,
             'nack_period_s':nack_period if impl=='v2' else None,
             'gap_grace_s':gap_grace if impl=='v2' else None,
             'nack_suppress_s':nack_suppress if impl=='v2' else None,
@@ -214,7 +218,8 @@ def main():
     ap.add_argument('--repair-interval',type=float,default=1.0)
     ap.add_argument('--output',default='pubsub-results')
     ap.add_argument('--v4',action='store_true')
-    ap.add_argument('--impl',choices=['v1','v2'],default='v1')
+    ap.add_argument('--impl',choices=['v1','v2','v2c'],default='v1')
+    ap.add_argument('--stream-early',action='store_true')
     ap.add_argument('--repair-pps',type=float,default=20)
     ap.add_argument('--gap-grace',type=float,default=1.5)
     ap.add_argument('--nack-suppress-seconds',type=float,default=2.0)
@@ -254,7 +259,7 @@ def main():
                                 args.repair_interval,out,args.v4,args.payload_bytes,
                                 args.publish_interval,args.ablation,args.fault,args.burst_seconds,
                                 args.impl,args.repair_pps,args.nack_period,
-                                args.gap_grace,args.nack_suppress_seconds)
+                                args.gap_grace,args.nack_suppress_seconds,args.stream_early)
                             r['status']='PASS' if r['pubsub_success'] and r['discovery_success'] else 'FAIL'
                         except Exception as exc:
                             r={'nodes':n,'mode':mode,'loss_percent_per_direction':loss,
