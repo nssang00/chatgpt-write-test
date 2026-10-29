@@ -194,6 +194,17 @@ def execute(n,mode,loss,seconds,disc,m,spread,publishers,seed,fanout,interval,ou
                 missing_src[key]=missing_src.get(key,0)+item['count']
         result['total_missing_by_source']={k:v for k,v in sorted(
             missing_src.items(),key=lambda kv:-kv[1])[:20]}
+        proofs=[json.loads(p.read_text()) for p in wd.glob('backup-proof-*.json')]
+        result['durability_proofs']=[{'source':p['source'],
+            'message_count':p['message_count'],'quorum':p['quorum'],
+            'min_replicas':min((len(v) for v in p['replica_ids_by_sequence'].values()),default=0),
+            'verified':len(p['replica_ids_by_sequence'])==p['message_count']
+                and all(len(set(v))>=p['quorum'] and p['source'] not in v
+                        for v in p['replica_ids_by_sequence'].values())}
+            for p in proofs]
+        result['killed_source_proof_valid']=all(any(
+            p['source']==i and p['verified'] for p in result['durability_proofs'])
+            for i in crashed)
         result.update({f'bridge_{k}':after[k]-before[k] for k in before})
         (wd/'summary.json').write_text(json.dumps(result,indent=2)+'\n')
         return result
