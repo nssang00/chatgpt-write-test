@@ -79,6 +79,24 @@ jobs:
           print('PRODUCT_PANEL_COMPILE_PROJECT_FIX_APPLIED')
           '@ | python -
           if ($LASTEXITCODE -ne 0) { throw 'CEF managed facade restoration failed' }
+      - name: Apply reviewed source fixes for real CEF RPC and Unity stub
+        shell: pwsh
+        run: |
+          @'
+          from pathlib import Path
+          root=Path('companywebview-p01/FullManagedSource')
+          changes=[
+           ('ExistingRuntime/CefRpcDispatcher.cs','private static void Complete(Active item, string result, bool isError)','private void Complete(Active item, string result, bool isError)'),
+           ('Validation/ProductPanelCompileStub.cs','public static void LogError(object s,Object o) {}','public static void LogError(object s) {} public static void LogError(object s,Object o) {}')
+          ]
+          for name,before,after in changes:
+              path=root/name
+              text=path.read_text(encoding='utf-8')
+              if text.count(before)!=1: raise SystemExit('P0-1 source fix no longer matches '+name)
+              path.write_text(text.replace(before,after),encoding='utf-8')
+              print('P0-1_COMPILER_SOURCE_FIX_APPLIED',name)
+          '@ | python -
+          if ($LASTEXITCODE -ne 0) { throw 'Managed source fix validation failed' }
       - name: Actual C# Roslyn compile of full C# panel with Unity stubs
         shell: pwsh
         run: |
