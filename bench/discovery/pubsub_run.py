@@ -95,7 +95,9 @@ def execute(n,mode,loss,seconds,disc,m,spread,publishers,seed,fanout,interval,ou
             if len(list(wd.glob('done-*')))>=active_count:
                 break
             if any(p.poll() is not None and i not in crashed for i,p in enumerate(procs)):
-                events.append({'event':'unexpected_process_exit','at_s':round(elapsed,3)})
+                events.append({'event':'normal_deadline_expiry' if elapsed>=disc+seconds-.6
+                               else 'unexpected_process_exit',
+                               'at_s':round(elapsed,3)})
                 break
             time.sleep(.08)
         if burst_active:
@@ -133,6 +135,9 @@ def execute(n,mode,loss,seconds,disc,m,spread,publishers,seed,fanout,interval,ou
             'total_expected_remote':sum(r['remote_expected'] for r in rows),
             'expected_live_receives':(n-len(crashed))*(n-1)*m,
             'all_published_marker_count':len(list(wd.glob('published-*'))),
+            'total_missing_by_source':{},
+            'max_repairs_per_sequence':max((r.get('max_repairs_per_sequence',0) for r in rows),default=0),
+            'total_samples_at_repair_limit':sum(r.get('samples_at_repair_limit',0) for r in rows),
             'total_delivered_remote':sum(r['remote_received'] for r in rows),
             'remote_delivery_rate':round(sum(r['remote_received'] for r in rows)/
               max(1,sum(r['remote_expected'] for r in rows)),6),
@@ -160,6 +165,13 @@ def execute(n,mode,loss,seconds,disc,m,spread,publishers,seed,fanout,interval,ou
             'aggregate_cpu_s':round(sum(r['cpu_s'] for r in rows),3),
             'aggregate_maxrss_mb':round(sum(r['maxrss_kb'] for r in rows)/1024,1),
             'seconds_observed':round(time.monotonic()-started,3)}
+        missing_src={}
+        for row in rows:
+            for item in row.get('missing_by_origin',[]):
+                key=str(item['origin'])
+                missing_src[key]=missing_src.get(key,0)+item['count']
+        result['total_missing_by_source']={k:v for k,v in sorted(
+            missing_src.items(),key=lambda kv:-kv[1])[:20]}
         result.update({f'bridge_{k}':after[k]-before[k] for k in before})
         (wd/'summary.json').write_text(json.dumps(result,indent=2)+'\n')
         return result
