@@ -47,6 +47,10 @@ def main():
     rnd = random.Random(33550336 + i * 17 + args.seed * 100003)
     known = {i: own_ip}
     received = set()
+    # Publisher progress comes from actual received data or periodic source HELLO.
+    # Without this watermark a receiver NACKs future, not-yet-published samples.
+    source_watermark = {}
+    source_finished = set()
     # Store no per-peer session; IDs are obtained by HELLO and anti-entropy.
     lazy_pending = {}
     request_last = {}
@@ -169,7 +173,11 @@ def main():
         elapsed = time.monotonic() - start
 
         if args.ablation!='no_hello' and elapsed >= next_hello:
-            send({'t':'h','i':i,'a':own_ip}, GROUP, 'hello_sent')
+            hello={'t':'h','i':i,'a':own_ip}
+            if args.incremental_repair and i < publisher_count:
+                hello['w']=len(sent_orig)
+                hello['fin']=(len(sent_orig)==m)
+            send(hello, GROUP, 'hello_sent')
             next_hello = elapsed + 1.6 + rnd.uniform(0, .5)
 
         if args.ablation!='no_anti_entropy' and elapsed - last_digest >= 1.2:
@@ -190,6 +198,10 @@ def main():
             seq = len(sent_orig)
             sent_orig.add(seq)
             received.add((i, seq))
+            if args.incremental_repair:
+                source_watermark[i]=len(sent_orig)
+                if len(sent_orig)==m:
+                    source_finished.add(i)
             relay(i, seq)
             publ_at += args.publish_interval
             if len(sent_orig)==m:
@@ -210,7 +222,13 @@ def main():
             missing_sources.sort(key=lambda src: (request_last.get(src,-1),
                 (src * 47 + i * 41 + args.seed * 53) % max(1,n)))
             for src in missing_sources[:args.repair_fanout]:
-                seqs=[seq for seq in range(m) if (src,seq) not in received]
+                # Incremental variant only requests samples proven published by
+                # a data packet or publisher's advertised progress.
+                limit=(min(m,source_watermark.get(src,0))
+                       if args.incremental_repair else m)
+                seqs=[seq for seq in range(limit) if (src,seq) not in received]
+                if not seqs:
+                    continue
                 if args.v4:
                     unsuppressed=(seqs if args.ablation=='no_nack_suppression' else
                                   [seq for seq in seqs if suppressed.get((src,seq),-1)<elapsed])
@@ -256,6 +274,12 @@ def main():
                 if typ == 'h':
                     if isinstance(peer,int) and 0 <= peer < n:
                         known[peer] = address[0]
+                        if args.incremental_repair and peer<publisher_count:
+                            watermark=item.get('w')
+                            if isinstance(watermark,int) and 0<=watermark<=m:
+                                source_watermark[peer]=max(source_watermark.get(peer,0),watermark)
+                                if watermark==m and item.get('fin') is True:
+                                    source_finished.add(peer)
                 elif typ == 'd':
                     if isinstance(peer,int) and 0 <= peer < n:
                         known[peer] = address[0]
@@ -299,6 +323,8 @@ def main():
                     if first_data is None and src != i:
                         first_data = elapsed
                     key=(src,seq)
+                    if args.incremental_repair:
+                        source_watermark[src]=max(source_watermark.get(src,0),seq+1)
                     if key not in received:
                         received.add(key)
                         lazy_pending.pop(key, None)
@@ -363,6 +389,8 @@ def main():
         'samples_at_repair_limit':sum(v>=32 for v in source_repair_count.values()),
         'ablation':args.ablation,'sent_original':len(sent_orig),
         'incremental_repair':args.incremental_repair,'nack_batch_limit':args.nack_batch_limit,
+        'watermarked_sources':len(source_watermark),
+        'finished_sources':len(source_finished),
         'discovery_s':discovery_time,'ready_at_publish':ready_at_publish,
         'received':len(received),'expected':expected,
         'remote_received':len(received)-len(sent_orig),
