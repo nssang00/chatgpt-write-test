@@ -167,7 +167,7 @@ inline void appDoctor() {
 }
 inline void appBuild() {
   const std::string lang=appMainLanguage();
-  restoredSdk();
+  const std::string coreSdk=restoredSdk();
   appDir(".xytron-build");
   if(lang=="cpp") {
     appDir(".xytron-build/source");
@@ -176,13 +176,23 @@ inline void appBuild() {
     const std::string makefile=
       "cmake_minimum_required(VERSION 3.16)\n"
       "project(xytron_user_backend LANGUAGES CXX)\n"
+      "find_package(NativeWeb CONFIG REQUIRED)\n"
+      "get_target_property(_xytron_inc NativeWeb::Core INTERFACE_INCLUDE_DIRECTORIES)\n"
       "add_executable(xytron_user_backend ../../backend/main.cpp)\n"
-      "set_target_properties(xytron_user_backend PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED YES)\n";
+      "add_library(xytron_app_backend SHARED ../../backend/main.cpp)\n"
+      "target_include_directories(xytron_app_backend PRIVATE ${_xytron_inc})\n"
+      "target_compile_definitions(xytron_app_backend PRIVATE\n"
+      "  XYTRON_APP_BACKEND_PLUGIN=1\n"
+      "  XYTRON_PLUGIN_ID=\\\"app\\\"\n"
+      "  XYTRON_PLUGIN_VERSION=\\\"1.0.0\\\")\n"
+      "set_target_properties(xytron_user_backend xytron_app_backend PROPERTIES\n"
+      "  CXX_STANDARD 11 CXX_STANDARD_REQUIRED YES CXX_EXTENSIONS NO)\n";
     std::ofstream out(".xytron-build/source/CMakeLists.txt",std::ios::binary|std::ios::trunc);
     if(!out)throw std::runtime_error("Cannot create backend build manifest");
     out<<makefile;out.close();
     if(!out)throw std::runtime_error("Cannot save backend build manifest");
-    appCommand("cmake -S .xytron-build/source -B .xytron-build/out","C++ backend configure");
+    const std::string configure="cmake -S .xytron-build/source -B .xytron-build/out \"-DCMAKE_PREFIX_PATH="+coreSdk+"\"";
+    appCommand(configure.c_str(),"C++ backend configure");
     appCommand("cmake --build .xytron-build/out --config Release","C++ backend build");
   } else if(lang=="python") {
     appCommand("python -m py_compile backend/main.py","Python backend syntax check");
@@ -190,7 +200,7 @@ inline void appBuild() {
     appDir(".xytron-build/dotnet");
     appCommand("dotnet build backend/MainBackend.csproj --configuration Release --output .xytron-build/dotnet --nologo","C# backend build");
   }
-  std::cout<<"Backend build PASS ("<<lang<<"); desktop browser host NOT built.\n";
+  std::cout<<"Backend build PASS ("<<lang<<"); C++ app ABI plugin built, browser host is external.\n";
 }
 inline void appTest() {
   const std::string lang=appMainLanguage();
@@ -237,7 +247,22 @@ inline void appTest() {
   std::cout<<"Backend-only smoke test PASS; JS/browser E2E NOT exercised.\n";
 }
 
-inline void appRunHost(const std::string& path, bool smoke) {
+inline std::string appBackendPlugin() {
+#ifdef _WIN32
+  const std::string path=
+    appExists(".xytron-build/out/Release/xytron_app_backend.dll")?
+    ".xytron-build/out/Release/xytron_app_backend.dll":
+    ".xytron-build/out/xytron_app_backend.dll";
+#elif defined(__APPLE__)
+  const std::string path=".xytron-build/out/libxytron_app_backend.dylib";
+#else
+  const std::string path=".xytron-build/out/libxytron_app_backend.so";
+#endif
+  projectPath(path,false);
+  return path;
+}
+inline void appRunHost(const std::string& path, bool smoke,
+                       const std::string& featurePath) {
   if(appMainLanguage()!="cpp")
     throw std::runtime_error("Real browser host currently supports generated C++ apps only");
   restoredSdk();
@@ -245,6 +270,8 @@ inline void appRunHost(const std::string& path, bool smoke) {
   // executable here is still a backend smoke preflight, not JS backend wiring.
   appTest();
   projectPath("ui/index.html",false);
+  const std::string backendPath=appBackendPlugin();
+  if(!featurePath.empty()) projectPath(featurePath,false);
   const std::string host=normalizeSdk(path);
   struct stat st;
   if(stat(host.c_str(),&st)!=0)
@@ -263,15 +290,19 @@ inline void appRunHost(const std::string& path, bool smoke) {
     throw std::runtime_error("Cannot resolve app project directory");
 #endif
   const std::string ui=std::string("--ui=")+project+"/ui/index.html";
+  const std::string backendArg=std::string("--backend-plugin=")+project+"/"+backendPath;
+  const std::string featureArg=featurePath.empty()?std::string():
+    std::string("--plugin-path=")+project+"/"+featurePath;
   const std::size_t slash=host.find_last_of("/\\");
   if(slash==std::string::npos)
     throw std::runtime_error("Native browser host path must be absolute");
   const std::string hostDir=host.substr(0,slash);
-  std::cout<<"Launching real browser app:// host; user backend JS bindings are not yet integrated.\n";
+  std::cout<<"Launching real browser app:// with user-owned C++ ABI plugin.\n";
 #ifdef _WIN32
   // Paths are canonical, contain no command-line quote characters, and are
   // passed directly to CreateProcess (never via cmd.exe).
-  std::string command="\""+host+"\" \""+ui+"\"";
+  std::string command="\""+host+"\" \""+ui+"\" \""+backendArg+"\"";
+  if(!featureArg.empty()) command+=" \""+featureArg+"\"";
   if(smoke) command+=" --smoke";
   std::vector<char> mutableCmd(command.begin(),command.end());
   mutableCmd.push_back('\0');
@@ -293,9 +324,19 @@ inline void appRunHost(const std::string& path, bool smoke) {
   if(child<0) throw std::runtime_error("Cannot fork desktop browser host");
   if(child==0) {
     if(chdir(hostDir.c_str())!=0) _exit(127);
-    execl(host.c_str(),host.c_str(),"--no-sandbox",
-          ui.c_str(),smoke?"--smoke":static_cast<const char*>(nullptr),
-          static_cast<char*>(nullptr));
+    if(smoke && featureArg.empty())
+      execl(host.c_str(),host.c_str(),"--no-sandbox",
+            ui.c_str(),backendArg.c_str(),"--smoke",static_cast<char*>(nullptr));
+    else if(smoke)
+      execl(host.c_str(),host.c_str(),"--no-sandbox",
+            ui.c_str(),backendArg.c_str(),featureArg.c_str(),"--smoke",
+            static_cast<char*>(nullptr));
+    else if(featureArg.empty())
+      execl(host.c_str(),host.c_str(),"--no-sandbox",
+            ui.c_str(),backendArg.c_str(),static_cast<char*>(nullptr));
+    else
+      execl(host.c_str(),host.c_str(),"--no-sandbox",
+            ui.c_str(),backendArg.c_str(),featureArg.c_str(),static_cast<char*>(nullptr));
     _exit(127);
   }
   int status=0;

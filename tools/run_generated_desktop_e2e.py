@@ -52,6 +52,16 @@ def run():
         rc,output=execute(base+["new","desktop","hello","--backend","cpp"],folder)
         if rc: raise AssertionError("new desktop failed")
         project=folder/"hello"
+        # Edit the actual generated user's C++ backend. A hardcoded host
+        # ping stub could not pass this test; the loaded DLL/SO must reflect
+        # this user source modification.
+        user_backend=project/"backend"/"main.cpp"
+        authored=user_backend.read_text(encoding="utf-8")
+        default="pong-from-user-backend"
+        custom="pong-edited-in-project"
+        if authored.count(default)!=1:
+            raise AssertionError("Generated C++ backend source lacks editable native method")
+        user_backend.write_text(authored.replace(default,custom),encoding="utf-8")
         for argv in (
             ["restore","--sdk",str(sdk)],
             ["build"],
@@ -59,12 +69,34 @@ def run():
         ):
             rc,output=execute(base+argv,project)
             if rc: raise AssertionError("generated app CLI workflow failed: "+" ".join(argv))
+        # A second, user-created real C++ feature plugin must be delivered
+        # into the same running WebView, using NativeWeb stable ABI v1.
+        for argv in (
+            ["plugin","new","feature","--language","cpp"],
+            ["plugin","build","feature","--sdk",str(sdk)],
+        ):
+            rc,output=execute(base+argv,project)
+            if rc: raise AssertionError("Feature plugin scaffold/build failed: "+" ".join(argv))
+        if os.name=="nt":
+            feature=project/"plugins/feature/build/Release/feature.dll"
+        elif sys.platform=="darwin":
+            feature=project/"plugins/feature/build/libfeature.dylib"
+        else:
+            feature=project/"plugins/feature/build/libfeature.so"
+        if not feature.is_file():
+            raise AssertionError("Built feature ABI plugin missing: "+str(feature))
+        # Fail closed when a missing feature binary is explicitly requested.
+        missing="plugins/feature/build/missing-feature.bin"
+        rc,_=execute(base+["run","--host",str(host),"--plugin",missing,"--smoke"],project)
+        if rc==0: raise AssertionError("Missing native feature plugin was accepted")
         # Verify invalid host paths are denied before launching anything.
         rc,_=execute(base+["run","--host",str(folder/"missing-host"),"--smoke"],
                      project)
         if rc==0: raise AssertionError("Missing executable was accepted")
 
-        command=base+["run","--host",str(host),"--smoke"]
+        # Pass a project-relative path. CLI checks every segment for links.
+        plugin_path=str(feature.relative_to(project)).replace("\\","/")
+        command=base+["run","--host",str(host),"--plugin",plugin_path,"--smoke"]
         if args.engine=="cef" and sys.platform.startswith("linux") and not os.getenv("DISPLAY"):
             if not shutil.which("xvfb-run"):
                 raise AssertionError("Real CEF smoke requires DISPLAY or xvfb-run")
@@ -74,6 +106,7 @@ def run():
             "checkpoint: native-app-window-created",
             "checkpoint: native-app-ui-loaded app://desktop/index.html",
             "checkpoint: generated-app-js-native-pong",
+            "checkpoint: user-cpp-backend-and-feature-plugin",
             "Real browser app:// host completed successfully."
         )
         missing=[marker for marker in markers if marker not in output]

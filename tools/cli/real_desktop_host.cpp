@@ -64,11 +64,20 @@ loadUi(const std::string& name) {
     const output=document.getElementById("xytron-result");
     if (!button || !output) throw new Error("Generated UI button missing");
     button.click();
-    for (let attempt=0; attempt<100 && output.textContent!=="pong"; ++attempt)
+    for (let attempt=0; attempt<100 && output.textContent!=="pong-edited-in-project"; ++attempt)
       await new Promise(resolve=>setTimeout(resolve,50));
-    if (output.textContent!=="pong")
-      throw new Error("Generated button did not receive native pong: "+
+    if (output.textContent!=="pong-edited-in-project")
+      throw new Error("User C++ backend did not return edited result: "+
                       String(output.textContent));
+    const featureButton=document.getElementById("xytron-feature");
+    const featureOutput=document.getElementById("xytron-feature-result");
+    if (!featureButton || !featureOutput)
+      throw new Error("Generated plugin UI button missing");
+    featureButton.click();
+    for (let attempt=0;attempt<100 && featureOutput.textContent!=="hello";++attempt)
+      await new Promise(resolve=>setTimeout(resolve,50));
+    if (featureOutput.textContent!=="hello")
+      throw new Error("Native feature plugin method not invoked");
     await xytron.app.complete();
   } catch (error) {
     await xytron.app.fail(String(error));
@@ -86,11 +95,13 @@ loadUi(const std::string& name) {
 class Listener : public nativeweb::WebViewListener {
 public:
   explicit Listener(nativeweb::WebView& webview) : webview_(webview) {
-    webview_.bind("app.ping",[]() { return std::string("pong"); });
+    // app.ping now comes exclusively from user-authored backend/main.cpp
+    // registered through ABI v1; never silently fall back to a host stub.
     if (smoke) {
       webview_.bind("app.complete",[this]() {
         verified=true;
         std::cout << "checkpoint: generated-app-js-native-pong" << std::endl;
+        std::cout << "checkpoint: user-cpp-backend-and-feature-plugin" << std::endl;
         webview_.destroy();
         return true;
       });
@@ -163,6 +174,10 @@ int main(int argc,char** argv) {
     }
     const std::shared_ptr<nativeweb::AppResourceBundle> assets=
         loadUi(flag(argc,argv,"--ui="));
+    const std::string backendPlugin=flag(argc,argv,"--backend-plugin=");
+    const std::string featurePlugin=flag(argc,argv,"--plugin-path=");
+    if (backendPlugin.empty())
+      throw std::runtime_error("Explicit C++ backend ABI plugin is required");
 
 #ifdef XYTRON_APP_HOST_CEF
     CefSettings settings;
@@ -173,6 +188,10 @@ int main(int argc,char** argv) {
     nativeweb::WebView view;
     Listener listener(view);
     view.setListener(&listener);
+    if (view.loadPlugin(backendPlugin)!="app")
+      throw std::runtime_error("C++ backend plugin ID mismatch");
+    if (!featurePlugin.empty() && view.loadPlugin(featurePlugin)!="feature")
+      throw std::runtime_error("Feature plugin ID mismatch");
     app->setBrowserReadyCallback([&view,assets]() {
       nativeweb::WebViewOptions options;
       options.engine=nativeweb::Engine::Cef;
@@ -190,6 +209,10 @@ int main(int argc,char** argv) {
     nativeweb::WebView view;
     Listener listener(view);
     view.setListener(&listener);
+    if (view.loadPlugin(backendPlugin)!="app")
+      throw std::runtime_error("C++ backend plugin ID mismatch");
+    if (!featurePlugin.empty() && view.loadPlugin(featurePlugin)!="feature")
+      throw std::runtime_error("Feature plugin ID mismatch");
     nativeweb::WebViewOptions options;
     options.engine=nativeweb::Engine::WebView2;
     options.appResources=assets;
