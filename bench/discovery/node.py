@@ -28,7 +28,9 @@ def main():
         from cyclonedds.pub import DataWriter
         from cyclonedds.sub import DataReader
         from cyclonedds.idl import IdlStruct
+        from cyclonedds.idl.annotations import keylist
         @dataclass
+        @keylist(['node_id'])
         class Alive(IdlStruct):
             node_id: int
             sequence: int
@@ -129,7 +131,7 @@ def main():
                 sequence += 1
                 sent += 1
                 next_send = now + .7
-            for msg in reader.take():
+            for msg in reader.take(N=256):
                 i = msg.node_id
                 if 0 <= i < args.count:
                     known[i] = ''
