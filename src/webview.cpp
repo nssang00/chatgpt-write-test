@@ -335,6 +335,12 @@ public:
                     if (plugins_.count(candidate))
                         throw Error("plugin_duplicate",
                                     "Plugin is already loaded: " + candidate);
+                },
+                [this](const std::string& event,const Any& payload) {
+                    // ABI event publishing is synchronous with a plugin call.
+                    // The backend dispatches this event to the current
+                    // trusted JS document, subject to its session checks.
+                    emit(event,payload);
                 }));
         const std::string pluginId = module->id();
         plugins_[pluginId].module = module;
