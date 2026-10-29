@@ -8,6 +8,7 @@ connects to a user's persistent cluster.
 from __future__ import annotations
 
 import argparse
+import gzip
 import hashlib
 import json
 import os
@@ -107,7 +108,12 @@ def fixtures(directory: Path):
         way(4000, [310, 311, 312], version=2) +
         '\n</delete>\n</osmChange>\n'
     )
-    return initial, diff, final
+    compressed = directory / "change.osc.gz"
+    with compressed.open("wb") as out:
+        out.write(gzip.compress(diff.read_bytes(), compresslevel=6, mtime=0))
+    # The increment must go through the real gzip-compressed OSC path.
+    assert gzip.decompress(compressed.read_bytes()) == diff.read_bytes()
+    return initial, compressed, final
 
 
 def sql_scalar(statement):
@@ -135,7 +141,7 @@ def run(work: Path):
     inc_archive = work / "updated.mbtiles"
     ref_archive = work / "full.mbtiles"
     report = {
-        "protocol": "real osm2pgsql flex --slim create + --append OSC vs fresh full OSM import",
+        "protocol": "real osm2pgsql flex --slim create + --append .osc.gz vs fresh full OSM import",
         "bbox": BBOX, "zooms": [LO, HI],
         "fixture_sha256": {
             p.name: hashlib.sha256(p.read_bytes()).hexdigest()
