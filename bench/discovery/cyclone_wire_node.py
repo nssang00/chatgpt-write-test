@@ -22,6 +22,7 @@ def main():
     p.add_argument('--seed',type=int,default=1)
     p.add_argument('--workdir',required=True)
     p.add_argument('--internal-capture',action='store_true')
+    p.add_argument('--history',choices=['default','last64','all'],default='default')
     a=p.parse_args()
     i,n=a.id,a.nodes
     wd=Path(a.workdir)
@@ -43,6 +44,8 @@ def main():
     from cyclonedds.sub import DataReader
     from cyclonedds.builtin import BuiltinDataReader,BuiltinTopicDcpsParticipant
     from cyclonedds.idl import IdlStruct
+    from cyclonedds.core import Qos
+    from cyclonedds.qos import Policy
     @dataclass
     class TraceDatum(IdlStruct):
         origin:int
@@ -69,7 +72,10 @@ def main():
         dp=DomainParticipant(domain_id=55)
         topic=Topic(dp,'wire_diag_data',TraceDatum)
         writer=DataWriter(dp,topic)
-        reader=DataReader(dp,topic)
+        read_qos=(None if a.history=='default' else Qos(
+            Policy.History.KeepAll if a.history=='all'
+            else Policy.History.KeepLast(depth=64)))
+        reader=DataReader(dp,topic,qos=read_qos)
         builtin=BuiltinDataReader(dp,BuiltinTopicDcpsParticipant)
         init_at=secs(time.monotonic_ns())
         next_pub=time.monotonic()+rng.uniform(.05,.20)
@@ -128,7 +134,7 @@ def main():
                 next_stat=now+.1
             time.sleep(.007)
         (wd/f'node-{i}.json').write_text(json.dumps({
-            'node':i,'n':n,'mode':a.mode,'seed':a.seed,'initialized_s':init_at,
+            'node':i,'n':n,'mode':a.mode,'history':a.history,'seed':a.seed,'initialized_s':init_at,
             'participants_full_s':participants_full_at,'matches_full_s':match_full_at,
             'first_remote_s':first_remote_at,'app_complete_s':app_full_at,
             'distinct_sources':len(earliest),'samples_taken':recv_total,
