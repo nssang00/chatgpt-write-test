@@ -1,0 +1,159 @@
+name: Kanto vector tile benchmark
+
+on:
+  push:
+    branches:
+      - benchmarks/kanto-vector-tile-20261029
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  compare:
+    name: Planetiler vs Tilemaker (Kanto, Z0-Z14)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Capture environment
+        shell: bash
+        run: |
+          mkdir -p bench/data bench/results
+          uname -a > bench/results/environment.txt
+          lscpu >> bench/results/environment.txt
+          free -h >> bench/results/environment.txt
+          df -h >> bench/results/environment.txt
+          docker --version >> bench/results/environment.txt
+          echo "GitHub-hosted Ubuntu 24.04; first-run pipeline comparison, NOT schema-normalized" > bench/results/methodology.txt
+          echo "Both process same fixed Geofabrik extract, Z0-Z14, 4 CPUs, 12GiB docker memory limit." >> bench/results/methodology.txt
+          echo "Planetiler: upstream default OpenMapTiles profile; Tilemaker: upstream container default profile + on-disk store." >> bench/results/methodology.txt
+          echo "Download/pull time excluded; run times are container wall-clock, include program startup. Different schemas prevent strict throughput ranking." >> bench/results/methodology.txt
+
+      - name: Download fixed Kanto Geofabrik extract
+        shell: bash
+        run: |
+          curl -fL --retry 5 --retry-delay 8 \
+            "https://download.geofabrik.de/asia/japan/kanto-261028.osm.pbf" \
+            -o bench/data/kanto.osm.pbf
+          test -s bench/data/kanto.osm.pbf
+          stat -c "%s" bench/data/kanto.osm.pbf > bench/results/input-bytes.txt
+          sha256sum bench/data/kanto.osm.pbf > bench/results/input.sha256
+          df -h >> bench/results/environment.txt
+
+      - name: Pull images outside timed run
+        shell: bash
+        run: |
+          docker pull ghcr.io/onthegomap/planetiler:latest
+          docker pull ghcr.io/systemed/tilemaker:master
+          docker image inspect --format '{{json .RepoDigests}}' \
+            ghcr.io/onthegomap/planetiler:latest > bench/results/planetiler-image-digests.txt
+          docker image inspect --format '{{json .RepoDigests}}' \
+            ghcr.io/systemed/tilemaker:master > bench/results/tilemaker-image-digests.txt
+
+      - name: Planetiler - generate MBTiles
+        shell: bash
+        continue-on-error: true
+        run: |
+          start=$(date +%s)
+          set +e
+          docker run --rm --cpus=4 --memory=12g \
+            -e JAVA_TOOL_OPTIONS="-Xmx8g" \
+            -v "$PWD/bench/data:/data" \
+            ghcr.io/onthegomap/planetiler:latest \
+            --osm-path=/data/kanto.osm.pbf \
+            --output=/data/planetiler.mbtiles \
+            --minzoom=0 --maxzoom=14 \
+            --threads=4 --download --force \
+            --tmpdir=/data/planetiler-temp \
+            > bench/results/planetiler.log 2>&1
+          status=$?
+          set -e
+          end=$(date +%s)
+          echo "$((end-start))" > bench/results/planetiler.seconds
+          echo "$status" > bench/results/planetiler.status
+          tail -n 60 bench/results/planetiler.log
+          exit "$status"
+
+      - name: Inspect Planetiler output and free disk
+        if: always()
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import os, sqlite3, json
+          path="bench/data/planetiler.mbtiles"
+          info={"tool":"Planetiler","exit_code":open("bench/results/planetiler.status").read().strip() if os.path.exists("bench/results/planetiler.status") else None,"elapsed_seconds":None,"size_bytes":None,"tile_counts_by_zoom":{}}
+          sec="bench/results/planetiler.seconds"
+          if os.path.exists(sec): info["elapsed_seconds"]=int(open(sec).read())
+          if os.path.isfile(path):
+              info["size_bytes"]=os.stat(path).st_size
+              try:
+                  with sqlite3.connect("file:"+os.path.abspath(path)+"?mode=ro",uri=True) as db:
+                      info["tile_counts_by_zoom"]={str(z):n for z,n in db.execute("SELECT zoom_level,COUNT(*) FROM tiles GROUP BY zoom_level ORDER BY zoom_level")}
+              except Exception as e: info["inspection_error"]=str(e)
+          with open("bench/results/planetiler.json","w") as fp:json.dump(info,fp,indent=2)
+          print(json.dumps(info,indent=2))
+          PY
+          sudo rm -rf bench/data/planetiler.mbtiles bench/data/planetiler-temp
+          df -h
+
+      - name: Tilemaker - generate MBTiles
+        if: always()
+        shell: bash
+        continue-on-error: true
+        run: |
+          mkdir -p bench/data/tilemaker-store
+          start=$(date +%s)
+          set +e
+          docker run --rm --cpus=4 --memory=12g \
+            -v "$PWD/bench/data:/data" \
+            ghcr.io/systemed/tilemaker:master \
+            /data/kanto.osm.pbf --output /data/tilemaker.mbtiles \
+            --threads 4 --store /data/tilemaker-store \
+            > bench/results/tilemaker.log 2>&1
+          status=$?
+          set -e
+          end=$(date +%s)
+          echo "$((end-start))" > bench/results/tilemaker.seconds
+          echo "$status" > bench/results/tilemaker.status
+          tail -n 60 bench/results/tilemaker.log
+          exit "$status"
+
+      - name: Inspect Tilemaker output
+        if: always()
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import os, sqlite3, json
+          path="bench/data/tilemaker.mbtiles"
+          info={"tool":"Tilemaker","exit_code":open("bench/results/tilemaker.status").read().strip() if os.path.exists("bench/results/tilemaker.status") else None,"elapsed_seconds":None,"size_bytes":None,"tile_counts_by_zoom":{}}
+          sec="bench/results/tilemaker.seconds"
+          if os.path.exists(sec): info["elapsed_seconds"]=int(open(sec).read())
+          if os.path.isfile(path):
+              info["size_bytes"]=os.stat(path).st_size
+              try:
+                  with sqlite3.connect("file:"+os.path.abspath(path)+"?mode=ro",uri=True) as db:
+                      info["tile_counts_by_zoom"]={str(z):n for z,n in db.execute("SELECT zoom_level,COUNT(*) FROM tiles GROUP BY zoom_level ORDER BY zoom_level")}
+              except Exception as e: info["inspection_error"]=str(e)
+          with open("bench/results/tilemaker.json","w") as fp:json.dump(info,fp,indent=2)
+          print(json.dumps(info,indent=2))
+          PY
+          df -h >> bench/results/environment.txt
+          {
+            echo "## Kanto vector tile generation (Z0-Z14)"
+            echo ""
+            echo "Same PBF, sequential runs on one Ubuntu runner. First-run pipeline comparison only; output schemas differ."
+            echo ""
+            cat bench/results/planetiler.json bench/results/tilemaker.json
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload measurement logs (not MBTiles)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kanto-vector-tiles-benchmark
+          path: bench/results/
+          if-no-files-found: warn
+          retention-days: 14
