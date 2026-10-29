@@ -32,11 +32,14 @@ def main():
     ap.add_argument('--repair-interval', type=float, default=1.0)
     ap.add_argument('--publish-interval',type=float,default=.28)
     ap.add_argument('--payload-bytes',type=int,default=32)
+    ap.add_argument('--proactive-replays',type=int,default=0,help='source multicasts each complete sample a bounded additional number of times')
+    ap.add_argument('--replay-interval',type=float,default=.065)
     ap.add_argument('--ablation',choices=['full','no_anti_entropy','no_hello','no_nack_suppression','unicast_repair'],default='full')
     args = ap.parse_args()
 
     i, n, m = args.id, args.count, args.messages
     assert 1<=args.payload_bytes<=1200 and 0<args.publish_interval<=5
+    assert 0<=args.proactive_replays<=16 and 0.01<=args.replay_interval<=1
     PAYLOAD='x'*args.payload_bytes
     publisher_count = args.publishers if args.publishers > 0 else n
     workdir = Path(args.workdir)
@@ -59,7 +62,8 @@ def main():
                  data_sent=0, data_forwarded=0, nack_sent=0,
                  repair_sent=0, packets_received=0,
                  ihave_sent=0, iwant_sent=0, nack_suppressed=0,
-                 nack_heard=0, repair_suppressed=0, completed_ack_sent=0)
+                 nack_heard=0, repair_suppressed=0, completed_ack_sent=0,
+                 proactive_replay_sent=0)
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 4 * 1024 * 1024)
@@ -154,6 +158,9 @@ def main():
     last_nack = 0
     next_hello = rnd.uniform(0, .6)
     sent_orig = set()
+    replay_seq_index=0
+    replay_start_at=None
+    replay_next_at=None
     publ_at = args.discovery_seconds + rnd.uniform(.0, args.publish_spread)
     last_nack = -10.0
     startup_nack_offset = rnd.uniform(0, args.repair_interval)
@@ -189,6 +196,20 @@ def main():
             publ_at += args.publish_interval
             if len(sent_orig)==m:
                 (workdir/f'published-{i}').touch()
+                if args.proactive_replays:
+                    replay_start_at=elapsed
+                    replay_next_at=elapsed+.35+rnd.uniform(0,.5)
+
+        if (args.proactive_replays and i<publisher_count and len(sent_orig)==m
+            and replay_next_at is not None and elapsed>=replay_next_at
+            and replay_seq_index<m*args.proactive_replays):
+            # Separate, paced retransmissions protect against both missing
+            # NACK feedback and transient loss. This is redundancy, not FEC.
+            seq=replay_seq_index % m
+            send({'t':'p','i':i,'s':seq,'k':TOPIC,'v':PAYLOAD},GROUP,
+                 'proactive_replay_sent')
+            replay_seq_index+=1
+            replay_next_at=elapsed+args.replay_interval
 
         # Explicit missing-data repair; discovery and data are independent.
         # First repair interval follows the last scheduled publish.
@@ -355,6 +376,8 @@ def main():
         'max_repairs_per_sequence':max(source_repair_count.values(),default=0),
         'samples_at_repair_limit':sum(v>=32 for v in source_repair_count.values()),
         'ablation':args.ablation,'sent_original':len(sent_orig),
+        'proactive_replays':args.proactive_replays,
+        'proactive_replay_completed':replay_seq_index,
         'discovery_s':discovery_time,'ready_at_publish':ready_at_publish,
         'received':len(received),'expected':expected,
         'remote_received':len(received)-len(sent_orig),
