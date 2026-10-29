@@ -1,0 +1,62 @@
+name: Aplus V2 Targeted Tail Recovery
+on:
+  push:
+    branches: [experiment/a-plus-v2-tail-feedback-20261030]
+    paths: [.github/workflows/a-plus-v2-tail-feedback-gate.yml]
+  workflow_dispatch:
+permissions: {contents: read}
+jobs:
+  bench:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 18
+    strategy:
+      fail-fast: false
+      max-parallel: 6
+      matrix:
+        include:
+          - {n: 100, m: 100, loss: 10, seed: 1, tail_after: 25, fanout: 12}
+          - {n: 200, m: 100, loss: 10, seed: 1, tail_after: 25, fanout: 12}
+          - {n: 200, m: 100, loss: 10, seed: 2, tail_after: 25, fanout: 12}
+          - {n: 200, m: 100, loss: 10, seed: 3, tail_after: 25, fanout: 12}
+          - {n: 200, m: 100, loss: 10, seed: 1, tail_after: 35, fanout: 18}
+          - {n: 200, m: 100, loss: 10, seed: 2, tail_after: 35, fanout: 18}
+    name: 'Tail feedback N=${{ matrix.n }} seed=${{ matrix.seed }} at=${{ matrix.tail_after }} fanout=${{ matrix.fanout }}'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - name: Preflight
+        run: |
+          python -m py_compile bench/discovery/pubsub_node.py bench/discovery/pubsub_run.py
+          sudo sysctl -w net.core.rmem_max=16777216
+          sudo sysctl -w net.core.wmem_max=16777216
+      - name: Original group feedback then direct gap repair control
+        shell: bash
+        run: |
+          set -euo pipefail
+          case '${{ matrix.n }}' in
+            100) disc=18; timeout=105; spread=12 ;;
+            200) disc=27; timeout=125; spread=18 ;;
+          esac
+          sudo -E "$(which python)" bench/discovery/pubsub_run.py \
+            --sizes '${{ matrix.n }}' --modes multicast --losses '${{ matrix.loss }}' \
+            --v4 --messages '${{ matrix.m }}' --publishers '${{ matrix.n }}' \
+            --payload-bytes 128 --publish-interval 0.06 \
+            --discovery "$disc" --timeout "$timeout" --publish-spread "$spread" \
+            --repair-fanout 6 --repair-interval 0.9 --seeds '${{ matrix.seed }}' \
+            --tail-feedback-after '${{ matrix.tail_after }}' \
+            --tail-fanout '${{ matrix.fanout }}' --tail-batch-limit 20 \
+            --output tail-results
+          python - <<'PY'
+          import json
+          r=json.load(open('tail-results/results.json'))[0]
+          print('TAIL_FEEDBACK_RESULT '+json.dumps(r))
+          assert r['status'] in ('PASS','FAIL'),r
+          assert r['reported']==r['nodes'],r
+          assert r['total_tail_nacks']>0,r
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: 'tail-N${{ matrix.n }}-seed${{ matrix.seed }}-t${{ matrix.tail_after }}-f${{ matrix.fanout }}'
+          path: tail-results/
