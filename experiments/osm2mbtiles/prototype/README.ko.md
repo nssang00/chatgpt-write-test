@@ -90,3 +90,26 @@ osm2mbtiles korea.osm.pbf -z 0-15 -o korea.mbtiles --processes 4 --metatile 8 --
 기본은 WSL2 안정성을 위한 `safe` import 프로필입니다. RAM/CPU 여유가 있고 실측 결과가 적절한 환경에서는 Windows 명령 프롬프트에서 `set OSM2MBTILES_VECTOR_IMPORT_PROFILE=fast` 후 `run.bat both`를 실행할 수 있습니다. `fast`는 PostgreSQL 서버 메모리까지 고려할 때 저메모리 PC에 권장되지 않습니다.
 
 실제 Carto 스타일과 Geofabrik Monaco OSM 데이터로 PNG 픽셀과 Vector 속성 동일성을 검증했고, 별도의 서울 PBF 테스트에서는 Carto/Vector 데이터 9개 테이블 및 벡터 58타일 전체를 비교했습니다. 측정/제약/비교 범위는 [SHARED-IMPORT-VALIDATION.ko.md](SHARED-IMPORT-VALIDATION.ko.md)를 참조하세요. 실제 Windows 11 + WSL2 및 한국 전체 줌 0–15 종단 간 검증은 아직 별도입니다.
+
+## 실험용 PostGIS 지역 배치 Vector MVT
+
+기존 `--vector-tiler postgis`가 기본값이며, 성능 실험에서 의미적 동등성을
+확인한 지역 배치 SQL 생성기는 명시적으로 선택해야 합니다.
+
+```bash
+python3 -m osm2mbtiles convert seoul.osm.pbf --format vector --zoom 12-15 \
+  --bbox 126.95,37.47,127.13,37.62 --output seoul-batch.mbtiles \
+  --vector-tiler batch --vector-batch-side 2 --processes 4
+```
+
+- `batch`는 PostGIS 안에서 지역별 후보 피처를 MATERIALIZED CTE로 추출하고
+  여러 타일에 재사용하며, 기존 `ST_AsMVTGeom` + `ST_AsMVT`를 그대로 사용합니다.
+- 기본 방식은 변경하지 않았으며 PNG는 기존 경로를 따릅니다.
+- 실제 출력은 GitHub Actions의 원본 베이스라인과 디코딩된 MVT의 타일별
+  피처 ID/Geometry/속성/중복도 및 메타데이터(출력 이름 제외)를 비교합니다.
+- 이 실험은 초기 전체 생성 방식의 개선입니다. OSM replication 기반
+  **증분 업데이트는 아직 구현/검증되지 않았습니다.** `--slim --drop`의
+  기존 최초 import 파이프라인도 그대로 유지되어 있습니다.
+- 실제 CI 자료: `.github/workflows/osm2mbtiles-batch-parity.yml`.
+  Planetiler 벤치마크는 동일 PBF/BBOX/zoom이지만 출력 스타일과 피처 수가 달라
+  의미적으로 동일한 출력 처리량 비교가 아닙니다.

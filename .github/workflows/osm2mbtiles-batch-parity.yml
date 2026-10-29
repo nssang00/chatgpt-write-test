@@ -1,0 +1,112 @@
+name: osm2mbtiles Batch MVT Strict Parity vs Planetiler
+
+on:
+  push:
+    branches: [ci/osm2mbtiles-batch-eval]
+    paths:
+      - '.github/workflows/osm2mbtiles-batch-parity.yml'
+      - 'experiments/osm2mbtiles/prototype/src/osm2mbtiles/vector_batch.py'
+      - 'experiments/osm2mbtiles/prototype/benchmarks/postgis_batch_parity.py'
+      - 'experiments/osm2mbtiles/prototype/tests/test_vector_batch.py'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  parity-and-speed:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install pinned PostgreSQL and MVT dependencies
+        shell: bash
+        run: |
+          set -euxo pipefail
+          sudo apt-get update -qq
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            postgresql-16 postgresql-client-16 postgresql-16-postgis-3 \
+            postgresql-16-postgis-3-scripts osm2pgsql \
+            python3-psycopg2 python3-pip python3-pytest time curl ca-certificates
+          /usr/bin/python3 -m pip install --break-system-packages mapbox-vector-tile
+          /usr/bin/python3 -c 'import psycopg2, mapbox_vector_tile, pytest;print("BENCH_DEPENDENCIES_OK")'
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+
+      - name: Structural tests before downloading source data
+        shell: bash
+        run: |
+          set -euxo pipefail
+          PROJECT="$GITHUB_WORKSPACE/experiments/osm2mbtiles/prototype"
+          export PYTHONPATH="$PROJECT/src"
+          /usr/bin/python3 -m compileall -q "$PROJECT/src/osm2mbtiles" "$PROJECT/benchmarks/postgis_batch_parity.py"
+          /usr/bin/python3 -m pytest -q "$PROJECT/tests/test_vector_batch.py"
+
+      - name: Download exact same Seoul OSM and pinned Planetiler
+        shell: bash
+        run: |
+          set -euxo pipefail
+          WORK="$RUNNER_TEMP/osm2mbtiles-batch-eval"
+          mkdir -p "$WORK" "$GITHUB_WORKSPACE/batch-evidence"
+          curl -fL --retry 3 --retry-delay 2 --connect-timeout 20 --max-time 180 \
+            https://tiles.osm.kr/download/seoul-non-military.osm.pbf \
+            -o "$WORK/seoul.osm.pbf"
+          curl -fL --retry 3 --retry-delay 2 \
+            https://github.com/onthegomap/planetiler/releases/download/v0.10.2/planetiler.jar \
+            -o "$WORK/planetiler.jar"
+          sha256sum "$WORK/seoul.osm.pbf" | tee "$GITHUB_WORKSPACE/batch-evidence/input.sha256"
+          nproc
+          free -h
+
+      - name: Fresh isolated PostGIS import and strict baseline parity
+        shell: bash
+        run: |
+          set -euxo pipefail
+          export PROJECT="$GITHUB_WORKSPACE/experiments/osm2mbtiles/prototype"
+          export WORK="$RUNNER_TEMP/osm2mbtiles-batch-eval"
+          export PATH="/usr/lib/postgresql/16/bin:$PATH"
+          export PGHOST="$WORK/socket" PGPORT=55469 PGUSER=batchosm PGDATABASE=gis
+          export PYTHONPATH="$PROJECT/src"
+          mkdir -p "$PGHOST"
+          initdb -D "$WORK/pgdata" -U "$PGUSER" --auth-local=trust --auth-host=trust
+          pg_ctl -D "$WORK/pgdata" -l "$WORK/postgres.log" -w \
+            -o "-c listen_addresses='' -c unix_socket_directories=$PGHOST -c port=$PGPORT -c shared_buffers=64MB -c work_mem=4MB -c maintenance_work_mem=64MB -c max_parallel_maintenance_workers=0" start
+          trap 'pg_ctl -D "$WORK/pgdata" -m immediate -w stop || true' EXIT
+          createdb gis
+          psql -v ON_ERROR_STOP=1 -c 'CREATE EXTENSION postgis; CREATE EXTENSION hstore;'
+          /usr/bin/time -f '%e' -o "$WORK/import.seconds" bash -eo pipefail -c '
+            osm2pgsql --slim --drop --cache=256 --number-processes=4 \
+              -O flex -S "$PROJECT/vector/vector-flex.lua" -d gis "$WORK/seoul.osm.pbf"
+            psql -v ON_ERROR_STOP=1 -f "$PROJECT/vector/post-import.sql"
+          '
+          IMPORT_SEC="$(cat "$WORK/import.seconds")"
+          /usr/bin/python3 "$PROJECT/benchmarks/postgis_batch_parity.py" \
+            --input "$WORK/seoul.osm.pbf" --project "$PROJECT" \
+            --planetiler "$WORK/planetiler.jar" --work "$WORK" \
+            --import-sec "$IMPORT_SEC" --repeats 2
+          cat "$WORK/summary.md" >> "$GITHUB_STEP_SUMMARY"
+          echo POSTGIS_BATCH_PARITY_AND_SPEED_VERIFIED
+
+      - name: Retain evidence even when parity or benchmark fails
+        if: always()
+        shell: bash
+        run: |
+          mkdir -p batch-evidence
+          WORK="$RUNNER_TEMP/osm2mbtiles-batch-eval"
+          for name in parity-results.json summary.md import.seconds postgres.log; do
+            cp "$WORK/$name" batch-evidence/ 2>/dev/null || true
+          done
+          for file in "$WORK"/r*-planetiler.log; do
+            [ -e "$file" ] && cp "$file" batch-evidence/ || true
+          done
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: batch-parity-and-speed-evidence
+          path: batch-evidence/
+          retention-days: 14
+          if-no-files-found: warn

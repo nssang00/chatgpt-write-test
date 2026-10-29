@@ -37,6 +37,10 @@ def arguments(argv=None):
                         help='vector OSM import: safe (default) or fast (4 threads, parallel indexes, no cluster)')
     export.add_argument('--vector-query-mode',choices=('baseline','cached','projected'),default='projected',
                         help='vector SQL: projected (default), baseline (reference), cached (experimental precompute)')
+    export.add_argument('--vector-tiler',choices=('postgis','batch'),default='postgis',
+                        help='postgis: original tile SQL (default); batch: experimental region SQL')
+    export.add_argument('--vector-batch-side',type=int,default=2,
+                        help='experimental batch tile block edge, 1..8 (default: 2)')
     export.add_argument('--bbox',help='west,south,east,north (otherwise from PBF header)')
     export.add_argument('--runtime',type=Path,help='prepared native runtime folder')
     export.add_argument('--workdir',type=Path,help='persist intermediate database for subsequent runs')
@@ -95,6 +99,8 @@ def convert(args):
         raise PipelineError('--buffer must be 0..1024, --metatile 1..32')
     if not 1 <= args.processes <= 64:
         raise PipelineError('--processes must be 1..64')
+    if not 1 <= args.vector_batch_side <= 8:
+        raise PipelineError('--vector-batch-side must be 1..8')
     bbox = validate_bbox(tuple(float(x) for x in args.bbox.split(','))) if args.bbox else read_bbox(pbf)
     count = tile_count(bbox,lo,hi)
     if count > args.max_tiles:
@@ -233,7 +239,8 @@ def run_pipeline(pbf,out,bbox,lo,hi,args,work,runtime):
             vector_job = work/'vector-job.json'
             vector_job.write_text(json.dumps({
                 'pbf':str(pbf),'output':str(vector_out),'bbox':bbox,'minzoom':lo,
-                'maxzoom':hi,'processes':args.processes},indent=2),encoding='utf-8')
+                'maxzoom':hi,'processes':args.processes,
+                'tiler':args.vector_tiler,'batch_side':args.vector_batch_side},indent=2),encoding='utf-8')
             vector_env=db.env.copy()
             vector_env['OSM2MBTILES_VECTOR_QUERY_MODE'] = args.vector_query_mode
             run([runtime.python,vector_script,vector_job],env=vector_env)
