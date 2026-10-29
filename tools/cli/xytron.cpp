@@ -730,7 +730,7 @@ static void help() {
     "  validate (inside a generated desktop project)\n"
     "  restore --sdk INSTALLED_CORE_SDK (desktop project; Core only)\n"
     "  build / test / doctor (desktop project; backend-only)\n"
-    "  run --host ABSOLUTE_ENGINE_HOST [--plugin PROJECT_PLUGIN_PATH] [--smoke] (C++ app)\n"
+    "  run --host ABSOLUTE_ENGINE_HOST [--plugin PROJECT_PLUGIN_PATH] [--smoke] (C++/Python/C# app)\n"
     "  automatic browser host restore / desktop publish: NOT IMPLEMENTED\n";
 }
 int main(int argc,char** argv) {
