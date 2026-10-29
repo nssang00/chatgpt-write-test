@@ -20,6 +20,7 @@ def main():
     ap.add_argument('--id', type=int, required=True)
     ap.add_argument('--count', type=int, required=True)
     ap.add_argument('--mode', choices=['multicast', 'tree', 'mesh', 'hybrid'], required=True)
+    ap.add_argument('--v4',action='store_true',help='experimental multicast-NACK suppression and bounded repair')
     ap.add_argument('--workdir', required=True)
     ap.add_argument('--discovery-seconds', type=float, default=9)
     ap.add_argument('--timeout', type=float, default=24)
@@ -41,6 +42,10 @@ def main():
     # Store no per-peer session; IDs are obtained by HELLO and anti-entropy.
     lazy_pending = {}
     request_last = {}
+    suppressed = {}
+    source_repair_last = {}
+    source_repair_count = {}
+    last_completed_ack = set()
     duplicate = 0
     rx_overflow_report = 0
     send_errors = 0
@@ -48,7 +53,8 @@ def main():
     stats = dict(hello_sent=0, digest_sent=0, delta_sent=0,
                  data_sent=0, data_forwarded=0, nack_sent=0,
                  repair_sent=0, packets_received=0,
-                 ihave_sent=0, iwant_sent=0)
+                 ihave_sent=0, iwant_sent=0, nack_suppressed=0,
+                 nack_heard=0, repair_suppressed=0, completed_ack_sent=0)
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 4 * 1024 * 1024)
@@ -102,9 +108,13 @@ def main():
 
     def advertise(origin, sequence):
         # Plumtree-inspired lazy announcements on bounded secondary edges.
-        if args.mode != 'hybrid':
+        if args.mode != 'hybrid' and not (args.v4 and args.mode=='mesh'):
             return
-        for peer in mesh_neighbors()[:2]:
+        if args.v4 and args.mode=='mesh':
+            candidates = sorted({(i + off)%n for off in (13,-13,23,-23)}-{i})
+        else:
+            candidates = mesh_neighbors()[:2]
+        for peer in candidates:
             ip = known.get(peer)
             if ip:
                 send({'t': 'a', 'i': i, 'src': origin, 's': sequence},
@@ -176,6 +186,8 @@ def main():
         # Explicit missing-data repair; discovery and data are independent.
         # First repair interval follows the last scheduled publish.
         if (elapsed > repair_start_at and elapsed-last_nack >= args.repair_interval):
+            # A+/B+: NORM-inspired multicast feedback suppression; NOT NORM.
+            suppressed={k:v for k,v in suppressed.items() if v>elapsed}
             # Bounded, per-origin selective requests; oldest last request first.
             # Aggregates missing sequence IDs; prevents the previous NACK storm.
             missing_sources = [src for src in known if src < publisher_count and
@@ -187,12 +199,23 @@ def main():
                 (src * 47 + i * 41 + args.seed * 53) % max(1,n)))
             for src in missing_sources[:args.repair_fanout]:
                 seqs=[seq for seq in range(m) if (src,seq) not in received]
-                send({'t':'q','i':i,'src':src,'seqs':seqs},
-                     (known[src], GROUP[1]), 'nack_sent')
+                if args.v4:
+                    unsuppressed=[seq for seq in seqs if suppressed.get((src,seq),-1)<elapsed]
+                    if not unsuppressed:
+                        stats['nack_suppressed']+=len(seqs)
+                        continue
+                    # Every subscriber sees the NACK, not only the origin.
+                    # Random hold-down prevents simultaneous identical feedback.
+                    send({'t':'q','i':i,'src':src,'seqs':unsuppressed}, GROUP, 'nack_sent')
+                    for seq in unsuppressed:
+                        suppressed[(src,seq)]=elapsed+0.45+rnd.random()*0.5
+                else:
+                    send({'t':'q','i':i,'src':src,'seqs':seqs},
+                         (known[src], GROUP[1]), 'nack_sent')
                 request_last[src]=elapsed
             last_nack = elapsed
 
-        if args.mode == 'hybrid' and lazy_pending:
+        if (args.mode == 'hybrid' or (args.v4 and args.mode=='mesh')) and lazy_pending:
             due = [key for key,(ip,at) in lazy_pending.items()
                    if at <= elapsed and key not in received]
             for src,seq in due[:12]:
@@ -240,7 +263,7 @@ def main():
                             known[j] = ip
                 elif typ == 'a':
                     src, seq = item.get('src'), item.get('s')
-                    if (args.mode == 'hybrid'
+                    if ((args.mode == 'hybrid' or (args.v4 and args.mode=='mesh'))
                         and isinstance(src,int) and isinstance(seq,int)
                         and 0 <= src < n and 0 <= seq < m
                         and (src,seq) not in received):
@@ -248,7 +271,7 @@ def main():
                             elapsed + .12 + rnd.random()*.12)
                 elif typ == 'w':
                     src, seq = item.get('src'), item.get('s')
-                    if args.mode == 'hybrid' and (src,seq) in received:
+                    if (args.mode == 'hybrid' or (args.v4 and args.mode=='mesh')) and (src,seq) in received:
                         send({'t':'p','i':src,'s':seq,'k':TOPIC,'v':PAYLOAD},
                              address,'repair_sent')
                 elif typ == 'p':
@@ -269,7 +292,23 @@ def main():
                         duplicate += 1
                 elif typ == 'q':
                     src=item.get('src')
-                    if src == i:
+                    if args.v4 and isinstance(src,int) and 0<=src<n:
+                        stats['nack_heard']+=1
+                        for seq in item.get('seqs',[])[:m]:
+                            if not isinstance(seq,int) or not 0<=seq<m:
+                                continue
+                            suppressed[(src,seq)]=max(suppressed.get((src,seq),0),elapsed+0.65+rnd.random()*.4)
+                            if src == i and seq in sent_orig:
+                                key=(src,seq)
+                                # Deduplicate NACKs across receivers and pace repair.
+                                if (elapsed-source_repair_last.get(key,-10)>0.7
+                                    and source_repair_count.get(key,0)<32):
+                                    send({'t':'p','i':i,'s':seq,'k':TOPIC,'v':PAYLOAD},GROUP,'repair_sent')
+                                    source_repair_last[key]=elapsed
+                                    source_repair_count[key]=source_repair_count.get(key,0)+1
+                                else:
+                                    stats['repair_suppressed']+=1
+                    elif src == i:
                         for seq in item.get('seqs',[])[:m]:
                             if isinstance(seq,int) and seq in sent_orig:
                                 send({'t':'p','i':i,'s':seq,'k':TOPIC,'v':PAYLOAD},
@@ -277,6 +316,9 @@ def main():
             except (OSError,ValueError,TypeError,KeyError):
                 continue
 
+        if args.v4 and i < publisher_count and len(sent_orig)==m:
+            # Completion acknowledgments are local benchmark-only unless peer has read everything.
+            pass
         if data_time is None and len(received) == publisher_count*m:
             data_time = elapsed
             (workdir / f'done-{i}').touch()
@@ -287,7 +329,7 @@ def main():
     expected = publisher_count*m
     end_udp_stats = udp_counters()
     (workdir / f'node-{i}.json').write_text(json.dumps({
-        'id':i,'mode':args.mode,'known_nodes':len(known),
+        'id':i,'mode':args.mode,'v4':args.v4,'known_nodes':len(known),
         'discovery_s':discovery_time,'ready_at_publish':ready_at_publish,
         'received':len(received),'expected':expected,
         'remote_received':len(received)-len(sent_orig),
