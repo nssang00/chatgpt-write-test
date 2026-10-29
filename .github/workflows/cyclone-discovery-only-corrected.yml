@@ -1,0 +1,47 @@
+name: Cyclone 30-35-40 SPDP SEDP Corrected
+on:
+  push:
+    branches: [diagnostic/cyclone-30-40-spdp-only-20261029]
+    paths: [.github/workflows/cyclone-discovery-only-corrected.yml]
+  workflow_dispatch:
+permissions: {contents: read}
+jobs:
+  corrected:
+    name: 'N=${{ matrix.nodes }} seed=${{ matrix.seed }}'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      max-parallel: 8
+      matrix:
+        nodes: [30, 35, 40]
+        seed: [1, 2, 3, 4, 5]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - name: Install Cyclone 11.0.1
+        run: |
+          python -m pip install cyclonedds==11.0.1
+          ip -V && tc -V
+      - name: Run SPDP SEDP discovery without data, retry transient Python errors
+        run: |
+          set -euo pipefail
+          trace=()
+          cap=()
+          if [ '${{ matrix.nodes }}' = '40' ] && [ '${{ matrix.seed }}' = '1' ]; then
+            trace+=(--trace)
+            cap+=(--capture)
+          fi
+          sudo -E "$(which python)" bench/discovery/discovery_only_run.py \
+            --nodes '${{ matrix.nodes }}' \
+            --seed '${{ matrix.seed }}' \
+            --config default --delay-ms 0 --timeout 25 \
+            --output corrected-discovery "${trace[@]}" "${cap[@]}"
+          cat corrected-discovery/summary.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: 'corrected-spdp-n${{ matrix.nodes }}-seed${{ matrix.seed }}'
+          path: corrected-discovery/
+          if-no-files-found: warn
