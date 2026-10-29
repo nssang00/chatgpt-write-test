@@ -1,0 +1,48 @@
+name: Aplus V2 Repair Window Diagnostics
+on:
+  push:
+    branches: [experiment/a-plus-v2-repair-20261030]
+    paths: [.github/workflows/a-plus-v2-window-diagnostic.yml]
+  workflow_dispatch:
+permissions: {contents: read}
+jobs:
+  diagnostic:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - name: Kernel buffers and syntax
+        run: |
+          python -m py_compile bench/discovery/a_plus_v2_node.py bench/discovery/pubsub_run.py
+          sudo sysctl -w net.core.rmem_max=16777216
+          sudo sysctl -w net.core.wmem_max=16777216
+      - name: N50 x100 loss10 detailed source-repair fairness map
+        run: |
+          sudo -E "$(which python)" bench/discovery/pubsub_run.py \
+            --impl v2 --sizes 50 --modes multicast --losses 10 \
+            --messages 100 --payload-bytes 128 --publish-interval 0.06 \
+            --publishers 50 --discovery 12 --timeout 75 \
+            --publish-spread 7 --repair-fanout 2 \
+            --repair-pps 20 --nack-period .8 --gap-grace 1.5 \
+            --nack-suppress-seconds 2 --seeds 1 --output diag
+          python - <<'PY'
+          import json,pathlib,collections
+          wd=next(pathlib.Path('diag').glob('v2-*'))
+          rows=[json.loads(p.read_text()) for p in wd.glob('node-*.json')]
+          missing=collections.Counter();replay=collections.Counter()
+          for row in rows:
+              missing.update(row.get('missing_by_window',{}))
+              replay.update(row.get('replays_by_window',{}))
+          print('MISSING_SEQUENCES_BY_WINDOW',dict(sorted(missing.items(),key=lambda v:int(v[0]))))
+          print('REPAIR_REPLAYS_BY_WINDOW',dict(sorted(replay.items(),key=lambda v:int(v[0]))))
+          print('COMPLETED_NODES',sum(r['remote_received']==r['remote_expected'] for r in rows))
+          PY
+          cat diag/results.csv
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: 'v2-repair-window-histograms'
+          path: diag/
+          if-no-files-found: warn
