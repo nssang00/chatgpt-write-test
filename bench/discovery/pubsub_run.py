@@ -163,12 +163,13 @@ def execute(n,mode,loss,seconds,disc,m,spread,publishers,seed,fanout,interval,ou
             'udp_in_errors':sum(r.get('udp_in_errors',0) for r in rows),
             'socket_rx_overflow':sum(r.get('socket_rx_overflow',0) for r in rows),
             'send_errors':sum(r.get('send_errors',0) for r in rows),
-            'total_ihave':sum(r['stats']['ihave_sent'] for r in rows),
-            'total_iwant':sum(r['stats']['iwant_sent'] for r in rows),
+            'total_ihave':sum(r['stats'].get('ihave_sent',0) for r in rows),
+            'total_iwant':sum(r['stats'].get('iwant_sent',0) for r in rows),
             'total_control_packets':sum(r['stats']['hello_sent']+r['stats']['digest_sent']+
-                                        r['stats']['delta_sent']+r['stats']['ihave_sent']+
-                                        r['stats']['iwant_sent'] for r in rows),
-            'total_data_packets':sum(r['stats']['data_sent']+r['stats']['data_forwarded'] for r in rows),
+                                        r['stats']['delta_sent']+r['stats'].get('progress_sent',0)+
+                                        r['stats'].get('end_sent',0)+r['stats'].get('ihave_sent',0)+
+                                        r['stats'].get('iwant_sent',0) for r in rows),
+            'total_data_packets':sum(r['stats']['data_sent']+r['stats'].get('data_forwarded',0) for r in rows),
             'aggregate_cpu_s':round(sum(r['cpu_s'] for r in rows),3),
             'aggregate_maxrss_mb':round(sum(r['maxrss_kb'] for r in rows)/1024,1),
             'seconds_observed':round(time.monotonic()-started,3)}
