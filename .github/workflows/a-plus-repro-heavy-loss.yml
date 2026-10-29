@@ -1,0 +1,73 @@
+name: Aplus Heavy Loss Repro and Repair Budget
+on:
+  push:
+    branches: [experiment/a-plus-stress-fault-ablation-20261029]
+    paths: [.github/workflows/a-plus-repro-heavy-loss.yml]
+  workflow_dispatch:
+permissions: {contents: read}
+jobs:
+  repro:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 17
+    strategy:
+      fail-fast: false
+      max-parallel: 5
+      matrix:
+        include:
+          - {nodes: 200, messages: 100, loss: 10, seed: 2, ablation: full}
+          - {nodes: 200, messages: 100, loss: 10, seed: 3, ablation: full}
+          - {nodes: 200, messages: 20, loss: 20, seed: 1, ablation: full}
+          - {nodes: 200, messages: 20, loss: 30, seed: 1, ablation: full}
+          - {nodes: 100, messages: 20, loss: 20, seed: 1, ablation: full}
+          - {nodes: 100, messages: 20, loss: 30, seed: 1, ablation: full}
+          - {nodes: 200, messages: 20, loss: 20, seed: 1, ablation: no_anti_entropy}
+          - {nodes: 200, messages: 20, loss: 20, seed: 1, ablation: no_nack_suppression}
+          - {nodes: 100, messages: 20, loss: 20, seed: 1, ablation: no_anti_entropy}
+          - {nodes: 100, messages: 20, loss: 20, seed: 1, ablation: no_nack_suppression}
+    name: 'N=${{ matrix.nodes }} m=${{ matrix.messages }} loss=${{ matrix.loss }} seed=${{ matrix.seed }} ${{ matrix.ablation }}'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - name: System limits and syntax preflight
+        run: |
+          python -m py_compile bench/discovery/pubsub_node.py bench/discovery/pubsub_run.py
+          sudo sysctl -w net.core.rmem_max=16777216
+          sudo sysctl -w net.core.wmem_max=16777216
+      - name: Reproduce high load and 20-30 percent independent per-leg loss
+        shell: bash
+        run: |
+          set -euo pipefail
+          case '${{ matrix.nodes }}' in
+            100) discovery=18; timeout=105; spread=12 ;;
+            200) discovery=27; timeout=125; spread=18 ;;
+          esac
+          if [ '${{ matrix.messages }}' = 100 ]; then
+            interval=0.06
+          else
+            interval=0.08
+          fi
+          sudo -E "$(which python)" bench/discovery/pubsub_run.py \
+            --sizes '${{ matrix.nodes }}' --modes multicast \
+            --losses '${{ matrix.loss }}' --v4 \
+            --messages '${{ matrix.messages }}' \
+            --payload-bytes 128 --publish-interval "$interval" \
+            --publishers '${{ matrix.nodes }}' --discovery "$discovery" \
+            --timeout "$timeout" --publish-spread "$spread" \
+            --ablation '${{ matrix.ablation }}' \
+            --repair-fanout 6 --repair-interval 0.9 \
+            --seeds '${{ matrix.seed }}' --output heavy-results
+          cat heavy-results/results.csv
+          python - <<'PY'
+          import json
+          r=json.load(open('heavy-results/results.json'))[0]
+          print('STRESS_BOUNDARY_RESULT '+json.dumps(r))
+          assert r['status'] in ('PASS','FAIL'),r
+          assert r['reported']==r['nodes'],r
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: 'heavy-N${{ matrix.nodes }}-m${{ matrix.messages }}-loss${{ matrix.loss }}-s${{ matrix.seed }}-${{ matrix.ablation }}'
+          path: heavy-results/
+          if-no-files-found: warn
