@@ -58,6 +58,10 @@ def main():
     last_completed_ack = set()
     duplicate = 0
     rx_overflow_report = 0
+    rx_budget_hits=0
+    rx_max_batch=0
+    rx_loop_s_total=0.0
+    rx_loop_s_max=0.0
     send_errors = 0
     start_udp_stats = {}
     stats = dict(hello_sent=0, digest_sent=0, delta_sent=0,
@@ -272,6 +276,8 @@ def main():
                      (ip,GROUP[1]),'iwant_sent')
                 lazy_pending[(src,seq)] = (ip,elapsed + 1.0 + rnd.random()*.2)
 
+        rx_batch=0
+        rx_begin=time.monotonic()
         for _ in range(120):
             if not select.select([sock],[],[],0)[0]:
                 break
@@ -282,6 +288,7 @@ def main():
                         rx_overflow_report = max(rx_overflow_report,
                             int.from_bytes(cmsg[:4], 'little'))
                 item = json.loads(raw)
+                rx_batch+=1
                 stats['packets_received'] += 1
                 typ = item.get('t')
                 peer = item.get('i')
@@ -376,6 +383,11 @@ def main():
         if args.v4 and i < publisher_count and len(sent_orig)==m:
             # Completion acknowledgments are local benchmark-only unless peer has read everything.
             pass
+        rx_max_batch=max(rx_max_batch,rx_batch)
+        if rx_batch>=120:rx_budget_hits+=1
+        rx_elapsed=time.monotonic()-rx_begin
+        rx_loop_s_total+=rx_elapsed
+        rx_loop_s_max=max(rx_loop_s_max,rx_elapsed)
         if data_time is None and len(received) == publisher_count*m:
             data_time = elapsed
             (workdir / f'done-{i}').touch()
@@ -399,6 +411,10 @@ def main():
         'completed_source_count':sum(completed_source),
         'payload_bytes':args.payload_bytes,'publish_interval_s':args.publish_interval,
         'missing_by_origin':missing_by_origin,
+        'rx_budget_hits':rx_budget_hits,
+        'rx_max_batch':rx_max_batch,
+        'rx_loop_s_total':round(rx_loop_s_total,3),
+        'rx_loop_s_max':round(rx_loop_s_max,6),
         'max_repairs_per_sequence':max(source_repair_count.values(),default=0),
         'samples_at_repair_limit':sum(v>=32 for v in source_repair_count.values()),
         'ablation':args.ablation,'sent_original':len(sent_orig),
