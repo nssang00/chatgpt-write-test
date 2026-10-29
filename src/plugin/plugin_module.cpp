@@ -388,8 +388,10 @@ public:
 PluginModule::PluginModule(
     const std::string& path,
     BindingRegistry& registry,
-    const std::function<void(const std::string&)>& validateId)
+    const std::function<void(const std::string&)>& validateId,
+    const std::function<void(const std::string&,const Any&)>& publishEvent)
     : registry_(registry),
+      publishEvent_(publishEvent),
       lease_(new PluginLibraryLease(path)),
       quiescing_(false), unloaded_(false), path_(path)
 {
@@ -716,6 +718,8 @@ void PluginModule::initialize(
         &PluginModule::registerObjectFactoryArgsThunk;
     host.register_typed_function =
         &PluginModule::registerTypedFunctionThunk;
+    host.publish_event =
+        &PluginModule::publishEventThunk;
 
     const int32_t registerStatus =
         lease_->api.register_api(
@@ -728,6 +732,39 @@ void PluginModule::initialize(
             "plugin_register_failed",
             "Plugin API registration failed");
     }
+}
+
+int32_t PluginModule::publishEventThunk(
+    void* context, const char* event, const nw_value_v1* payload)
+{
+    if (!context) return -1;
+    try {
+        return static_cast<PluginModule*>(context)->publishEvent(event,payload);
+    } catch (...) {
+        // Never leak C++ exceptions across a C ABI boundary.
+        return -1;
+    }
+}
+
+int32_t PluginModule::publishEvent(
+    const char* relative, const nw_value_v1* payload)
+{
+    if (!relative || !payload || !validPluginId(relative))
+        return -1;
+
+    std::function<void(const std::string&,const Any&)> publish;
+    std::string event;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (quiescing_ || unloaded_ || !publishEvent_)
+            return -1;
+        event=id_+"."+relative;
+        publish=publishEvent_;
+    }
+    // Copies the ABI payload before returning. No plugin pointers survive
+    // into the queued browser event; the bridge owns document-session guards.
+    publish(event,pluginValueToAny(*payload));
+    return 0;
 }
 
 int32_t PluginModule::registerFunctionThunk(
