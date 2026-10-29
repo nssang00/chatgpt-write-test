@@ -1,0 +1,55 @@
+name: Aplus V2 Bitmap Feedback Budget Sweep N200
+on:
+  push:
+    branches: [experiment/a-plus-v2-repair-20261030]
+    paths: [.github/workflows/a-plus-v2-feedback-budget-sweep.yml]
+  workflow_dispatch:
+permissions: {contents: read}
+jobs:
+  budget:
+    name: 'N200×100 loss10 fanout${{ matrix.fanout }} period${{ matrix.period }}'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix:
+        include:
+          - {fanout: 3, period: 0.45}
+          - {fanout: 6, period: 0.45}
+          - {fanout: 12, period: 0.9}
+          - {fanout: 12, period: 0.6}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - name: Same netem/reader QoS and original deadline
+        run: |
+          set -euo pipefail
+          python -m py_compile bench/discovery/a_plus_v2_conservative_node.py bench/discovery/pubsub_run.py
+          sudo sysctl -w net.core.rmem_max=16777216
+          sudo sysctl -w net.core.wmem_max=16777216
+      - name: Vary only number of source NACK requests allowed per tick
+        run: |
+          sudo -E "$(which python)" bench/discovery/pubsub_run.py \
+            --impl v2c --v4 --sizes 200 --modes multicast \
+            --losses 10 --messages 100 --payload-bytes 128 \
+            --publish-interval 0.06 --publishers 200 \
+            --discovery 27 --timeout 125 --publish-spread 18 \
+            --repair-fanout '${{ matrix.fanout }}' \
+            --repair-interval '${{ matrix.period }}' \
+            --seeds 1 --output budget-results
+          cat budget-results/results.csv
+          python - <<'PY'
+          import json
+          x=json.load(open('budget-results/results.json'))[0]
+          print('FEEDBACK_BUDGET_RESULT '+json.dumps(x))
+          assert x['status'] in ('PASS','FAIL'),x
+          assert x['reported']==200 and x['total_expected_remote']==3980000,x
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: 'feedback-f${{ matrix.fanout }}-period${{ matrix.period }}'
+          path: budget-results/
+          if-no-files-found: warn
