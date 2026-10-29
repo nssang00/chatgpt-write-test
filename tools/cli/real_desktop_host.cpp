@@ -78,6 +78,35 @@ loadUi(const std::string& name) {
       await new Promise(resolve=>setTimeout(resolve,50));
     if (featureOutput.textContent!=="hello")
       throw new Error("Native feature plugin method not invoked");
+    // Plugin emits from its C ABI v1 callable; no JS-side proxy event.
+    let count=0;
+    let subscription=null;
+    const received=new Promise((resolve,reject) => {
+      const timer=setTimeout(()=>reject(new Error("Native plugin event timeout")),5000);
+      subscription=xytron.onMessage("feature.changed",payload => {
+        ++count;
+        clearTimeout(timer);
+        resolve(payload);
+      });
+    });
+    if (await xytron.feature.fire()!=="published")
+      throw new Error("Native feature publisher did not complete");
+    if (await received!=="from-native-feature" || count!==1)
+      throw new Error("Native feature event payload or delivery count mismatch");
+    if (!xytron.offMessage(subscription))
+      throw new Error("Native event subscription could not be removed");
+    // A new plugin notification must not reach a removed JS listener.
+    await xytron.feature.fire();
+    await new Promise(resolve=>setTimeout(resolve,150));
+    if (count!==1)
+      throw new Error("Event fired after JS unsubscribed");
+    if (await xytron.app.unloadFeature()!==true)
+      throw new Error("Feature plugin unload refused");
+    let rejected=false;
+    try { await xytron.feature.hello(); }
+    catch (_) { rejected=true; }
+    if (!rejected)
+      throw new Error("Unloaded plugin callable was still exposed to JS");
     await xytron.app.complete();
   } catch (error) {
     await xytron.app.fail(String(error));
@@ -102,7 +131,13 @@ public:
         verified=true;
         std::cout << "checkpoint: generated-app-js-native-pong" << std::endl;
         std::cout << "checkpoint: user-cpp-backend-and-feature-plugin" << std::endl;
+        std::cout << "checkpoint: plugin-native-js-event-unsubscribe" << std::endl;
         webview_.destroy();
+        return true;
+      });
+      webview_.bind("app.unloadFeature",[this]() {
+        webview_.unloadPlugin("feature");
+        std::cout << "checkpoint: feature-plugin-unloaded" << std::endl;
         return true;
       });
       webview_.bind("app.fail",[this](const std::string& msg) {
