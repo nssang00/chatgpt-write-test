@@ -121,6 +121,22 @@ set_target_properties(
 )
 
 
+
+# Project app:// UI host, using the same real WebView2 backend as E2E.
+add_executable(xytron_desktop_host
+  "${NATIVEWEB_ROOT}/tools/cli/real_desktop_host.cpp")
+target_include_directories(xytron_desktop_host PRIVATE
+  "${NATIVEWEB_ROOT}/include" "${NATIVEWEB_ROOT}/src"
+  "${WEBVIEW2_INCLUDE_DIR}")
+target_compile_features(xytron_desktop_host PRIVATE cxx_std_11)
+target_compile_definitions(xytron_desktop_host PRIVATE
+  UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX)
+target_link_libraries(xytron_desktop_host PRIVATE
+  nativeweb_webview2_backend nativeweb_core_for_webview2 user32)
+set_target_properties(xytron_desktop_host PROPERTIES
+  RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+  RUNTIME_OUTPUT_DIRECTORY_RELEASE "${CMAKE_BINARY_DIR}/bin")
+
 add_executable(nativeweb_webview2_multi_webview_integration
   multi_webview.cpp
 )

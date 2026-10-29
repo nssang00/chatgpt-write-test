@@ -74,8 +74,14 @@ static void desktop(const std::string& id,const std::string& lang) {
     "{\"id\":\"app\", \"language\": "+q(lang)+", \"entry\": "+
     q(entry)+"},\n \"modules\": []\n}\n");
   file(id+"/ui/index.html","<!doctype html><html><body><h1>Xytron</h1>"
-    "<p>Scaffold only: native desktop bridge not connected.</p>"
-    "</body></html>\n");
+    "<p>Native desktop C++ bridge demo (requires explicit engine host).</p>"
+    "<button id=\"xytron-ping\">Call native C++</button>"
+    "<output id=\"xytron-result\">idle</output>"
+    "<script>document.getElementById('xytron-ping').onclick=async function(){"
+    "const output=document.getElementById('xytron-result');"
+    "try{output.textContent=await xytron.app.ping();}"
+    "catch(error){output.textContent='error:'+String(error);}"
+    "};</script></body></html>\n");
   if(lang=="cpp")
     file(id+"/"+entry,"// Placeholder until bridge host is integrated.\n"
       "#include <iostream>\nint main(){std::cout<<\"backend placeholder\\n\";}\n");
@@ -664,7 +670,8 @@ static void help() {
     "  validate (inside a generated desktop project)\n"
     "  restore --sdk INSTALLED_CORE_SDK (desktop project; Core only)\n"
     "  build / test / doctor (desktop project; backend-only)\n"
-    "  run / desktop publish / engine restore: NOT IMPLEMENTED\n";
+    "  run --host ABSOLUTE_ENGINE_HOST [--smoke] (C++ desktop project)\n"
+    "  automatic browser host restore / desktop publish: NOT IMPLEMENTED\n";
 }
 int main(int argc,char** argv) {
   try {
@@ -741,6 +748,12 @@ int main(int argc,char** argv) {
     }
     if(argc==2 && std::string(argv[1])=="doctor" && exists("xytron.json")) {
       xytron_cli::appDoctor();return 0;
+    }
+    if((argc==4 || argc==5) && std::string(argv[1])=="run" &&
+       std::string(argv[2])=="--host" &&
+       (argc==4 || std::string(argv[4])=="--smoke")) {
+      xytron_cli::appRunHost(argv[3],argc==5);
+      return 0;
     }
     if(argc==2 && std::string(argv[1])=="run" && exists("xytron.json")) {
       std::cerr<<"Desktop run unavailable: native shell and browser engine not integrated\n";

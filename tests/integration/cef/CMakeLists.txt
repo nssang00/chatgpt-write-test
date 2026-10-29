@@ -171,6 +171,31 @@ COPY_FILES(
 )
 
 
+
+# Generated app host that serves exactly one project app:// UI entry.
+add_executable(xytron_desktop_host
+  "${NATIVEWEB_ROOT}/tools/cli/real_desktop_host.cpp")
+if(WIN32)
+  target_sources(xytron_desktop_host PRIVATE nativeweb_cef_windows_manifest.rc)
+endif()
+target_include_directories(xytron_desktop_host PRIVATE
+  "${NATIVEWEB_ROOT}/include" "${NATIVEWEB_ROOT}/src" "${CEF_ROOT}")
+target_compile_definitions(xytron_desktop_host PRIVATE XYTRON_APP_HOST_CEF=1)
+SET_EXECUTABLE_TARGET_PROPERTIES(xytron_desktop_host)
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+  target_compile_options(xytron_desktop_host PRIVATE -frtti -fexceptions)
+elseif(MSVC)
+  target_compile_options(xytron_desktop_host PRIVATE /EHsc)
+  target_compile_definitions(xytron_desktop_host PRIVATE _HAS_EXCEPTIONS=1)
+endif()
+target_link_libraries(xytron_desktop_host PRIVATE
+  nativeweb_cef_backend nativeweb_core_for_cef
+  libcef_lib libcef_dll_wrapper ${CEF_STANDARD_LIBS})
+set_target_properties(xytron_desktop_host PROPERTIES
+  RUNTIME_OUTPUT_DIRECTORY "${CEF_TARGET_OUT_DIR}"
+  RUNTIME_OUTPUT_DIRECTORY_RELEASE "${CEF_TARGET_OUT_DIR}")
+add_dependencies(xytron_desktop_host nativeweb_cef_bridge_integration)
+
 set(MULTI_TARGET nativeweb_cef_multi_webview_integration)
 
 add_executable(${MULTI_TARGET}
