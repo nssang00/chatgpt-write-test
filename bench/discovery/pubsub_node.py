@@ -30,9 +30,14 @@ def main():
     ap.add_argument('--seed', type=int, default=1)
     ap.add_argument('--repair-fanout', type=int, default=4)
     ap.add_argument('--repair-interval', type=float, default=1.0)
+    ap.add_argument('--publish-interval',type=float,default=.28)
+    ap.add_argument('--payload-bytes',type=int,default=32)
+    ap.add_argument('--ablation',choices=['full','no_anti_entropy','no_hello','no_nack_suppression','unicast_repair'],default='full')
     args = ap.parse_args()
 
     i, n, m = args.id, args.count, args.messages
+    assert 1<=args.payload_bytes<=1200 and 0<args.publish_interval<=5
+    PAYLOAD='x'*args.payload_bytes
     publisher_count = args.publishers if args.publishers > 0 else n
     workdir = Path(args.workdir)
     own_ip = f'10.77.{i // 250}.{i % 250 + 1}'
@@ -152,17 +157,17 @@ def main():
     publ_at = args.discovery_seconds + rnd.uniform(.0, args.publish_spread)
     last_nack = -10.0
     startup_nack_offset = rnd.uniform(0, args.repair_interval)
-    repair_start_at = args.discovery_seconds + args.publish_spread + m*.28 + .7 + startup_nack_offset
+    repair_start_at = args.discovery_seconds + args.publish_spread + m*args.publish_interval + .7 + startup_nack_offset
     stop_at = args.discovery_seconds + args.timeout
 
     while not (workdir / 'stop').exists():
         elapsed = time.monotonic() - start
 
-        if elapsed >= next_hello:
+        if args.ablation!='no_hello' and elapsed >= next_hello:
             send({'t':'h','i':i,'a':own_ip}, GROUP, 'hello_sent')
             next_hello = elapsed + 1.6 + rnd.uniform(0, .5)
 
-        if elapsed - last_digest >= 1.2:
+        if args.ablation!='no_anti_entropy' and elapsed - last_digest >= 1.2:
             # Robust membership anti-entropy: each round sends complete ID digest
             # to 4 peers, but never eagerly sends full metadata.
             peers = [j for j in known if j != i]
@@ -181,7 +186,9 @@ def main():
             sent_orig.add(seq)
             received.add((i, seq))
             relay(i, seq)
-            publ_at += .28
+            publ_at += args.publish_interval
+            if len(sent_orig)==m:
+                (workdir/f'published-{i}').touch()
 
         # Explicit missing-data repair; discovery and data are independent.
         # First repair interval follows the last scheduled publish.
@@ -200,15 +207,17 @@ def main():
             for src in missing_sources[:args.repair_fanout]:
                 seqs=[seq for seq in range(m) if (src,seq) not in received]
                 if args.v4:
-                    unsuppressed=[seq for seq in seqs if suppressed.get((src,seq),-1)<elapsed]
+                    unsuppressed=(seqs if args.ablation=='no_nack_suppression' else
+                                  [seq for seq in seqs if suppressed.get((src,seq),-1)<elapsed])
                     if not unsuppressed:
                         stats['nack_suppressed']+=len(seqs)
                         continue
                     # Every subscriber sees the NACK, not only the origin.
                     # Random hold-down prevents simultaneous identical feedback.
                     send({'t':'q','i':i,'src':src,'seqs':unsuppressed}, GROUP, 'nack_sent')
-                    for seq in unsuppressed:
-                        suppressed[(src,seq)]=elapsed+0.45+rnd.random()*0.5
+                    if args.ablation!='no_nack_suppression':
+                        for seq in unsuppressed:
+                            suppressed[(src,seq)]=elapsed+0.45+rnd.random()*0.5
                 else:
                     send({'t':'q','i':i,'src':src,'seqs':seqs},
                          (known[src], GROUP[1]), 'nack_sent')
@@ -297,13 +306,16 @@ def main():
                         for seq in item.get('seqs',[])[:m]:
                             if not isinstance(seq,int) or not 0<=seq<m:
                                 continue
-                            suppressed[(src,seq)]=max(suppressed.get((src,seq),0),elapsed+0.65+rnd.random()*.4)
+                            if args.ablation!='no_nack_suppression':
+                                suppressed[(src,seq)]=max(suppressed.get((src,seq),0),elapsed+0.65+rnd.random()*.4)
                             if src == i and seq in sent_orig:
                                 key=(src,seq)
                                 # Deduplicate NACKs across receivers and pace repair.
                                 if (elapsed-source_repair_last.get(key,-10)>0.7
                                     and source_repair_count.get(key,0)<32):
-                                    send({'t':'p','i':i,'s':seq,'k':TOPIC,'v':PAYLOAD},GROUP,'repair_sent')
+                                    send({'t':'p','i':i,'s':seq,'k':TOPIC,'v':PAYLOAD},
+                                         address if args.ablation=='unicast_repair' else GROUP,
+                                         'repair_sent')
                                     source_repair_last[key]=elapsed
                                     source_repair_count[key]=source_repair_count.get(key,0)+1
                                 else:
@@ -330,6 +342,8 @@ def main():
     end_udp_stats = udp_counters()
     (workdir / f'node-{i}.json').write_text(json.dumps({
         'id':i,'mode':args.mode,'v4':args.v4,'known_nodes':len(known),
+        'payload_bytes':args.payload_bytes,'publish_interval_s':args.publish_interval,
+        'ablation':args.ablation,'sent_original':len(sent_orig),
         'discovery_s':discovery_time,'ready_at_publish':ready_at_publish,
         'received':len(received),'expected':expected,
         'remote_received':len(received)-len(sent_orig),
