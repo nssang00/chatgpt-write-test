@@ -16,6 +16,7 @@ namespace nativeweb {
 namespace detail {
 
 class PluginLibraryLease;
+struct PluginEventState;
 
 class PluginModule
 {
@@ -54,7 +55,6 @@ public:
 private:
     static int32_t publishEventThunk(
         void* hostContext, const char* relativeEvent, const nw_value_v1* payload);
-    int32_t publishEvent(const char* relativeEvent, const nw_value_v1* payload);
 
     static int32_t registerFunctionThunk(
         void* hostContext,
@@ -114,7 +114,7 @@ private:
         const std::function<void(const std::string&)>& validateId);
 
     BindingRegistry& registry_;
-    std::function<void(const std::string&, const Any&)> publishEvent_;
+    std::shared_ptr<PluginEventState> eventState_;
     std::shared_ptr<PluginLibraryLease> lease_;
     std::vector<RegistrationToken> registrations_;
     std::vector<std::string> functionNames_;
