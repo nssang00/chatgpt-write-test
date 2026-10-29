@@ -19,6 +19,7 @@ def main():
     ap.add_argument('--capture-all',action='store_true')
     ap.add_argument('--internal-capture',action='store_true')
     ap.add_argument('--history',choices=['default','last64','all'],default='default')
+    ap.add_argument('--keyed',action='store_true')
     ap.add_argument('--output',default='cyclone-wire-results')
     a=ap.parse_args()
     wd=Path(a.output).resolve()
@@ -37,6 +38,7 @@ def main():
                      '--history',a.history,
                      '--workdir',str(wd)]
             if a.internal_capture:command.append('--internal-capture')
+            if a.keyed:command.append('--keyed')
             proc=subprocess.Popen(command,stdout=log,stderr=subprocess.STDOUT)
             log.close()
             procs.append(proc)
@@ -87,7 +89,7 @@ def main():
                 if len(received_by)<a.nodes:
                     bad_sources.append({'origin':src,'seen_by':len(received_by)})
         summary={
-            'nodes':a.nodes,'mode':a.mode,'history':a.history,'seed':a.seed,'capture':a.capture,
+            'nodes':a.nodes,'mode':a.mode,'history':a.history,'keyed':a.keyed,'seed':a.seed,'capture':a.capture,
             'capture_all':a.capture_all,'internal_capture':a.internal_capture,
             'reports':len(nodes),'ready':ready,
             'full_participant_s':max_complete('participants_full_s'),
