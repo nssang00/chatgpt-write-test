@@ -62,7 +62,7 @@ def main():
     a=argparse.ArgumentParser()
     a.add_argument('--nodes',type=int,required=True)
     a.add_argument('--seed',type=int,required=True)
-    a.add_argument('--config',choices=['default','eth0','spdp-only'],default='default')
+    a.add_argument('--config',choices=['default','eth0','spdp-only','lease60','spdp1s','lease60-spdp1s'],default='default')
     a.add_argument('--delay-ms',type=float,default=0.0)
     a.add_argument('--timeout',type=float,default=25.0)
     a.add_argument('--capture',action='store_true')
