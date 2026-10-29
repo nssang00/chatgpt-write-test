@@ -2,8 +2,8 @@ name: osm2mbtiles Seoul Same-Tile Three-Engine Comparison
 
 on:
   push:
-    branches: [ci/osm2mbtiles-3way-seoul-tile]
-    paths: ['.github/workflows/osm2mbtiles-seoul-3way.yml', 'experiments/osm2mbtiles/prototype/benchmarks/seoul_generation_speed.py']
+    branches: [ci/osm2mbtiles-3way-seoul-tile, ci/osm2mbtiles-natural-boundary-audit]
+    paths: ['.github/workflows/osm2mbtiles-seoul-3way.yml', 'experiments/osm2mbtiles/prototype/benchmarks/seoul_generation_speed.py', 'experiments/osm2mbtiles/prototype/benchmarks/seoul_natural_boundary_audit.py']
   workflow_dispatch:
 
 permissions:
@@ -155,6 +155,8 @@ jobs:
             "planetiler=$WORK/planetiler.mbtiles" \
             "tilemaker=$WORK/tilemaker.mbtiles"
           /usr/bin/python3 "$PROJECT/benchmarks/seoul_generation_speed.py" "$WORK"
+          /usr/bin/python3 "$PROJECT/benchmarks/seoul_natural_boundary_audit.py" "$WORK"
+          cat "$WORK/natural-boundary-audit.md" >> "$GITHUB_STEP_SUMMARY"
           cat "$WORK/speed_summary.md" >> "$GITHUB_STEP_SUMMARY"
           cat "$WORK/summary.md" >> "$GITHUB_STEP_SUMMARY"
           cat "$WORK/tilemaker-profile.txt" >> "$GITHUB_STEP_SUMMARY"
@@ -168,7 +170,8 @@ jobs:
                    postgis-import.log postgis-vector-r1.log postgis-vector-r2.log \
                    planetiler-r1.log planetiler-r2.log \
                    tilemaker-omt-r1.log tilemaker-omt-r2.log \
-                   speed_summary.md same-tile-speed.json; do
+                   speed_summary.md same-tile-speed.json \
+                   natural-boundary-audit.md natural-boundary-audit.json; do
             cp "$WORK/$f" seoul-three-way-evidence/ 2>/dev/null || true
           done
           for f in "$WORK"/*.seconds; do
