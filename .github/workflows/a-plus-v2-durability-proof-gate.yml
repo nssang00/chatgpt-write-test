@@ -1,0 +1,67 @@
+name: Aplus V2 Auditable Durability Proof Gate
+on:
+  push:
+    branches: [experiment/a-plus-v2-selective-durability-qos-20261030]
+    paths: [.github/workflows/a-plus-v2-durability-proof-gate.yml]
+  workflow_dispatch:
+permissions: {contents: read}
+jobs:
+  proof:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 16
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix:
+        include:
+          - {n: 20, seed: 1}
+          - {n: 100, seed: 1}
+          - {n: 200, seed: 1}
+          - {n: 200, seed: 2}
+    name: 'Audited durable sender SIGKILL N=${{ matrix.n }} seed=${{ matrix.seed }}'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - name: Validate source and networking limits
+        run: |
+          python -m py_compile bench/discovery/pubsub_node.py bench/discovery/pubsub_run.py
+          sudo sysctl -w net.core.rmem_max=16777216
+          sudo sysctl -w net.core.wmem_max=16777216
+      - name: Evidence-backed data recovery with origin SIGKILL
+        shell: bash
+        run: |
+          set -euo pipefail
+          case '${{ matrix.n }}' in
+            20) disc=6; timeout=55; spread=3 ;;
+            100) disc=18; timeout=115; spread=12 ;;
+            200) disc=27; timeout=145; spread=18 ;;
+          esac
+          sudo -E "$(which python)" bench/discovery/pubsub_run.py \
+            --sizes '${{ matrix.n }}' --modes multicast --losses 10 \
+            --v4 --messages 20 --publishers '${{ matrix.n }}' \
+            --payload-bytes 128 --publish-interval 0.08 \
+            --discovery "$disc" --timeout "$timeout" --publish-spread "$spread" \
+            --repair-fanout 6 --repair-interval 0.9 --seeds '${{ matrix.seed }}' \
+            --fault crash_confirmed --peer-repair --peer-replicas 6 \
+            --peer-cache-limit 2048 --backup-quorum 2 --durable-publishers 1 \
+            --output proof-results
+          python - <<'PY'
+          import json,glob
+          r=json.load(open('proof-results/results.json'))[0]
+          print('DURABILITY_PROOF_RESULT '+json.dumps(r))
+          assert r['status']=='PASS' and r['crashed_nodes']==[0],r
+          assert r['backup_confirmed_origins']==1 and r['killed_source_proof_valid'],r
+          proofpaths=glob.glob('proof-results/*/backup-proof-0.json')
+          assert len(proofpaths)==1,proofpaths
+          proof=json.load(open(proofpaths[0]))
+          assert proof['message_count']==20 and proof['quorum']==2,proof
+          assert len(proof['replica_ids_by_sequence'])==20,proof
+          assert all(len(ids)>=2 and 0 not in ids for ids in proof['replica_ids_by_sequence'].values()),proof
+          assert r['reported']==r['nodes']-1 and r['pubsub_success'],r
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: 'proof-N${{ matrix.n }}-seed${{ matrix.seed }}'
+          path: proof-results/
