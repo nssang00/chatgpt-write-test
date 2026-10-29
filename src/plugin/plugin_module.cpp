@@ -16,6 +16,19 @@ namespace detail {
 
 namespace {
 
+// A plugin may publish events only synchronously while one of its
+// registered C ABI functions is executing on this thread. This prevents
+// asynchronous publisher use after a module has been quiesced/unloaded.
+thread_local PluginModule* activePublisherModule = 0;
+struct PluginPublishScope {
+    explicit PluginPublishScope(PluginModule* module)
+        : previous(activePublisherModule) {
+        activePublisherModule = module;
+    }
+    ~PluginPublishScope() { activePublisherModule = previous; }
+    PluginModule* previous;
+};
+
 std::string copyString(
     const nw_string_view_v1& value)
 {
@@ -278,13 +291,15 @@ Callable makePluginCallable(
     nw_plugin_call_v1 function,
     void* userData,
     const std::shared_ptr<void>& lifetime,
-    const CallableSignature& signature)
+    const CallableSignature& signature,
+    PluginModule* module)
 {
     // Preserve the lease even when a consumer extracts/copies dynamicFunction()
     // instead of copying the full Callable wrapper.
-    const DynamicFunction dynamic = [function, userData, lifetime, signature](
+    const DynamicFunction dynamic = [function, userData, lifetime, signature, module](
         const VariantList& args) -> Any {
         (void)lifetime;
+        PluginPublishScope scopedEventPublisher(module);
         if (signature.result.kind != CallableTypeKind::Unknown)
         {
             if (args.size() != signature.arity())
@@ -737,7 +752,8 @@ void PluginModule::initialize(
 int32_t PluginModule::publishEventThunk(
     void* context, const char* event, const nw_value_v1* payload)
 {
-    if (!context) return -1;
+    if (!context || activePublisherModule != static_cast<PluginModule*>(context))
+        return -1;
     try {
         return static_cast<PluginModule*>(context)->publishEvent(event,payload);
     } catch (...) {
@@ -884,7 +900,7 @@ int32_t PluginModule::registerFunctionImpl(
             makePluginCallable(
                 function,
                 userData,
-                lifetime, signature));
+                lifetime, signature, this));
 
     registrations_.push_back(
         std::move(token));
