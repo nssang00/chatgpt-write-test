@@ -89,7 +89,7 @@ def main():
                  backup_ack_sent=0, backup_ack_received=0,
                  peer_repairs_sent=0, peer_cache_evictions=0,
                  backup_ack_retry_sent=0, backup_need_hello=0,
-                 fault_dropped_initial=0)
+                 fault_dropped_initial=0, forced_backup_delivered=0)
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 4 * 1024 * 1024)
@@ -397,6 +397,8 @@ def main():
                         source_watermark[src]=max(source_watermark.get(src,0),seq+1)
                     if key not in received:
                         received.add(key)
+                        if args.force_miss_receiver==i and args.force_miss_origin==src:
+                            stats['forced_backup_delivered']+=1
                         if args.peer_repair and src<durable_count and src!=i and i in backup_peers(src,seq):
                             # Do not synthesize data from a sequence number.
                             peer_cache[key]=item['v']
