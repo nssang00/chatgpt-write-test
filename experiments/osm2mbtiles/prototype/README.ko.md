@@ -199,6 +199,13 @@ test-seoul.bat 12-14 both
 
 - 기본: **서울 OSM**(`https://tiles.osm.kr/download/seoul-non-military.osm.pbf`)을
   `test-output` 폴더에 내려받고 재실행 시 재사용합니다.
+- 서울 단독 배치 파일은 `OSM2MBTILES_BBOX`의 기본값으로
+  `126.75,37.40,127.20,37.72`를 전달합니다. PBF에 HeaderBBox가 없더라도
+  CLI 초기 검사에서 중단되지 않도록 범위를 고정합니다. 지도 범위만 지정하는
+  옵션으로, 입력 PBF의 feature import 범위 자체를 줄이는 옵션은 아닙니다.
+  범위를 변경하려면 Windows cmd에서
+  `set "OSM2MBTILES_BBOX=126.80,37.45,127.15,37.70"` 후
+  `test-seoul.bat`를 실행하세요.
 - 기본 출력: `--tile-type both`, z12~14, PNG + MVT/PBF MBTiles 두 개.
   기본 Vector 엔진은 `batch`, Raster 인코딩은 손실 없는 `png`.
 - 실제 지도 스타일은 기존 `run_windows.ps1` / `run_wsl.sh`의 OSM Carto +
@@ -214,3 +221,15 @@ test-seoul.bat 12-14 both
 - 고급 환경변수 `OSM2MBTILES_VECTOR_TILER=postgis|batch`,
   `OSM2MBTILES_VECTOR_BATCH_SIDE=1..8`,
   `OSM2MBTILES_RASTER_FORMAT=png|png256`를 Windows 런처에 전달합니다.
+
+### 서울 배치 실행 실패 진단
+
+- `[DIAG] Failed command at run_wsl.sh:...` 와 해당 줄 이전의 첫
+  `[ERROR]` 또는 `ERROR:` 메시지를 확인하세요. 종료 코드 2만으로 원인을
+  단정할 수 없습니다.
+- `[DIAG] Actual input PBF`가 서울 파일인지 확인하세요. 기존 진단
+  문구가 서울 실행에도 한국 전체 캐시 경로를 표시하던 문제를 수정했습니다.
+- `oom=0`, `oom_kill=0` 및 충분한 용량은 OOM/디스크 부족의
+  근거가 없음을 뜻할 뿐 다른 오류를 배제하지 않습니다.
+- 수정된 `tools/run_wsl.sh`와 `tools/run_windows.ps1` 및
+  `tools/test_seoul.ps1`를 모두 같은 버전으로 교체해야 합니다.
