@@ -1,0 +1,52 @@
+name: Aplus Protocol Ablation Controls
+on:
+  push:
+    branches: [experiment/a-plus-stress-fault-ablation-20261029]
+    paths: [.github/workflows/a-plus-ablation-controls.yml]
+  workflow_dispatch:
+permissions: {contents: read}
+jobs:
+  ablation:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    strategy:
+      fail-fast: false
+      max-parallel: 7
+      matrix:
+        ablation: [full, no_anti_entropy, no_hello, no_nack_suppression, unicast_repair]
+        loss: [0, 10]
+    name: '${{ matrix.ablation }} N=100 loss=${{ matrix.loss }}'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - name: Ensure Python and kernel networking
+        run: |
+          python -m py_compile bench/discovery/pubsub_node.py bench/discovery/pubsub_run.py
+          sudo sysctl -w net.core.rmem_max=16777216
+          sudo sysctl -w net.core.wmem_max=16777216
+      - name: Remove one protocol feature, hold constant 100 nodes 20 messages
+        run: |
+          set -euo pipefail
+          sudo -E "$(which python)" bench/discovery/pubsub_run.py \
+            --sizes 100 --modes multicast \
+            --losses '${{ matrix.loss }}' --v4 \
+            --messages 20 --publish-interval 0.08 --payload-bytes 128 \
+            --publishers 100 --discovery 18 \
+            --timeout 70 --publish-spread 12 --seeds 1 \
+            --ablation '${{ matrix.ablation }}' \
+            --repair-fanout 6 --repair-interval 0.9 \
+            --output ablation-results
+          cat ablation-results/results.csv
+          python - <<'PY'
+          import json
+          r=json.load(open('ablation-results/results.json'))[0]
+          print('ABLATION_RESULT '+json.dumps(r))
+          assert r['status'] in ('PASS','FAIL'),r
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: 'ablation-${{ matrix.ablation }}-loss${{ matrix.loss }}'
+          path: ablation-results/
+          if-no-files-found: warn
