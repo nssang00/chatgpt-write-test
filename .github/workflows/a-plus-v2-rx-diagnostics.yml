@@ -1,0 +1,49 @@
+name: Aplus V2 Receive Budget Diagnostics
+on:
+  push:
+    branches: [experiment/a-plus-v2-repair-20261030]
+    paths: [.github/workflows/a-plus-v2-rx-diagnostics.yml]
+  workflow_dispatch:
+permissions: {contents: read}
+jobs:
+  diagnostics:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 17
+    strategy:
+      fail-fast: false
+      matrix:
+        nodes: [100, 200]
+        loss: [0, 10]
+    name: 'RX diagnostic N=${{ matrix.nodes }} loss=${{ matrix.loss }}'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - run: |
+          python -m py_compile bench/discovery/a_plus_v2_conservative_node.py bench/discovery/pubsub_run.py
+          sudo sysctl -w net.core.rmem_max=16777216
+          sudo sysctl -w net.core.wmem_max=16777216
+      - name: Measure receive-loop pressure on fixed workload
+        run: |
+          set -euo pipefail
+          if [ "${{ matrix.nodes }}" = 200 ]; then discovery=27; timeout=125; spread=18; else discovery=18; timeout=105; spread=12; fi
+          sudo -E "$(which python)" bench/discovery/pubsub_run.py \
+            --impl v2c --sizes "${{ matrix.nodes }}" --modes multicast --v4 \
+            --messages 100 --publishers "${{ matrix.nodes }}" --losses "${{ matrix.loss }}" \
+            --payload-bytes 128 --publish-interval 0.06 --discovery "$discovery" \
+            --timeout "$timeout" --publish-spread "$spread" --repair-fanout 6 \
+            --repair-interval 0.9 --seeds 4 --output rx-results
+          cat rx-results/results.csv
+          python - <<'PY'
+          import json
+          r=json.load(open('rx-results/results.json'))[0]
+          print('RX_DIAGNOSTIC_RESULT '+json.dumps(r))
+          assert r['status'] in ('PASS','FAIL')
+          assert r['reported']==r['nodes']
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: 'rx-N${{ matrix.nodes }}-loss${{ matrix.loss }}'
+          path: rx-results/
+          if-no-files-found: warn
