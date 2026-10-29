@@ -14,6 +14,7 @@ import (
 	libp2p "github.com/libp2p/go-libp2p"
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	"github.com/libp2p/go-libp2p/core/peer"
+	"github.com/libp2p/go-libp2p/core/network"
 	ma "github.com/multiformats/go-multiaddr"
 )
 
@@ -136,21 +137,39 @@ func main() {
 			if err!=nil {mu.Lock();connectErr++;mu.Unlock();return}
 			pi,err:=peer.AddrInfoFromP2pAddr(addr)
 			if err!=nil {mu.Lock();connectErr++;mu.Unlock();return}
-			// Retry throughout the warmup: initial simultaneous dials can trigger
-			// libp2p's connection backoff even when the peer is now reachable.
-			deadline:=start.Add(time.Duration(*warmup*float64(time.Second)))
+			// One directional dialer per link also owns link maintenance.
+			// Gossipsub itself does not connect/rediscover peers: the application
+			// must re-bootstrap disconnected mesh links.
+			deadline:=start.Add(time.Duration(*duration*float64(time.Second)))
+			everConnected:=false
+			attempt:=0
 			firstError:=""
-			for attempt:=0;time.Now().Before(deadline) && ctx.Err()==nil;attempt++ {
-				cctx,cancel:=context.WithTimeout(ctx,1800*time.Millisecond)
+			for time.Now().Before(deadline) && ctx.Err()==nil {
+				if host.Network().Connectedness(pi.ID)==network.Connected {
+					everConnected=true
+					attempt=0
+					time.Sleep(650*time.Millisecond)
+					continue
+				}
+				cctx,cancel:=context.WithTimeout(ctx,1600*time.Millisecond)
 				err=host.Connect(cctx,*pi)
 				cancel()
-				if err==nil {mu.Lock();connectOK++;mu.Unlock();return}
+				if err==nil {
+					mu.Lock();connectOK++;mu.Unlock()
+					everConnected=true
+					attempt=0
+					time.Sleep(650*time.Millisecond)
+					continue
+				}
 				if firstError=="" {firstError=err.Error()}
-				sleepMs:=300+attempt*180
+				sleepMs:=400+attempt*150
 				if sleepMs>1800 {sleepMs=1800}
+				attempt++
 				time.Sleep(time.Duration(sleepMs)*time.Millisecond)
 			}
-			mu.Lock();connectErr++;errs=append(errs,fmt.Sprintf("connect %d initial=%s final=%v",j,firstError,err));mu.Unlock()
+			if !everConnected {
+				mu.Lock();connectErr++;errs=append(errs,fmt.Sprintf("connect %d initial=%s final=%v",j,firstError,err));mu.Unlock()
+			}
 		}(j)
 	}
 	go wg.Wait()
