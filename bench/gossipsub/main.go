@@ -122,6 +122,9 @@ func main() {
 	sort.Ints(neighbors)
 	var wg sync.WaitGroup
 	for _,j:=range neighbors {
+		// Each undirected edge has exactly one dialer. Simultaneous
+		// bidirectional TCP dials produced libp2p TLS ClientHello races.
+		if j<*id {continue}
 		wg.Add(1)
 		go func(j int){
 			defer wg.Done()
