@@ -13,8 +13,11 @@ BRIDGE = 'db-br0'
 PREFIX = 'db-n'
 
 def sh(*args, check=True):
-    return subprocess.run(args, check=check, stdout=subprocess.DEVNULL,
-                          stderr=subprocess.PIPE, text=True)
+    p = subprocess.run(args, check=False, stdout=subprocess.DEVNULL,
+                       stderr=subprocess.PIPE, text=True)
+    if check and p.returncode:
+        raise RuntimeError(f'command {args!r} returned {p.returncode}: {p.stderr.strip()}')
+    return p
 
 def addr(i):
     return f'10.77.{i // 250}.{i % 250 + 1}'
@@ -26,11 +29,17 @@ def memory_available():
     try:
         p = Path('/sys/fs/cgroup')
         limit = (p / 'memory.max').read_text().strip()
-        if limit == 'max':
-            return None
-        return int(limit) - int((p / 'memory.current').read_text())
+        if limit != 'max':
+            return int(limit) - int((p / 'memory.current').read_text())
     except (OSError, ValueError):
-        return None
+        pass
+    try:
+        for line in Path('/proc/meminfo').read_text().splitlines():
+            if line.startswith('MemAvailable:'):
+                return int(line.split()[1])*1024
+    except (OSError, ValueError):
+        pass
+    return None
 
 def prepare(n):
     sh('ip', 'link', 'add', BRIDGE, 'type', 'bridge')
@@ -144,6 +153,7 @@ def main():
     p = argparse.ArgumentParser()
     p.add_argument('--sizes', default='10,30,100,200,300')
     p.add_argument('--losses', default='0,10')
+    p.add_argument('--backends', default='gossip,zenoh,cyclone')
     p.add_argument('--timeout', type=float, default=22)
     p.add_argument('--output', default='discovery-results')
     a = p.parse_args()
@@ -154,7 +164,7 @@ def main():
     results = []
     for n in [int(s) for s in a.sizes.split(',')]:
         avail = memory_available()
-        if avail is not None and avail < n*42*1024*1024 + 900*1024*1024:
+        if avail is not None and avail < n*15*1024*1024 + 500*1024*1024:
             row = {'nodes': n, 'status': 'SKIP',
                    'reason': 'estimated cgroup memory safety limit', 'available_bytes': avail}
             results.append(row)
@@ -162,9 +172,16 @@ def main():
             continue
         try:
             prepare(n)
+        except Exception as exc:
+            row = {'nodes': n, 'status': 'ERROR', 'reason': str(exc)}
+            results.append(row)
+            print(json.dumps(row), flush=True)
+            cleanup(n)
+            continue
+        try:
             for loss in [float(x) for x in a.losses.split(',')]:
                 netem(n, loss)
-                for backend in ('gossip', 'zenoh', 'cyclone'):
+                for backend in a.backends.split(','):
                     print(f'RUN {backend} N={n} loss={loss}%', flush=True)
                     try:
                         row = execute(n, backend, loss, a.timeout, outdir)
