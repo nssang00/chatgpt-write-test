@@ -61,6 +61,8 @@ def main():
     pending_peer_repairs = {}
     peer_repair_last = {}
     backup_acks = {}  # Source-side per-sequence backup storage confirmations.
+    pending_backup_acks = {}  # Cache holders retry until source confirms the ACK.
+    last_source_hello = {}
     backup_durable_at = None
     # Store no per-peer session; IDs are obtained by HELLO and anti-entropy.
     lazy_pending = {}
@@ -79,7 +81,8 @@ def main():
                  ihave_sent=0, iwant_sent=0, nack_suppressed=0,
                  nack_heard=0, repair_suppressed=0, completed_ack_sent=0,
                  backup_ack_sent=0, backup_ack_received=0,
-                 peer_repairs_sent=0, peer_cache_evictions=0)
+                 peer_repairs_sent=0, peer_cache_evictions=0,
+                 backup_ack_confirm_sent=0, backup_ack_confirm_recv=0)
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 4 * 1024 * 1024)
@@ -301,6 +304,7 @@ def main():
                 if typ == 'h':
                     if isinstance(peer,int) and 0 <= peer < n:
                         known[peer] = address[0]
+                        last_source_hello[peer] = elapsed
                         if args.incremental_repair and peer<publisher_count:
                             watermark=item.get('w')
                             if isinstance(watermark,int) and 0<=watermark<=m:
@@ -360,11 +364,13 @@ def main():
                             if len(peer_cache)>args.peer_cache_limit:
                                 oldest=next(iter(peer_cache))
                                 peer_cache.pop(oldest)
+                                pending_backup_acks.pop(oldest,None)
                                 stats['peer_cache_evictions']+=1
                             ip=known.get(src)
                             if ip:
                                 send({'t':'b','i':i,'src':src,'s':seq},
                                      (ip,GROUP[1]),'backup_ack_sent')
+                                pending_backup_acks[key]=(elapsed+0.9+rnd.uniform(0,.4),1)
                         lazy_pending.pop(key, None)
                         if args.mode != 'multicast':
                             relay(src,seq)
@@ -379,6 +385,14 @@ def main():
                         and peer in backup_peers(i,seq) and seq in sent_orig):
                         backup_acks.setdefault(seq,set()).add(peer)
                         stats['backup_ack_received']+=1
+                        send({'t':'c','i':i,'src':i,'s':seq,'to':peer},
+                             address,'backup_ack_confirm_sent')
+                elif typ == 'c':
+                    src,seq,to=item.get('src'),item.get('s'),item.get('to')
+                    if (args.peer_repair and isinstance(src,int)
+                        and isinstance(seq,int) and src==peer and to==i):
+                        pending_backup_acks.pop((src,seq),None)
+                        stats['backup_ack_confirm_recv']+=1
                 elif typ == 'q':
                     src=item.get('src')
                     if args.v4 and isinstance(src,int) and 0<=src<n:
@@ -390,6 +404,7 @@ def main():
                                 suppressed[(src,seq)]=max(suppressed.get((src,seq),0),elapsed+0.65+rnd.random()*.4)
                             key=(src,seq)
                             if (args.peer_repair and src!=i and key in peer_cache
+                                and elapsed-last_source_hello.get(src,0)>=3.0
                                 and key not in pending_peer_repairs and
                                 elapsed-peer_repair_last.get(key,-10)>1.25):
                                 rank=backup_peers(src,seq).index(i)
@@ -413,6 +428,19 @@ def main():
             except (OSError,ValueError,TypeError,KeyError):
                 continue
 
+        if args.peer_repair and pending_backup_acks:
+            # Confirmed replica retention, with bounded ACK retries.
+            due=[key for key,(at,tries) in pending_backup_acks.items() if at<=elapsed]
+            for key in due[:12]:
+                at,tries=pending_backup_acks[key]
+                if tries>=12 or key not in peer_cache:
+                    pending_backup_acks.pop(key,None)
+                    continue
+                src,seq=key
+                ip=known.get(src)
+                if ip:
+                    send({'t':'b','i':i,'src':src,'s':seq},(ip,GROUP[1]),'backup_ack_sent')
+                pending_backup_acks[key]=(elapsed+1.1+rnd.uniform(0,.55),tries+1)
         if args.peer_repair and pending_peer_repairs:
             # Bounded repair work per loop, lower-ranked replicas wait longer.
             due=sorted((at,key) for key,at in pending_peer_repairs.items() if at<=elapsed)
@@ -458,6 +486,7 @@ def main():
         'peer_repair':args.peer_repair,'peer_cache_entries':len(peer_cache),
         'backup_acked_sequences':sum(len(backup_acks.get(seq,set()))>=args.backup_quorum for seq in range(m)) if i<publisher_count else 0,
         'backup_durable_at_s':backup_durable_at,
+        'backup_ack_pending':len(pending_backup_acks),
         'incremental_repair':args.incremental_repair,'nack_batch_limit':args.nack_batch_limit,
         'watermarked_sources':len(source_watermark),
         'finished_sources':len(source_finished),
