@@ -107,6 +107,8 @@ def run():
             "checkpoint: native-app-ui-loaded app://desktop/index.html",
             "checkpoint: generated-app-js-native-pong",
             "checkpoint: user-cpp-backend-and-feature-plugin",
+            "checkpoint: plugin-native-js-event-unsubscribe",
+            "checkpoint: feature-plugin-unloaded",
             "Real browser app:// host completed successfully."
         )
         missing=[marker for marker in markers if marker not in output]
