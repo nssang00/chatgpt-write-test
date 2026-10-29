@@ -1,0 +1,34 @@
+name: PubSub Reliable Repair V2 100 Nodes
+on:
+  push:
+    branches: [benchmark/pubsub-repair-v2-20261029]
+    paths: [.github/workflows/pubsub-repair-v2-100.yml]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  v2-100:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Check networking and memory
+        run: ip -V && tc -V && free -m
+      - name: Run UDP algorithm comparisons with bounded repair
+        run: |
+          set -euxo pipefail
+          sudo -E "$(which python)" bench/discovery/pubsub_run.py \
+            --sizes 100 --modes multicast,tree,mesh,hybrid --losses 0,10 \
+            --discovery 10 --timeout 45 --messages 2 --publish-spread 3 \
+            --output repair-v2-100-results
+          cat repair-v2-100-results/results.csv
+      - name: Upload evidence and metrics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: repair-v2-100-results
+          path: repair-v2-100-results/
+          if-no-files-found: warn
