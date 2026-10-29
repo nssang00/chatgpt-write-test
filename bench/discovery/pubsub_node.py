@@ -380,12 +380,16 @@ def main():
                         or not 0 <= src < n or not 0 <= seq < m
                         or item.get('k') != TOPIC or item.get('v') != payload_for(src,seq)):
                         continue
-                    if (args.force_miss_receiver==i and args.force_miss_origin==src
-                        and not (workdir/f'origin-killed-{src}').exists()):
-                        # No sample from the targeted origin can enter Received
-                        # or backup cache before the source has actually died.
-                        stats['fault_dropped_initial']+=1
-                        continue
+                    if args.force_miss_receiver==i and args.force_miss_origin==src:
+                        # Causal trial accepts ONLY a tagged eligible backup's
+                        # retransmission and ONLY after source SIGKILL. A delayed
+                        # original multicast can never satisfy this test.
+                        backup_id=item.get('from_backup')
+                        valid_backup=(isinstance(backup_id,int)
+                            and backup_id in backup_peers(src,seq))
+                        if not ((workdir/f'origin-killed-{src}').exists() and valid_backup):
+                            stats['fault_dropped_initial']+=1
+                            continue
                     if first_data is None and src != i:
                         first_data = elapsed
                     key=(src,seq)
@@ -462,7 +466,8 @@ def main():
                 pending_peer_repairs.pop(key,None)
                 if payload is not None:
                     src,seq=key
-                    send({'t':'p','i':src,'s':seq,'k':TOPIC,'v':payload},GROUP,'peer_repairs_sent')
+                    send({'t':'p','i':src,'s':seq,'k':TOPIC,'v':payload,
+                          'from_backup':i},GROUP,'peer_repairs_sent')
                     peer_repair_last[key]=elapsed
         if (args.peer_repair and i < durable_count and len(sent_orig)==m
             and backup_durable_at is None and
