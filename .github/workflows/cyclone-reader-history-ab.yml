@@ -1,0 +1,49 @@
+name: Cyclone Reader History Cache Root Cause A-B
+on:
+  push:
+    branches: [diagnostic/cyclone-wire-timing-20261029]
+    paths: [.github/workflows/cyclone-reader-history-ab.yml]
+  workflow_dispatch:
+permissions: {contents: read}
+jobs:
+  history-ab:
+    name: 'n=${{ matrix.nodes }} history=${{ matrix.history }} seed=${{ matrix.seed }}'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    strategy:
+      fail-fast: false
+      max-parallel: 8
+      matrix:
+        include:
+          - {nodes: 10, history: default, seed: 1}
+          - {nodes: 10, history: last64, seed: 1}
+          - {nodes: 10, history: last64, seed: 2}
+          - {nodes: 10, history: last64, seed: 3}
+          - {nodes: 10, history: all, seed: 1}
+          - {nodes: 10, history: all, seed: 2}
+          - {nodes: 10, history: all, seed: 3}
+          - {nodes: 20, history: last64, seed: 1}
+          - {nodes: 20, history: all, seed: 1}
+          - {nodes: 40, history: last64, seed: 1}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - name: Install Cyclone DDS Python
+        run: python -m pip install cyclonedds==11.0.1
+      - name: Measure Participant, matched endpoints and first data per origin
+        run: |
+          set -euo pipefail
+          sudo -E "$(which python)" bench/discovery/cyclone_wire_run.py \
+            --nodes '${{ matrix.nodes }}' \
+            --mode default --history '${{ matrix.history }}' \
+            --seed '${{ matrix.seed }}' --duration 20 \
+            --output history-ab
+          cat history-ab/summary.json
+      - name: Upload full per-origin source/sequence history
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: 'history-${{ matrix.nodes }}-${{ matrix.history }}-seed${{ matrix.seed }}'
+          path: history-ab/
+          if-no-files-found: warn
