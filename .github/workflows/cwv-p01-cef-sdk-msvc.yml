@@ -20,7 +20,9 @@ jobs:
           path: |
             .cache/cef/windows/archive
             .cache/cef/windows/extracted
-          key: cwv-p01-cef-144-0-36-sdk-windows-v1
+          key: cef-windows64-144.0.36-g78619fd-runtime-v2
+          restore-keys: |
+            cef-windows64-144.0.36-g78619fd
       - name: Fetch and SHA1 verify official CEF SDK (not CompanyWebView product)
         shell: pwsh
         run: |
