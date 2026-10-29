@@ -2,7 +2,7 @@ name: osm2mbtiles Incremental OSM Diff Full-Rebuild Parity
 
 on:
   push:
-    branches: [ci/osm2mbtiles-incremental-parity]
+    branches: [ci/osm2mbtiles-incremental-parity, ci/osm2mbtiles-osc-gz-real-parity]
     paths:
       - '.github/workflows/osm2mbtiles-incremental-parity.yml'
       - 'experiments/osm2mbtiles/prototype/src/osm2mbtiles/vector_incremental.py'
@@ -64,10 +64,11 @@ jobs:
           from pathlib import Path
           j = json.loads(Path(sys.argv[1]).read_text())
           assert j["parity"]["equal"] and j["delta"]["dirty_covers_all_changes"]
+          assert "append .osc.gz" in j["protocol"]
           assert j["delta"]["actual_changed_tiles"] > 0
           lines = [
               "# Incremental vs full rebuild", "",
-              "Real osm2pgsql --slim create / --append with synthetic OSM XML/OSC.",
+              "Real osm2pgsql --slim create / --append with synthetic OSM XML/.osc.gz.",
               "",
               "Parity: {}. Dirty coverage: {}.".format(
                   j["parity"]["equal"], j["delta"]["dirty_covers_all_changes"]),
@@ -89,7 +90,7 @@ jobs:
         run: |
           mkdir -p incremental-evidence
           WORK="$RUNNER_TEMP/osm2mbtiles-incremental"
-          for name in incremental-results.json summary.md initial.osm final.osm change.osc postgres.log; do
+          for name in incremental-results.json summary.md initial.osm final.osm change.osc change.osc.gz postgres.log; do
             cp "$WORK/$name" incremental-evidence/ 2>/dev/null || true
           done
       - uses: actions/upload-artifact@v4
