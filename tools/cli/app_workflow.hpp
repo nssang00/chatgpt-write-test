@@ -198,7 +198,8 @@ inline void appBuild() {
     appCommand("python -m py_compile backend/main.py","Python backend syntax check");
   } else {
     appDir(".xytron-build/dotnet");
-    appCommand("dotnet build backend/MainBackend.csproj --configuration Release --output .xytron-build/dotnet --nologo","C# backend build");
+    const std::string build="dotnet build backend/MainBackend.csproj --configuration Release --output .xytron-build/dotnet --nologo \"-p:XytronSdkPrefix="+coreSdk+"\"";
+    appCommand(build.c_str(),"C# backend build");
   }
   std::cout<<"Backend build PASS ("<<lang<<"); C++ app ABI plugin built, browser host is external.\n";
 }
@@ -263,15 +264,23 @@ inline std::string appBackendPlugin() {
 }
 inline void appRunHost(const std::string& path, bool smoke,
                        const std::string& featurePath) {
-  if(appMainLanguage()!="cpp")
-    throw std::runtime_error("Real browser host currently supports generated C++ apps only");
-  restoredSdk();
+  const std::string language=appMainLanguage();
+  const std::string sdk=restoredSdk();
   // Require a built, valid backend before launching the UI. Running this
   // executable here is still a backend smoke preflight, not JS backend wiring.
   appTest();
   projectPath("ui/index.html",false);
-  const std::string backendPath=appBackendPlugin();
-  if(!featurePath.empty()) projectPath(featurePath,false);
+  const std::string backendPath=language=="cpp"?appBackendPlugin():std::string();
+  if(!featurePath.empty()) {
+    if(language!="cpp") throw std::runtime_error("Native feature plugin run is C++-only in this slice");
+    projectPath(featurePath,false);
+  }
+  if(language=="python") {
+    projectPath("backend/main.py",false);
+  } else if(language=="csharp") {
+    projectPath(".xytron-build/dotnet/MainBackend.dll",false);
+    projectPath(".xytron-build/dotnet/MainBackend.runtimeconfig.json",false);
+  }
   const std::string host=normalizeSdk(path);
   struct stat st;
   if(stat(host.c_str(),&st)!=0)
@@ -290,19 +299,30 @@ inline void appRunHost(const std::string& path, bool smoke,
     throw std::runtime_error("Cannot resolve app project directory");
 #endif
   const std::string ui=std::string("--ui=")+project+"/ui/index.html";
-  const std::string backendArg=std::string("--backend-plugin=")+project+"/"+backendPath;
+  const std::string backendArg=language=="cpp"?
+    std::string("--backend-plugin=")+project+"/"+backendPath:
+    std::string("--backend-language=")+language;
+  const std::string managedArg=language=="python"?
+    std::string("--python-runner=")+sdk+"/share/xytron/python/app_worker.py":
+    language=="csharp"?
+    std::string("--dotnet-assembly=")+project+"/.xytron-build/dotnet/MainBackend.dll":
+    std::string();
+  const std::string managedDir=language=="python"?
+    std::string("--python-project=")+project+"/backend":std::string();
   const std::string featureArg=featurePath.empty()?std::string():
     std::string("--plugin-path=")+project+"/"+featurePath;
   const std::size_t slash=host.find_last_of("/\\");
   if(slash==std::string::npos)
     throw std::runtime_error("Native browser host path must be absolute");
   const std::string hostDir=host.substr(0,slash);
-  std::cout<<"Launching real browser app:// with user-owned C++ ABI plugin.\n";
+  std::cout<<"Launching real browser app:// with trusted "<<language<<" Main backend.\n";
 #ifdef _WIN32
   // Paths are canonical, contain no command-line quote characters, and are
   // passed directly to CreateProcess (never via cmd.exe).
   std::string command="\""+host+"\" \""+ui+"\" \""+backendArg+"\"";
   if(!featureArg.empty()) command+=" \""+featureArg+"\"";
+  if(!managedArg.empty()) command+=" \""+managedArg+"\"";
+  if(!managedDir.empty()) command+=" \""+managedDir+"\"";
   if(smoke) command+=" --smoke";
   std::vector<char> mutableCmd(command.begin(),command.end());
   mutableCmd.push_back('\0');
@@ -324,19 +344,20 @@ inline void appRunHost(const std::string& path, bool smoke,
   if(child<0) throw std::runtime_error("Cannot fork desktop browser host");
   if(child==0) {
     if(chdir(hostDir.c_str())!=0) _exit(127);
-    if(smoke && featureArg.empty())
-      execl(host.c_str(),host.c_str(),"--no-sandbox",
-            ui.c_str(),backendArg.c_str(),"--smoke",static_cast<char*>(nullptr));
-    else if(smoke)
-      execl(host.c_str(),host.c_str(),"--no-sandbox",
-            ui.c_str(),backendArg.c_str(),featureArg.c_str(),"--smoke",
-            static_cast<char*>(nullptr));
-    else if(featureArg.empty())
-      execl(host.c_str(),host.c_str(),"--no-sandbox",
-            ui.c_str(),backendArg.c_str(),static_cast<char*>(nullptr));
-    else
-      execl(host.c_str(),host.c_str(),"--no-sandbox",
-            ui.c_str(),backendArg.c_str(),featureArg.c_str(),static_cast<char*>(nullptr));
+    std::vector<std::string> args;
+    args.push_back(host);
+    args.push_back("--no-sandbox");
+    args.push_back(ui);
+    args.push_back(backendArg);
+    if(!featureArg.empty())args.push_back(featureArg);
+    if(!managedArg.empty())args.push_back(managedArg);
+    if(!managedDir.empty())args.push_back(managedDir);
+    if(smoke)args.push_back("--smoke");
+    std::vector<char*> native;
+    for(std::size_t i=0;i<args.size();++i)
+      native.push_back(const_cast<char*>(args[i].c_str()));
+    native.push_back(nullptr);
+    execv(host.c_str(),native.data());
     _exit(127);
   }
   int status=0;
