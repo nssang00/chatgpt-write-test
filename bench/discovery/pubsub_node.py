@@ -35,11 +35,17 @@ def main():
     ap.add_argument('--ablation',choices=['full','no_anti_entropy','no_hello','no_nack_suppression','unicast_repair'],default='full')
     ap.add_argument('--incremental-repair',action='store_true')
     ap.add_argument('--nack-batch-limit',type=int,default=32)
+    ap.add_argument('--peer-repair',action='store_true',help='bounded deterministic backup caching and NACK takeover')
+    ap.add_argument('--peer-replicas',type=int,default=6)
+    ap.add_argument('--peer-cache-limit',type=int,default=2048)
+    ap.add_argument('--backup-quorum',type=int,default=2)
     args = ap.parse_args()
 
     i, n, m = args.id, args.count, args.messages
     assert 1<=args.payload_bytes<=1200 and 0<args.publish_interval<=5
     assert 1<=args.nack_batch_limit<=64
+    assert 1<=args.peer_replicas<n and args.peer_cache_limit>0
+    assert 1<=args.backup_quorum<=args.peer_replicas
     PAYLOAD='x'*args.payload_bytes
     publisher_count = args.publishers if args.publishers > 0 else n
     workdir = Path(args.workdir)
@@ -51,6 +57,11 @@ def main():
     # Without this watermark a receiver NACKs future, not-yet-published samples.
     source_watermark = {}
     source_finished = set()
+    peer_cache = {}  # Bounded cache only on deterministic backup peers.
+    pending_peer_repairs = {}
+    peer_repair_last = {}
+    backup_acks = {}  # Source-side per-sequence backup storage confirmations.
+    backup_durable_at = None
     # Store no per-peer session; IDs are obtained by HELLO and anti-entropy.
     lazy_pending = {}
     request_last = {}
@@ -66,7 +77,9 @@ def main():
                  data_sent=0, data_forwarded=0, nack_sent=0,
                  repair_sent=0, packets_received=0,
                  ihave_sent=0, iwant_sent=0, nack_suppressed=0,
-                 nack_heard=0, repair_suppressed=0, completed_ack_sent=0)
+                 nack_heard=0, repair_suppressed=0, completed_ack_sent=0,
+                 backup_ack_sent=0, backup_ack_received=0,
+                 peer_repairs_sent=0, peer_cache_evictions=0)
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 4 * 1024 * 1024)
@@ -104,6 +117,18 @@ def main():
             stats[kind] += 1
         except (OSError, ValueError):
             send_errors += 1
+
+    def backup_peers(origin, sequence):
+        # Fixed global benchmark IDs allow deterministic replica selection.
+        start=((origin*1103515245+sequence*12345+7919)&0x7fffffff)%n
+        result=[]
+        for off in range(n):
+            candidate=(start+off)%n
+            if candidate!=origin:
+                result.append(candidate)
+                if len(result)>=args.peer_replicas:
+                    break
+        return result
 
     def tree_children(origin):
         # 3-ary dissemination tree rooted at the origin, evaluated locally.
@@ -329,11 +354,31 @@ def main():
                         source_watermark[src]=max(source_watermark.get(src,0),seq+1)
                     if key not in received:
                         received.add(key)
+                        if args.peer_repair and src!=i and i in backup_peers(src,seq):
+                            # Do not synthesize data from a sequence number.
+                            peer_cache[key]=item['v']
+                            if len(peer_cache)>args.peer_cache_limit:
+                                oldest=next(iter(peer_cache))
+                                peer_cache.pop(oldest)
+                                stats['peer_cache_evictions']+=1
+                            ip=known.get(src)
+                            if ip:
+                                send({'t':'b','i':i,'src':src,'s':seq},
+                                     (ip,GROUP[1]),'backup_ack_sent')
                         lazy_pending.pop(key, None)
                         if args.mode != 'multicast':
                             relay(src,seq)
                     else:
                         duplicate += 1
+                    if args.peer_repair:
+                        pending_peer_repairs.pop(key,None)
+                elif typ == 'b':
+                    src,seq=item.get('src'),item.get('s')
+                    if (args.peer_repair and src==i and isinstance(seq,int)
+                        and 0<=seq<m and isinstance(peer,int)
+                        and peer in backup_peers(i,seq) and seq in sent_orig):
+                        backup_acks.setdefault(seq,set()).add(peer)
+                        stats['backup_ack_received']+=1
                 elif typ == 'q':
                     src=item.get('src')
                     if args.v4 and isinstance(src,int) and 0<=src<n:
@@ -343,8 +388,13 @@ def main():
                                 continue
                             if args.ablation!='no_nack_suppression':
                                 suppressed[(src,seq)]=max(suppressed.get((src,seq),0),elapsed+0.65+rnd.random()*.4)
+                            key=(src,seq)
+                            if (args.peer_repair and src!=i and key in peer_cache
+                                and key not in pending_peer_repairs and
+                                elapsed-peer_repair_last.get(key,-10)>1.25):
+                                rank=backup_peers(src,seq).index(i)
+                                pending_peer_repairs[key]=elapsed+0.75+rank*0.25+rnd.uniform(0,.1)
                             if src == i and seq in sent_orig:
-                                key=(src,seq)
                                 # Deduplicate NACKs across receivers and pace repair.
                                 if (elapsed-source_repair_last.get(key,-10)>0.7
                                     and source_repair_count.get(key,0)<32):
@@ -363,6 +413,21 @@ def main():
             except (OSError,ValueError,TypeError,KeyError):
                 continue
 
+        if args.peer_repair and pending_peer_repairs:
+            # Bounded repair work per loop, lower-ranked replicas wait longer.
+            due=sorted((at,key) for key,at in pending_peer_repairs.items() if at<=elapsed)
+            for _,key in due[:8]:
+                payload=peer_cache.get(key)
+                pending_peer_repairs.pop(key,None)
+                if payload is not None:
+                    src,seq=key
+                    send({'t':'p','i':src,'s':seq,'k':TOPIC,'v':payload},GROUP,'peer_repairs_sent')
+                    peer_repair_last[key]=elapsed
+        if (args.peer_repair and i < publisher_count and len(sent_orig)==m
+            and backup_durable_at is None and
+            all(len(backup_acks.get(seq,set()))>=args.backup_quorum for seq in range(m))):
+            backup_durable_at=elapsed
+            (workdir/f'backed-{i}').touch()
         if args.v4 and i < publisher_count and len(sent_orig)==m:
             # Completion acknowledgments are local benchmark-only unless peer has read everything.
             pass
@@ -390,6 +455,9 @@ def main():
         'max_repairs_per_sequence':max(source_repair_count.values(),default=0),
         'samples_at_repair_limit':sum(v>=32 for v in source_repair_count.values()),
         'ablation':args.ablation,'sent_original':len(sent_orig),
+        'peer_repair':args.peer_repair,'peer_cache_entries':len(peer_cache),
+        'backup_acked_sequences':sum(len(backup_acks.get(seq,set()))>=args.backup_quorum for seq in range(m)) if i<publisher_count else 0,
+        'backup_durable_at_s':backup_durable_at,
         'incremental_repair':args.incremental_repair,'nack_batch_limit':args.nack_batch_limit,
         'watermarked_sources':len(source_watermark),
         'finished_sources':len(source_finished),
