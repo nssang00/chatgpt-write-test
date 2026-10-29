@@ -19,6 +19,8 @@
 #else
 #include <limits.h>
 #include <unistd.h>
+#include <sys/types.h>
+#include <sys/wait.h>
 #endif
 namespace xytron_cli {
 inline bool appExists(const std::string& path) {
@@ -233,6 +235,75 @@ inline void appTest() {
     appCommand("dotnet .xytron-build/dotnet/MainBackend.dll","C# backend smoke test");
   }
   std::cout<<"Backend-only smoke test PASS; JS/browser E2E NOT exercised.\n";
+}
+
+inline void appRunHost(const std::string& path, bool smoke) {
+  if(appMainLanguage()!="cpp")
+    throw std::runtime_error("Real browser host currently supports generated C++ apps only");
+  restoredSdk();
+  // Require a built, valid backend before launching the UI. Running this
+  // executable here is still a backend smoke preflight, not JS backend wiring.
+  appTest();
+  projectPath("ui/index.html",false);
+  const std::string host=normalizeSdk(path);
+  struct stat st;
+  if(stat(host.c_str(),&st)!=0)
+    throw std::runtime_error("Explicit native browser host is missing");
+#ifdef _WIN32
+  if(!(st.st_mode&_S_IFREG))
+    throw std::runtime_error("Browser host is not a regular executable");
+  char project[MAX_PATH*3]={};
+  if(!GetCurrentDirectoryA(sizeof(project),project))
+    throw std::runtime_error("Cannot resolve app project directory");
+#else
+  if(!S_ISREG(st.st_mode))
+    throw std::runtime_error("Browser host is not a regular executable");
+  char project[PATH_MAX]={};
+  if(!getcwd(project,sizeof(project)))
+    throw std::runtime_error("Cannot resolve app project directory");
+#endif
+  const std::string ui=std::string("--ui=")+project+"/ui/index.html";
+  const std::size_t slash=host.find_last_of("/\\");
+  if(slash==std::string::npos)
+    throw std::runtime_error("Native browser host path must be absolute");
+  const std::string hostDir=host.substr(0,slash);
+  std::cout<<"Launching real browser app:// host; user backend JS bindings are not yet integrated.\n";
+#ifdef _WIN32
+  // Paths are canonical, contain no command-line quote characters, and are
+  // passed directly to CreateProcess (never via cmd.exe).
+  std::string command="\""+host+"\" \""+ui+"\"";
+  if(smoke) command+=" --smoke";
+  std::vector<char> mutableCmd(command.begin(),command.end());
+  mutableCmd.push_back('\0');
+  STARTUPINFOA startup={};startup.cb=sizeof(startup);
+  PROCESS_INFORMATION process={};
+  if(!CreateProcessA(host.c_str(),mutableCmd.data(),nullptr,nullptr,FALSE,0,
+                     nullptr,hostDir.c_str(),&startup,&process))
+    throw std::runtime_error("Cannot launch real WebView2/CEF browser host");
+  const DWORD wait=WaitForSingleObject(process.hProcess,
+      smoke?60000:INFINITE);
+  DWORD code=1;
+  if(wait==WAIT_OBJECT_0) GetExitCodeProcess(process.hProcess,&code);
+  if(wait!=WAIT_OBJECT_0) TerminateProcess(process.hProcess,1);
+  CloseHandle(process.hThread);CloseHandle(process.hProcess);
+  if(wait!=WAIT_OBJECT_0||code!=0)
+    throw std::runtime_error("Real desktop browser host failed");
+#else
+  pid_t child=fork();
+  if(child<0) throw std::runtime_error("Cannot fork desktop browser host");
+  if(child==0) {
+    if(chdir(hostDir.c_str())!=0) _exit(127);
+    execl(host.c_str(),host.c_str(),"--no-sandbox",
+          ui.c_str(),smoke?"--smoke":static_cast<const char*>(nullptr),
+          static_cast<char*>(nullptr));
+    _exit(127);
+  }
+  int status=0;
+  if(waitpid(child,&status,0)!=child ||
+     !WIFEXITED(status)||WEXITSTATUS(status)!=0)
+    throw std::runtime_error("Real desktop browser host failed");
+#endif
+  std::cout<<"Real browser app:// host completed successfully.\n";
 }
 } // namespace xytron_cli
 #endif
