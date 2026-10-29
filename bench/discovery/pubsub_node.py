@@ -24,6 +24,7 @@ def main():
     ap.add_argument('--discovery-seconds', type=float, default=9)
     ap.add_argument('--timeout', type=float, default=24)
     ap.add_argument('--messages', type=int, default=2)
+    ap.add_argument('--publish-spread', type=float, default=3)
     args = ap.parse_args()
 
     i, n, m = args.id, args.count, args.messages
@@ -34,6 +35,7 @@ def main():
     received = set()
     last_missing = set()
     lazy_pending = {}
+    request_last = {}
     duplicate = 0
     stats = dict(hello_sent=0, digest_sent=0, delta_sent=0,
                  data_sent=0, data_forwarded=0, nack_sent=0,
@@ -110,7 +112,7 @@ def main():
     last_nack = 0
     next_hello = rnd.uniform(0, .6)
     sent_orig = set()
-    publ_at = args.discovery_seconds + rnd.uniform(.0, .25)
+    publ_at = args.discovery_seconds + rnd.uniform(.0, args.publish_spread)
     stop_at = args.discovery_seconds + args.timeout
 
     while not (workdir / 'stop').exists():
@@ -143,13 +145,19 @@ def main():
 
         # Explicit missing-data repair; discovery and data are independent.
         # First repair interval follows the last scheduled publish.
-        if elapsed > args.discovery_seconds + 2.2 and elapsed-last_nack >= .62:
-            missing = [(src,seq) for src in range(n) for seq in range(m)
-                       if (src,seq) not in received and src in known]
-            rnd.shuffle(missing)
-            for src,seq in missing[:min(24,len(missing))]:
-                send({'t':'q','i':i,'src':src,'s':seq},
-                     (known[src],GROUP[1]),'nack_sent')
+        if (elapsed > args.discovery_seconds + args.publish_spread +
+              m*.28 + .6 and elapsed-last_nack >= .75):
+            # Bounded, per-origin selective requests; oldest last request first.
+            # Aggregates missing sequence IDs; prevents the previous NACK storm.
+            missing_sources = [src for src in known if
+                               any((src,seq) not in received for seq in range(m))
+                               and src != i]
+            missing_sources.sort(key=lambda src: request_last.get(src,-1))
+            for src in missing_sources[:8]:
+                seqs=[seq for seq in range(m) if (src,seq) not in received]
+                send({'t':'q','i':i,'src':src,'seqs':seqs},
+                     (known[src], GROUP[1]), 'nack_sent')
+                request_last[src]=elapsed
             last_nack = elapsed
 
         if args.mode == 'hybrid' and lazy_pending:
@@ -224,10 +232,12 @@ def main():
                     else:
                         duplicate += 1
                 elif typ == 'q':
-                    src,seq=item.get('src'),item.get('s')
-                    if src == i and seq in sent_orig:
-                        send({'t':'p','i':i,'s':seq,'k':TOPIC,'v':PAYLOAD},
-                             address,'repair_sent')
+                    src=item.get('src')
+                    if src == i:
+                        for seq in item.get('seqs',[])[:m]:
+                            if isinstance(seq,int) and seq in sent_orig:
+                                send({'t':'p','i':i,'s':seq,'k':TOPIC,'v':PAYLOAD},
+                                     address,'repair_sent')
             except (OSError,ValueError,TypeError,KeyError):
                 continue
 
