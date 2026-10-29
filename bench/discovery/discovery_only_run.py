@@ -67,6 +67,7 @@ def main():
     a.add_argument('--timeout',type=float,default=25.0)
     a.add_argument('--capture',action='store_true')
     a.add_argument('--trace',action='store_true')
+    a.add_argument('--join-spread-ms',type=float,default=0.0)
     a.add_argument('--output',default='discovery-only-results')
     args=a.parse_args()
     wd=Path(args.output).resolve()
@@ -74,7 +75,8 @@ def main():
     processes=[]
     captures=[]
     report={'nodes':args.nodes,'seed':args.seed,'config':args.config,
-            'delay_ms_each_end':args.delay_ms,'configured_loss_pct':0}
+            'delay_ms_each_end':args.delay_ms,'configured_loss_pct':0,
+            'join_spread_ms':args.join_spread_ms}
     try:
         prepare(args.nodes)
         setup_netem(args.nodes,args.delay_ms)
@@ -84,7 +86,8 @@ def main():
                 str(Path(__file__).resolve().parent/'discovery_only_node.py'),
                 '--id',str(i),'--count',str(args.nodes),
                 '--config',args.config,'--seed',str(args.seed),
-                '--timeout',str(args.timeout),'--workdir',str(wd)]
+                '--timeout',str(args.timeout),'--workdir',str(wd),
+                '--join-spread-ms',str(args.join_spread_ms)]
             if args.trace:
                 cmd.append('--trace')
             p=subprocess.Popen(cmd,stdout=f,stderr=subprocess.STDOUT)
