@@ -50,6 +50,29 @@ int main(int argc, char** argv) {
         CHECK(denied);
         CHECK(events.size()==1);
     }
+    // A queued/copied callable may outlive PluginModule itself; it must
+    // retain its DLL lease but MUST NOT dereference a deleted event host.
+    nativeweb::detail::Callable retained;
+    {
+        nativeweb::detail::PluginModule temporary(
+            argv[1],registry,std::function<void(const std::string&)>(),
+            [&](const std::string& name,const Any& payload) {
+                events.push_back(name);
+                payloads.push_back(AnyCast<std::string>(payload));
+            });
+        retained=registry.find("eventfixture.fire");
+    }
+    CHECK(!registry.has("eventfixture.fire"));
+    bool destroyedDenied=false;
+    try {
+        retained.invoke(VariantList());
+    } catch(const nativeweb::Error& e) {
+        destroyedDenied=true;
+        CHECK(e.code()=="plugin_event_rejected");
+    }
+    CHECK(destroyedDenied);
+    CHECK(events.size()==1);
+    retained=nativeweb::detail::Callable();
     if (errors==0) std::cout<<"Plugin ABI native-event lifecycle and denials PASS\n";
     return errors?1:0;
 }
