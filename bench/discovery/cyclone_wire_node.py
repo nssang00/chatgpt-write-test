@@ -23,6 +23,7 @@ def main():
     p.add_argument('--workdir',required=True)
     p.add_argument('--internal-capture',action='store_true')
     p.add_argument('--history',choices=['default','last64','all'],default='default')
+    p.add_argument('--keyed',action='store_true')
     a=p.parse_args()
     i,n=a.id,a.nodes
     wd=Path(a.workdir)
@@ -46,11 +47,20 @@ def main():
     from cyclonedds.idl import IdlStruct
     from cyclonedds.core import Qos
     from cyclonedds.qos import Policy
-    @dataclass
-    class TraceDatum(IdlStruct):
-        origin:int
-        seq:int
-        born_ns:int
+    if a.keyed:
+        from cyclonedds.idl.annotations import keylist
+        @dataclass
+        @keylist(['origin'])
+        class TraceDatum(IdlStruct):
+            origin:int
+            seq:int
+            born_ns:int
+    else:
+        @dataclass
+        class TraceDatum(IdlStruct):
+            origin:int
+            seq:int
+            born_ns:int
     (wd/f'ready-{i}').touch()
     while not (wd/'go').exists():
         time.sleep(.005)
@@ -134,7 +144,7 @@ def main():
                 next_stat=now+.1
             time.sleep(.007)
         (wd/f'node-{i}.json').write_text(json.dumps({
-            'node':i,'n':n,'mode':a.mode,'history':a.history,'seed':a.seed,'initialized_s':init_at,
+            'node':i,'n':n,'mode':a.mode,'history':a.history,'keyed':a.keyed,'seed':a.seed,'initialized_s':init_at,
             'participants_full_s':participants_full_at,'matches_full_s':match_full_at,
             'first_remote_s':first_remote_at,'app_complete_s':app_full_at,
             'distinct_sources':len(earliest),'samples_taken':recv_total,
