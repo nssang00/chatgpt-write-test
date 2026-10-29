@@ -1,0 +1,64 @@
+name: Candidate PubSub 50 100 200 Node Comparison
+on:
+  push:
+    branches: [benchmark/pubsub-50-100-200-candidates-20261029]
+    paths: [.github/workflows/pubsub-candidates-50-100-200.yml]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  pubsub:
+    name: '${{ matrix.mode }} N=${{ matrix.nodes }} loss=${{ matrix.loss }}%'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 18
+    strategy:
+      fail-fast: false
+      max-parallel: 8
+      matrix:
+        nodes: [50, 100, 200]
+        mode: [multicast, tree, mesh, hybrid]
+        loss: [0, 10]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Verify network tools and raise kernel socket buffer limits
+        run: |
+          set -euxo pipefail
+          ip -V
+          tc -V
+          free -m
+          sudo sysctl -w net.core.rmem_max=16777216
+          sudo sysctl -w net.core.wmem_max=16777216
+      - name: Compare full membership and all-to-all PubSub receiver results
+        run: |
+          set -euo pipefail
+          case '${{ matrix.nodes }}' in
+            50) disc=15; timeout=42; spread=4 ;;
+            100) disc=25; timeout=65; spread=6 ;;
+            200) disc=45; timeout=90; spread=8 ;;
+          esac
+          sudo -E "$(which python)" bench/discovery/pubsub_run.py \
+            --sizes '${{ matrix.nodes }}' \
+            --modes '${{ matrix.mode }}' \
+            --losses '${{ matrix.loss }}' \
+            --discovery "$disc" --timeout "$timeout" \
+            --messages 2 --publishers '${{ matrix.nodes }}' \
+            --publish-spread "$spread" --repair-fanout 4 \
+            --repair-interval 1.2 --seeds 1 \
+            --output candidate-results
+          cat candidate-results/results.csv
+          python - <<'PY'
+          import json
+          rows=json.load(open("candidate-results/results.json"))
+          for r in rows:
+              assert r.get('status')=='PASS', f"FAIL (strict receiver completion): {r}"
+          PY
+      - name: Upload per-node evidence and summary
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: 'candidate-${{ matrix.mode }}-n${{ matrix.nodes }}-loss${{ matrix.loss }}'
+          path: candidate-results/
+          if-no-files-found: warn
