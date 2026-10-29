@@ -37,6 +37,7 @@ def main():
     ap.add_argument('--nack-batch-limit',type=int,default=32)
     ap.add_argument('--peer-repair',action='store_true',help='bounded deterministic backup caching and NACK takeover')
     ap.add_argument('--peer-replicas',type=int,default=6)
+    ap.add_argument('--durable-publishers',type=int,default=0,help='first K publishers require replica storage; 0 means all publishers')
     ap.add_argument('--peer-cache-limit',type=int,default=2048)
     ap.add_argument('--backup-quorum',type=int,default=2)
     args = ap.parse_args()
@@ -48,6 +49,8 @@ def main():
     assert 1<=args.backup_quorum<=args.peer_replicas
     PAYLOAD='x'*args.payload_bytes
     publisher_count = args.publishers if args.publishers > 0 else n
+    durable_count = args.durable_publishers if args.durable_publishers > 0 else publisher_count
+    assert 1<=durable_count<=publisher_count
     workdir = Path(args.workdir)
     own_ip = f'10.77.{i // 250}.{i % 250 + 1}'
     rnd = random.Random(33550336 + i * 17 + args.seed * 100003)
@@ -205,7 +208,7 @@ def main():
             if args.incremental_repair and i < publisher_count:
                 hello['w']=len(sent_orig)
                 hello['fin']=(len(sent_orig)==m)
-            if args.peer_repair and i < publisher_count and sent_orig:
+            if args.peer_repair and i < durable_count and sent_orig:
                 need=[seq for seq in sorted(sent_orig)
                       if len(backup_acks.get(seq,set()))<args.backup_quorum]
                 if need:
@@ -311,7 +314,7 @@ def main():
                     if isinstance(peer,int) and 0 <= peer < n:
                         known[peer] = address[0]
                         last_source_hello[peer] = elapsed
-                        if args.peer_repair and peer<publisher_count:
+                        if args.peer_repair and peer<durable_count:
                             for seq in item.get('need',[])[:m]:
                                 if not isinstance(seq,int) or not 0<=seq<m:
                                     continue
@@ -374,7 +377,7 @@ def main():
                         source_watermark[src]=max(source_watermark.get(src,0),seq+1)
                     if key not in received:
                         received.add(key)
-                        if args.peer_repair and src!=i and i in backup_peers(src,seq):
+                        if args.peer_repair and src<durable_count and src!=i and i in backup_peers(src,seq):
                             # Do not synthesize data from a sequence number.
                             peer_cache[key]=item['v']
                             if len(peer_cache)>args.peer_cache_limit:
@@ -395,7 +398,7 @@ def main():
                         pending_peer_repairs.pop(key,None)
                 elif typ == 'b':
                     src,seq=item.get('src'),item.get('s')
-                    if (args.peer_repair and src==i and isinstance(seq,int)
+                    if (args.peer_repair and src==i and i<durable_count and isinstance(seq,int)
                         and 0<=seq<m and isinstance(peer,int)
                         and peer in backup_peers(i,seq) and seq in sent_orig):
                         backup_acks.setdefault(seq,set()).add(peer)
@@ -410,7 +413,7 @@ def main():
                             if args.ablation!='no_nack_suppression':
                                 suppressed[(src,seq)]=max(suppressed.get((src,seq),0),elapsed+0.65+rnd.random()*.4)
                             key=(src,seq)
-                            if (args.peer_repair and src!=i and key in peer_cache
+                            if (args.peer_repair and src<durable_count and src!=i and key in peer_cache
                                 and elapsed-last_source_hello.get(src,0)>=3.0
                                 and key not in pending_peer_repairs and
                                 elapsed-peer_repair_last.get(key,-10)>1.25):
@@ -445,7 +448,7 @@ def main():
                     src,seq=key
                     send({'t':'p','i':src,'s':seq,'k':TOPIC,'v':payload},GROUP,'peer_repairs_sent')
                     peer_repair_last[key]=elapsed
-        if (args.peer_repair and i < publisher_count and len(sent_orig)==m
+        if (args.peer_repair and i < durable_count and len(sent_orig)==m
             and backup_durable_at is None and
             all(len(backup_acks.get(seq,set()))>=args.backup_quorum for seq in range(m))):
             backup_durable_at=elapsed
@@ -477,7 +480,8 @@ def main():
         'max_repairs_per_sequence':max(source_repair_count.values(),default=0),
         'samples_at_repair_limit':sum(v>=32 for v in source_repair_count.values()),
         'ablation':args.ablation,'sent_original':len(sent_orig),
-        'peer_repair':args.peer_repair,'peer_cache_entries':len(peer_cache),
+        'peer_repair':args.peer_repair,'durable_publishers':durable_count,
+        'peer_cache_entries':len(peer_cache),
         'backup_acked_sequences':sum(len(backup_acks.get(seq,set()))>=args.backup_quorum for seq in range(m)) if i<publisher_count else 0,
         'backup_durable_at_s':backup_durable_at,
         'backup_need_hellos':stats['backup_need_hello'],
