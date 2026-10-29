@@ -1,0 +1,51 @@
+name: Aplus Stress Harness Sanity
+on:
+  push:
+    branches: [experiment/a-plus-stress-fault-ablation-20261029]
+    paths: [.github/workflows/a-plus-stress-smoke.yml]
+  workflow_dispatch:
+permissions: {contents: read}
+jobs:
+  smoke:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    strategy:
+      fail-fast: false
+      matrix:
+        profile: [baseline, burst, crash, no-nack-suppression]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - name: Check Python syntax
+        run: python -m py_compile bench/discovery/pubsub_node.py bench/discovery/pubsub_run.py
+      - name: Run isolated 20 peers with actual workload and faults
+        shell: bash
+        run: |
+          set -euo pipefail
+          args=(--sizes 20 --modes multicast --messages 20 --losses 10
+                --discovery 6 --timeout 25 --publish-spread 2
+                --publish-interval 0.06 --payload-bytes 128
+                --repair-fanout 6 --repair-interval 0.7 --seeds 1
+                --v4 --output smoke-results)
+          case '${{ matrix.profile }}' in
+            baseline) ;;
+            burst) args+=(--fault burst --burst-seconds 3) ;;
+            crash) args+=(--fault crash) ;;
+            no-nack-suppression) args+=(--ablation no_nack_suppression) ;;
+          esac
+          sudo -E "$(which python)" bench/discovery/pubsub_run.py "${args[@]}"
+          cat smoke-results/results.json
+          python - <<'PY'
+          import json
+          r=json.load(open('smoke-results/results.json'))[0]
+          assert r['status'] in ('PASS','FAIL'),r
+          assert r['total_expected_remote']>0,r
+          assert r['all_published_marker_count']>0,r
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: 'smoke-${{ matrix.profile }}'
+          path: smoke-results/
+          if-no-files-found: warn
