@@ -128,6 +128,18 @@ typedef int32_t (*nw_host_register_typed_function_v1)(
     void* user_data,
     const nw_function_signature_v1* signature);
 
+/* Optional, size-gated ABI v1 extension: a plugin can publish a native
+ * event during a host-initiated function call. The event is namespaced as
+ * <plugin_id>.<relative_event>. The host immediately copies the payload.
+ *
+ * Synchronous-only lifetime rule: call only while a registered plugin
+ * function is executing; never retain/use host_context from background
+ * threads or after plugin unload. This function is not an asynchronous
+ * task scheduler. Subscribers are bound to their JS document/session. */
+typedef int32_t (*nw_host_publish_event_v1)(
+    void* host_context, const char* relative_event,
+    const nw_value_v1* payload);
+
 typedef struct nw_host_api_v1
 {
     uint32_t struct_size;
@@ -142,6 +154,8 @@ typedef struct nw_host_api_v1
     nw_host_register_object_factory_args_v1 register_object_factory_args;
     /* Check struct_size before accessing the optional typed registration. */
     nw_host_register_typed_function_v1 register_typed_function;
+    /* Optional ABI v1; guard by struct_size. */
+    nw_host_publish_event_v1 publish_event;
 } nw_host_api_v1;
 
 typedef int32_t (*nw_plugin_register_api_v1)(
