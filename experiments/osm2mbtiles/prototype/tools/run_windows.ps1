@@ -131,7 +131,7 @@ foreach ($produced in $outputs) {
     Write-Host "`n[SUCCESS] $format MBTiles: $produced" -ForegroundColor Green
 }
 $endToEndTimer.Stop()
-Write-Host ("[TIME] Windows end-to-end elapsed (WSL + verify + copy): {0:N3}s ({1})" -f $endToEndTimer.Elapsed.TotalSeconds,$endToEndTimer.Elapsed.ToString('hh\\:mm\\:ss')) -ForegroundColor Cyan
+Write-Host ("[TIME] Windows end-to-end elapsed (WSL + verify + copy): {0:N3}s ({1})" -f $endToEndTimer.Elapsed.TotalSeconds,$endToEndTimer.Elapsed.ToString('hh\:mm\:ss')) -ForegroundColor Cyan
 exit 0) { Fail 'OSM2MBTILES_VECTOR_BATCH_SIDE must be 1..8.' }
 $rasterFormat = if ($env:OSM2MBTILES_RASTER_FORMAT) { $env:OSM2MBTILES_RASTER_FORMAT.ToLowerInvariant() } else { 'png' }
 if ($rasterFormat -notin @('png','png256')) { Fail 'OSM2MBTILES_RASTER_FORMAT must be png or png256.' }
