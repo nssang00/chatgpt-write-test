@@ -1,0 +1,71 @@
+name: Aplus Burst Loss and Publisher Crash
+on:
+  push:
+    branches: [experiment/a-plus-stress-fault-ablation-20261029]
+    paths: [.github/workflows/a-plus-failure-injection.yml]
+  workflow_dispatch:
+permissions: {contents: read}
+jobs:
+  failure:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 13
+    strategy:
+      fail-fast: false
+      max-parallel: 7
+      matrix:
+        include:
+          - {nodes: 50, loss: 0, fault: burst, seed: 1}
+          - {nodes: 50, loss: 10, fault: burst, seed: 1}
+          - {nodes: 100, loss: 10, fault: burst, seed: 1}
+          - {nodes: 100, loss: 10, fault: burst, seed: 2}
+          - {nodes: 200, loss: 10, fault: burst, seed: 1}
+          - {nodes: 50, loss: 0, fault: crash, seed: 1}
+          - {nodes: 50, loss: 10, fault: crash, seed: 1}
+          - {nodes: 100, loss: 10, fault: crash, seed: 1}
+          - {nodes: 100, loss: 10, fault: crash, seed: 2}
+          - {nodes: 200, loss: 10, fault: crash, seed: 1}
+    name: '${{ matrix.fault }} N=${{ matrix.nodes }} loss=${{ matrix.loss }} seed=${{ matrix.seed }}'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - name: Preflight
+        run: |
+          python -m py_compile bench/discovery/pubsub_node.py bench/discovery/pubsub_run.py
+          sudo sysctl -w net.core.rmem_max=16777216
+          sudo sysctl -w net.core.wmem_max=16777216
+      - name: Kill publisher after all its initial messages, or blackhole 5% of nodes for 3s
+        shell: bash
+        run: |
+          set -euo pipefail
+          case '${{ matrix.nodes }}' in
+            50) discovery=12; timeout=60; spread=7 ;;
+            100) discovery=18; timeout=90; spread=12 ;;
+            200) discovery=27; timeout=115; spread=18 ;;
+          esac
+          sudo -E "$(which python)" bench/discovery/pubsub_run.py \
+            --sizes '${{ matrix.nodes }}' --modes multicast \
+            --losses '${{ matrix.loss }}' --v4 --messages 20 \
+            --payload-bytes 128 --publish-interval 0.08 \
+            --publishers '${{ matrix.nodes }}' --discovery "$discovery" \
+            --timeout "$timeout" --publish-spread "$spread" \
+            --fault '${{ matrix.fault }}' --burst-seconds 3 \
+            --repair-fanout 6 --repair-interval 0.9 --seeds '${{ matrix.seed }}' \
+            --output fault-results
+          cat fault-results/results.csv
+          python - <<'PY'
+          import json
+          r=json.load(open('fault-results/results.json'))[0]
+          print('FAULT_OUTCOME '+json.dumps(r))
+          assert r['status'] in ('PASS','FAIL'),r
+          assert r['fault_events'],r
+          if r['fault']=='crash':
+              assert r['crashed_nodes']==[0],r
+              assert r['reported']==r['nodes']-1,r
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: 'fault-${{ matrix.fault }}-N${{ matrix.nodes }}-loss${{ matrix.loss }}-s${{ matrix.seed }}'
+          path: fault-results/
+          if-no-files-found: warn
