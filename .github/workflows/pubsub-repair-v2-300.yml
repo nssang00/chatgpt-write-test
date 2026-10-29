@@ -1,0 +1,34 @@
+name: PubSub Repair V2 300-Node Scale Trial
+on:
+  push:
+    branches: [benchmark/pubsub-repair-v2-20261029]
+    paths: [.github/workflows/pubsub-repair-v2-300.yml]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  v2-300:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Network capabilities
+        run: ip -V && tc -V && free -m
+      - name: Run 300-node two-mode scale test with bounded recovery
+        run: |
+          set -euxo pipefail
+          sudo -E "$(which python)" bench/discovery/pubsub_run.py \
+            --sizes 300 --modes multicast,hybrid --losses 0,10 \
+            --discovery 16 --timeout 60 --messages 2 --publish-spread 8 \
+            --output repair-v2-300-results
+          cat repair-v2-300-results/results.csv
+      - name: Upload CSV and per-node evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: repair-v2-300-results
+          path: repair-v2-300-results/
+          if-no-files-found: warn
