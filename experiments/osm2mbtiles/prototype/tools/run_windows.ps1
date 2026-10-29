@@ -81,6 +81,7 @@ $batchSide = if ($env:OSM2MBTILES_VECTOR_BATCH_SIDE) { $env:OSM2MBTILES_VECTOR_B
 if ($batchSide -notmatch '^[1-8]$') { Fail 'OSM2MBTILES_VECTOR_BATCH_SIDE must be 1..8.' }
 $rasterFormat = if ($env:OSM2MBTILES_RASTER_FORMAT) { $env:OSM2MBTILES_RASTER_FORMAT.ToLowerInvariant() } else { 'png' }
 if ($rasterFormat -notin @('png','png256')) { Fail 'OSM2MBTILES_RASTER_FORMAT must be png or png256.' }
+$bbox = if ($env:OSM2MBTILES_BBOX) { $env:OSM2MBTILES_BBOX.Trim() } else { '' }
 $queryMode = if ($env:OSM2MBTILES_VECTOR_QUERY_MODE) { $env:OSM2MBTILES_VECTOR_QUERY_MODE.ToLowerInvariant() } else { 'projected' }
 if ($queryMode -notin @('projected','baseline','cached')) { Fail 'OSM2MBTILES_VECTOR_QUERY_MODE must be projected, baseline, or cached.' }
 $cachePolicy = if ($env:OSM2MBTILES_CLEANUP) { $env:OSM2MBTILES_CLEANUP.ToLowerInvariant() } else { 'compact' }
@@ -92,7 +93,7 @@ Write-Host "`n=== osm2mbtiles - Docker-free one-click launcher ===" -ForegroundC
 Write-Host "Input : $inputLabel"
 Write-Host "Output: $output"
 Write-Host "Zoom  : $zoom   Workers: $workers   Cache: $cachePolicy   Format: $format   Vector SQL: $queryMode   Import: $importProfile"
-Write-Host "Vector tiler: $vectorTiler   batch side: $batchSide   Raster: $rasterFormat"
+Write-Host "Vector tiler: $vectorTiler   batch side: $batchSide   Raster: $rasterFormat   BBOX: $(if ($bbox) {$bbox} else {'PBF header'})"
 Write-Host 'Backend: Linux tools inside WSL (no Docker)' -ForegroundColor DarkCyan
 
 $outputs = if ($format -eq 'both') {
@@ -124,7 +125,7 @@ $script = Join-Path $PSScriptRoot 'run_wsl.sh'
 $scriptUnix = (& wsl.exe --exec wslpath -a $script 2>&1 | Out-String).Trim()
 if ($LASTEXITCODE -ne 0 -or -not $scriptUnix) { Fail 'Unable to translate launcher path into WSL.' }
 Write-Host "`n[INFO] Starting native Mapnik/PostGIS pipeline..." -ForegroundColor Cyan
-& wsl.exe --exec bash $scriptUnix $project $pbf $output $zoom $workers $cachePolicy $format $queryMode $importProfile $vectorTiler $batchSide $rasterFormat
+& wsl.exe --exec bash $scriptUnix $project $pbf $output $zoom $workers $cachePolicy $format $queryMode $importProfile $vectorTiler $batchSide $rasterFormat $bbox
 $code = $LASTEXITCODE
 if ($code -ne 0) { Fail "WSL rendering failed (exit $code). See output above." $code }
 foreach ($produced in $outputs) {
