@@ -1,0 +1,55 @@
+name: CompanyWebView P0-1 / resolve exact official CEF 154 SDK
+on:
+  push:
+    branches: [verify/cwv-p01-windows-20261029]
+    paths:
+      - '.github/workflows/cwv-p01-cef154-resolve.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  resolve-cef-154:
+    runs-on: windows-2022
+    timeout-minutes: 8
+    steps:
+      - name: Retrieve official build manifest and select pinned source-compatible SDK
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $ProgressPreference='SilentlyContinue'
+          $url='https://cef-builds.spotifycdn.com/index.json'
+          $manifest=Join-Path $env:RUNNER_TEMP 'cef-index.json'
+          curl.exe --fail --location --retry 2 --connect-timeout 15 --max-time 120 $url -o $manifest
+          if($LASTEXITCODE -ne 0){ throw 'Official CEF index unavailable' }
+          $data=Get-Content $manifest -Raw | ConvertFrom-Json -Depth 50
+          $matches=@($data.windows64.versions | Where-Object { $_.cef_version -like '154.0.28+*' })
+          if($matches.Count -ne 1){ throw "Expected one exact CEF 154.0.28 windows64 version; found $($matches.Count)" }
+          $file=@($matches[0].files | Where-Object { $_.type -eq 'minimal' })
+          if($file.Count -ne 1){ throw "Minimal CEF 154.0.28 Windows64 SDK missing" }
+          $filename=[string]$file[0].name
+          $sha1=[string]$file[0].sha1
+          if($filename -notmatch '^cef_binary_154\.0\.28\+.*_windows64_minimal\.tar\.bz2$'){throw 'CEF artifact name unexpected'}
+          if($sha1 -notmatch '^[a-fA-F0-9]{40}$'){throw 'Official CEF digest missing'}
+          $remote="https://cef-builds.spotifycdn.com/$filename"
+          $proof=[ordered]@{
+            status='CEF_154_0_28_OFFICIAL_MANIFEST_FOUND'
+            cefVersion=[string]$matches[0].cef_version
+            chromiumVersion=[string]$matches[0].chromium_version
+            distribution='windows64_minimal'
+            officialArchive=$filename
+            officialSha1=$sha1.ToLowerInvariant()
+            sdkDownloaded=$false
+            sdkCompiled=$false
+            productNativeCompiled=$false
+            upmAssembled=$false
+          }
+          $proof|ConvertTo-Json -Depth 4|Set-Content (Join-Path $env:RUNNER_TEMP 'cwv-cef154-resolved.json') -Encoding utf8
+          Write-Host "Resolved official source-compatible CEF SDK: $filename"
+          Write-Host "Official SHA1: $sha1"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: cwv-cef154-metadata-only
+          retention-days: 7
+          if-no-files-found: warn
+          path: ${{ runner.temp }}/cwv-cef154-resolved.json
