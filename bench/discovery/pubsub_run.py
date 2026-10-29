@@ -8,11 +8,25 @@ from pathlib import Path
 import subprocess
 import sys
 import time
-from run import prepare, netem, counters, cleanup, memory_available, ns
+from run import prepare, counters, cleanup, memory_available, ns, sh
 
 MODES=('multicast','tree','mesh','hybrid')
 
-def execute(n,mode,loss,seconds,disc,m,out):
+def netem(n,loss):
+    # Keep base latency equal between 0% and 10% loss treatments.
+    for i in range(n):
+        host=f'db{i:03d}h'
+        sh('tc','qdisc','del','dev',host,'root',check=False)
+        sh('ip','netns','exec',ns(i),'tc','qdisc','del','dev','eth0','root',check=False)
+        opts=['netem','delay','2ms']
+        if loss:
+            opts.extend(['loss',f'{loss}%'])
+        sh('tc','qdisc','add','dev',host,'root',*opts)
+        sh('ip','netns','exec',ns(i),'tc','qdisc','add',
+           'dev','eth0','root',*opts)
+
+
+def execute(n,mode,loss,seconds,disc,m,spread,out):
     wd=out/f'{mode}-n{n}-loss{loss:g}'
     wd.mkdir(parents=True,exist_ok=True)
     procs=[]
@@ -23,7 +37,8 @@ def execute(n,mode,loss,seconds,disc,m,out):
                 str(Path(__file__).resolve().parent/'pubsub_node.py'),
                 '--id',str(i),'--count',str(n),'--mode',mode,
                 '--messages',str(m),'--discovery-seconds',str(disc),
-                '--timeout',str(seconds),'--workdir',str(wd)],
+                '--timeout',str(seconds),'--publish-spread',str(spread),
+                '--workdir',str(wd)],
                 stdout=log,stderr=subprocess.STDOUT)
             log.close()
             procs.append(p)
@@ -105,6 +120,7 @@ def main():
     ap.add_argument('--discovery',type=float,default=9)
     ap.add_argument('--timeout',type=float,default=24)
     ap.add_argument('--messages',type=int,default=2)
+    ap.add_argument('--publish-spread',type=float,default=3)
     ap.add_argument('--output',default='pubsub-results')
     args=ap.parse_args()
     if os.geteuid()!=0:
@@ -130,7 +146,7 @@ def main():
                 for mode in args.modes.split(','):
                     print(f'START n={n} mode={mode} loss={loss}%',flush=True)
                     try:
-                        r=execute(n,mode,loss,args.timeout,args.discovery,args.messages,out)
+                        r=execute(n,mode,loss,args.timeout,args.discovery,args.messages,args.publish_spread,out)
                         r['status']='PASS' if r['pubsub_success'] and r['discovery_success'] else 'FAIL'
                     except Exception as exc:
                         r={'nodes':n,'mode':mode,'loss_percent_per_direction':loss,
