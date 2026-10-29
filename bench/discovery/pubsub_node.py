@@ -32,11 +32,15 @@ def main():
     ap.add_argument('--repair-interval', type=float, default=1.0)
     ap.add_argument('--publish-interval',type=float,default=.28)
     ap.add_argument('--payload-bytes',type=int,default=32)
+    ap.add_argument('--tail-feedback-after',type=float,default=0,help='seconds after regular repair begins before switching to unicast tail feedback; 0 disables')
+    ap.add_argument('--tail-fanout',type=int,default=18)
+    ap.add_argument('--tail-batch-limit',type=int,default=20)
     ap.add_argument('--ablation',choices=['full','no_anti_entropy','no_hello','no_nack_suppression','unicast_repair'],default='full')
     args = ap.parse_args()
 
     i, n, m = args.id, args.count, args.messages
     assert 1<=args.payload_bytes<=1200 and 0<args.publish_interval<=5
+    assert 0<=args.tail_feedback_after<=300 and 1<=args.tail_fanout<=n and 1<=args.tail_batch_limit<=m
     PAYLOAD='x'*args.payload_bytes
     publisher_count = args.publishers if args.publishers > 0 else n
     workdir = Path(args.workdir)
@@ -59,7 +63,8 @@ def main():
                  data_sent=0, data_forwarded=0, nack_sent=0,
                  repair_sent=0, packets_received=0,
                  ihave_sent=0, iwant_sent=0, nack_suppressed=0,
-                 nack_heard=0, repair_suppressed=0, completed_ack_sent=0)
+                 nack_heard=0, repair_suppressed=0, completed_ack_sent=0,
+                 tail_nack_sent=0)
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 4 * 1024 * 1024)
@@ -204,7 +209,8 @@ def main():
             # Retry oldest/never-asked sources first. Independently rotate order per receiver.
             missing_sources.sort(key=lambda src: (request_last.get(src,-1),
                 (src * 47 + i * 41 + args.seed * 53) % max(1,n)))
-            for src in missing_sources[:args.repair_fanout]:
+            tail_mode=(args.tail_feedback_after>0 and elapsed >= repair_start_at+args.tail_feedback_after)
+            for src in missing_sources[:args.tail_fanout if tail_mode else args.repair_fanout]:
                 seqs=[seq for seq in range(m) if (src,seq) not in received]
                 if args.v4:
                     unsuppressed=(seqs if args.ablation=='no_nack_suppression' else
@@ -212,9 +218,14 @@ def main():
                     if not unsuppressed:
                         stats['nack_suppressed']+=len(seqs)
                         continue
-                    # Every subscriber sees the NACK, not only the origin.
-                    # Random hold-down prevents simultaneous identical feedback.
-                    send({'t':'q','i':i,'src':src,'seqs':unsuppressed}, GROUP, 'nack_sent')
+                    # Retain group NACK suppression under initial load, but
+                    # route tail-gap feedback directly to source to avoid
+                    # flooding every receiver with repeated gap requests.
+                    if tail_mode:
+                        unsuppressed=unsuppressed[:args.tail_batch_limit]
+                    send({'t':'q','i':i,'src':src,'seqs':unsuppressed},
+                         (known[src],GROUP[1]) if tail_mode else GROUP,
+                         'tail_nack_sent' if tail_mode else 'nack_sent')
                     if args.ablation!='no_nack_suppression':
                         for seq in unsuppressed:
                             suppressed[(src,seq)]=elapsed+0.45+rnd.random()*0.5
@@ -355,6 +366,8 @@ def main():
         'max_repairs_per_sequence':max(source_repair_count.values(),default=0),
         'samples_at_repair_limit':sum(v>=32 for v in source_repair_count.values()),
         'ablation':args.ablation,'sent_original':len(sent_orig),
+        'tail_feedback_after_s':args.tail_feedback_after,
+        'tail_nack_sent':stats['tail_nack_sent'],
         'discovery_s':discovery_time,'ready_at_publish':ready_at_publish,
         'received':len(received),'expected':expected,
         'remote_received':len(received)-len(sent_orig),
