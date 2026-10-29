@@ -5,6 +5,8 @@ on:
     branches: [ci/osm2mbtiles-cli-seoul-test]
     paths:
       - '.github/workflows/osm2mbtiles-source-archive.yml'
+      - 'experiments/osm2mbtiles/prototype/**'
+      - '.github/workflows/osm2mbtiles-cli-seoul-test.yml'
   workflow_dispatch:
 
 permissions:
