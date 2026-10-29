@@ -21,6 +21,7 @@ def main():
     p.add_argument('--duration',type=float,default=18)
     p.add_argument('--seed',type=int,default=1)
     p.add_argument('--workdir',required=True)
+    p.add_argument('--internal-capture',action='store_true')
     a=p.parse_args()
     i,n=a.id,a.nodes
     wd=Path(a.workdir)
@@ -31,10 +32,11 @@ def main():
     else:
         interface=''
     tracefile=str(wd/f'cyclone-config-{i}.log')
+    pcap_config=('<PacketCaptureFile>'+str(wd/f'cyclone-{i}.pcap')+'</PacketCaptureFile>') if a.internal_capture else ''
     os.environ['CYCLONEDDS_URI']=(
         '<CycloneDDS xmlns="https://cdds.io/config"><Domain id="any">'
         +interface+'<Tracing><Verbosity>config</Verbosity><OutputFile>'
-        +tracefile+'</OutputFile></Tracing></Domain></CycloneDDS>')
+        +tracefile+'</OutputFile>'+pcap_config+'</Tracing></Domain></CycloneDDS>')
     from cyclonedds.domain import DomainParticipant
     from cyclonedds.topic import Topic
     from cyclonedds.pub import DataWriter
