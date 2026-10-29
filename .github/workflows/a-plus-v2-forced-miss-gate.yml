@@ -1,0 +1,72 @@
+name: Aplus V2 Causal Backup Recovery After Forced Miss
+on:
+  push:
+    branches: [experiment/a-plus-v2-forced-miss-recovery-20261030]
+    paths: [.github/workflows/a-plus-v2-forced-miss-gate.yml]
+  workflow_dispatch:
+permissions: {contents: read}
+jobs:
+  causal:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 17
+    strategy:
+      fail-fast: false
+      max-parallel: 5
+      matrix:
+        include:
+          - {n: 20, seed: 1}
+          - {n: 100, seed: 1}
+          - {n: 200, seed: 1}
+          - {n: 200, seed: 2}
+    name: 'Force receiver 1 miss every original source-0 message N=${{ matrix.n }} seed=${{ matrix.seed }}'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - name: Preflight
+        run: |
+          python -m py_compile bench/discovery/pubsub_node.py bench/discovery/pubsub_run.py
+          sudo sysctl -w net.core.rmem_max=16777216
+          sudo sysctl -w net.core.wmem_max=16777216
+      - name: Confirm replicas, SIGKILL source, unblock subscriber 1, require full data recovery
+        shell: bash
+        run: |
+          set -euo pipefail
+          case '${{ matrix.n }}' in
+            20) disc=6; timeout=70; spread=3 ;;
+            100) disc=18; timeout=125; spread=12 ;;
+            200) disc=27; timeout=150; spread=18 ;;
+          esac
+          sudo -E "$(which python)" bench/discovery/pubsub_run.py \
+            --sizes '${{ matrix.n }}' --modes multicast --losses 10 \
+            --v4 --messages 20 --publishers '${{ matrix.n }}' \
+            --sequence-payload --payload-bytes 128 --publish-interval 0.08 \
+            --discovery "$disc" --timeout "$timeout" --publish-spread "$spread" \
+            --repair-fanout 6 --repair-interval 0.9 --seeds '${{ matrix.seed }}' \
+            --fault crash_confirmed --peer-repair --peer-replicas 6 \
+            --peer-cache-limit 2048 --backup-quorum 2 --durable-publishers 1 \
+            --force-miss-origin 0 --force-miss-receiver 1 \
+            --output forced-results
+          python - <<'PY'
+          import json,glob
+          r=json.load(open('forced-results/results.json'))[0]
+          print('FORCED_MISS_RESULT '+json.dumps(r))
+          assert r['status']=='PASS' and r['crashed_nodes']==[0],r
+          assert r['killed_source_proof_valid'] and r['backup_confirmed_origins']==1,r
+          assert r['forced_initial_packets_dropped']>0,r
+          assert r['total_peer_repairs']>0,r
+          assert r['total_delivered_remote']==r['total_expected_remote'],r
+          assert r['reported']==r['nodes']-1,r
+          rows=glob.glob('forced-results/*/node-1.json')
+          assert len(rows)==1,rows
+          subscriber=json.load(open(rows[0]))
+          assert subscriber['stats']['fault_dropped_initial']>0,subscriber
+          assert subscriber['remote_received']==subscriber['remote_expected'],subscriber
+          proof=glob.glob('forced-results/*/backup-proof-0.json')
+          assert len(proof)==1,proof
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: 'forced-N${{ matrix.n }}-seed${{ matrix.seed }}'
+          path: forced-results/
