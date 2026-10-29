@@ -1,0 +1,62 @@
+name: CompanyWebView P0-1 / Managed Windows source integration
+on:
+  push:
+    branches: [verify/cwv-p01-windows-20261029]
+    paths:
+      - 'companywebview-p01/source-bundle.txt'
+      - 'companywebview-p01/Validation/**'
+      - '.github/workflows/cwv-p01-managed.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  managed-source:
+    runs-on: windows-2022
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Verify and extract original P0-1 managed source archive
+        shell: pwsh
+        run: |
+          @'
+          import base64,hashlib,io,lzma,tarfile,pathlib
+          bundle=pathlib.Path('companywebview-p01/source-bundle.txt')
+          data=bundle.read_bytes()
+          expected='21dcc75248c08aef0832bf6b909d91b1f035cded7fdaf49d51fa31b370d489ed'
+          if hashlib.sha256(data).hexdigest()!=expected:
+              raise SystemExit('P0-1 public source bundle checksum mismatch')
+          raw=lzma.decompress(base64.b64decode(data))
+          tar=tarfile.open(fileobj=io.BytesIO(raw))
+          root=pathlib.Path('companywebview-p01/FullManagedSource')
+          root.mkdir(parents=True,exist_ok=True)
+          members=tar.getmembers()
+          if len(members)!=80: raise SystemExit('P0-1 source list count mismatch')
+          for m in members:
+              p=pathlib.PurePosixPath(m.name)
+              if not m.isfile() or p.is_absolute() or '..' in p.parts:
+                  raise SystemExit('unsafe file in P0-1 source archive')
+              dest=root.joinpath(*p.parts)
+              dest.parent.mkdir(parents=True,exist_ok=True)
+              dest.write_bytes(tar.extractfile(m).read())
+          print('EXACT_P01_MANAGED_SOURCE_BUNDLE_PASS',len(members))
+          '@ | python -
+          if ($LASTEXITCODE -ne 0) { throw 'Source extraction failed' }
+      - name: Actual C# Roslyn compile of Unity Editor build source
+        shell: pwsh
+        run: |
+          dotnet build companywebview-p01/FullManagedSource/Validation/AutoBuildCompile.csproj -c Release --nologo
+          if ($LASTEXITCODE -ne 0) { throw 'Auto-build source compilation failed' }
+      - name: Actual C# Roslyn compile of full C# panel with Unity stubs
+        shell: pwsh
+        run: |
+          $root='companywebview-p01/FullManagedSource'
+          $facade=Join-Path $root 'NativeSource/oneclick_bundle/Package/com.company.webview/Runtime/Backends/CEF/WebViewRuntime.cs'
+          if(-not(Test-Path $facade)){throw 'Exact CEF WebViewRuntime.cs missing from published source subset (not a code failure)'}
+          dotnet build (Join-Path $root 'Validation/ProductPanelCompile.csproj') -c Release --nologo
+          if ($LASTEXITCODE -ne 0) { throw 'Panel source Roslyn compilation failed' }
