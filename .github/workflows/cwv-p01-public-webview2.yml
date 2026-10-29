@@ -48,6 +48,11 @@ jobs:
           if ($bytes -lt 8192) { throw 'Native DLL unexpectedly small' }
           $proof=[ordered]@{status='PASS';kind='Actual v8 WebView2 MSVC C++17 native DLL';version='1.0.4258.31';commit=$env:GITHUB_SHA;dllSha256=(Get-FileHash $dll -Algorithm SHA256).Hash.ToLowerInvariant();dllBytes=$bytes;unityPlayerExecuted=$false;cefCompiled=$false}
           $proof|ConvertTo-Json|Set-Content -Encoding utf8 (Join-Path $env:RUNNER_TEMP 'cwv-v8-public-msvc-evidence.json')
+      - name: Real Roslyn compile of Unity Editor build script against stubs
+        shell: pwsh
+        run: |
+          dotnet build companywebview-p01/Validation/AutoBuildCompile.csproj --configuration Release --nologo -v:minimal
+          if ($LASTEXITCODE -ne 0) { throw 'Unity Editor facade Roslyn compilation failed' }
       - name: Run security registry and lifecycle CTest with MSVC
         shell: pwsh
         run: |
