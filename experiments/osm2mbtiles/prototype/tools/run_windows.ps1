@@ -5,6 +5,7 @@ param(
     [Parameter(Position=1)] [string]$ZoomOverride
 )
 $ErrorActionPreference = 'Stop'
+$endToEndTimer = [Diagnostics.Stopwatch]::StartNew()
 $project = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 
 function Fail([string]$message, [int]$code = 1) {
@@ -74,8 +75,15 @@ $zoom = if ($ZoomOverride) { $ZoomOverride } elseif ($env:OSM2MBTILES_ZOOM) { $e
 $workers = if ($env:OSM2MBTILES_PROCESSES) { $env:OSM2MBTILES_PROCESSES } else { '4' }
 $importProfile = if ($env:OSM2MBTILES_VECTOR_IMPORT_PROFILE) { $env:OSM2MBTILES_VECTOR_IMPORT_PROFILE.ToLowerInvariant() } else { 'safe' }
 if ($importProfile -notin @('safe', 'fast')) { Fail 'OSM2MBTILES_VECTOR_IMPORT_PROFILE must be safe or fast.' }
+$vectorTiler = if ($env:OSM2MBTILES_VECTOR_TILER) { $env:OSM2MBTILES_VECTOR_TILER.ToLowerInvariant() } else { 'postgis' }
+if ($vectorTiler -notin @('postgis','batch')) { Fail 'OSM2MBTILES_VECTOR_TILER must be postgis or batch.' }
+$batchSide = if ($env:OSM2MBTILES_VECTOR_BATCH_SIDE) { $env:OSM2MBTILES_VECTOR_BATCH_SIDE } else { '2' }
+if ($batchSide -notmatch '^[1-8]$') { Fail 'OSM2MBTILES_VECTOR_BATCH_SIDE must be 1..8.' }
+$rasterFormat = if ($env:OSM2MBTILES_RASTER_FORMAT) { $env:OSM2MBTILES_RASTER_FORMAT.ToLowerInvariant() } else { 'png' }
+if ($rasterFormat -notin @('png','png256')) { Fail 'OSM2MBTILES_RASTER_FORMAT must be png or png256.' }
+$bbox = if ($env:OSM2MBTILES_BBOX) { $env:OSM2MBTILES_BBOX.Trim() } else { '' }
 $queryMode = if ($env:OSM2MBTILES_VECTOR_QUERY_MODE) { $env:OSM2MBTILES_VECTOR_QUERY_MODE.ToLowerInvariant() } else { 'projected' }
-if ($queryMode -notin @('projected', 'baseline', 'cached')) { Fail 'OSM2MBTILES_VECTOR_QUERY_MODE must be projected, baseline, or cached.' }
+if ($queryMode -notin @('projected','baseline','cached')) { Fail 'OSM2MBTILES_VECTOR_QUERY_MODE must be projected, baseline, or cached.' }
 $cachePolicy = if ($env:OSM2MBTILES_CLEANUP) { $env:OSM2MBTILES_CLEANUP.ToLowerInvariant() } else { 'compact' }
 if ($cachePolicy -notin @('keep', 'compact', 'prune')) { Fail 'OSM2MBTILES_CLEANUP must be keep, compact, or prune.' }
 if ($zoom -notmatch '^(?:\d+)(?:-\d+)?$') { Fail "Invalid zoom: $zoom" }
@@ -85,6 +93,7 @@ Write-Host "`n=== osm2mbtiles - Docker-free one-click launcher ===" -ForegroundC
 Write-Host "Input : $inputLabel"
 Write-Host "Output: $output"
 Write-Host "Zoom  : $zoom   Workers: $workers   Cache: $cachePolicy   Format: $format   Vector SQL: $queryMode   Import: $importProfile"
+Write-Host "Vector tiler: $vectorTiler   batch side: $batchSide   Raster: $rasterFormat   BBOX: $(if ($bbox) {$bbox} else {'PBF header'})"
 Write-Host 'Backend: Linux tools inside WSL (no Docker)' -ForegroundColor DarkCyan
 
 $outputs = if ($format -eq 'both') {
@@ -116,7 +125,7 @@ $script = Join-Path $PSScriptRoot 'run_wsl.sh'
 $scriptUnix = (& wsl.exe --exec wslpath -a $script 2>&1 | Out-String).Trim()
 if ($LASTEXITCODE -ne 0 -or -not $scriptUnix) { Fail 'Unable to translate launcher path into WSL.' }
 Write-Host "`n[INFO] Starting native Mapnik/PostGIS pipeline..." -ForegroundColor Cyan
-& wsl.exe --exec bash $scriptUnix $project $pbf $output $zoom $workers $cachePolicy $format $queryMode $importProfile
+& wsl.exe --exec bash $scriptUnix $project $pbf $output $zoom $workers $cachePolicy $format $queryMode $importProfile $vectorTiler $batchSide $rasterFormat $bbox
 $code = $LASTEXITCODE
 if ($code -ne 0) { Fail "WSL rendering failed (exit $code). See output above." $code }
 foreach ($produced in $outputs) {
@@ -125,4 +134,6 @@ foreach ($produced in $outputs) {
     }
     Write-Host "`n[SUCCESS] $format MBTiles: $produced" -ForegroundColor Green
 }
+$endToEndTimer.Stop()
+Write-Host ("[TIME] Windows end-to-end elapsed (WSL + verify + copy): {0:N3}s ({1})" -f $endToEndTimer.Elapsed.TotalSeconds,$endToEndTimer.Elapsed.ToString('hh\:mm\:ss')) -ForegroundColor Cyan
 exit 0

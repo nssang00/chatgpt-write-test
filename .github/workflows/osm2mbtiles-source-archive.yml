@@ -1,0 +1,103 @@
+name: osm2mbtiles Complete Source Snapshot
+
+on:
+  push:
+    branches: [ci/osm2mbtiles-cli-seoul-test]
+    paths:
+      - '.github/workflows/osm2mbtiles-source-archive.yml'
+      - 'experiments/osm2mbtiles/prototype/**'
+      - '.github/workflows/osm2mbtiles-cli-seoul-test.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Package complete osm2mbtiles project, related CI and full repository source
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          python3 - <<'PY'
+          import hashlib
+          import os
+          from pathlib import Path
+          import zipfile
+
+          project = Path('experiments/osm2mbtiles/prototype')
+          workflows = Path('.github/workflows')
+          assert (project / 'test-seoul.bat').is_file()
+          assert (project / 'src/osm2mbtiles/vector_incremental.py').is_file()
+          assert (project / 'src/osm2mbtiles/vector_batch.py').is_file()
+          assert (project / 'src/osm2mbtiles/cli.py').is_file()
+
+          source_files = sorted(p for p in project.rglob('*') if p.is_file()
+                                and not any(part in ('__pycache__', 'test-output', '.git')
+                                            for part in p.parts))
+          workflow_files = sorted(p for p in workflows.glob('osm2mbtiles-*.yml') if p.is_file())
+          assert len(source_files) >= 55, f'Unexpectedly incomplete source: {len(source_files)}'
+          assert len(workflow_files) >= 5, f'Missing related CI files: {len(workflow_files)}'
+
+          sha = os.environ['GITHUB_SHA']
+          source_info = (
+              'osm2mbtiles full source snapshot\n'
+              'Repository: nssang00/chatgpt-write-test\n'
+              'Branch: ci/osm2mbtiles-cli-seoul-test\n'
+              f'Commit: {sha}\n'
+              f'Project files: {len(source_files)}\n'
+              f'Related workflows: {len(workflow_files)}\n'
+              'Included: complete source, Windows launchers, Seoul batch, tests, docs, CI.\n'
+              'Excluded: Git history and downloaded/geospatial/generated runtime artifacts.\n'
+              'CI workflows are provided in ci-workflows/ for reference; inside the\n'
+              'original repository they live in .github/workflows/.\n'
+          )
+          def write_zip(path, entries, root, meta):
+              manifest = []
+              with zipfile.ZipFile(path, 'w', zipfile.ZIP_DEFLATED, compresslevel=7) as z:
+                  for file, dest in entries:
+                      data = file.read_bytes()
+                      z.writestr(str(Path(root) / dest), data)
+                      manifest.append(f'{hashlib.sha256(data).hexdigest()}  {dest}')
+                  z.writestr(str(Path(root) / 'SOURCE_INFO.txt'), meta)
+                  z.writestr(str(Path(root) / 'SHA256_MANIFEST.txt'),
+                             '\n'.join(manifest) + '\n')
+              with zipfile.ZipFile(path) as z:
+                  assert z.testzip() is None
+              print('CREATED_ARCHIVE',path,'files',len(entries),'bytes',path.stat().st_size,flush=True)
+
+          project_entries = (
+              [(p, str(p.relative_to(project))) for p in source_files]
+              + [(p, 'ci-workflows/' + p.name) for p in workflow_files]
+          )
+          write_zip(Path('dist/osm2mbtiles-complete-project.zip'), project_entries,
+                    'osm2mbtiles', source_info)
+
+          # A second archive preserves the original relative paths of ALL
+          # repository files, for developers who need the original workflow layout.
+          repo_files = sorted(p for p in Path('.').rglob('*') if p.is_file()
+                              and not any(part in ('.git', 'dist', '__pycache__',
+                                                   'test-output')
+                                          for part in p.parts))
+          write_zip(Path('dist/chatgpt-write-test-entire-repository.zip'),
+                    [(p, str(p)) for p in repo_files],
+                    'chatgpt-write-test', source_info +
+                    f'Entire repository files: {len(repo_files)}\n')
+          Path('dist/archive-summary.txt').write_text(
+              source_info +
+              'Project zip: osm2mbtiles-complete-project.zip\n'
+              'Repository zip: chatgpt-write-test-entire-repository.zip\n'
+          )
+          PY
+          sha256sum dist/*.zip | tee dist/archive-sha256.txt
+          unzip -t dist/osm2mbtiles-complete-project.zip | tail -n 1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: osm2mbtiles-complete-source-archives
+          path: dist/
+          retention-days: 14
+          if-no-files-found: error

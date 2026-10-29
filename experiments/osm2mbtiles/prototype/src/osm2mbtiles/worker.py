@@ -61,7 +61,10 @@ def render(job):
     runtime = Path(job['runtime'])
     fonts = Path(job.get('fonts',str(runtime/'fonts')))
     if fonts.is_dir() and hasattr(mapnik,'register_fonts'):
-        mapnik.register_fonts(str(fonts), True)
+        # Python mapnik.register_fonts(path, valid_extensions=[...]) already
+        # recurses into subdirectories; the second argument is NOT a Boolean.
+        # Passing True breaks Python Mapnik 3.x (TypeError: bool not iterable).
+        mapnik.register_fonts(str(fonts))
     plugins = runtime/'lib'/'mapnik'/'input'
     if plugins.is_dir() and hasattr(mapnik,'register_datasources'):
         mapnik.register_datasources(str(plugins))
