@@ -1,0 +1,65 @@
+name: Aplus V2 Stream Bitmap Repair Smoke
+on:
+  push:
+    branches: [experiment/a-plus-v2-repair-20261030]
+    paths: [.github/workflows/a-plus-v2-smoke.yml]
+  workflow_dispatch:
+permissions: {contents: read}
+jobs:
+  smoke:
+    name: 'N=${{ matrix.nodes }} m=${{ matrix.messages }} loss=${{ matrix.loss }}%'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    strategy:
+      fail-fast: false
+      max-parallel: 5
+      matrix:
+        include:
+          - {nodes: 8, messages: 8, loss: 0, seed: 1}
+          - {nodes: 20, messages: 20, loss: 10, seed: 1}
+          - {nodes: 50, messages: 100, loss: 10, seed: 1}
+          - {nodes: 50, messages: 100, loss: 0, seed: 1}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - name: Validate code and kernel buffers
+        run: |
+          set -euo pipefail
+          python -m py_compile bench/discovery/a_plus_v2_node.py bench/discovery/pubsub_run.py
+          sudo sysctl -w net.core.rmem_max=16777216
+          sudo sysctl -w net.core.wmem_max=16777216
+      - name: Actual netns all-to-all streaming/bitmap NACK gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          case '${{ matrix.nodes }}' in
+            8) disc=6; timeout=35; spread=3 ;;
+            20) disc=8; timeout=50; spread=5 ;;
+            50) disc=12; timeout=75; spread=7 ;;
+          esac
+          sudo -E "$(which python)" bench/discovery/pubsub_run.py \
+            --impl v2 --sizes '${{ matrix.nodes }}' --modes multicast \
+            --losses '${{ matrix.loss }}' \
+            --messages '${{ matrix.messages }}' \
+            --payload-bytes 128 --publish-interval 0.06 \
+            --publishers '${{ matrix.nodes }}' \
+            --discovery "$disc" --timeout "$timeout" --publish-spread "$spread" \
+            --repair-fanout 6 --repair-interval 0.9 \
+            --repair-pps 12 --nack-period 0.45 \
+            --seeds '${{ matrix.seed }}' --output v2-smoke
+          cat v2-smoke/results.csv
+          python - <<'PY'
+          import json
+          r=json.load(open('v2-smoke/results.json'))[0]
+          print('V2_SMOKE '+json.dumps(r))
+          assert r['status']=='PASS',r
+          assert r['all_published_marker_count']==r['nodes'],r
+          assert r['total_expected_remote']==r['nodes']*(r['nodes']-1)*r['messages_per_publisher']
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: 'v2-smoke-n${{ matrix.nodes }}-m${{ matrix.messages }}-loss${{ matrix.loss }}'
+          path: v2-smoke/
+          if-no-files-found: warn
