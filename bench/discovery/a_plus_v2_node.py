@@ -141,6 +141,7 @@ def main():
     repair_tokens=args.repair_burst
     repair_token_at=0.
     request_cursor=i%n
+    window_cursor=[0]*n
     max_pending=0
     emitted_last_progress=-1
 
@@ -220,13 +221,16 @@ def main():
                 if not valid:
                     stats['nack_suppressed']+=1
                     continue
-                first=valid[0]
-                base=(first//WINDOW)*WINDOW
+                # Rotate across 64-sequence windows for EACH source. Always
+                # taking the first gap can starve sequences 64..99 forever.
+                windows=sorted({seq//WINDOW for seq in valid})
+                current=window_cursor[src]
+                win=next((w for w in windows if w>=current),windows[0])
+                base=win*WINDOW
                 bits=0
                 for seq in valid:
-                    if seq<base:continue
-                    if seq>=base+WINDOW:break
-                    bits |= 1<<(seq-base)
+                    if base<=seq<base+WINDOW:
+                        bits |= 1<<(seq-base)
                 if bits==0:continue
                 if send({'t':'q','i':i,'src':src,'base':base,'bm':format(bits,'x')},
                         GROUP,'nack_sent'):
@@ -235,6 +239,7 @@ def main():
                         if bits & (1<<off):
                             peer_suppression[(src,base+off)]=elapsed+args.nack_suppress_seconds+rng.random()*.4
                     last_request[src]=elapsed
+                    window_cursor[src]=(win+1)%((m+WINDOW-1)//WINDOW)
                     selected+=1
                     if selected>=args.repair_fanout:
                         request_cursor=(src+1)%n
