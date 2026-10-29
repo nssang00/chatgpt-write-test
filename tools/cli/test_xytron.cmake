@@ -93,6 +93,29 @@ endfunction()
 in_project(ai_app module add camera --language cpp)
 in_project(ai_app module add agent --language python)
 in_project(ai_app module add erp --language csharp)
+# End-to-end CLI hard-link denial: module add must not truncate an aliased
+# project manifest or mutate the linked victim outside the project directory.
+file(READ "${TEST_ROOT}/ai_app/xytron.json" original_manifest)
+file(CREATE_LINK "${TEST_ROOT}/ai_app/xytron.json"
+     "${TEST_ROOT}/aliased-manifest.json" RESULT link_result)
+if(NOT link_result STREQUAL "0")
+  message(FATAL_ERROR "Cannot establish hard-link regression fixture: ${link_result}")
+endif()
+execute_process(COMMAND "${XYTRON}" module add hardprobe --language python
+  WORKING_DIRECTORY "${TEST_ROOT}/ai_app"
+  RESULT_VARIABLE hardlink_denied OUTPUT_VARIABLE hardlink_out ERROR_VARIABLE hardlink_err)
+if(NOT hardlink_denied EQUAL 1)
+  message(FATAL_ERROR "module add accepted hard-linked manifest: ${hardlink_out} ${hardlink_err}")
+endif()
+file(READ "${TEST_ROOT}/aliased-manifest.json" linked_after)
+if(NOT linked_after STREQUAL original_manifest)
+  message(FATAL_ERROR "CLI modified hard-linked manifest victim")
+endif()
+if(EXISTS "${TEST_ROOT}/ai_app/modules/hardprobe")
+  message(FATAL_ERROR "CLI created a module before rejecting hard-linked manifest")
+endif()
+file(REMOVE "${TEST_ROOT}/aliased-manifest.json")
+
 foreach(p modules/camera/module.cpp
           modules/agent/module.py
           modules/erp/Module.csproj)
