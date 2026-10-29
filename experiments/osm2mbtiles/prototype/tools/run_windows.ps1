@@ -78,8 +78,11 @@ if ($importProfile -notin @('safe', 'fast')) { Fail 'OSM2MBTILES_VECTOR_IMPORT_P
 $vectorTiler = if ($env:OSM2MBTILES_VECTOR_TILER) { $env:OSM2MBTILES_VECTOR_TILER.ToLowerInvariant() } else { 'postgis' }
 if ($vectorTiler -notin @('postgis','batch')) { Fail 'OSM2MBTILES_VECTOR_TILER must be postgis or batch.' }
 $batchSide = if ($env:OSM2MBTILES_VECTOR_BATCH_SIDE) { $env:OSM2MBTILES_VECTOR_BATCH_SIDE } else { '2' }
-if ($batchSide -notmatch '^[1-8] { $env:OSM2MBTILES_VECTOR_QUERY_MODE.ToLowerInvariant() } else { 'projected' }
-if ($queryMode -notin @('projected', 'baseline', 'cached')) { Fail 'OSM2MBTILES_VECTOR_QUERY_MODE must be projected, baseline, or cached.' }
+if ($batchSide -notmatch '^[1-8]$') { Fail 'OSM2MBTILES_VECTOR_BATCH_SIDE must be 1..8.' }
+$rasterFormat = if ($env:OSM2MBTILES_RASTER_FORMAT) { $env:OSM2MBTILES_RASTER_FORMAT.ToLowerInvariant() } else { 'png' }
+if ($rasterFormat -notin @('png','png256')) { Fail 'OSM2MBTILES_RASTER_FORMAT must be png or png256.' }
+$queryMode = if ($env:OSM2MBTILES_VECTOR_QUERY_MODE) { $env:OSM2MBTILES_VECTOR_QUERY_MODE.ToLowerInvariant() } else { 'projected' }
+if ($queryMode -notin @('projected','baseline','cached')) { Fail 'OSM2MBTILES_VECTOR_QUERY_MODE must be projected, baseline, or cached.' }
 $cachePolicy = if ($env:OSM2MBTILES_CLEANUP) { $env:OSM2MBTILES_CLEANUP.ToLowerInvariant() } else { 'compact' }
 if ($cachePolicy -notin @('keep', 'compact', 'prune')) { Fail 'OSM2MBTILES_CLEANUP must be keep, compact, or prune.' }
 if ($zoom -notmatch '^(?:\d+)(?:-\d+)?$') { Fail "Invalid zoom: $zoom" }
