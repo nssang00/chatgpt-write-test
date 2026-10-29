@@ -130,7 +130,7 @@ def main():
                 next_pub+=.22
             if args.backend=='cyclone':
                 try:
-                    for msg in reader.take():
+                    for msg in reader.take(N=256):
                         receive(msg.kind,msg.origin,msg.sequence)
                 except Exception as exc:
                     errors.append(f'READ:{type(exc).__name__}:{exc}')
