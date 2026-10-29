@@ -1,0 +1,53 @@
+name: NativeWeb public-baseline Windows/Linux verification
+'on':
+  push:
+    branches: [ci/nativeweb-public-baseline-20261029]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  public-source-only:
+    name: public-baseline-${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2022]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 35
+    steps:
+      - name: Checkout already-public source only
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Assert historical public CI baseline ancestry
+        shell: bash
+        run: |
+          git merge-base --is-ancestor 7b4c92cab87e1ef6bbe445187ba570ff0daa23a8 HEAD
+          printf 'Tested public commit: %s\n' "$(git rev-parse HEAD)"
+          printf '%s\n' 'This workflow does NOT test the newer private PR #5 source.'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Configure published baseline
+        run: cmake -S . -B build-public-verify -DNATIVEWEB_BUILD_TESTS=ON -DCMAKE_BUILD_TYPE=Release
+      - name: Build published native source
+        run: cmake --build build-public-verify --config Release --parallel 3
+      - name: Core and CLI regressions
+        run: ctest --test-dir build-public-verify -C Release --output-on-failure --timeout 90
+      - name: Published Python binding and worker regressions
+        run: python -m unittest discover -s bindings/python/tests -p "test_*.py" -v
+      - name: Install published Core SDK
+        run: cmake --install build-public-verify --config Release --prefix "${{ github.workspace }}/public-sdk-verify"
+      - name: Configure independent Core SDK consumer
+        run: cmake -S examples/sdk_consumer -B build-public-consumer-verify -DCMAKE_BUILD_TYPE=Release "-DCMAKE_PREFIX_PATH=${{ github.workspace }}/public-sdk-verify"
+      - name: Build independent Core SDK consumer
+        run: cmake --build build-public-consumer-verify --config Release --parallel 2
+      - name: Run independent Core SDK consumer
+        run: ctest --test-dir build-public-consumer-verify -C Release --output-on-failure --timeout 90
+      - name: Configure published process path probe
+        run: cmake -S tools/public_ci -B build-public-probe-verify -DCMAKE_BUILD_TYPE=Release
+      - name: Build published process path probe
+        run: cmake --build build-public-probe-verify --config Release --parallel 2
+      - name: Test process path and exit-code handling
+        run: ctest --test-dir build-public-probe-verify -C Release --output-on-failure --timeout 20
