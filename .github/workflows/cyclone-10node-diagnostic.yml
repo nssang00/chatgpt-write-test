@@ -1,0 +1,58 @@
+name: Cyclone DDS 10-node 16s Root Cause
+on:
+  push:
+    branches: [diagnostic/cyclone-discovery-10nodes-20261029]
+    paths: [.github/workflows/cyclone-10node-diagnostic.yml]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  diagnostics:
+    name: 'N=${{ matrix.nodes }} take=${{ matrix.batch }} iface=${{ matrix.config }} seed=${{ matrix.seed }}'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    strategy:
+      fail-fast: false
+      max-parallel: 8
+      matrix:
+        include:
+          - {nodes: 10, batch: 1, config: default, seed: 1}
+          - {nodes: 10, batch: 1, config: default, seed: 2}
+          - {nodes: 10, batch: 1, config: default, seed: 3}
+          - {nodes: 10, batch: 256, config: default, seed: 1}
+          - {nodes: 10, batch: 256, config: default, seed: 2}
+          - {nodes: 10, batch: 256, config: default, seed: 3}
+          - {nodes: 10, batch: 256, config: eth0, seed: 1}
+          - {nodes: 10, batch: 256, config: eth0-fastspdp, seed: 1}
+          - {nodes: 20, batch: 1, config: default, seed: 1}
+          - {nodes: 20, batch: 256, config: default, seed: 1}
+          - {nodes: 40, batch: 1, config: default, seed: 1}
+          - {nodes: 40, batch: 256, config: default, seed: 1}
+          - {nodes: 40, batch: 256, config: eth0-fastspdp, seed: 1}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - name: Install native Cyclone DDS bindings
+        run: |
+          python -m pip install cyclonedds==11.0.1
+          python -c 'import cyclonedds; from cyclonedds.builtin import BuiltinDataReader; print("BuiltinDataReader ready")'
+      - name: Check network tools
+        run: ip -V && tc -V && free -m
+      - name: Compare SPDP, endpoint-match and application-sample milestones
+        run: |
+          set -euo pipefail
+          sudo -E "$(which python)" bench/discovery/cyclone_diag_run.py \
+            --nodes '${{ matrix.nodes }}' \
+            --batch '${{ matrix.batch }}' \
+            --config '${{ matrix.config }}' \
+            --seed '${{ matrix.seed }}' --timeout 27 \
+            --output cyclone-diagnostics
+          cat cyclone-diagnostics/summary.json
+      - name: Upload individual node timelines
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: 'cyclone-diag-${{ matrix.nodes }}-take${{ matrix.batch }}-${{ matrix.config }}-seed${{ matrix.seed }}'
+          path: cyclone-diagnostics/
+          if-no-files-found: warn
