@@ -32,6 +32,7 @@ def main():
     p.add_argument('--seed',type=int,default=1)
     p.add_argument('--timeout',type=float,default=25)
     p.add_argument('--trace',action='store_true')
+    p.add_argument('--join-spread-ms',type=float,default=0.0)
     a=p.parse_args()
     wd=Path(a.workdir)
     if a.config!='default' or a.trace:
@@ -60,6 +61,10 @@ def main():
     while not (wd/'go').exists():
         time.sleep(.005)
     start=time.monotonic()
+    if a.join_spread_ms>0:
+        # Stagger DDS participant creation while keeping one global measurement clock.
+        slot=(a.id*37+a.seed*19)%a.count
+        time.sleep((slot/max(1,a.count-1))*a.join_spread_ms/1000.0)
     begin_udp=udp_stats()
     first_participant={}
     participant_keys=set()
@@ -128,6 +133,7 @@ def main():
     end_udp=udp_stats()
     results={
         'node':a.id,'count':a.count,'config':a.config,'seed':a.seed,
+        'join_spread_ms':a.join_spread_ms,
         'init_s':init_s,'participant_full_s':participant_full_s,
         'reader_full_s':readers_full_s,'writer_full_s':writers_full_s,
         'all_full_s':all_full_s,'participant_count':len(participant_keys),
