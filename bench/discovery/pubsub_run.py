@@ -26,14 +26,14 @@ def netem(n,loss):
            'dev','eth0','root',*opts)
 
 
-def execute(n,mode,loss,seconds,disc,m,spread,publishers,seed,fanout,interval,out):
+def execute(n,mode,loss,seconds,disc,m,spread,publishers,seed,fanout,interval,out,v4=False):
     wd=out/f'{mode}-n{n}-loss{loss:g}-seed{seed}'
     wd.mkdir(parents=True,exist_ok=True)
     procs=[]
     try:
         for i in range(n):
             log=(wd/f'log-{i}.txt').open('w')
-            p=subprocess.Popen(['ip','netns','exec',ns(i),sys.executable,
+            command=['ip','netns','exec',ns(i),sys.executable,
                 str(Path(__file__).resolve().parent/'pubsub_node.py'),
                 '--id',str(i),'--count',str(n),'--mode',mode,
                 '--messages',str(m),'--discovery-seconds',str(disc),
@@ -41,8 +41,9 @@ def execute(n,mode,loss,seconds,disc,m,spread,publishers,seed,fanout,interval,ou
                 '--publishers',str(publishers),
                 '--seed',str(seed),'--repair-fanout',str(fanout),
                 '--repair-interval',str(interval),
-                '--workdir',str(wd)],
-                stdout=log,stderr=subprocess.STDOUT)
+                '--workdir',str(wd)]
+            if v4: command.append('--v4')
+            p=subprocess.Popen(command,stdout=log,stderr=subprocess.STDOUT)
             log.close()
             procs.append(p)
         deadline=time.monotonic()+max(30,n*.3)
@@ -80,7 +81,7 @@ def execute(n,mode,loss,seconds,disc,m,spread,publishers,seed,fanout,interval,ou
         full_disc=all(r['known_nodes']==n for r in rows) and len(rows)==n
         first_pub=disc
         result={'mode':mode,'nodes':n,'publishers':publishers or n,
-            'loss_percent_per_direction':loss,'seed':seed,
+            'loss_percent_per_direction':loss,'seed':seed,'v4':v4,
             'publish_spread_s':spread, 'repair_fanout':fanout,
             'repair_interval_s':interval,
             'reported':len(rows),'discovery_success':full_disc,
@@ -99,6 +100,9 @@ def execute(n,mode,loss,seconds,disc,m,spread,publishers,seed,fanout,interval,ou
             'total_duplicate_deliveries':sum(r['duplicates'] for r in rows),
             'total_nacks':sum(r['stats']['nack_sent'] for r in rows),
             'total_repairs':sum(r['stats']['repair_sent'] for r in rows),
+            'total_nack_suppressed':sum(r['stats'].get('nack_suppressed',0) for r in rows),
+            'total_nack_heard':sum(r['stats'].get('nack_heard',0) for r in rows),
+            'total_repair_suppressed':sum(r['stats'].get('repair_suppressed',0) for r in rows),
             'udp_rcvbuf_errors':sum(r.get('udp_rcvbuf_errors',0) for r in rows),
             'udp_in_errors':sum(r.get('udp_in_errors',0) for r in rows),
             'socket_rx_overflow':sum(r.get('socket_rx_overflow',0) for r in rows),
@@ -136,6 +140,7 @@ def main():
     ap.add_argument('--repair-fanout',type=int,default=4)
     ap.add_argument('--repair-interval',type=float,default=1.0)
     ap.add_argument('--output',default='pubsub-results')
+    ap.add_argument('--v4',action='store_true')
     args=ap.parse_args()
     if os.geteuid()!=0:
         raise SystemExit('root needed for network namespaces')
@@ -163,7 +168,7 @@ def main():
                         try:
                             r=execute(n,mode,loss,args.timeout,args.discovery,args.messages,
                                 args.publish_spread,args.publishers,seed,args.repair_fanout,
-                                args.repair_interval,out)
+                                args.repair_interval,out,args.v4)
                             r['status']='PASS' if r['pubsub_success'] and r['discovery_success'] else 'FAIL'
                         except Exception as exc:
                             r={'nodes':n,'mode':mode,'loss_percent_per_direction':loss,
