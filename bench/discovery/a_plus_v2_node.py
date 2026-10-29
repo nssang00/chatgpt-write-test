@@ -340,6 +340,16 @@ def main():
 
     udp_end=udp_stats()
     unresolved={str(j):len(missing[j]) for j in range(pubn) if j!=i and missing[j]}
+    missing_by_window={}
+    for j in range(pubn):
+        if j==i:continue
+        for seq in missing[j]:
+            window=str((seq//16)*16)
+            missing_by_window[window]=missing_by_window.get(window,0)+1
+    replay_by_window={}
+    for seq,num in repair_count.items():
+        window=str((seq//16)*16)
+        replay_by_window[window]=replay_by_window.get(window,0)+num
     # Missing-beacon gaps are reported separately: no application source-m progress
     # does NOT mean application data was necessarily delivered.
     rows=dict(id=i,mode=args.mode,version='AplusV2',
@@ -353,6 +363,8 @@ def main():
         gap_grace_s=args.gap_grace,nack_suppress_s=args.nack_suppress_seconds,
         source_repair_pps=args.repair_pps,
         missing_by_origin=unresolved,
+        missing_by_window=missing_by_window,replays_by_window=replay_by_window,
+        distinct_repaired_samples=len(repair_count),
         max_repairs_per_sequence=max(repair_count.values(),default=0),
         samples_at_repair_limit=0,
         repair_queue_max=max_pending,repair_queue_left=len(source_q),
