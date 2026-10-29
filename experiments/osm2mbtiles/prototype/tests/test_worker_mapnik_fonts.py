@@ -28,6 +28,8 @@ def test_mapnik_font_registration_uses_python_api(tmp_path, monkeypatch):
 
     fake = types.SimpleNamespace(register_fonts=register_fonts, Map=map_constructor)
     monkeypatch.setitem(sys.modules, "mapnik", fake)
+    # This regression exercises the font API and stops before tile rendering.
+    monkeypatch.setattr(worker, "create_db", lambda db, job: None)
     with pytest.raises(ReachedMapConstructor):
         worker.render({
             "runtime": str(tmp_path),
@@ -51,6 +53,8 @@ def test_mapnik_font_registration_skips_missing_directory(tmp_path, monkeypatch)
         Map=lambda *args: (_ for _ in ()).throw(ReachedMapConstructor()),
     )
     monkeypatch.setitem(sys.modules, "mapnik", fake)
+    # This regression exercises the font API and stops before tile rendering.
+    monkeypatch.setattr(worker, "create_db", lambda db, job: None)
     with pytest.raises(ReachedMapConstructor):
         worker.render({"runtime": str(tmp_path),
                        "fonts": str(tmp_path / "no-font-directory"),
