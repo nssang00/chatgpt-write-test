@@ -100,7 +100,10 @@ def execute(n,mode,loss,seconds,disc,m,spread,publishers,seed,fanout,interval,ou
                 crashed.add(0)
                 events.append({'event':'publisher_killed','at_s':round(elapsed,3),'id':0})
             active_count=n-len(crashed)
-            if len(list(wd.glob('done-*')))>=active_count:
+            # A durability trial cannot stop merely because all data arrived:
+            # it must actually kill the source after quorum before declaring success.
+            if (len(list(wd.glob('done-*')))>=active_count
+                and (fault!='crash_confirmed' or crashed)):
                 break
             if any(p.poll() is not None and i not in crashed for i,p in enumerate(procs)):
                 events.append({'event':'normal_deadline_expiry' if elapsed>=disc+seconds-.6
