@@ -1,0 +1,37 @@
+name: Hybrid vs Multicast 300-Node Validation
+on:
+  push:
+    branches: [benchmark/pubsub-hybrid-lazy-repair-20261029]
+    paths: [.github/workflows/hybrid-300-validation.yml]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  three-hundred:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Verify capabilities and memory
+        run: |
+          ip -V && tc -V && free -m
+          sudo ip netns add probe300
+          sudo ip netns delete probe300
+      - name: Compare 300 independent UDP subscribers
+        run: |
+          set -euxo pipefail
+          sudo -E "$(which python)" bench/discovery/pubsub_run.py \
+            --sizes 300 --modes multicast,hybrid --losses 0,10 \
+            --discovery 16 --timeout 50 --messages 2 \
+            --output hybrid-300-results
+          cat hybrid-300-results/results.csv
+      - name: Upload 300-node logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: hybrid-300-results
+          path: hybrid-300-results/
+          if-no-files-found: warn
