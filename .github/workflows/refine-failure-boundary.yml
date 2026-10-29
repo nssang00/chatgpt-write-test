@@ -1,0 +1,70 @@
+name: Refine Vendor and Candidate Failure Boundary
+on:
+  push:
+    branches: [benchmark/vendor-threshold-matched-20261029]
+    paths: [.github/workflows/refine-failure-boundary.yml]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  comparison:
+    name: '${{ matrix.backend }} N=${{ matrix.nodes }} loss=${{ matrix.loss }} seed=${{ matrix.seed }}'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      max-parallel: 8
+      matrix:
+        include:
+          - {backend: cyclone, nodes: 40, loss: 0, seed: 1}
+          - {backend: zenoh, nodes: 40, loss: 0, seed: 1}
+          - {backend: multicast, nodes: 40, loss: 0, seed: 1}
+          - {backend: hybrid, nodes: 40, loss: 0, seed: 1}
+          - {backend: cyclone, nodes: 40, loss: 10, seed: 1}
+          - {backend: zenoh, nodes: 40, loss: 10, seed: 1}
+          - {backend: multicast, nodes: 40, loss: 10, seed: 1}
+          - {backend: hybrid, nodes: 40, loss: 10, seed: 1}
+          - {backend: cyclone, nodes: 30, loss: 10, seed: 2}
+          - {backend: zenoh, nodes: 30, loss: 10, seed: 2}
+          - {backend: multicast, nodes: 30, loss: 10, seed: 2}
+          - {backend: hybrid, nodes: 30, loss: 10, seed: 2}
+          - {backend: cyclone, nodes: 30, loss: 10, seed: 3}
+          - {backend: zenoh, nodes: 30, loss: 10, seed: 3}
+          - {backend: multicast, nodes: 30, loss: 10, seed: 3}
+          - {backend: hybrid, nodes: 30, loss: 10, seed: 3}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - name: Install native vendor bindings and set network buffers
+        run: |
+          python -m pip install eclipse-zenoh==1.10.1 cyclonedds==11.0.1
+          sudo sysctl -w net.core.rmem_max=16777216
+          sudo sysctl -w net.core.wmem_max=16777216
+      - name: Matched end-to-end data delivery threshold
+        run: |
+          set -euo pipefail
+          case '${{ matrix.backend }}' in
+            zenoh|cyclone)
+              sudo -E "$(which python)" bench/discovery/vendor_threshold_run.py \
+                --backend '${{ matrix.backend }}' --nodes '${{ matrix.nodes }}' \
+                --loss '${{ matrix.loss }}' --warmup 17 --spread 4 \
+                --timeout 48 --messages 2 --seed '${{ matrix.seed }}' --output threshold-refine
+              ;;
+            *)
+              sudo -E "$(which python)" bench/discovery/pubsub_run.py \
+                --sizes '${{ matrix.nodes }}' --modes '${{ matrix.backend }}' \
+                --losses '${{ matrix.loss }}' --discovery 17 --timeout 31 \
+                --messages 2 --publishers '${{ matrix.nodes }}' --publish-spread 4 \
+                --seeds '${{ matrix.seed }}' --repair-fanout 4 \
+                --repair-interval 1.2 --output threshold-refine
+              ;;
+          esac
+          cat threshold-refine/results.csv
+      - name: Upload per-node experiment evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: 'refine-${{ matrix.backend }}-${{ matrix.nodes }}-${{ matrix.loss }}-seed-${{ matrix.seed }}'
+          path: threshold-refine/
+          if-no-files-found: warn
