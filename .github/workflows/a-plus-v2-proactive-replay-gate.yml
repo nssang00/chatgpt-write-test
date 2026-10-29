@@ -1,0 +1,63 @@
+name: Aplus V2 Bounded Proactive Replay Evaluation
+on:
+  push:
+    branches: [experiment/a-plus-v2-proactive-replay-20261030]
+    paths: [.github/workflows/a-plus-v2-proactive-replay-gate.yml]
+  workflow_dispatch:
+permissions: {contents: read}
+jobs:
+  bench:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 18
+    strategy:
+      fail-fast: false
+      max-parallel: 6
+      matrix:
+        include:
+          - {n: 20, m: 20, loss: 10, seed: 1, replays: 4}
+          - {n: 100, m: 100, loss: 10, seed: 1, replays: 4}
+          - {n: 200, m: 100, loss: 10, seed: 1, replays: 4}
+          - {n: 200, m: 100, loss: 10, seed: 2, replays: 4}
+          - {n: 200, m: 100, loss: 10, seed: 1, replays: 8}
+          - {n: 200, m: 100, loss: 10, seed: 2, replays: 8}
+          - {n: 200, m: 100, loss: 10, seed: 3, replays: 8}
+    name: 'N=${{ matrix.n }} m=${{ matrix.m }} loss=${{ matrix.loss }} seed=${{ matrix.seed }} repeat=${{ matrix.replays }}'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - name: Preflight
+        run: |
+          python -m py_compile bench/discovery/pubsub_node.py bench/discovery/pubsub_run.py
+          sudo sysctl -w net.core.rmem_max=16777216
+          sudo sysctl -w net.core.wmem_max=16777216
+      - name: Strict full-receiver delivery with bounded timed source replays
+        shell: bash
+        run: |
+          set -euo pipefail
+          case '${{ matrix.n }}' in
+            20) disc=6; timeout=45; spread=2 ;;
+            100) disc=18; timeout=115; spread=12 ;;
+            200) disc=27; timeout=135; spread=18 ;;
+          esac
+          sudo -E "$(which python)" bench/discovery/pubsub_run.py \
+            --sizes '${{ matrix.n }}' --modes multicast --losses '${{ matrix.loss }}' \
+            --v4 --messages '${{ matrix.m }}' --publishers '${{ matrix.n }}' \
+            --payload-bytes 128 --publish-interval 0.06 \
+            --discovery "$disc" --timeout "$timeout" --publish-spread "$spread" \
+            --repair-fanout 6 --repair-interval 0.9 --seeds '${{ matrix.seed }}' \
+            --proactive-replays '${{ matrix.replays }}' --replay-interval 0.065 \
+            --output proactive-results
+          python - <<'PY'
+          import json
+          r=json.load(open('proactive-results/results.json'))[0]
+          print('PROACTIVE_REPLAY_RESULT '+json.dumps(r))
+          assert r['reported']==r['nodes'],r
+          assert r['status'] in ('PASS','FAIL'),r
+          assert r['proactive_replay_sent']>0,r
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: 'replay-N${{ matrix.n }}-m${{ matrix.m }}-s${{ matrix.seed }}-r${{ matrix.replays }}'
+          path: proactive-results/
