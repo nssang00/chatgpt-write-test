@@ -25,7 +25,7 @@ import mapbox_vector_tile
 from osm2mbtiles.vector import export as export_baseline
 from osm2mbtiles.vector_batch import export_batch
 
-BBOX = (127.015, 37.485, 127.075, 37.535)
+BBOX = (126.95, 37.47, 127.13, 37.62)
 LO, HI = 12, 15
 
 
