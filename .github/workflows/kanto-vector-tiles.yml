@@ -1,4 +1,4 @@
-name: Kanto vector tile benchmark
+name: Kanto vector tile benchmark (building merge OFF)
 
 on:
   pull_request:
@@ -12,7 +12,7 @@ permissions:
 
 jobs:
   compare:
-    name: Planetiler vs Tilemaker (Kanto, Z0-Z14)
+    name: Planetiler merge OFF vs Tilemaker (Kanto, Z0-Z14)
     runs-on: ubuntu-24.04
     timeout-minutes: 120
 
@@ -80,6 +80,7 @@ jobs:
             --osm-path=/data/kanto.osm.pbf \
             --output=/data/planetiler.mbtiles \
             --minzoom=0 --maxzoom=14 \
+            --building-merge-z13=false \
             --threads=4 --force \
             --tmpdir=/data/planetiler-temp \
             > bench/results/planetiler.log 2>&1
@@ -202,7 +203,7 @@ jobs:
           PY
           df -h >> bench/results/environment.txt
           {
-            echo "## Kanto vector tile generation (Z0-Z14)"
+            echo "## Kanto vector tile generation (Z0-Z14, Planetiler building merge OFF)"
             echo ""
             echo "Same PBF, sequential runs on one Ubuntu runner. First-run pipeline comparison only; output schemas differ."
             echo ""
