@@ -1,0 +1,61 @@
+name: CompanyWebView P0-1 / download and validate CEF 154 x64 minimal SDK
+on:
+  push:
+    branches: [verify/cwv-p01-windows-20261029]
+    paths:
+      - '.github/workflows/cwv-p01-cef154-sdk.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  cef-sdk:
+    runs-on: windows-2022
+    timeout-minutes: 25
+    steps:
+      - name: Download checksum-pinned official CEF SDK (not product source)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $ProgressPreference='SilentlyContinue'
+          $version='154.0.28+g564dd6c+chromium-154.0.8037.58'
+          $name="cef_binary_${version}_windows64_minimal.tar.bz2"
+          $url="https://cef-builds.spotifycdn.com/$name"
+          $path=Join-Path $env:RUNNER_TEMP $name
+          $expected='34a32277db8addfa355a009ed16c8dae939daed1'
+          curl.exe --fail --location --retry 2 --retry-delay 5 --connect-timeout 20 --max-time 900 --output $path $url
+          if($LASTEXITCODE -ne 0){throw 'Official CEF154 minimal SDK download failed'}
+          $actual=(Get-FileHash $path -Algorithm SHA1).Hash.ToLowerInvariant()
+          if($actual -cne $expected){throw 'Official CEF154 minimal SDK SHA1 mismatch'}
+          Write-Host 'Verified official exact CEF154 minimal SDK SHA1'
+          $dest=Join-Path $env:RUNNER_TEMP 'cef154'
+          New-Item $dest -ItemType Directory -Force|Out-Null
+          tar.exe -xjf $path -C $dest
+          if($LASTEXITCODE -ne 0){throw 'CEF154 SDK extraction failed'}
+          $headers=@(Get-ChildItem $dest -Recurse -File -Filter cef_app.h)
+          if($headers.Count -ne 1){throw 'Unexpected exact CEF154 header count'}
+          $root=Split-Path (Split-Path $headers[0].FullName -Parent) -Parent
+          foreach($item in @('include/cef_version.h','cmake/FindCEF.cmake','libcef_dll/CMakeLists.txt','Release/libcef.dll','Release/libcef.lib','Resources/icudtl.dat')){
+            if(-not(Test-Path -LiteralPath (Join-Path $root $item) -PathType Leaf)){throw "CEF154 SDK missing: $item"}
+          }
+          $versionHeader=Get-Content (Join-Path $root 'include/cef_version.h') -Raw
+          if($versionHeader -notmatch '154\.0\.28\+g564dd6c'){throw 'CEF native source and SDK version mismatch'}
+          $proof=[ordered]@{
+            status='OFFICIAL_CEF154_SDK_VERIFIED'
+            version=$version
+            sha1=$actual
+            archive=$name
+            cefNativeProductCompiled=$false
+            cefSubprocessCompiled=$false
+            upmAssembled=$false
+            unityPlayerExecuted=$false
+          }
+          $proof|ConvertTo-Json|Set-Content (Join-Path $env:RUNNER_TEMP 'cwv-cef154-sdk-proof.json') -Encoding utf8
+          Remove-Item $path -Force -ErrorAction SilentlyContinue
+      - name: Upload metadata only
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cwv-cef154-minimal-sdk-evidence
+          retention-days: 7
+          if-no-files-found: warn
+          path: ${{ runner.temp }}/cwv-cef154-sdk-proof.json
