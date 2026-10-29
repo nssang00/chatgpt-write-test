@@ -1,0 +1,42 @@
+name: OLVT R74 pinned source export for handoff
+on:
+  push:
+    branches: [handoff/r74-source-snapshot-20261029]
+    paths:
+      - '.github/workflows/olvt-r74-handoff-export.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout exact R74 main
+        uses: actions/checkout@v4
+        with:
+          repository: rydolabs/ol-vt-gl-boost
+          ref: aa0278a77c21f804934733e4d08114b9752e66ae
+          path: source
+          persist-credentials: false
+      - name: Verify tracked tree, commit and export clean zip
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p handoff
+          ACTUAL=$(git -C source rev-parse HEAD)
+          test "$ACTUAL" = "aa0278a77c21f804934733e4d08114b9752e66ae"
+          test "$(git -C source ls-files | wc -l | xargs)" = "115"
+          git -C source archive --format=zip --output="../handoff/ol-vt-gl-boost-R74-main-aa0278a.zip" HEAD
+          git -C source ls-files -z | xargs -0 -I{} sha256sum "source/{}" > handoff/tracked-files-sha256.txt
+          printf 'repository=rydolabs/ol-vt-gl-boost\ncommit=%s\ntracked_files=115\nsource=GitHub exact SHA checkout and git archive\n' "$ACTUAL" > handoff/source-manifest.txt
+          sha256sum handoff/ol-vt-gl-boost-R74-main-aa0278a.zip > handoff/zip-sha256.txt
+          unzip -tq handoff/ol-vt-gl-boost-R74-main-aa0278a.zip
+          echo "R74_SOURCE_HANDOFF_EXACT_SHA_115_TRACKED_FILES_PASS"
+      - name: Upload portable source + integrity manifest
+        uses: actions/upload-artifact@v4
+        with:
+          name: olvt-r74-pinned-source-snapshot
+          path: handoff/**
+          retention-days: 30
+          if-no-files-found: error
