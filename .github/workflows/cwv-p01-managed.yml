@@ -27,8 +27,8 @@ jobs:
           @'
           import base64,hashlib,io,lzma,tarfile,pathlib
           bundle=pathlib.Path('companywebview-p01/source-bundle.txt')
-          data=bundle.read_bytes()
-          expected='21dcc75248c08aef0832bf6b909d91b1f035cded7fdaf49d51fa31b370d489ed'
+          data=bundle.read_bytes().strip()
+          expected='1bbf91d9907fe61a2733f023990c8b4861c08e721da0bbdea3703a78f47bc850'
           if hashlib.sha256(data).hexdigest()!=expected:
               raise SystemExit('P0-1 public source bundle checksum mismatch')
           raw=lzma.decompress(base64.b64decode(data))
@@ -52,6 +52,22 @@ jobs:
         run: |
           dotnet build companywebview-p01/FullManagedSource/Validation/AutoBuildCompile.csproj -c Release --nologo
           if ($LASTEXITCODE -ne 0) { throw 'Auto-build source compilation failed' }
+      - name: Restore exact original CEF managed facade into source tree
+        shell: pwsh
+        run: |
+          @'
+          import base64,lzma,hashlib,pathlib
+          p=pathlib.Path('companywebview-p01/cef-webviewruntime.xz.b64')
+          b=lzma.decompress(base64.b64decode(p.read_text().strip()))
+          expected='0b12e7c1967db4b1a10034a6e88a7f897cf4d3800107ba0062cc3fa064dc5fac'
+          if hashlib.sha256(b).hexdigest()!=expected:
+              raise SystemExit('Original CEF managed facade checksum mismatch')
+          target=pathlib.Path('companywebview-p01/FullManagedSource/NativeSource/oneclick_bundle/Package/com.company.webview/Runtime/Backends/CEF/WebViewRuntime.cs')
+          target.parent.mkdir(parents=True, exist_ok=True)
+          target.write_bytes(b)
+          print('ORIGINAL_CEF_MANAGED_FACADE_SHA256_PASS')
+          '@ | python -
+          if ($LASTEXITCODE -ne 0) { throw 'CEF managed facade restoration failed' }
       - name: Actual C# Roslyn compile of full C# panel with Unity stubs
         shell: pwsh
         run: |
