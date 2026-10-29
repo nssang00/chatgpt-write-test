@@ -74,8 +74,14 @@ static void desktop(const std::string& id,const std::string& lang) {
     "{\"id\":\"app\", \"language\": "+q(lang)+", \"entry\": "+
     q(entry)+"},\n \"modules\": []\n}\n");
   file(id+"/ui/index.html","<!doctype html><html><body><h1>Xytron</h1>"
-    "<p>Scaffold only: native desktop bridge not connected.</p>"
-    "</body></html>\n");
+    "<p>Native desktop C++ bridge demo (requires explicit engine host).</p>"
+    "<button id=\"xytron-ping\">Call native C++</button>"
+    "<output id=\"xytron-result\">idle</output>"
+    "<script>document.getElementById('xytron-ping').onclick=async function(){"
+    "const output=document.getElementById('xytron-result');"
+    "try{output.textContent=await xytron.app.ping();}"
+    "catch(error){output.textContent='error:'+String(error);}"
+    "};</script></body></html>\n");
   if(lang=="cpp")
     file(id+"/"+entry,"// Placeholder until bridge host is integrated.\n"
       "#include <iostream>\nint main(){std::cout<<\"backend placeholder\\n\";}\n");
