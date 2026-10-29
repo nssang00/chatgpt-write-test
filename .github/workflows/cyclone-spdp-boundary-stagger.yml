@@ -1,0 +1,50 @@
+name: Cyclone SPDP 31-34 Exact Boundary and Boot Stagger
+on:
+  push:
+    branches: [diagnostic/cyclone-30-40-spdp-only-20261029]
+    paths: [.github/workflows/cyclone-spdp-boundary-stagger.yml]
+  workflow_dispatch:
+permissions: {contents: read}
+jobs:
+  exact-boundary:
+    name: 'N=${{ matrix.nodes }} spread=${{ matrix.spread }}ms seed=${{ matrix.seed }}'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      max-parallel: 8
+      matrix:
+        include:
+          - {nodes: 31, spread: 0, seed: 1}
+          - {nodes: 31, spread: 0, seed: 2}
+          - {nodes: 32, spread: 0, seed: 1}
+          - {nodes: 32, spread: 0, seed: 2}
+          - {nodes: 33, spread: 0, seed: 1}
+          - {nodes: 33, spread: 0, seed: 2}
+          - {nodes: 34, spread: 0, seed: 1}
+          - {nodes: 34, spread: 0, seed: 2}
+          - {nodes: 35, spread: 500, seed: 1}
+          - {nodes: 35, spread: 2000, seed: 1}
+          - {nodes: 40, spread: 2000, seed: 1}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - name: Install Cyclone 11.0.1
+        run: python -m pip install cyclonedds==11.0.1
+      - name: Evaluate SPDP/SEDP no application traffic
+        run: |
+          set -euo pipefail
+          sudo -E "$(which python)" bench/discovery/discovery_only_run.py \
+            --nodes '${{ matrix.nodes }}' \
+            --seed '${{ matrix.seed }}' \
+            --join-spread-ms '${{ matrix.spread }}' \
+            --config default --delay-ms 0 --timeout 27 \
+            --output boundary-stagger
+          cat boundary-stagger/summary.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: 'boundary-n${{ matrix.nodes }}-s${{ matrix.seed }}-j${{ matrix.spread }}'
+          path: boundary-stagger/
+          if-no-files-found: warn
