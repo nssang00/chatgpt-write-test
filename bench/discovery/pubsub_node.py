@@ -61,6 +61,8 @@ def main():
     pending_peer_repairs = {}
     peer_repair_last = {}
     backup_acks = {}  # Source-side per-sequence backup storage confirmations.
+    backup_ack_last = {}
+    last_source_hello = {}
     backup_durable_at = None
     # Store no per-peer session; IDs are obtained by HELLO and anti-entropy.
     lazy_pending = {}
@@ -79,7 +81,8 @@ def main():
                  ihave_sent=0, iwant_sent=0, nack_suppressed=0,
                  nack_heard=0, repair_suppressed=0, completed_ack_sent=0,
                  backup_ack_sent=0, backup_ack_received=0,
-                 peer_repairs_sent=0, peer_cache_evictions=0)
+                 peer_repairs_sent=0, peer_cache_evictions=0,
+                 backup_ack_retry_sent=0, backup_need_hello=0)
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 4 * 1024 * 1024)
@@ -202,6 +205,12 @@ def main():
             if args.incremental_repair and i < publisher_count:
                 hello['w']=len(sent_orig)
                 hello['fin']=(len(sent_orig)==m)
+            if args.peer_repair and i < publisher_count and sent_orig:
+                need=[seq for seq in sorted(sent_orig)
+                      if len(backup_acks.get(seq,set()))<args.backup_quorum]
+                if need:
+                    hello['need']=need
+                    stats['backup_need_hello']+=1
             send(hello, GROUP, 'hello_sent')
             next_hello = elapsed + 1.6 + rnd.uniform(0, .5)
 
@@ -301,6 +310,17 @@ def main():
                 if typ == 'h':
                     if isinstance(peer,int) and 0 <= peer < n:
                         known[peer] = address[0]
+                        last_source_hello[peer] = elapsed
+                        if args.peer_repair and peer<publisher_count:
+                            for seq in item.get('need',[])[:m]:
+                                if not isinstance(seq,int) or not 0<=seq<m:
+                                    continue
+                                key=(peer,seq)
+                                if (key in peer_cache and
+                                    elapsed-backup_ack_last.get(key,-10)>1.0):
+                                    send({'t':'b','i':i,'src':peer,'s':seq},
+                                         address,'backup_ack_retry_sent')
+                                    backup_ack_last[key]=elapsed
                         if args.incremental_repair and peer<publisher_count:
                             watermark=item.get('w')
                             if isinstance(watermark,int) and 0<=watermark<=m:
@@ -365,6 +385,7 @@ def main():
                             if ip:
                                 send({'t':'b','i':i,'src':src,'s':seq},
                                      (ip,GROUP[1]),'backup_ack_sent')
+                                backup_ack_last[key]=elapsed
                         lazy_pending.pop(key, None)
                         if args.mode != 'multicast':
                             relay(src,seq)
@@ -390,6 +411,7 @@ def main():
                                 suppressed[(src,seq)]=max(suppressed.get((src,seq),0),elapsed+0.65+rnd.random()*.4)
                             key=(src,seq)
                             if (args.peer_repair and src!=i and key in peer_cache
+                                and elapsed-last_source_hello.get(src,0)>=3.0
                                 and key not in pending_peer_repairs and
                                 elapsed-peer_repair_last.get(key,-10)>1.25):
                                 rank=backup_peers(src,seq).index(i)
@@ -458,6 +480,8 @@ def main():
         'peer_repair':args.peer_repair,'peer_cache_entries':len(peer_cache),
         'backup_acked_sequences':sum(len(backup_acks.get(seq,set()))>=args.backup_quorum for seq in range(m)) if i<publisher_count else 0,
         'backup_durable_at_s':backup_durable_at,
+        'backup_need_hellos':stats['backup_need_hello'],
+        'backup_ack_retries':stats['backup_ack_retry_sent'],
         'incremental_repair':args.incremental_repair,'nack_batch_limit':args.nack_batch_limit,
         'watermarked_sources':len(source_watermark),
         'finished_sources':len(source_finished),
