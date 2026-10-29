@@ -27,7 +27,7 @@ jobs:
           @'
           import base64,hashlib,io,lzma,tarfile,pathlib
           bundle=pathlib.Path('companywebview-p01/source-bundle.txt')
-          data=bundle.read_bytes().strip()
+          data=bundle.read_bytes().replace(b'\r\n',b'\n').strip()
           expected='1bbf91d9907fe61a2733f023990c8b4861c08e721da0bbdea3703a78f47bc850'
           actual=hashlib.sha256(data).hexdigest()
           print('PUBLIC_BUNDLE_SHA256_OBSERVED',actual,'length',len(data))
