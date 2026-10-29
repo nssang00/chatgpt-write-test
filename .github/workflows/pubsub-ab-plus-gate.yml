@@ -1,0 +1,60 @@
+name: Aplus Bplus Shared Reliability Layer Trial
+on:
+  push:
+    branches: [benchmark/pubsub-a-plus-b-plus-real-gossipsub-20261029]
+    paths: [.github/workflows/pubsub-ab-plus-gate.yml]
+  workflow_dispatch:
+permissions: {contents: read}
+jobs:
+  abplus:
+    name: '${{ matrix.name }} N=${{ matrix.nodes }} loss=${{ matrix.loss }}%'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 16
+    strategy:
+      fail-fast: false
+      max-parallel: 6
+      matrix:
+        include:
+          - {name: Aplus, mode: multicast, nodes: 50, loss: 0}
+          - {name: Bplus, mode: mesh, nodes: 50, loss: 0}
+          - {name: Aplus, mode: multicast, nodes: 50, loss: 10}
+          - {name: Bplus, mode: mesh, nodes: 50, loss: 10}
+          - {name: Aplus, mode: multicast, nodes: 100, loss: 0}
+          - {name: Bplus, mode: mesh, nodes: 100, loss: 0}
+          - {name: Aplus, mode: multicast, nodes: 100, loss: 10}
+          - {name: Bplus, mode: mesh, nodes: 100, loss: 10}
+          - {name: Aplus, mode: multicast, nodes: 200, loss: 0}
+          - {name: Bplus, mode: mesh, nodes: 200, loss: 0}
+          - {name: Aplus, mode: multicast, nodes: 200, loss: 10}
+          - {name: Bplus, mode: mesh, nodes: 200, loss: 10}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - name: Set UDP receive limits
+        run: |
+          sudo sysctl -w net.core.rmem_max=16777216
+          sudo sysctl -w net.core.wmem_max=16777216
+          ip -V && free -m
+      - name: 2 messages from each node with 100%-complete receiver gate
+        run: |
+          set -euo pipefail
+          case '${{ matrix.nodes }}' in
+            50) disc=15; timeout=45; spread=8 ;;
+            100) disc=25; timeout=65; spread=12 ;;
+            200) disc=45; timeout=95; spread=20 ;;
+          esac
+          sudo -E "$(which python)" bench/discovery/pubsub_run.py \
+            --sizes '${{ matrix.nodes }}' --modes '${{ matrix.mode }}' \
+            --losses '${{ matrix.loss }}' --messages 2 --publishers '${{ matrix.nodes }}' \
+            --discovery "$disc" --timeout "$timeout" --publish-spread "$spread" \
+            --repair-fanout 6 --repair-interval 1.0 --seeds 1 --v4 \
+            --output abplus-results
+          cat abplus-results/results.csv
+      - name: Upload per-node evidence regardless of pass/fail
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: 'abplus-${{ matrix.name }}-n${{ matrix.nodes }}-loss${{ matrix.loss }}'
+          path: abplus-results/
+          if-no-files-found: warn
