@@ -214,9 +214,11 @@ def main():
             suppressed={k:v for k,v in suppressed.items() if v>elapsed}
             # Bounded, per-origin selective requests; oldest last request first.
             # Aggregates missing sequence IDs; prevents the previous NACK storm.
-            missing_sources = [src for src in known if src < publisher_count and
-                               any((src,seq) not in received for seq in range(m))
-                               and src != i]
+            missing_sources = [src for src in known if src < publisher_count
+                               and src != i and
+                               any((src,seq) not in received for seq in range(
+                                   min(m,source_watermark.get(src,0))
+                                   if args.incremental_repair else m))]
             # Diversify the initial origin order across receivers to avoid a NACK herd.
             # Retry oldest/never-asked sources first. Independently rotate order per receiver.
             missing_sources.sort(key=lambda src: (request_last.get(src,-1),
