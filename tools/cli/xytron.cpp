@@ -83,8 +83,18 @@ static void desktop(const std::string& id,const std::string& lang) {
     "catch(error){output.textContent='error:'+String(error);}"
     "};</script></body></html>\n");
   if(lang=="cpp")
-    file(id+"/"+entry,"// Placeholder until bridge host is integrated.\n"
-      "#include <iostream>\nint main(){std::cout<<\"backend placeholder\\n\";}\n");
+    file(id+"/"+entry,
+      "// A single user-owned C++ source backs both the CLI smoke executable\\n"
+      "// and the NativeWeb ABI v1 plugin loaded by the real browser host.\\n"
+      "#ifdef XYTRON_APP_BACKEND_PLUGIN\\n"
+      "#include <xytron/plugin.hpp>\\n"
+      "#include <string>\\n"
+      "static std::string ping() { return \"pong-from-user-backend\"; }\\n"
+      "XYTRON_MODULE(m) { m.function(\"ping\", &ping); }\\n"
+      "#else\\n"
+      "#include <iostream>\\n"
+      "int main() { std::cout << \"cpp backend smoke\\\\n\"; return 0; }\\n"
+      "#endif\\n");
   else if(lang=="python")
     file(id+"/"+entry,"# Placeholder until JS bridge host is integrated.\n"
       "async def initialize():\n    return 'backend placeholder'\n");
