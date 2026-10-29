@@ -71,6 +71,8 @@ def main():
     writers_full_s=None
     all_full_s=None
     errors=[]
+    transient_errors={'builtin':0,'matched_read':0,'matched_write':0}
+    transient_samples=[]
     timeline=[]
     polls=0
     try:
@@ -84,13 +86,28 @@ def main():
         while time.monotonic()-start<a.timeout and not (wd/'stop').exists():
             now=time.monotonic()-start
             # Built-in SPDP samples (including self, as observed in prior runs).
-            for item in builtin.take(N=256):
-                k=str(item.key)
-                if k not in participant_keys:
-                    participant_keys.add(k)
-                    first_participant[k]=round(now,6)
-            matched_read=len(reader.get_matched_publications())
-            matched_write=len(writer.get_matched_subscriptions())
+            try:
+                for item in builtin.take(N=256):
+                    k=str(item.key)
+                    if k not in participant_keys:
+                        participant_keys.add(k)
+                        first_participant[k]=round(now,6)
+            except (IndexError,ValueError,RuntimeError) as e:
+                transient_errors['builtin']+=1
+                if len(transient_samples)<10:
+                    transient_samples.append(['builtin',round(now,4),repr(e)])
+            try:
+                matched_read=len(reader.get_matched_publications())
+            except (IndexError,ValueError,RuntimeError) as e:
+                transient_errors['matched_read']+=1
+                if len(transient_samples)<10:
+                    transient_samples.append(['matched_read',round(now,4),repr(e)])
+            try:
+                matched_write=len(writer.get_matched_subscriptions())
+            except (IndexError,ValueError,RuntimeError) as e:
+                transient_errors['matched_write']+=1
+                if len(transient_samples)<10:
+                    transient_samples.append(['matched_write',round(now,4),repr(e)])
             polls+=1
             if len(participant_keys)>=a.count and participant_full_s is None:
                 participant_full_s=now
@@ -119,6 +136,7 @@ def main():
         'matched_publications':matched_read,'matched_subscriptions':matched_write,
         'polls':polls,'user_data_sent':0,
         'timeline':timeline,'errors':errors,
+        'transient_errors':transient_errors,'transient_samples':transient_samples,
         'cpu_s':round(time.process_time(),3),
         'maxrss_kb':resource.getrusage(resource.RUSAGE_SELF).ru_maxrss,
         'udp_rcvbuf_errors':end_udp.get('RcvbufErrors',0)-begin_udp.get('RcvbufErrors',0),
