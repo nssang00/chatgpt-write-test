@@ -69,8 +69,9 @@ def arguments(argv=None):
             p.error('--tile-type and deprecated --format must agree if both are supplied')
         if args.raster_format is not None and args.encoding is not None and args.raster_format != args.encoding:
             p.error('--raster-format and deprecated --encoding must agree if both are supplied')
-        if args.tile_type == 'vector' and args.raster_format is not None:
-            p.error('--raster-format is not applicable to --tile-type vector')
+        effective_type = args.tile_type or args.format or 'raster'
+        if effective_type == 'vector' and args.raster_format is not None:
+            p.error('--raster-format is not applicable to vector-only output')
         # Normalize once to preserve all existing internal render/import paths.
         args.tile_type = args.tile_type or args.format or 'raster'
         args.format = args.tile_type
