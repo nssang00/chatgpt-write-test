@@ -57,7 +57,12 @@ try {
     if (-not $env:OSM2MBTILES_RASTER_FORMAT) {
         $env:OSM2MBTILES_RASTER_FORMAT = 'png'
     }
-    Write-Host "[SEOUL] Generating tile-type=$TileType zoom=$Zoom vector-engine=$env:OSM2MBTILES_VECTOR_TILER" -ForegroundColor Cyan
+    # Seoul extract may not carry a usable OSM PBF HeaderBBox. Always supply a
+    # deterministic region to avoid a preflight exit(2); caller can override it.
+    if (-not $env:OSM2MBTILES_BBOX) {
+        $env:OSM2MBTILES_BBOX = '126.75,37.40,127.20,37.72'
+    }
+    Write-Host "[SEOUL] Generating tile-type=$TileType zoom=$Zoom vector-engine=$env:OSM2MBTILES_VECTOR_TILER bbox=$env:OSM2MBTILES_BBOX" -ForegroundColor Cyan
     & powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'run_windows.ps1') $pbf $Zoom
     if ($LASTEXITCODE -ne 0) { throw "WSL converter exited with code $LASTEXITCODE" }
     $stem = Join-Path $outputDir 'seoul-non-military'
