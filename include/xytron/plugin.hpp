@@ -18,6 +18,10 @@ class Module {
 public:
     explicit Module(::nativeweb::PluginApi& api) : api_(api) {}
 
+    ::nativeweb::PluginEventPublisher events() const {
+        return api_.events();
+    }
+
     template <typename Function>
     Module& function(const std::string& name, Function fn) {
         api_.bind(name, fn);

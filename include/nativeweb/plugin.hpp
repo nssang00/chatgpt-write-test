@@ -436,9 +436,53 @@ class PluginExportContext;
 
 } // namespace detail
 
+// Copy-only handle for synchronous host-initiated plugin method calls.
+// Never publish from a background thread or retain after plugin unload:
+// host_context is not a ref-counted persistent callback registration.
+class PluginEventPublisher
+{
+public:
+    explicit PluginEventPublisher(const nw_host_api_v1* host)
+        : context_(0), publish_(0)
+    {
+        if (host && host->struct_size >=
+                offsetof(nw_host_api_v1, publish_event) +
+                sizeof(host->publish_event))
+        {
+            context_ = host->host_context;
+            publish_ = host->publish_event;
+        }
+    }
+
+    void emit(const std::string& relativeEvent,
+              const std::string& value) const
+    {
+        if (!publish_ || relativeEvent.empty())
+            throw Error("plugin_event_unavailable", "Plugin events are unsupported");
+        nw_value_v1 payload;
+        std::memset(&payload, 0, sizeof(payload));
+        payload.struct_size = sizeof(payload);
+        payload.type = NW_VALUE_STRING_V1;
+        payload.data.string_value.data = value.data();
+        payload.data.string_value.size =
+            static_cast<uint64_t>(value.size());
+        if (publish_(context_, relativeEvent.c_str(), &payload) != 0)
+            throw Error("plugin_event_rejected",
+                        "Plugin event was rejected by the host");
+    }
+private:
+    void* context_;
+    nw_host_publish_event_v1 publish_;
+};
+
 class PluginApi
 {
 public:
+    PluginEventPublisher events() const
+    {
+        return PluginEventPublisher(host_);
+    }
+
     template <typename CallableValue>
     void bind(
         const std::string& relativeName,
