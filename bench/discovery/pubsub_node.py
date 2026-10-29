@@ -340,9 +340,20 @@ def main():
 
     expected = publisher_count*m
     end_udp_stats = udp_counters()
+    missing_by_origin = []
+    for origin in range(publisher_count):
+        if origin == i:
+            continue
+        missing = [seq for seq in range(m) if (origin,seq) not in received]
+        if missing:
+            missing_by_origin.append({'origin':origin,'count':len(missing),
+                                      'first_missing_sequence':missing[0]})
     (workdir / f'node-{i}.json').write_text(json.dumps({
         'id':i,'mode':args.mode,'v4':args.v4,'known_nodes':len(known),
         'payload_bytes':args.payload_bytes,'publish_interval_s':args.publish_interval,
+        'missing_by_origin':missing_by_origin,
+        'max_repairs_per_sequence':max(source_repair_count.values(),default=0),
+        'samples_at_repair_limit':sum(v>=32 for v in source_repair_count.values()),
         'ablation':args.ablation,'sent_original':len(sent_orig),
         'discovery_s':discovery_time,'ready_at_publish':ready_at_publish,
         'received':len(received),'expected':expected,
