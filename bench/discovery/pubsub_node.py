@@ -35,6 +35,7 @@ def main():
     ap.add_argument('--ablation',choices=['full','no_anti_entropy','no_hello','no_nack_suppression','unicast_repair'],default='full')
     ap.add_argument('--incremental-repair',action='store_true')
     ap.add_argument('--nack-batch-limit',type=int,default=32)
+    ap.add_argument('--unicast-nack',action='store_true',help='unicast receiver feedback to publisher; multicast shared repair')
     args = ap.parse_args()
 
     i, n, m = args.id, args.count, args.messages
@@ -241,7 +242,8 @@ def main():
                         continue
                     # Every subscriber sees the NACK, not only the origin.
                     # Random hold-down prevents simultaneous identical feedback.
-                    send({'t':'q','i':i,'src':src,'seqs':unsuppressed}, GROUP, 'nack_sent')
+                    send({'t':'q','i':i,'src':src,'seqs':unsuppressed},
+                         (known[src],GROUP[1]) if args.unicast_nack else GROUP,'nack_sent')
                     if args.ablation!='no_nack_suppression':
                         for seq in unsuppressed:
                             suppressed[(src,seq)]=elapsed+0.45+rnd.random()*0.5
@@ -391,6 +393,7 @@ def main():
         'samples_at_repair_limit':sum(v>=32 for v in source_repair_count.values()),
         'ablation':args.ablation,'sent_original':len(sent_orig),
         'incremental_repair':args.incremental_repair,'nack_batch_limit':args.nack_batch_limit,
+        'unicast_nack':args.unicast_nack,
         'watermarked_sources':len(source_watermark),
         'finished_sources':len(source_finished),
         'discovery_s':discovery_time,'ready_at_publish':ready_at_publish,
