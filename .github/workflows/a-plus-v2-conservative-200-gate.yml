@@ -1,0 +1,66 @@
+name: Aplus V2 Conservative 200 Heavy Load Five Seeds
+on:
+  push:
+    branches: [experiment/a-plus-v2-repair-20261030]
+    paths: [.github/workflows/a-plus-v2-conservative-200-gate.yml]
+  workflow_dispatch:
+permissions: {contents: read}
+jobs:
+  gate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 17
+    strategy:
+      fail-fast: false
+      max-parallel: 6
+      matrix:
+        include:
+          - {variant: early, loss: 10, seed: 1}
+          - {variant: early, loss: 10, seed: 2}
+          - {variant: early, loss: 10, seed: 3}
+          - {variant: early, loss: 10, seed: 4}
+          - {variant: early, loss: 10, seed: 5}
+          - {variant: bitmap, loss: 10, seed: 1}
+          - {variant: bitmap, loss: 10, seed: 2}
+          - {variant: bitmap, loss: 0, seed: 1}
+    name: 'N200 x100 ${{ matrix.variant }} loss${{ matrix.loss }} seed${{ matrix.seed }}'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - name: Verify code and UDP buffers
+        run: |
+          set -euo pipefail
+          python -m py_compile bench/discovery/a_plus_v2_conservative_node.py bench/discovery/pubsub_run.py
+          sudo sysctl -w net.core.rmem_max=16777216
+          sudo sysctl -w net.core.wmem_max=16777216
+      - name: Same deadline and traffic as original failing A+ test
+        shell: bash
+        run: |
+          set -euo pipefail
+          streaming=()
+          if [ '${{ matrix.variant }}' = early ]; then streaming+=(--stream-early); fi
+          sudo -E "$(which python)" bench/discovery/pubsub_run.py \
+            --impl v2c --v4 --sizes 200 --modes multicast \
+            --losses '${{ matrix.loss }}' \
+            --messages 100 --payload-bytes 128 \
+            --publish-interval 0.06 --publishers 200 \
+            --discovery 27 --timeout 125 --publish-spread 18 \
+            --repair-fanout 6 --repair-interval 0.9 \
+            --seeds '${{ matrix.seed }}' \
+            "${streaming[@]}" --output v2c-heavy
+          cat v2c-heavy/results.csv
+          python - <<'PY'
+          import json
+          r=json.load(open('v2c-heavy/results.json'))[0]
+          print('V2_CONSERVATIVE_200_RESULT '+json.dumps(r))
+          assert r['status'] in ('PASS','FAIL'),r
+          assert r['total_expected_remote']==3980000,r
+          assert r['reported']==200,r
+          assert r['all_published_marker_count']==200,r
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: 'v2c-200-${{ matrix.variant }}-loss${{ matrix.loss }}-seed${{ matrix.seed }}'
+          path: v2c-heavy/
+          if-no-files-found: warn
