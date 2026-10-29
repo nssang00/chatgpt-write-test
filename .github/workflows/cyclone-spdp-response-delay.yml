@@ -1,0 +1,44 @@
+name: Cyclone SPDP Response Jitter Threshold Trial
+on:
+  push:
+    branches: [diagnostic/cyclone-30-40-spdp-only-20261029]
+    paths: [.github/workflows/cyclone-spdp-response-delay.yml]
+  workflow_dispatch:
+permissions: {contents: read}
+jobs:
+  jitter:
+    name: 'N=${{ matrix.nodes }} delay=${{ matrix.config }} seed=${{ matrix.seed }}'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 11
+    strategy:
+      fail-fast: false
+      max-parallel: 6
+      matrix:
+        include:
+          - {nodes: 35, config: resp500ms, seed: 1}
+          - {nodes: 35, config: resp500ms, seed: 2}
+          - {nodes: 35, config: resp1s, seed: 1}
+          - {nodes: 35, config: resp2s, seed: 1}
+          - {nodes: 40, config: resp500ms, seed: 1}
+          - {nodes: 40, config: resp1s, seed: 1}
+          - {nodes: 40, config: resp2s, seed: 1}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - name: Cyclone native library
+        run: python -m pip install cyclonedds==11.0.1
+      - name: Randomized DDS response to participant detection
+        run: |
+          set -euo pipefail
+          sudo -E "$(which python)" bench/discovery/discovery_only_run.py \
+            --nodes '${{ matrix.nodes }}' --seed '${{ matrix.seed }}' \
+            --config '${{ matrix.config }}' --timeout 27 \
+            --output spdp-response
+          cat spdp-response/summary.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: 'response-n${{ matrix.nodes }}-${{ matrix.config }}-s${{ matrix.seed }}'
+          path: spdp-response/
+          if-no-files-found: warn
