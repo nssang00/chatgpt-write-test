@@ -1,0 +1,87 @@
+name: Real go-libp2p Gossipsub 50 100 200
+on:
+  push:
+    branches: [benchmark/pubsub-a-plus-b-plus-real-gossipsub-20261029]
+    paths: [.github/workflows/real-libp2p-gossipsub-gate.yml]
+  workflow_dispatch:
+permissions: {contents: read}
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
+          cache: false
+      - name: Compile canonical go-libp2p-pubsub Gossipsub
+        working-directory: bench/gossipsub
+        run: |
+          set -euxo pipefail
+          go version
+          go mod tidy
+          CGO_ENABLED=0 go build -trimpath -o "$RUNNER_TEMP/gossipsub-gate" .
+          ls -lh "$RUNNER_TEMP/gossipsub-gate"
+      - name: Smoke test real Gossipsub across 8 isolated Linux peers
+        run: |
+          sudo -E "$(which python)" bench/gossipsub/run.py \
+            --binary "$RUNNER_TEMP/gossipsub-gate" --nodes 8 \
+            --loss 0 --messages 2 --warmup 10 --spread 2 \
+            --duration 28 --output gossipsub-smoke
+          cat gossipsub-smoke/summary.json
+          python - <<'PY'
+          import json
+          r=json.load(open('gossipsub-smoke/summary.json'))
+          assert r['status']!='ERROR',r
+          assert r['node_reports']==8,r
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: real-gossipsub-executable
+          path: ${{ runner.temp }}/gossipsub-gate
+          retention-days: 3
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: real-gossipsub-smoke-evidence
+          path: gossipsub-smoke/
+  scale:
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 16
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix:
+        nodes: [50, 100, 200]
+        loss: [0, 10]
+    name: 'Gossipsub N=${{ matrix.nodes }} loss=${{ matrix.loss }}%'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: real-gossipsub-executable
+          path: ./bin
+      - name: Run real Gossipsub with bounded static neighbor bootstrapping
+        run: |
+          set -euo pipefail
+          chmod +x bin/gossipsub-gate
+          case '${{ matrix.nodes }}' in
+            50) warmup=15; duration=65; spread=8 ;;
+            100) warmup=25; duration=95; spread=12 ;;
+            200) warmup=45; duration=140; spread=20 ;;
+          esac
+          sudo -E "$(which python)" bench/gossipsub/run.py \
+            --binary bin/gossipsub-gate \
+            --nodes '${{ matrix.nodes }}' \
+            --loss '${{ matrix.loss }}' --messages 2 \
+            --warmup "$warmup" --spread "$spread" \
+            --duration "$duration" --seed 1 --output gossipsub-results
+          cat gossipsub-results/summary.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: 'real-gossipsub-n${{ matrix.nodes }}-loss${{ matrix.loss }}'
+          path: gossipsub-results/
+          if-no-files-found: warn
