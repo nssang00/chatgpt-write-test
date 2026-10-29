@@ -164,7 +164,11 @@ def append(diff: Path, output: Path, *, flush: bool = True):
     """Apply one OSM diff at most once. On ambiguous failures stop, never replay."""
     if not diff.is_file():
         raise FileNotFoundError(diff)
-    sha = hashlib.sha256(diff.read_bytes()).hexdigest()
+    checksum = hashlib.sha256()
+    with diff.open("rb") as source:
+        for block in iter(lambda: source.read(8 * 1024 * 1024), b""):
+            checksum.update(block)
+    sha = checksum.hexdigest()
     with _connect() as db:
         with _exclusive(db):
             state = _load(db)
@@ -177,11 +181,11 @@ def append(diff: Path, output: Path, *, flush: bool = True):
                 cur.execute("SELECT count(*) FROM " + EXPIRE_TABLE)
                 if cur.fetchone()[0]:
                     raise RuntimeError("Unflushed expire table; use flush before next append")
-            # Durable marker written BEFORE invoking an external importer.
-            _update_phase(db, "applying", sha)
             style = output.with_name(output.name + ".update-flex.lua")
             if not style.is_file() or style.read_text() != configured_style(state["lo"], state["hi"]):
-                raise RuntimeError("Missing or changed configured update style; manual recovery needed")
+                raise RuntimeError("Missing or changed configured update style; no diff was applied")
+            # Durable marker written BEFORE invoking an external importer.
+            _update_phase(db, "applying", sha)
             try:
                 _run(["osm2pgsql", "--append", "--slim", "--cache=256",
                       "--number-processes=1", "-O", "flex", "-S", style,
@@ -199,9 +203,10 @@ def append(diff: Path, output: Path, *, flush: bool = True):
 
 
 def flush_tiles(output: Path):
-    """One atomic SQLite transaction, then clear PostGIS expire queue.
+    """Stream PostGIS expire records; one atomic SQLite transaction, then clear.
 
-    A crash after SQLite commit but before queue deletion is safely repeatable.
+    A crash after the SQLite commit but before queue deletion is idempotently
+    recoverable. Tile buffers and dirty rows never accumulate in Python RAM.
     """
     output = output.resolve()
     with _connect() as db:
@@ -210,61 +215,61 @@ def flush_tiles(output: Path):
             bbox, lo, hi = _scope(state, output)
             if state["phase"] not in ("pending", "idle"):
                 raise RuntimeError("OSM diff application uncertain; refusing partial repair")
-            with db.cursor() as cur:
-                cur.execute("SELECT zoom,x,y FROM " + EXPIRE_TABLE + " ORDER BY zoom,y,x")
-                expired = cur.fetchall()
-            # Keep only tiles that belong to this archive.
-            wanted = []
-            for z, x, y in expired:
-                if lo <= z <= hi:
-                    xmin, xmax, ymin, ymax = xyz_range(bbox, z)
-                    if xmin <= x <= xmax and ymin <= y <= ymax:
-                        wanted.append((z, x, y))
-            # Read all affected tiles from a single snapshot: do not mix DB versions.
+            changed = deleted = total = selected = 0
+            # Snapshot the resulting OSM/derived tables while building one
+            # archive transaction. The source must not change during this flush.
             with _connect() as reader:
                 reader.set_session(isolation_level="REPEATABLE READ", readonly=True)
-                queries = {}
-                updates = []
-                with reader.cursor() as cur:
-                    for z, x, y in wanted:
-                        if z < 3:
-                            data = b""
-                        else:
-                            sql = queries.setdefault(z, query_for_zoom(z))
-                            cur.execute(sql, (z, x, y, z, x, y))
-                            data = bytes(cur.fetchone()[0] or b"")
-                        updates.append((z, x, (1 << z) - 1 - y, data))
-            changed = deleted = 0
-            with sqlite3.connect(output) as archive:
-                if archive.execute("PRAGMA integrity_check").fetchone()[0] != "ok":
-                    raise RuntimeError("Existing MBTiles failed SQLite integrity_check")
-                meta = dict(archive.execute("SELECT name,value FROM metadata"))
-                if meta.get("format") != "pbf":
-                    raise RuntimeError("Not a vector MBTiles file")
-                archive.execute("PRAGMA synchronous=FULL")
-                archive.execute("BEGIN IMMEDIATE")
-                for z, x, tms_y, data in updates:
-                    if data:
-                        archive.execute(
-                            "INSERT INTO tiles VALUES(?,?,?,?) "
-                            "ON CONFLICT(zoom_level,tile_column,tile_row) "
-                            "DO UPDATE SET tile_data=excluded.tile_data",
-                            (z, x, tms_y, sqlite3.Binary(
-                                gzip.compress(data, compresslevel=6, mtime=0))))
-                        changed += 1
-                    else:
-                        archive.execute(
-                            "DELETE FROM tiles WHERE zoom_level=? AND tile_column=? AND tile_row=?",
-                            (z, x, tms_y))
-                        deleted += 1
-            # If this fails, pending tiles survive for another idempotent flush.
+                sql_by_zoom = {}
+                with sqlite3.connect(output) as archive:
+                    if archive.execute("PRAGMA integrity_check").fetchone()[0] != "ok":
+                        raise RuntimeError("Existing MBTiles failed SQLite integrity_check")
+                    meta = dict(archive.execute("SELECT name,value FROM metadata"))
+                    if meta.get("format") != "pbf":
+                        raise RuntimeError("Not a vector MBTiles file")
+                    archive.execute("PRAGMA synchronous=FULL")
+                    archive.execute("BEGIN IMMEDIATE")
+                    with db.cursor(name="vector_dirty_cursor") as expired:
+                        expired.itersize = 256
+                        expired.execute(
+                            "SELECT zoom,x,y FROM " + EXPIRE_TABLE + " ORDER BY zoom,y,x")
+                        with reader.cursor() as query:
+                            for z, x, y in expired:
+                                total += 1
+                                if not lo <= z <= hi:
+                                    continue
+                                xmin, xmax, ymin, ymax = xyz_range(bbox, z)
+                                if not (xmin <= x <= xmax and ymin <= y <= ymax):
+                                    continue
+                                selected += 1
+                                if z < 3:
+                                    data = b""
+                                else:
+                                    sql = sql_by_zoom.setdefault(z, query_for_zoom(z))
+                                    query.execute(sql, (z, x, y, z, x, y))
+                                    data = bytes(query.fetchone()[0] or b"")
+                                tms_y = (1 << z) - 1 - y
+                                if data:
+                                    archive.execute(
+                                        "INSERT INTO tiles VALUES(?,?,?,?) "
+                                        "ON CONFLICT(zoom_level,tile_column,tile_row) "
+                                        "DO UPDATE SET tile_data=excluded.tile_data",
+                                        (z, x, tms_y, sqlite3.Binary(
+                                            gzip.compress(data, compresslevel=6, mtime=0))))
+                                    changed += 1
+                                else:
+                                    archive.execute(
+                                        "DELETE FROM tiles WHERE zoom_level=? "
+                                        "AND tile_column=? AND tile_row=?",
+                                        (z, x, tms_y))
+                                    deleted += 1
+            # If this fails, the complete list survives for another flush.
             with db.cursor() as cur:
                 cur.execute("DELETE FROM " + EXPIRE_TABLE)
                 cur.execute("UPDATE " + STATE_TABLE + " SET phase='idle' WHERE id=1")
             db.commit()
-            result = {"dirty_total": len(expired), "dirty_in_archive": len(wanted),
-                      "written": changed, "deleted_or_empty": deleted,
-                      "remaining": 0}
+            result = {"dirty_total": total, "dirty_in_archive": selected,
+                      "written": changed, "deleted_or_empty": deleted, "remaining": 0}
             print("VECTOR_INCREMENTAL_FLUSH_OK", json.dumps(result), flush=True)
             return result
 
