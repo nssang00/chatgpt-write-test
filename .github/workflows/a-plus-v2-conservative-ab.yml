@@ -1,0 +1,65 @@
+name: Aplus V2 Conservative Bitmap and Streaming A-B
+on:
+  push:
+    branches: [experiment/a-plus-v2-repair-20261030]
+    paths: [.github/workflows/a-plus-v2-conservative-ab.yml]
+  workflow_dispatch:
+permissions: {contents: read}
+jobs:
+  comparison:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 14
+    strategy:
+      fail-fast: false
+      max-parallel: 5
+      matrix:
+        include:
+          - {nodes: 50, messages: 100, loss: 0, stream: 'false', label: bitmap_only}
+          - {nodes: 50, messages: 100, loss: 10, stream: 'false', label: bitmap_only}
+          - {nodes: 50, messages: 100, loss: 10, stream: 'true', label: early_stream}
+          - {nodes: 100, messages: 100, loss: 10, stream: 'false', label: bitmap_only}
+          - {nodes: 100, messages: 100, loss: 10, stream: 'true', label: early_stream}
+    name: 'v2c ${{ matrix.label }} n${{ matrix.nodes }} loss${{ matrix.loss }}'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - name: Validate code and buffers
+        run: |
+          python -m py_compile bench/discovery/a_plus_v2_conservative_node.py bench/discovery/pubsub_run.py
+          sudo sysctl -w net.core.rmem_max=16777216
+          sudo sysctl -w net.core.wmem_max=16777216
+      - name: Same legacy workload, isolate bitmap encoding vs early gap repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ '${{ matrix.nodes }}' = '50' ]; then
+            disc=12; timeout=75; spread=7
+          else
+            disc=18; timeout=105; spread=12
+          fi
+          extra=()
+          if [ '${{ matrix.stream }}' = 'true' ]; then extra+=(--stream-early); fi
+          sudo -E "$(which python)" bench/discovery/pubsub_run.py \
+            --impl v2c --v4 --sizes '${{ matrix.nodes }}' \
+            --modes multicast --losses '${{ matrix.loss }}' \
+            --messages '${{ matrix.messages }}' --payload-bytes 128 \
+            --publish-interval .06 --publishers '${{ matrix.nodes }}' \
+            --discovery "$disc" --timeout "$timeout" \
+            --publish-spread "$spread" --repair-fanout 6 \
+            --repair-interval .9 --seeds 1 \
+            "${extra[@]}" --output v2c-results
+          cat v2c-results/results.csv
+          python - <<'PY'
+          import json
+          r=json.load(open('v2c-results/results.json'))[0]
+          print('V2_CONSERVATIVE_RESULT '+json.dumps(r))
+          assert r['status'] in ('PASS','FAIL'),r
+          assert r['total_expected_remote']==r['nodes']*(r['nodes']-1)*100,r
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: 'v2c-${{ matrix.label }}-n${{ matrix.nodes }}-loss${{ matrix.loss }}'
+          path: v2c-results/
+          if-no-files-found: warn
