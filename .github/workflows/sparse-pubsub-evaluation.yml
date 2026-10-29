@@ -1,0 +1,51 @@
+name: Sparse PubSub Algorithm Evaluation
+on:
+  push:
+    branches: [benchmark/pubsub-algorithm-selection-20261029]
+    paths:
+      - bench/discovery/pubsub_node.py
+      - bench/discovery/pubsub_run.py
+      - .github/workflows/sparse-pubsub-evaluation.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  udp-topologies:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Verify Linux network isolation support
+        run: |
+          set -euxo pipefail
+          ip -V && tc -V && free -m
+          sudo ip netns add pubsub-probe
+          sudo ip netns exec pubsub-probe ip link set lo up
+          sudo ip netns delete pubsub-probe
+      - name: Run three real UDP topology variants (30 and 100 nodes)
+        run: |
+          set -euxo pipefail
+          sudo -E "$(which python)" bench/discovery/pubsub_run.py \
+            --sizes 30,100 --modes multicast,tree,mesh \
+            --losses 0,10 --discovery 9 --timeout 24 \
+            --messages 2 --output pubsub-results
+          cat pubsub-results/results.csv
+      - name: Upload logs and CSVs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sparse-pubsub-evaluation-results
+          path: pubsub-results/
+          if-no-files-found: warn
+      - name: Workflow summary
+        if: always()
+        run: |
+          if [ -f pubsub-results/results.csv ]; then
+            echo '## Experimental multicast, tree and sparse-mesh Pub/Sub' >> "$GITHUB_STEP_SUMMARY"
+            echo '~~~' >> "$GITHUB_STEP_SUMMARY"
+            cat pubsub-results/results.csv >> "$GITHUB_STEP_SUMMARY"
+            echo '~~~' >> "$GITHUB_STEP_SUMMARY"
+          fi
