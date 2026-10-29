@@ -25,18 +25,26 @@ def main():
     ap.add_argument('--timeout', type=float, default=24)
     ap.add_argument('--messages', type=int, default=2)
     ap.add_argument('--publish-spread', type=float, default=3)
+    ap.add_argument('--publishers', type=int, default=0)
+    ap.add_argument('--seed', type=int, default=1)
+    ap.add_argument('--repair-fanout', type=int, default=4)
+    ap.add_argument('--repair-interval', type=float, default=1.0)
     args = ap.parse_args()
 
     i, n, m = args.id, args.count, args.messages
+    publisher_count = args.publishers if args.publishers > 0 else n
     workdir = Path(args.workdir)
     own_ip = f'10.77.{i // 250}.{i % 250 + 1}'
-    rnd = random.Random(33550336 + i * 17)
+    rnd = random.Random(33550336 + i * 17 + args.seed * 100003)
     known = {i: own_ip}
     received = set()
-    last_missing = set()
+    # Store no per-peer session; IDs are obtained by HELLO and anti-entropy.
     lazy_pending = {}
     request_last = {}
     duplicate = 0
+    rx_overflow_report = 0
+    send_errors = 0
+    start_udp_stats = {}
     stats = dict(hello_sent=0, digest_sent=0, delta_sent=0,
                  data_sent=0, data_forwarded=0, nack_sent=0,
                  repair_sent=0, packets_received=0,
@@ -52,13 +60,32 @@ def main():
                     socket.inet_aton(own_ip))
     sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_TTL, 1)
     sock.setblocking(False)
+    # Linux SO_RXQ_OVFL provides cumulative kernel socket queue drops via recvmsg ancillary data.
+    SO_RXQ_OVFL = 40
+    try:
+        sock.setsockopt(socket.SOL_SOCKET, SO_RXQ_OVFL, 1)
+    except OSError:
+        pass
+
+    def udp_counters():
+        try:
+            lines = Path('/proc/net/snmp').read_text().splitlines()
+            for k in range(0, len(lines)-1):
+                if lines[k].startswith('Udp:') and lines[k+1].startswith('Udp:'):
+                    return {key:int(v) for key,v in zip(lines[k].split()[1:],lines[k+1].split()[1:])}
+        except (OSError, ValueError):
+            pass
+        return {}
+
+    start_udp_stats = udp_counters()
 
     def send(msg, address, kind):
+        nonlocal send_errors
         try:
             sock.sendto(json.dumps(msg, separators=(',', ':')).encode(), address)
             stats[kind] += 1
         except (OSError, ValueError):
-            pass
+            send_errors += 1
 
     def tree_children(origin):
         # 3-ary dissemination tree rooted at the origin, evaluated locally.
@@ -77,7 +104,7 @@ def main():
         # Plumtree-inspired lazy announcements on bounded secondary edges.
         if args.mode != 'hybrid':
             return
-        for peer in mesh_neighbors():
+        for peer in mesh_neighbors()[:2]:
             ip = known.get(peer)
             if ip:
                 send({'t': 'a', 'i': i, 'src': origin, 's': sequence},
@@ -113,6 +140,9 @@ def main():
     next_hello = rnd.uniform(0, .6)
     sent_orig = set()
     publ_at = args.discovery_seconds + rnd.uniform(.0, args.publish_spread)
+    last_nack = -10.0
+    startup_nack_offset = rnd.uniform(0, args.repair_interval)
+    repair_start_at = args.discovery_seconds + args.publish_spread + m*.28 + .7 + startup_nack_offset
     stop_at = args.discovery_seconds + args.timeout
 
     while not (workdir / 'stop').exists():
@@ -134,7 +164,7 @@ def main():
         if discovery_time is None and len(known) == n:
             discovery_time = elapsed
 
-        if elapsed >= publ_at and len(sent_orig) < m:
+        if i < publisher_count and elapsed >= publ_at and len(sent_orig) < m:
             if not sent_orig:
                 ready_at_publish = len(known)
             seq = len(sent_orig)
@@ -145,15 +175,17 @@ def main():
 
         # Explicit missing-data repair; discovery and data are independent.
         # First repair interval follows the last scheduled publish.
-        if (elapsed > args.discovery_seconds + args.publish_spread +
-              m*.28 + .6 and elapsed-last_nack >= .75):
+        if (elapsed > repair_start_at and elapsed-last_nack >= args.repair_interval):
             # Bounded, per-origin selective requests; oldest last request first.
             # Aggregates missing sequence IDs; prevents the previous NACK storm.
-            missing_sources = [src for src in known if
+            missing_sources = [src for src in known if src < publisher_count and
                                any((src,seq) not in received for seq in range(m))
                                and src != i]
-            missing_sources.sort(key=lambda src: request_last.get(src,-1))
-            for src in missing_sources[:8]:
+            # Diversify the initial origin order across receivers to avoid a NACK herd.
+            # Retry oldest/never-asked sources first. Independently rotate order per receiver.
+            missing_sources.sort(key=lambda src: (request_last.get(src,-1),
+                (src * 47 + i * 41 + args.seed * 53) % max(1,n)))
+            for src in missing_sources[:args.repair_fanout]:
                 seqs=[seq for seq in range(m) if (src,seq) not in received]
                 send({'t':'q','i':i,'src':src,'seqs':seqs},
                      (known[src], GROUP[1]), 'nack_sent')
@@ -173,7 +205,11 @@ def main():
             if not select.select([sock],[],[],0)[0]:
                 break
             try:
-                raw,address = sock.recvfrom(65535)
+                raw,anc,_,address = sock.recvmsg(65535,64)
+                for level,typ,cmsg in anc:
+                    if level == socket.SOL_SOCKET and typ == SO_RXQ_OVFL and len(cmsg) >= 4:
+                        rx_overflow_report = max(rx_overflow_report,
+                            int.from_bytes(cmsg[:4], 'little'))
                 item = json.loads(raw)
                 stats['packets_received'] += 1
                 typ = item.get('t')
@@ -241,22 +277,26 @@ def main():
             except (OSError,ValueError,TypeError,KeyError):
                 continue
 
-        if data_time is None and len(received) == n*m:
+        if data_time is None and len(received) == publisher_count*m:
             data_time = elapsed
             (workdir / f'done-{i}').touch()
         if elapsed >= stop_at:
             break
         time.sleep(.004)
 
-    expected = n*m
+    expected = publisher_count*m
+    end_udp_stats = udp_counters()
     (workdir / f'node-{i}.json').write_text(json.dumps({
         'id':i,'mode':args.mode,'known_nodes':len(known),
         'discovery_s':discovery_time,'ready_at_publish':ready_at_publish,
         'received':len(received),'expected':expected,
         'remote_received':len(received)-len(sent_orig),
-        'remote_expected':(n-1)*m,'duplicates':duplicate,
+        'remote_expected':(publisher_count-(1 if i < publisher_count else 0))*m,'duplicates':duplicate,
         'pubsub_complete_s':data_time,
         'first_data_s':first_data,'stats':stats,
+        'socket_rx_overflow':rx_overflow_report,'send_errors':send_errors,
+        'udp_rcvbuf_errors':end_udp_stats.get('RcvbufErrors',0)-start_udp_stats.get('RcvbufErrors',0),
+        'udp_in_errors':end_udp_stats.get('InErrors',0)-start_udp_stats.get('InErrors',0),
         'cpu_s':time.process_time(),
         'maxrss_kb':resource.getrusage(resource.RUSAGE_SELF).ru_maxrss}))
     sock.close()
