@@ -129,7 +129,14 @@ static void pluginCpp(const std::string& id) {
   file(p+"/plugin.cpp","#include \"xytron/plugin.hpp\"\n"
     "#include <string>\n"
     "static std::string hello() { return std::string(\"hello\"); }\n"
-    "XYTRON_MODULE(m) {\n  m.function(\"hello\", &hello);\n}\n");
+    "XYTRON_MODULE(m) {\n"
+    "  m.function(\"hello\", &hello);\n"
+    "  const auto publisher=m.events();\n"
+    "  m.function(\"fire\", [publisher]() {\n"
+    "    publisher.emit(\"changed\", \"from-native-feature\");\n"
+    "    return std::string(\"published\");\n"
+    "  });\n"
+    "}\n");
   file(p+"/README.md", "# "+id+" (C++ plugin)\n\n"
     "Edit plugin.cpp, then run `xytron plugin build "+id+" --sdk SDK_PREFIX` "
     "from the parent project. This is a native ABI v1 plugin; "
