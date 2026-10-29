@@ -10,7 +10,7 @@ import sys
 import time
 from run import prepare, netem, counters, cleanup, memory_available, ns
 
-MODES=('multicast','tree','mesh')
+MODES=('multicast','tree','mesh','hybrid')
 
 def execute(n,mode,loss,seconds,disc,m,out):
     wd=out/f'{mode}-n{n}-loss{loss:g}'
@@ -78,8 +78,11 @@ def execute(n,mode,loss,seconds,disc,m,out):
             'total_duplicate_deliveries':sum(r['duplicates'] for r in rows),
             'total_nacks':sum(r['stats']['nack_sent'] for r in rows),
             'total_repairs':sum(r['stats']['repair_sent'] for r in rows),
+            'total_ihave':sum(r['stats']['ihave_sent'] for r in rows),
+            'total_iwant':sum(r['stats']['iwant_sent'] for r in rows),
             'total_control_packets':sum(r['stats']['hello_sent']+r['stats']['digest_sent']+
-                                        r['stats']['delta_sent'] for r in rows),
+                                        r['stats']['delta_sent']+r['stats']['ihave_sent']+
+                                        r['stats']['iwant_sent'] for r in rows),
             'total_data_packets':sum(r['stats']['data_sent']+r['stats']['data_forwarded'] for r in rows),
             'aggregate_cpu_s':round(sum(r['cpu_s'] for r in rows),3),
             'aggregate_maxrss_mb':round(sum(r['maxrss_kb'] for r in rows)/1024,1),
