@@ -30,26 +30,56 @@ jobs:
             python3-psycopg2 python3-pip python3-pytest curl ca-certificates
           /usr/bin/python3 -m pip install --break-system-packages mapbox-vector-tile
           osm2pgsql --version
-          /usr/bin/python3 - <<'PY'
-          import json, os
+          /usr/bin/python3 -c 'import psycopg2,pytest,mapbox_vector_tile;print("INCREMENTAL_PREREQUISITES_OK")'
+      - name: Structural + existing vector batch tests
+        shell: bash
+        run: |
+          set -euxo pipefail
+          PROJECT="$GITHUB_WORKSPACE/experiments/osm2mbtiles/prototype"
+          export PYTHONPATH="$PROJECT/src:$PROJECT/benchmarks"
+          /usr/bin/python3 -m compileall -q \
+            "$PROJECT/src/osm2mbtiles" "$PROJECT/benchmarks/incremental_parity_e2e.py"
+          /usr/bin/python3 -m pytest -q \
+            "$PROJECT/tests/test_vector_incremental.py" "$PROJECT/tests/test_vector_batch.py"
+      - name: Real OSM XML create, OSC append and independent full rebuild parity
+        shell: bash
+        run: |
+          set -euxo pipefail
+          export PROJECT="$GITHUB_WORKSPACE/experiments/osm2mbtiles/prototype"
+          export WORK="$RUNNER_TEMP/osm2mbtiles-incremental"
+          export PATH="/usr/lib/postgresql/16/bin:$PATH"
+          export PYTHONPATH="$PROJECT/src:$PROJECT/benchmarks"
+          export PGHOST="$WORK/socket" PGPORT=55470 PGUSER=incrementalosm PGDATABASE=gis
+          mkdir -p "$PGHOST" "$GITHUB_WORKSPACE/incremental-evidence"
+          initdb -D "$WORK/pgdata" -U "$PGUSER" --auth-local=trust --auth-host=trust
+          pg_ctl -D "$WORK/pgdata" -l "$WORK/postgres.log" -w \
+            -o "-c listen_addresses='' -c unix_socket_directories=$PGHOST -c port=$PGPORT -c shared_buffers=64MB -c work_mem=4MB -c maintenance_work_mem=64MB -c max_parallel_maintenance_workers=0" start
+          trap 'pg_ctl -D "$WORK/pgdata" -m immediate -w stop || true' EXIT
+          createdb gis
+          /usr/bin/python3 "$PROJECT/benchmarks/incremental_parity_e2e.py" --work "$WORK"
+          test -s "$WORK/incremental-results.json"
+          /usr/bin/python3 - "$WORK/incremental-results.json" "$WORK/summary.md" <<'PY'
+          import json
+          import sys
           from pathlib import Path
-          work = Path(os.environ["WORK"])
-          j = json.loads((work / "incremental-results.json").read_text())
+          j = json.loads(Path(sys.argv[1]).read_text())
           assert j["parity"]["equal"] and j["delta"]["dirty_covers_all_changes"]
           assert j["delta"]["actual_changed_tiles"] > 0
-          summary = (
-              "# Incremental vs full rebuild\\n\\n"
-              "Real osm2pgsql --slim create / --append on synthetic OSM XML/OSC.\\n\\n"
-              "Full-rebuild semantic parity: **{}**. Dirty-tile coverage: **{}**.\\n\\n"
-              "Changed: {}, expired: {}, uncovered: {}.\\n\\n"
-              "Measured seconds: init {}, append {}, flush {}, fresh full render {}.\\n\\n"
-              "PNG incrementals, upstream replication ingestion and nationwide RAM are not tested.\\n"
-          ).format(
-              j["parity"]["equal"], j["delta"]["dirty_covers_all_changes"],
-              j["delta"]["actual_changed_tiles"], j["delta"]["expired_tiles"],
-              len(j["delta"]["changed_not_expired"]),
-              j["init_sec"], j["append_sec"], j["flush_sec"], j["reference_render_sec"])
-          (work / "summary.md").write_text(summary)
+          lines = [
+              "# Incremental vs full rebuild", "",
+              "Real osm2pgsql --slim create / --append with synthetic OSM XML/OSC.",
+              "",
+              "Parity: {}. Dirty coverage: {}.".format(
+                  j["parity"]["equal"], j["delta"]["dirty_covers_all_changes"]),
+              "Changed tiles: {}, expired: {}, uncovered: {}.".format(
+                  j["delta"]["actual_changed_tiles"], j["delta"]["expired_tiles"],
+                  len(j["delta"]["changed_not_expired"])),
+              "Timings (seconds): init={}, append={}, flush={}, fresh full render={}.".format(
+                  j["init_sec"], j["append_sec"], j["flush_sec"], j["reference_render_sec"]),
+              "",
+              "Not tested: PNG incrementals, automated replication feed, nationwide data.",
+          ]
+          Path(sys.argv[2]).write_text(chr(10).join(lines) + chr(10))
           PY
           cat "$WORK/summary.md" >> "$GITHUB_STEP_SUMMARY"
           echo INCREMENTAL_FULL_REBUILD_PARITY_VERIFIED
