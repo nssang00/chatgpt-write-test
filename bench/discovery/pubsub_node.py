@@ -25,9 +25,11 @@ def main():
     ap.add_argument('--timeout', type=float, default=24)
     ap.add_argument('--messages', type=int, default=2)
     ap.add_argument('--publish-spread', type=float, default=3)
+    ap.add_argument('--publishers', type=int, default=0)
     args = ap.parse_args()
 
     i, n, m = args.id, args.count, args.messages
+    publisher_count = args.publishers if args.publishers > 0 else n
     workdir = Path(args.workdir)
     own_ip = f'10.77.{i // 250}.{i % 250 + 1}'
     rnd = random.Random(33550336 + i * 17)
@@ -134,7 +136,7 @@ def main():
         if discovery_time is None and len(known) == n:
             discovery_time = elapsed
 
-        if elapsed >= publ_at and len(sent_orig) < m:
+        if i < publisher_count and elapsed >= publ_at and len(sent_orig) < m:
             if not sent_orig:
                 ready_at_publish = len(known)
             seq = len(sent_orig)
@@ -149,7 +151,7 @@ def main():
               m*.28 + .6 and elapsed-last_nack >= .75):
             # Bounded, per-origin selective requests; oldest last request first.
             # Aggregates missing sequence IDs; prevents the previous NACK storm.
-            missing_sources = [src for src in known if
+            missing_sources = [src for src in known if src < publisher_count and
                                any((src,seq) not in received for seq in range(m))
                                and src != i]
             missing_sources.sort(key=lambda src: request_last.get(src,-1))
@@ -241,20 +243,20 @@ def main():
             except (OSError,ValueError,TypeError,KeyError):
                 continue
 
-        if data_time is None and len(received) == n*m:
+        if data_time is None and len(received) == publisher_count*m:
             data_time = elapsed
             (workdir / f'done-{i}').touch()
         if elapsed >= stop_at:
             break
         time.sleep(.004)
 
-    expected = n*m
+    expected = publisher_count*m
     (workdir / f'node-{i}.json').write_text(json.dumps({
         'id':i,'mode':args.mode,'known_nodes':len(known),
         'discovery_s':discovery_time,'ready_at_publish':ready_at_publish,
         'received':len(received),'expected':expected,
         'remote_received':len(received)-len(sent_orig),
-        'remote_expected':(n-1)*m,'duplicates':duplicate,
+        'remote_expected':(publisher_count-(1 if i < publisher_count else 0))*m,'duplicates':duplicate,
         'pubsub_complete_s':data_time,
         'first_data_s':first_data,'stats':stats,
         'cpu_s':time.process_time(),
