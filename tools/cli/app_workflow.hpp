@@ -167,7 +167,7 @@ inline void appDoctor() {
 }
 inline void appBuild() {
   const std::string lang=appMainLanguage();
-  restoredSdk();
+  const std::string coreSdk=restoredSdk();
   appDir(".xytron-build");
   if(lang=="cpp") {
     appDir(".xytron-build/source");
@@ -176,13 +176,23 @@ inline void appBuild() {
     const std::string makefile=
       "cmake_minimum_required(VERSION 3.16)\n"
       "project(xytron_user_backend LANGUAGES CXX)\n"
+      "find_package(NativeWeb CONFIG REQUIRED)\n"
+      "get_target_property(_xytron_inc NativeWeb::Core INTERFACE_INCLUDE_DIRECTORIES)\n"
       "add_executable(xytron_user_backend ../../backend/main.cpp)\n"
-      "set_target_properties(xytron_user_backend PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED YES)\n";
+      "add_library(xytron_app_backend SHARED ../../backend/main.cpp)\n"
+      "target_include_directories(xytron_app_backend PRIVATE ${_xytron_inc})\n"
+      "target_compile_definitions(xytron_app_backend PRIVATE\n"
+      "  XYTRON_APP_BACKEND_PLUGIN=1\n"
+      "  XYTRON_PLUGIN_ID=\\\"app\\\"\n"
+      "  XYTRON_PLUGIN_VERSION=\\\"1.0.0\\\")\n"
+      "set_target_properties(xytron_user_backend xytron_app_backend PROPERTIES\n"
+      "  CXX_STANDARD 11 CXX_STANDARD_REQUIRED YES CXX_EXTENSIONS NO)\n";
     std::ofstream out(".xytron-build/source/CMakeLists.txt",std::ios::binary|std::ios::trunc);
     if(!out)throw std::runtime_error("Cannot create backend build manifest");
     out<<makefile;out.close();
     if(!out)throw std::runtime_error("Cannot save backend build manifest");
-    appCommand("cmake -S .xytron-build/source -B .xytron-build/out","C++ backend configure");
+    const std::string configure="cmake -S .xytron-build/source -B .xytron-build/out \"-DCMAKE_PREFIX_PATH="+coreSdk+"\"";
+    appCommand(configure.c_str(),"C++ backend configure");
     appCommand("cmake --build .xytron-build/out --config Release","C++ backend build");
   } else if(lang=="python") {
     appCommand("python -m py_compile backend/main.py","Python backend syntax check");
@@ -190,7 +200,7 @@ inline void appBuild() {
     appDir(".xytron-build/dotnet");
     appCommand("dotnet build backend/MainBackend.csproj --configuration Release --output .xytron-build/dotnet --nologo","C# backend build");
   }
-  std::cout<<"Backend build PASS ("<<lang<<"); desktop browser host NOT built.\n";
+  std::cout<<"Backend build PASS ("<<lang<<"); C++ app ABI plugin built, browser host is external.\n";
 }
 inline void appTest() {
   const std::string lang=appMainLanguage();
