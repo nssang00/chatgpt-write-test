@@ -29,7 +29,7 @@ def netem(n,loss):
 
 def execute(n,mode,loss,seconds,disc,m,spread,publishers,seed,fanout,interval,out,v4=False,
             payload_bytes=32,publish_interval=.28,ablation='full',fault='none',burst_seconds=3,
-            incremental_repair=False,nack_batch_limit=32):
+            incremental_repair=False,nack_batch_limit=32,unicast_nack=False):
     wd=out/f'{mode}-n{n}-loss{loss:g}-seed{seed}'
     wd.mkdir(parents=True,exist_ok=True)
     procs=[]
@@ -59,6 +59,7 @@ def execute(n,mode,loss,seconds,disc,m,spread,publishers,seed,fanout,interval,ou
                 '--payload-bytes',str(payload_bytes),
                 '--ablation',ablation,
                 '--nack-batch-limit',str(nack_batch_limit),
+                *(['--unicast-nack'] if unicast_nack else []),
                 *(['--incremental-repair'] if incremental_repair else []),
                 '--workdir',str(wd)]
             if v4: command.append('--v4')
@@ -130,6 +131,7 @@ def execute(n,mode,loss,seconds,disc,m,spread,publishers,seed,fanout,interval,ou
             'messages_per_publisher':m,'ablation':ablation,'fault':fault,
             'fault_events':events,'crashed_nodes':sorted(crashed),
             'incremental_repair':incremental_repair,'nack_batch_limit':nack_batch_limit,
+            'unicast_nack':unicast_nack,
             'publish_spread_s':spread, 'repair_fanout':fanout,
             'repair_interval_s':interval,
             'reported':len(rows),'discovery_success':full_disc,
@@ -208,6 +210,7 @@ def main():
     ap.add_argument('--burst-seconds',type=float,default=3)
     ap.add_argument('--incremental-repair',action='store_true')
     ap.add_argument('--nack-batch-limit',type=int,default=32)
+    ap.add_argument('--unicast-nack',action='store_true')
     args=ap.parse_args()
     if os.geteuid()!=0:
         raise SystemExit('root needed for network namespaces')
@@ -237,7 +240,7 @@ def main():
                                 args.publish_spread,args.publishers,seed,args.repair_fanout,
                                 args.repair_interval,out,args.v4,args.payload_bytes,
                                 args.publish_interval,args.ablation,args.fault,args.burst_seconds,
-                                args.incremental_repair,args.nack_batch_limit)
+                                args.incremental_repair,args.nack_batch_limit,args.unicast_nack)
                             r['status']='PASS' if r['pubsub_success'] and r['discovery_success'] else 'FAIL'
                         except Exception as exc:
                             r={'nodes':n,'mode':mode,'loss_percent_per_direction':loss,
