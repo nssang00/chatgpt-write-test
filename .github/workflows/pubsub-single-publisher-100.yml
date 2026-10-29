@@ -1,0 +1,31 @@
+name: Single Publisher 100-Node Diagnostic
+on:
+  push:
+    branches: [benchmark/pubsub-single-publisher-diagnostic-20261029]
+    paths: [.github/workflows/pubsub-single-publisher-100.yml]
+  workflow_dispatch:
+permissions: {contents: read}
+jobs:
+  single-pub-100:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Compare 1 publisher and 99 remote subscribers
+        run: |
+          set -euxo pipefail
+          sudo -E "$(which python)" bench/discovery/pubsub_run.py \
+            --sizes 100 --modes multicast,tree,mesh,hybrid --losses 0,10 \
+            --discovery 10 --timeout 25 --messages 2 --publishers 1 \
+            --publish-spread 3 --output one-publisher-100
+          cat one-publisher-100/results.csv
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: one-publisher-100
+          path: one-publisher-100/
+          if-no-files-found: warn
