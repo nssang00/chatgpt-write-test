@@ -1,4 +1,4 @@
-name: Aplus V2 Paced Bitmap Repair Smoke Revision 2
+name: Aplus V2 Round-Robin Bitmap Window Smoke Revision 3
 on:
   push:
     branches: [experiment/a-plus-v2-repair-20261030]
