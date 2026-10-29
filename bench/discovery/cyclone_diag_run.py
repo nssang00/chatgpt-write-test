@@ -12,7 +12,7 @@ def main():
     p=argparse.ArgumentParser()
     p.add_argument('--nodes',type=int,default=10)
     p.add_argument('--batch',type=int,default=1)
-    p.add_argument('--config',choices=['default','eth0','eth0-fastspdp'],default='default')
+    p.add_argument('--config',choices=['default','eth0','eth0-fastspdp','auto-fastspdp','eth0-multicast','eth0-250ms'],default='default')
     p.add_argument('--timeout',type=float,default=30)
     p.add_argument('--seed',type=int,default=1)
     p.add_argument('--output',default='cyclone-diag-results')
