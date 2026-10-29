@@ -48,7 +48,23 @@ After this fix:
 - 100 nodes, loss 0% and 10%: **PASS** 19,800/19,800 each (no bootstrap connection errors).
 - 200 nodes, loss 0% and 10%, one seed: **FAIL** 77,224/79,600 and 78,977/79,600 respectively; some peers were disconnected by the end although the initial connection pass reported no errors.
 
-An additional run maintains and re-establishes peers throughout the experiment; this is necessary because Gossipsub depends on a separate peer discovery and connection manager. Check the updated retry workflow for the most recent outcome. **Do not interpret incomplete Gossipsub delivery as a defect of the published algorithm while the harness has disconnected nodes.**
+### Final third Gossipsub run: asymmetric dials + continuous link maintenance (seed 2)
+
+After adding continuous monitoring and reconnection of the six-neighbor bootstrap graph, the real library produced:
+
+| N | 0% loss (unique remote deliveries) | 10% loss (unique remote deliveries) |
+|---:|---|---|
+| 50 | **PASS** 4,900/4,900 | **PASS** 4,900/4,900 |
+| 100 | **PASS** 19,800/19,800 | **PASS** 19,800/19,800 |
+| 200 | **FAIL** 78,808/79,600 (99.005%) | **PASS** 79,600/79,600 |
+
+All six conditions in this last run reported zero final bootstrap-connect failures. The surprising 200-node loss=0 failure while loss=10 passed illustrates run-to-run variation and non-guaranteed default Gossipsub application receipt; do not conclude random loss improves Gossipsub. It could reflect message timing, internal peer maintenance, router behavior or unrelated runner scheduling. For the 200-node/10%-loss PASS, Bridge TX was **120,122,071 bytes**, compared with approximately 147–152 million bytes for the three A+ 200-node/10%-loss PASS trials. **This is not an RF airtime comparison:** real Gossipsub uses encrypted libp2p TCP streams and A+ uses UDP/IP multicast and shared bridge replication.
+
+The full last run is https://github.com/nssang00/chatgpt-write-test/actions/runs/40890414515
+
+**Best defensible decision:** Select A+ provisionally only for the shared-L2, multicast-capable setting: 200/10% complete delivery succeeded across all three independent seeds. Keep canonical Gossipsub as a top-tier candidate for non-multicast/real peer-to-peer deployments, but add a shared end-to-end ACK/retention layer to enforce the required subscriber delivery semantics. Deprioritize this particular B+ static eager-flood implementation at 200 nodes because it failed 200/10% in all three trials and used far more control traffic. Do NOT claim original HyParView, Plumtree or all forms of sparse mesh have failed.
+
+**Do not interpret early disconnected Gossipsub results as defects in the published library:** the harness first had symmetric TLS dial collision and later lacked reconnect maintenance. Even the corrected six-neighbor fixed topology is a benchmark bootstrap, not the canonical way to discover arbitrary churned peers.
 
 ## Links
 
