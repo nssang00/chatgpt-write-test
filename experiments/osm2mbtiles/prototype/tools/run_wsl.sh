@@ -3,8 +3,8 @@
 # No Docker and no system PostgreSQL service configuration by the user.
 set -Eeuo pipefail
 
-if [[ $# -lt 7 || $# -gt 9 ]]; then
-  echo 'usage: run_wsl.sh <project-win> <pbf-win> <out-win> <zoom> <workers> <cleanup> <format> [vector-sql-mode] [vector-import-profile]' >&2
+if [[ $# -lt 7 || $# -gt 12 ]]; then
+  echo 'usage: run_wsl.sh <project-win> <pbf-win> <out-win> <zoom> <workers> <cleanup> <format> [vector-sql-mode] [vector-import-profile] [vector-tiler] [batch-side] [raster-format]' >&2
   exit 2
 fi
 PROJECT="$(wslpath -a "$1")"
@@ -24,6 +24,9 @@ CLEANUP="$6"
 FORMAT="$7"
 QUERY_MODE="${8:-projected}"
 IMPORT_PROFILE="${9:-safe}"
+VECTOR_TILER="${10:-postgis}"
+BATCH_SIDE="${11:-2}"
+RASTER_FORMAT="${12:-png}"
 if [[ ! -f "$PROJECT/pyproject.toml" ]] || { [[ "$AUTO_DOWNLOAD" != 1 ]] && [[ ! -f "$PBF" ]]; }; then
   echo '[ERROR] WSL cannot locate PBF or project files.' >&2
   exit 2
@@ -35,6 +38,9 @@ fi
 
 case "$QUERY_MODE" in projected|baseline|cached) ;; *) echo '[ERROR] Vector SQL mode must be projected/baseline/cached' >&2; exit 2 ;; esac
 case "$IMPORT_PROFILE" in safe|fast) ;; *) echo '[ERROR] Vector import profile must be safe/fast' >&2; exit 2 ;; esac
+case "$VECTOR_TILER" in postgis|batch) ;; *) echo '[ERROR] Vector tiler must be postgis/batch' >&2; exit 2 ;; esac
+case "$BATCH_SIDE" in [1-8]) ;; *) echo '[ERROR] Batch side must be 1..8' >&2; exit 2 ;; esac
+case "$RASTER_FORMAT" in png|png256) ;; *) echo '[ERROR] Raster encoding must be png/png256' >&2; exit 2 ;; esac
 case "$FORMAT" in raster|vector|both) ;; *) echo '[ERROR] Format must be raster/vector/both' >&2; exit 2 ;; esac
 case "$CLEANUP" in keep|compact|prune) ;; *) echo '[ERROR] Unknown cache policy (keep/compact/prune).' >&2; exit 2 ;; esac
 
@@ -203,7 +209,9 @@ LOCAL_OUT="$EXPORTDIR/$EXPORT_NAME"
 echo "[RUN] Converting PBF to $FORMAT MBTiles."
 /usr/bin/python3 -m osm2mbtiles "$PBF" -z "$ZOOM" -o "$LOCAL_OUT" \
   --runtime "$RUNTIME" --workdir "$WORKDIR" --processes "$WORKERS" \
-  --metatile 8 --encoding png --format "$FORMAT" --vector-query-mode "$QUERY_MODE" --vector-import-profile "$IMPORT_PROFILE" --force
+  --metatile 8 --tile-type "$FORMAT" --raster-format "$RASTER_FORMAT" \
+  --vector-tiler "$VECTOR_TILER" --vector-batch-side "$BATCH_SIDE" \
+  --vector-query-mode "$QUERY_MODE" --vector-import-profile "$IMPORT_PROFILE" --force
 
 # For both, CLI adds raster/vector suffixes. Never copy an unverified file.
 BASE_OUT="${OUTPUT%.mbtiles}"
