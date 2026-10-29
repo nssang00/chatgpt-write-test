@@ -60,8 +60,15 @@ loadUi(const std::string& name) {
 <script>
 (async function () {
   try {
-    if (await xytron.app.ping() !== "pong")
-      throw new Error("Unexpected native ping result");
+    const button=document.getElementById("xytron-ping");
+    const output=document.getElementById("xytron-result");
+    if (!button || !output) throw new Error("Generated UI button missing");
+    button.click();
+    for (let attempt=0; attempt<100 && output.textContent!=="pong"; ++attempt)
+      await new Promise(resolve=>setTimeout(resolve,50));
+    if (output.textContent!=="pong")
+      throw new Error("Generated button did not receive native pong: "+
+                      String(output.textContent));
     await xytron.app.complete();
   } catch (error) {
     await xytron.app.fail(String(error));
