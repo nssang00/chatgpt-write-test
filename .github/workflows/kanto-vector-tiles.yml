@@ -30,7 +30,7 @@ jobs:
           docker --version >> bench/results/environment.txt
           echo "GitHub-hosted Ubuntu 24.04; first-run pipeline comparison, NOT schema-normalized" > bench/results/methodology.txt
           echo "Both process same fixed Geofabrik extract, Z0-Z14, 4 CPUs, 12GiB docker memory limit." >> bench/results/methodology.txt
-          echo "Planetiler: upstream default OpenMapTiles profile; Tilemaker: upstream container default profile + on-disk store." >> bench/results/methodology.txt
+          echo "Planetiler: upstream default OpenMapTiles profile; Tilemaker: upstream image config and Lua copied into /data, with coastline and Natural Earth shapefiles + on-disk store." >> bench/results/methodology.txt
           echo "Download/pull time excluded; run times are container wall-clock, include program startup. Different schemas prevent strict throughput ranking." >> bench/results/methodology.txt
 
       - name: Download fixed Kanto Geofabrik extract
@@ -113,6 +113,46 @@ jobs:
           sudo rm -rf bench/data/planetiler.mbtiles bench/data/planetiler-temp
           df -h
 
+      - name: Prepare and verify Tilemaker coastline and landcover
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="$PWD/bench/data"
+          mkdir -p "$root/coastline" "$root/landcover"
+          curl -fL --retry 5 --retry-delay 8 \
+            "https://osmdata.openstreetmap.de/download/water-polygons-split-4326.zip" \
+            -o "$root/coastline/water-polygons-split-4326.zip"
+          unzip -oq -j "$root/coastline/water-polygons-split-4326.zip" -d "$root/coastline"
+          for spec in \
+            "physical/ne_10m_antarctic_ice_shelves_polys" \
+            "cultural/ne_10m_urban_areas" \
+            "physical/ne_10m_glaciated_areas"; do
+            name="${spec##*/}"
+            mkdir -p "$root/landcover/$name"
+            curl -fL --retry 5 --retry-delay 8 \
+              "https://naciscdn.org/naturalearth/10m/$spec.zip" \
+              -o "$root/landcover/$name.zip"
+            unzip -oq "$root/landcover/$name.zip" -d "$root/landcover/$name"
+          done
+          for shp in \
+            "coastline/water_polygons" \
+            "landcover/ne_10m_urban_areas/ne_10m_urban_areas" \
+            "landcover/ne_10m_antarctic_ice_shelves_polys/ne_10m_antarctic_ice_shelves_polys" \
+            "landcover/ne_10m_glaciated_areas/ne_10m_glaciated_areas"; do
+            test -s "$root/$shp.shp"
+            test -s "$root/$shp.shx"
+            test -s "$root/$shp.dbf"
+          done
+          docker run --rm --entrypoint /bin/sh \
+            -v "$root:/data" ghcr.io/systemed/tilemaker:master \
+            -c 'cp /usr/src/app/config.json /data/tilemaker-config.json && cp /usr/src/app/process.lua /data/tilemaker-process.lua'
+          sha256sum "$root/coastline/water-polygons-split-4326.zip" \
+            "$root/landcover/"*.zip \
+            "$root/tilemaker-config.json" "$root/tilemaker-process.lua" \
+            > bench/results/tilemaker-sources.sha256
+          echo "Tilemaker coastline and Natural Earth sources verified before timing" >> bench/results/methodology.txt
+          df -h >> bench/results/environment.txt
+
       - name: Tilemaker - generate MBTiles
         if: always()
         shell: bash
@@ -122,12 +162,18 @@ jobs:
           start=$(date +%s)
           set +e
           docker run --rm --cpus=4 --memory=12g \
-            -v "$PWD/bench/data:/data" \
+            -v "$PWD/bench/data:/data" -w /data \
             ghcr.io/systemed/tilemaker:master \
             /data/kanto.osm.pbf --output /data/tilemaker.mbtiles \
+            --config /data/tilemaker-config.json \
+            --process /data/tilemaker-process.lua \
             --threads 4 --store /data/tilemaker-store \
             > bench/results/tilemaker.log 2>&1
           status=$?
+          if grep -q 'Unable to open' bench/results/tilemaker.log; then
+            echo "Tilemaker silently skipped a required shapefile" >&2
+            status=42
+          fi
           set -e
           end=$(date +%s)
           echo "$((end-start))" > bench/results/tilemaker.seconds
