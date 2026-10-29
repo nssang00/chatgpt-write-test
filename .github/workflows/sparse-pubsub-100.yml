@@ -1,0 +1,37 @@
+name: Sparse PubSub 100-Node Independent Trial
+on:
+  push:
+    branches: [benchmark/pubsub-algorithm-selection-20261029]
+    paths: [.github/workflows/sparse-pubsub-100.yml]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  hundred-nodes:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 38
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Verify runner and isolation
+        run: |
+          ip -V && tc -V && free -m
+          sudo ip netns add isolated-probe
+          sudo ip netns delete isolated-probe
+      - name: Compare 100-node delivery with and without loss
+        run: |
+          set -euxo pipefail
+          sudo -E "$(which python)" bench/discovery/pubsub_run.py \
+            --sizes 100 --modes multicast,tree,mesh --losses 0,10 \
+            --discovery 10 --timeout 30 --messages 2 \
+            --output pubsub-100-results
+          cat pubsub-100-results/results.csv
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sparse-pubsub-100-node-results
+          path: pubsub-100-results/
+          if-no-files-found: warn
