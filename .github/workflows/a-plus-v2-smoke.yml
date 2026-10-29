@@ -1,4 +1,4 @@
-name: Aplus V2 Stream Bitmap Repair Smoke
+name: Aplus V2 Paced Bitmap Repair Smoke Revision 2
 on:
   push:
     branches: [experiment/a-plus-v2-repair-20261030]
@@ -45,8 +45,9 @@ jobs:
             --payload-bytes 128 --publish-interval 0.06 \
             --publishers '${{ matrix.nodes }}' \
             --discovery "$disc" --timeout "$timeout" --publish-spread "$spread" \
-            --repair-fanout 6 --repair-interval 0.9 \
-            --repair-pps 12 --nack-period 0.45 \
+            --repair-fanout 2 --repair-interval 0.9 \
+            --repair-pps 20 --nack-period 0.8 \
+            --gap-grace 1.5 --nack-suppress-seconds 2.0 \
             --seeds '${{ matrix.seed }}' --output v2-smoke
           cat v2-smoke/results.csv
           python - <<'PY'
