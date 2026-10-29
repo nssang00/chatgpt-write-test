@@ -3,8 +3,8 @@
 # No Docker and no system PostgreSQL service configuration by the user.
 set -Eeuo pipefail
 
-if [[ $# -lt 7 || $# -gt 12 ]]; then
-  echo 'usage: run_wsl.sh <project-win> <pbf-win> <out-win> <zoom> <workers> <cleanup> <format> [vector-sql-mode] [vector-import-profile] [vector-tiler] [batch-side] [raster-format]' >&2
+if [[ $# -lt 7 || $# -gt 13 ]]; then
+  echo 'usage: run_wsl.sh <project-win> <pbf-win> <out-win> <zoom> <workers> <cleanup> <format> [vector-sql-mode] [vector-import-profile] [vector-tiler] [batch-side] [raster-format] [bbox]' >&2
   exit 2
 fi
 PROJECT="$(wslpath -a "$1")"
@@ -27,6 +27,7 @@ IMPORT_PROFILE="${9:-safe}"
 VECTOR_TILER="${10:-postgis}"
 BATCH_SIDE="${11:-2}"
 RASTER_FORMAT="${12:-png}"
+BBOX="${13:-}"
 if [[ ! -f "$PROJECT/pyproject.toml" ]] || { [[ "$AUTO_DOWNLOAD" != 1 ]] && [[ ! -f "$PBF" ]]; }; then
   echo '[ERROR] WSL cannot locate PBF or project files.' >&2
   exit 2
@@ -56,8 +57,11 @@ mkdir -p "$BASE" "$EXPORTDIR"
 # Preserve failure evidence on the WSL filesystem so that a PostgreSQL crash
 # can be diagnosed even if pg_ctl can no longer stop the dead postmaster.
 print_failure_diagnostics() {
-  local status=$?
+  local status="$1" line="$2" failed_command="$3"
   trap - ERR
+  echo "[DIAG] Failed command at run_wsl.sh:$line: $failed_command" >&2
+  echo "[DIAG] Actual input PBF: ${PBF:-<not-yet-selected>}" >&2
+  echo "[DIAG] Tile bbox: ${BBOX:-<PBF header>}" >&2
   echo "[DIAG] WSL pipeline stopped (exit=$status)" >&2
   if [[ -f "$WORKDIR/postgres.log" ]]; then
     echo "[DIAG] PostgreSQL logfile: $WORKDIR/postgres.log" >&2
@@ -75,10 +79,10 @@ print_failure_diagnostics() {
   if command -v dmesg >/dev/null 2>&1; then
     dmesg 2>/dev/null | grep -iE 'out of memory|oom|killed process|segfault' | tail -n 16 >&2 || true
   fi
-  echo "[DIAG] Safe to rerun. Cached PBF: $BASE/downloads/south-korea-latest.osm.pbf" >&2
+  echo "[DIAG] Safe to rerun. Source PBF is unchanged: ${PBF:-<unknown>}" >&2
   exit "$status"
 }
-trap print_failure_diagnostics ERR
+trap 'print_failure_diagnostics $? "$LINENO" "$BASH_COMMAND"' ERR
 # Preflight is informational: the user's disk image location and input region
 # may vary, so do not invent a universal minimum free-space threshold.
 echo '[CHECK] WSL memory and available disk for PostgreSQL import:'
@@ -204,7 +208,12 @@ ln -sfn -- "$OSM2PGSQL_BIN" "$RUNTIME/bin/osm2pgsql"
 # Preflight tile count before importing the PBF or downloading the large assets.
 EXPORT_NAME="$(basename "$OUTPUT")"
 LOCAL_OUT="$EXPORTDIR/$EXPORT_NAME"
-/usr/bin/python3 -m osm2mbtiles "$PBF" -z "$ZOOM" -o "$LOCAL_OUT" --dry-run
+BBOX_ARGS=()
+if [[ -n "$BBOX" ]]; then
+  BBOX_ARGS=(--bbox "$BBOX")
+  echo "[CHECK] Explicit tile bbox: $BBOX"
+fi
+/usr/bin/python3 -m osm2mbtiles "$PBF" -z "$ZOOM" -o "$LOCAL_OUT" "${BBOX_ARGS[@]}" --dry-run
 /usr/bin/python3 -m osm2mbtiles doctor --runtime "$RUNTIME"
 echo "[RUN] Converting PBF to $FORMAT MBTiles."
 RASTER_ARGS=()
@@ -213,7 +222,7 @@ if [[ "$FORMAT" != vector ]]; then
 fi
 /usr/bin/python3 -m osm2mbtiles "$PBF" -z "$ZOOM" -o "$LOCAL_OUT" \
   --runtime "$RUNTIME" --workdir "$WORKDIR" --processes "$WORKERS" \
-  --metatile 8 --tile-type "$FORMAT" "${RASTER_ARGS[@]}" \
+  --metatile 8 --tile-type "$FORMAT" "${RASTER_ARGS[@]}" "${BBOX_ARGS[@]}" \
   --vector-tiler "$VECTOR_TILER" --vector-batch-side "$BATCH_SIDE" \
   --vector-query-mode "$QUERY_MODE" --vector-import-profile "$IMPORT_PROFILE" --force
 
