@@ -1,8 +1,8 @@
-name: Real Gossipsub Bootstrap Retest
+name: Real Gossipsub Asymmetric Dial Retest
 on:
   push:
     branches: [benchmark/pubsub-a-plus-b-plus-real-gossipsub-20261029]
-    paths: [.github/workflows/gossipsub-bootstrap-retest.yml]
+    paths: [.github/workflows/gossipsub-bootstrap-retest.yml, bench/gossipsub/main.go]
   workflow_dispatch:
 permissions: {contents: read}
 jobs:
