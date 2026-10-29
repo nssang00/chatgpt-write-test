@@ -1,0 +1,53 @@
+name: Cyclone SPDP SEDP Discovery Only 30-35-40
+on:
+  push:
+    branches: [diagnostic/cyclone-30-40-spdp-only-20261029]
+    paths: [.github/workflows/cyclone-discovery-only-30-40.yml]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  baseline:
+    name: 'N=${{ matrix.nodes }} seed=${{ matrix.seed }}'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    strategy:
+      fail-fast: false
+      max-parallel: 8
+      matrix:
+        nodes: [30, 35, 40]
+        seed: [1, 2, 3, 4, 5]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install Cyclone DDS and Linux packet tools
+        run: |
+          python -m pip install cyclonedds==11.0.1
+          sudo apt-get update -qq
+          sudo apt-get install -y iproute2 tcpdump
+          ip -V
+          free -m
+      - name: Pure SPDP/SEDP only - do not publish user data
+        run: |
+          set -euo pipefail
+          capture=()
+          trace=()
+          if [ '${{ matrix.nodes }}' = '40' ] && [ '${{ matrix.seed }}' = '1' ]; then
+            capture+=(--capture)
+            trace+=(--trace)
+          fi
+          sudo -E "$(which python)" bench/discovery/discovery_only_run.py \
+            --nodes '${{ matrix.nodes }}' \
+            --seed '${{ matrix.seed }}' \
+            --config default --delay-ms 0 --timeout 25 \
+            --output spdp-sedp-results "${capture[@]}" "${trace[@]}"
+          cat spdp-sedp-results/summary.json
+      - name: Preserve each node's matching timeline and representative RTPS packets
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: 'spdp-only-N${{ matrix.nodes }}-seed${{ matrix.seed }}'
+          path: spdp-sedp-results/
+          if-no-files-found: warn
