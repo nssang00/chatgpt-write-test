@@ -1,0 +1,69 @@
+name: Aplus V2 Backup Replica Fault Tolerance
+on:
+  push:
+    branches: [experiment/a-plus-v2-peer-assisted-repair-20261030]
+    paths: [.github/workflows/a-plus-v2-peer-fault-gate.yml]
+  workflow_dispatch:
+permissions: {contents: read}
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 14
+    strategy:
+      fail-fast: false
+      max-parallel: 7
+      matrix:
+        include:
+          - {n: 20, m: 20, loss: 10, seed: 1, fault: crash}
+          - {n: 20, m: 20, loss: 10, seed: 1, fault: crash_confirmed}
+          - {n: 50, m: 20, loss: 0, seed: 1, fault: crash_confirmed}
+          - {n: 50, m: 20, loss: 10, seed: 1, fault: crash_confirmed}
+          - {n: 100, m: 20, loss: 10, seed: 1, fault: crash_confirmed}
+          - {n: 200, m: 20, loss: 10, seed: 1, fault: crash_confirmed}
+    name: 'N=${{ matrix.n }} loss=${{ matrix.loss }} fault=${{ matrix.fault }}'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - name: Preflight
+        run: |
+          python -m py_compile bench/discovery/pubsub_node.py bench/discovery/pubsub_run.py
+          sudo sysctl -w net.core.rmem_max=16777216
+          sudo sysctl -w net.core.wmem_max=16777216
+      - name: Backed-data takeover under real SIGKILL and packet loss
+        shell: bash
+        run: |
+          set -euo pipefail
+          case '${{ matrix.n }}' in
+            20) disc=6; timeout=48; spread=3 ;;
+            50) disc=12; timeout=70; spread=7 ;;
+            100) disc=18; timeout=95; spread=12 ;;
+            200) disc=27; timeout=125; spread=18 ;;
+          esac
+          sudo -E "$(which python)" bench/discovery/pubsub_run.py \
+            --sizes '${{ matrix.n }}' --modes multicast --losses '${{ matrix.loss }}' \
+            --v4 --messages '${{ matrix.m }}' --publishers '${{ matrix.n }}' \
+            --payload-bytes 128 --publish-interval 0.08 \
+            --discovery "$disc" --timeout "$timeout" --publish-spread "$spread" \
+            --repair-fanout 6 --repair-interval 0.9 --seeds '${{ matrix.seed }}' \
+            --fault '${{ matrix.fault }}' --peer-repair --peer-replicas 6 \
+            --peer-cache-limit 2048 --backup-quorum 2 \
+            --output replica-results
+          python - <<'PY'
+          import json
+          r=json.load(open('replica-results/results.json'))[0]
+          print('PEER_REPAIR_RESULT '+json.dumps(r))
+          assert r['status'] in ('PASS','FAIL'),r
+          assert r['fault_events'],r
+          assert r['crashed_nodes']==[0],r
+          assert r['reported']==r['nodes']-1,r
+          if r['fault']=='crash_confirmed':
+              assert r['backup_confirmed_origins']>=1,r
+              assert r['pubsub_success'],r
+              assert r['discovery_success'],r
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: 'replica-N${{ matrix.n }}-loss${{ matrix.loss }}-${{ matrix.fault }}'
+          path: replica-results/
