@@ -207,9 +207,13 @@ LOCAL_OUT="$EXPORTDIR/$EXPORT_NAME"
 /usr/bin/python3 -m osm2mbtiles "$PBF" -z "$ZOOM" -o "$LOCAL_OUT" --dry-run
 /usr/bin/python3 -m osm2mbtiles doctor --runtime "$RUNTIME"
 echo "[RUN] Converting PBF to $FORMAT MBTiles."
+RASTER_ARGS=()
+if [[ "$FORMAT" != vector ]]; then
+  RASTER_ARGS=(--raster-format "$RASTER_FORMAT")
+fi
 /usr/bin/python3 -m osm2mbtiles "$PBF" -z "$ZOOM" -o "$LOCAL_OUT" \
   --runtime "$RUNTIME" --workdir "$WORKDIR" --processes "$WORKERS" \
-  --metatile 8 --tile-type "$FORMAT" --raster-format "$RASTER_FORMAT" \
+  --metatile 8 --tile-type "$FORMAT" "${RASTER_ARGS[@]}" \
   --vector-tiler "$VECTOR_TILER" --vector-batch-side "$BATCH_SIDE" \
   --vector-query-mode "$QUERY_MODE" --vector-import-profile "$IMPORT_PROFILE" --force
 
