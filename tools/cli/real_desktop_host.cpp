@@ -4,7 +4,13 @@
 #include "nativeweb/webview.hpp"
 #include "nativeweb/app_resources.hpp"
 #include <atomic>
+#include <cstdlib>
+#include <cstring>
 #include <fstream>
+#ifndef _WIN32
+#include <unistd.h>
+#include <limits.h>
+#endif
 #include <vector>
 #include <iostream>
 #include <memory>
@@ -35,6 +41,41 @@ std::string flag(int argc, char** argv, const std::string& prefix) {
       return arg.substr(prefix.size());
   }
   return "";
+}
+
+// Resolve installed runtimes to real absolute executables BEFORE handing
+// control to ProcessBroker. It intentionally rejects a PATH-only program name;
+// the native managed-worker security contract must not be weakened.
+std::string trustedRuntime(const char* name) {
+#ifdef _WIN32
+  char found[32768] = {};
+  const DWORD count=SearchPathA(nullptr,name,nullptr,sizeof(found),found,nullptr);
+  if(count==0 || count>=sizeof(found))
+    throw std::runtime_error(std::string("Missing installed worker runtime: ")+name);
+  return std::string(found);
+#else
+  const char* path=std::getenv("PATH");
+  if(!path) throw std::runtime_error("Missing trusted runtime PATH");
+  const std::string search(path);
+  for(std::size_t from=0;from<=search.size();) {
+    const std::size_t until=search.find(':',from);
+    const std::string dir=search.substr(from,
+      until==std::string::npos?std::string::npos:until-from);
+    // Skip empty relative PATH segments to keep the subprocess executable
+    // independent of its working directory.
+    if(!dir.empty() && dir[0]=='/') {
+      const std::string candidate=dir+"/"+name;
+      if(access(candidate.c_str(),X_OK)==0) {
+        char resolved[PATH_MAX]={};
+        if(realpath(candidate.c_str(),resolved))
+          return std::string(resolved);
+      }
+    }
+    if(until==std::string::npos)break;
+    from=until+1;
+  }
+  throw std::runtime_error(std::string("Missing installed worker runtime: ")+name);
+#endif
 }
 
 std::shared_ptr<nativeweb::AppResourceBundle>
@@ -212,10 +253,22 @@ public:
       };
       if(language_=="python") {
         webview_.bindManagedWorker("app",operations,
-          {"python",pythonRunner_,pythonProject_},5000);
+          {trustedRuntime(
+#ifdef _WIN32
+             "python.exe"
+#else
+             "python"
+#endif
+           ),pythonRunner_,pythonProject_},5000);
       } else if(language_=="csharp") {
         webview_.bindManagedWorker("app",operations,
-          {"dotnet",dotnetAssembly_},5000);
+          {trustedRuntime(
+#ifdef _WIN32
+             "dotnet.exe"
+#else
+             "dotnet"
+#endif
+           ),dotnetAssembly_},5000);
       } else {
         throw std::runtime_error("Unsupported managed Main language");
       }
