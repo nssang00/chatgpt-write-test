@@ -1,0 +1,183 @@
+name: osm2mbtiles Seoul Same-Tile Three-Engine Comparison
+
+on:
+  push:
+    branches: [ci/osm2mbtiles-3way-seoul-tile]
+    paths: ['.github/workflows/osm2mbtiles-seoul-3way.yml', 'experiments/osm2mbtiles/prototype/benchmarks/seoul_generation_speed.py']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  compare:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+      - name: Install genuine PostGIS, tilemaker, decoder
+        shell: bash
+        run: |
+          set -euxo pipefail
+          sudo apt-get update -qq
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            postgresql-16 postgresql-client-16 postgresql-16-postgis-3 \
+            postgresql-16-postgis-3-scripts osm2pgsql tilemaker \
+            python3-psycopg2 python3-pip curl ca-certificates time
+          /usr/bin/python3 -m pip install --break-system-packages mapbox-vector-tile
+          tilemaker --version || true
+      - name: Fetch one Seoul source PBF and pinned tool profiles
+        shell: bash
+        run: |
+          set -euxo pipefail
+          WORK="$RUNNER_TEMP/seoul-3way"
+          mkdir -p "$WORK"
+          curl -fL --retry 3 --retry-delay 2 --connect-timeout 20 --max-time 240 \
+            https://tiles.osm.kr/download/seoul-non-military.osm.pbf -o "$WORK/seoul.osm.pbf"
+          sha256sum "$WORK/seoul.osm.pbf" | tee "$WORK/input.sha256"
+          curl -fL --retry 3 --retry-delay 2 --max-time 180 \
+            https://github.com/onthegomap/planetiler/releases/download/v0.10.2/planetiler.jar -o "$WORK/planetiler.jar"
+          for name in config-openmaptiles.json process-openmaptiles.lua config-example.json process-example.lua; do
+            curl -fL --retry 3 --retry-delay 2 \
+              "https://raw.githubusercontent.com/systemed/tilemaker/v2.4.0/resources/$name" -o "$WORK/$name"
+          done
+          /usr/bin/python3 - "$WORK" <<'PY'
+          import json,sys
+          from pathlib import Path
+          w=Path(sys.argv[1])
+          for stem in ('openmaptiles','example'):
+              p=w/('config-'+stem+'.json')
+              c=json.loads(p.read_text())
+              if stem=='openmaptiles':
+                  removed=[k for k,v in c['layers'].items() if v.get('source')]
+                  c['layers']={k:v for k,v in c['layers'].items() if k not in removed}
+                  print('TILEMAKER_OMT_REMOTE_SHAPEFILE_LAYERS_EXCLUDED',removed)
+              c['settings'].update(minzoom=14,maxzoom=14,basezoom=14)
+              (w/('config-'+stem+'-local.json')).write_text(json.dumps(c))
+          PY
+      - name: Run original osm2mbtiles projected vector via real PostGIS
+        shell: bash
+        run: |
+          set -euxo pipefail
+          export PROJECT="$GITHUB_WORKSPACE/experiments/osm2mbtiles/prototype"
+          export WORK="$RUNNER_TEMP/seoul-3way"
+          export PYTHONPATH="$PROJECT/src"
+          export PATH="/usr/lib/postgresql/16/bin:$PATH"
+          export PGHOST="$WORK/socket" PGPORT=55483 PGUSER=seoulcompare PGDATABASE=gis
+          mkdir -p "$PGHOST"
+          initdb -D "$WORK/pgdata" -U "$PGUSER" --auth-local=trust --auth-host=trust
+          pg_ctl -D "$WORK/pgdata" -l "$WORK/postgres.log" -w \
+            -o "-c listen_addresses='' -c unix_socket_directories=$PGHOST -c port=$PGPORT -c shared_buffers=64MB -c work_mem=4MB" start
+          trap 'pg_ctl -D "$WORK/pgdata" -m immediate -w stop || true' EXIT
+          createdb gis
+          psql -v ON_ERROR_STOP=1 -c 'CREATE EXTENSION postgis; CREATE EXTENSION hstore;'
+          /usr/bin/time -f '%e' -o "$WORK/osm2mbtiles-import.seconds" \
+            bash -euo pipefail -c '
+              osm2pgsql --slim --drop --cache=256 --number-processes=4 \
+                -O flex -S "$PROJECT/vector/vector-flex.lua" -d gis "$WORK/seoul.osm.pbf"
+              psql -v ON_ERROR_STOP=1 -f "$PROJECT/vector/post-import.sql"
+            ' > "$WORK/postgis-import.log" 2>&1
+          for repeat in 1 2; do
+            /usr/bin/python3 - "$repeat" <<'PY'
+          import json,os,sys
+          from pathlib import Path
+          w=Path(os.environ['WORK'])
+          r=sys.argv[1]
+          job=dict(pbf=str(w/'seoul.osm.pbf'),
+                   output=str(w/f'osm2mbtiles-r{r}.mbtiles'),
+                   bbox=[126.975,37.566,126.978,37.568],
+                   minzoom=14,maxzoom=14,
+                   processes=4,tiler='postgis',batch_side=2)
+          (w/'osm2mbtiles-job.json').write_text(json.dumps(job))
+          PY
+            /usr/bin/time -f '%e' -o "$WORK/osm2mbtiles-r$repeat.seconds" \
+              env OSM2MBTILES_VECTOR_QUERY_MODE=projected \
+              /usr/bin/python3 "$PROJECT/src/osm2mbtiles/vector_worker.py" \
+              "$WORK/osm2mbtiles-job.json" | tee "$WORK/postgis-vector-r$repeat.log"
+          done
+          cp "$WORK/osm2mbtiles-r1.mbtiles" "$WORK/osm2mbtiles.mbtiles"
+      - name: Run Planetiler custom Seoul detailed YAML profile on same PBF
+        shell: bash
+        run: |
+          set -euxo pipefail
+          PROJECT="$GITHUB_WORKSPACE/experiments/osm2mbtiles/prototype"
+          WORK="$RUNNER_TEMP/seoul-3way"
+          mkdir -p "$WORK/planetiler-work"
+          ln -s "$WORK/seoul.osm.pbf" "$WORK/planetiler-work/seoul.osm.pbf"
+          for repeat in 1 2; do
+            (
+              cd "$WORK/planetiler-work"
+              /usr/bin/time -f '%e' -o "$WORK/planetiler-r$repeat.seconds" \
+                java -Xmx3g -jar "$WORK/planetiler.jar" generate-custom \
+                --schema="$PROJECT/benchmarks/seoul-planetiler.yml" \
+                --output="$WORK/planetiler-r$repeat.mbtiles" \
+                --bounds=126.9581,37.5621,126.9798,37.5793 \
+                --minzoom=14 --maxzoom=14 \
+                --threads=4 --tmpdir="$WORK/planetiler-tmp-$repeat" --force
+            ) > "$WORK/planetiler-r$repeat.log" 2>&1
+          done
+          cp "$WORK/planetiler-r1.mbtiles" "$WORK/planetiler.mbtiles"
+          ls -lh "$WORK/planetiler.mbtiles"
+      - name: Run Tilemaker 2.4 native OpenMapTiles-like / example profile
+        shell: bash
+        run: |
+          set -euxo pipefail
+          WORK="$RUNNER_TEMP/seoul-3way"
+          for repeat in 1 2; do
+            (
+              cd "$WORK"
+              /usr/bin/time -f '%e' -o "$WORK/tilemaker-r$repeat.seconds" \
+                tilemaker --input "$WORK/seoul.osm.pbf" \
+                --output "$WORK/tilemaker-r$repeat.mbtiles" \
+                --config "$WORK/config-openmaptiles-local.json" \
+                --process "$WORK/process-openmaptiles.lua" \
+                --bbox 126.9581,37.5621,126.9798,37.5793 \
+                --threads 4
+            ) > "$WORK/tilemaker-omt-r$repeat.log" 2>&1
+          done
+          echo 'tilemaker v2.4.0 OpenMapTiles-like, no external shapefiles; clipped to one Seoul tile using --bbox' > "$WORK/tilemaker-profile.txt"
+          cp "$WORK/tilemaker-r1.mbtiles" "$WORK/tilemaker.mbtiles"
+          cat "$WORK/tilemaker-profile.txt"
+          ls -lh "$WORK/tilemaker.mbtiles"
+      - name: Compare real decoded layer and feature counts of exact z14/13970/6344
+        shell: bash
+        run: |
+          set -euxo pipefail
+          WORK="$RUNNER_TEMP/seoul-3way"
+          PROJECT="$GITHUB_WORKSPACE/experiments/osm2mbtiles/prototype"
+          /usr/bin/python3 "$PROJECT/benchmarks/seoul_three_way_tile.py" \
+            "$WORK/three-way.json" \
+            "osm2mbtiles=$WORK/osm2mbtiles.mbtiles" \
+            "planetiler=$WORK/planetiler.mbtiles" \
+            "tilemaker=$WORK/tilemaker.mbtiles"
+          /usr/bin/python3 "$PROJECT/benchmarks/seoul_generation_speed.py" "$WORK"
+          cat "$WORK/speed_summary.md" >> "$GITHUB_STEP_SUMMARY"
+          cat "$WORK/summary.md" >> "$GITHUB_STEP_SUMMARY"
+          cat "$WORK/tilemaker-profile.txt" >> "$GITHUB_STEP_SUMMARY"
+      - name: Keep result and production logs
+        if: always()
+        shell: bash
+        run: |
+          WORK="$RUNNER_TEMP/seoul-3way"
+          mkdir -p seoul-three-way-evidence
+          for f in input.sha256 three-way.json summary.md tilemaker-profile.txt \
+                   postgis-import.log postgis-vector-r1.log postgis-vector-r2.log \
+                   planetiler-r1.log planetiler-r2.log \
+                   tilemaker-omt-r1.log tilemaker-omt-r2.log \
+                   speed_summary.md same-tile-speed.json; do
+            cp "$WORK/$f" seoul-three-way-evidence/ 2>/dev/null || true
+          done
+          for f in "$WORK"/*.seconds; do
+            [ -f "$f" ] && cp "$f" seoul-three-way-evidence/
+          done
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: seoul-same-zxy-three-way-analysis
+          path: seoul-three-way-evidence/
+          retention-days: 14
+          if-no-files-found: warn
