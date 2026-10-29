@@ -329,6 +329,7 @@ public:
     std::string loadPlugin(const std::string& path)
     {
         std::lock_guard<std::mutex> guard(pluginsMutex_);
+        const std::shared_ptr<ResponseSinkState> sink=responseSink_;
         std::shared_ptr<detail::PluginModule> module(
             new detail::PluginModule(path, runtime_.bindingRegistry(),
                 [this](const std::string& candidate) {
@@ -336,11 +337,13 @@ public:
                         throw Error("plugin_duplicate",
                                     "Plugin is already loaded: " + candidate);
                 },
-                [this](const std::string& event,const Any& payload) {
-                    // ABI event publishing is synchronous with a plugin call.
-                    // The backend dispatches this event to the current
-                    // trusted JS document, subject to its session checks.
-                    emit(event,payload);
+                [sink](const std::string& event,const Any& payload) {
+                    // Worker calls may outlive WebView; use the shared sink.
+                    std::lock_guard<std::mutex> guard(sink->mutex);
+                    if (!sink->owner)
+                        throw Error("webview_destroyed",
+                                    "Plugin event arrived after WebView shutdown");
+                    sink->owner->emit(event,payload);
                 }));
         const std::string pluginId = module->id();
         plugins_[pluginId].module = module;
