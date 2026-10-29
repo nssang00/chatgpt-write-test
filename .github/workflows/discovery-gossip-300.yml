@@ -1,0 +1,40 @@
+name: Discovery Gossip 200-300 Node Capacity Test
+on:
+  push:
+    branches:
+      - benchmark/discovery-300-node-followup
+    paths:
+      - 'bench/discovery/**'
+      - '.github/workflows/discovery-gossip-300.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  gossip-capacity:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Network namespace capability and memory
+        run: |
+          set -euxo pipefail
+          ip -V
+          tc -V
+          free -m
+          sudo ip netns add db-probe
+          sudo ip netns exec db-probe ip link set lo up
+          sudo ip netns delete db-probe
+      - name: Test 300 and 200 isolated gossip nodes on fresh runner
+        run: |
+          set -euxo pipefail
+          sudo -E "$(which python)" bench/discovery/run.py --sizes 300,200 --backends gossip --losses 0,10 --timeout 50 --output discovery-results
+          cat discovery-results/results.csv
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: discovery-300-gossip-results
+          path: discovery-results/
+          if-no-files-found: warn
