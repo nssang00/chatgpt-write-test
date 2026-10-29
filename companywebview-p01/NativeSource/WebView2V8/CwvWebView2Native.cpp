@@ -6,8 +6,9 @@
 #endif
 #include "CwvWebView2Native.h"
 #include "../SecureRegistry/CwvSecureViewRegistry.h"
-#include <WebView2.h>
+#include <objbase.h>
 #include <wrl.h>
+#include <WebView2.h>
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
