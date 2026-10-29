@@ -16,6 +16,8 @@ def main():
     ap.add_argument('--seed',type=int,default=1)
     ap.add_argument('--duration',type=float,default=18)
     ap.add_argument('--capture',action='store_true')
+    ap.add_argument('--capture-all',action='store_true')
+    ap.add_argument('--internal-capture',action='store_true')
     ap.add_argument('--output',default='cyclone-wire-results')
     a=ap.parse_args()
     wd=Path(a.output).resolve()
@@ -32,12 +34,13 @@ def main():
                      '--id',str(i),'--nodes',str(a.nodes),'--mode',a.mode,
                      '--seed',str(a.seed),'--duration',str(a.duration),
                      '--workdir',str(wd)]
+            if a.internal_capture:command.append('--internal-capture')
             proc=subprocess.Popen(command,stdout=log,stderr=subprocess.STDOUT)
             log.close()
             procs.append(proc)
         # Every packet at two veth bridge ports; includes actual RTPS data and discovery.
-        if a.capture:
-            for i in (0,1):
+        if a.capture or a.capture_all:
+            for i in (range(a.nodes) if a.capture_all else (0,1)):
                 fname=wd/f'port-{i}.pcap'
                 cap=subprocess.Popen(['tcpdump','-i',f'db{i:03d}h','-n',
                     '-s','256','-U','-w',str(fname),'udp'],
@@ -83,6 +86,7 @@ def main():
                     bad_sources.append({'origin':src,'seen_by':len(received_by)})
         summary={
             'nodes':a.nodes,'mode':a.mode,'seed':a.seed,'capture':a.capture,
+            'capture_all':a.capture_all,'internal_capture':a.internal_capture,
             'reports':len(nodes),'ready':ready,
             'full_participant_s':max_complete('participants_full_s'),
             'full_endpoints_s':max_complete('matches_full_s'),
