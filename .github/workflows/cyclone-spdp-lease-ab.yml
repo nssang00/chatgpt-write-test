@@ -1,0 +1,48 @@
+name: Cyclone SPDP Lease Expiry Root Cause A-B
+on:
+  push:
+    branches: [diagnostic/cyclone-30-40-spdp-only-20261029]
+    paths: [.github/workflows/cyclone-spdp-lease-ab.yml]
+  workflow_dispatch:
+permissions: {contents: read}
+jobs:
+  renew:
+    name: 'N=${{ matrix.nodes }} ${{ matrix.config }} seed=${{ matrix.seed }}'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 11
+    strategy:
+      fail-fast: false
+      max-parallel: 8
+      matrix:
+        include:
+          - {nodes: 35, config: lease60, seed: 1}
+          - {nodes: 35, config: lease60, seed: 2}
+          - {nodes: 35, config: spdp1s, seed: 1}
+          - {nodes: 35, config: spdp1s, seed: 2}
+          - {nodes: 35, config: lease60-spdp1s, seed: 1}
+          - {nodes: 35, config: lease60-spdp1s, seed: 2}
+          - {nodes: 40, config: lease60, seed: 1}
+          - {nodes: 40, config: spdp1s, seed: 1}
+          - {nodes: 40, config: lease60-spdp1s, seed: 1}
+          - {nodes: 40, config: lease60-spdp1s, seed: 2}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - name: Install Cyclone DDS
+        run: python -m pip install cyclonedds==11.0.1
+      - name: Test SPDP heartbeat and lease without user samples
+        run: |
+          set -euo pipefail
+          sudo -E "$(which python)" bench/discovery/discovery_only_run.py \
+            --nodes '${{ matrix.nodes }}' \
+            --seed '${{ matrix.seed }}' \
+            --config '${{ matrix.config }}' \
+            --timeout 27 --output lease-ab
+          cat lease-ab/summary.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: 'lease-n${{ matrix.nodes }}-${{ matrix.config }}-seed${{ matrix.seed }}'
+          path: lease-ab/
+          if-no-files-found: warn
