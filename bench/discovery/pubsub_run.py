@@ -28,7 +28,8 @@ def netem(n,loss):
 
 
 def execute(n,mode,loss,seconds,disc,m,spread,publishers,seed,fanout,interval,out,v4=False,
-            payload_bytes=32,publish_interval=.28,ablation='full',fault='none',burst_seconds=3):
+            payload_bytes=32,publish_interval=.28,ablation='full',fault='none',burst_seconds=3,
+            tail_feedback_after=0,tail_fanout=18,tail_batch_limit=20):
     wd=out/f'{mode}-n{n}-loss{loss:g}-seed{seed}'
     wd.mkdir(parents=True,exist_ok=True)
     procs=[]
@@ -57,6 +58,9 @@ def execute(n,mode,loss,seconds,disc,m,spread,publishers,seed,fanout,interval,ou
                 '--publish-interval',str(publish_interval),
                 '--payload-bytes',str(payload_bytes),
                 '--ablation',ablation,
+                '--tail-feedback-after',str(tail_feedback_after),
+                '--tail-fanout',str(tail_fanout),
+                '--tail-batch-limit',str(tail_batch_limit),
                 '--workdir',str(wd)]
             if v4: command.append('--v4')
             p=subprocess.Popen(command,stdout=log,stderr=subprocess.STDOUT)
@@ -126,6 +130,8 @@ def execute(n,mode,loss,seconds,disc,m,spread,publishers,seed,fanout,interval,ou
             'payload_bytes':payload_bytes,'publish_interval_s':publish_interval,
             'messages_per_publisher':m,'ablation':ablation,'fault':fault,
             'fault_events':events,'crashed_nodes':sorted(crashed),
+            'tail_feedback_after_s':tail_feedback_after,
+            'total_tail_nacks':sum(r['stats'].get('tail_nack_sent',0) for r in rows),
             'publish_spread_s':spread, 'repair_fanout':fanout,
             'repair_interval_s':interval,
             'reported':len(rows),'discovery_success':full_disc,
@@ -202,6 +208,9 @@ def main():
     ap.add_argument('--ablation',choices=['full','no_anti_entropy','no_hello','no_nack_suppression','unicast_repair'],default='full')
     ap.add_argument('--fault',choices=['none','burst','crash'],default='none')
     ap.add_argument('--burst-seconds',type=float,default=3)
+    ap.add_argument('--tail-feedback-after',type=float,default=0)
+    ap.add_argument('--tail-fanout',type=int,default=18)
+    ap.add_argument('--tail-batch-limit',type=int,default=20)
     args=ap.parse_args()
     if os.geteuid()!=0:
         raise SystemExit('root needed for network namespaces')
@@ -230,7 +239,8 @@ def main():
                             r=execute(n,mode,loss,args.timeout,args.discovery,args.messages,
                                 args.publish_spread,args.publishers,seed,args.repair_fanout,
                                 args.repair_interval,out,args.v4,args.payload_bytes,
-                                args.publish_interval,args.ablation,args.fault,args.burst_seconds)
+                                args.publish_interval,args.ablation,args.fault,args.burst_seconds,
+                                args.tail_feedback_after,args.tail_fanout,args.tail_batch_limit)
                             r['status']='PASS' if r['pubsub_success'] and r['discovery_success'] else 'FAIL'
                         except Exception as exc:
                             r={'nodes':n,'mode':mode,'loss_percent_per_direction':loss,
