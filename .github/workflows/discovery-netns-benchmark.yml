@@ -1,0 +1,61 @@
+name: Discovery NetNS Benchmark
+on:
+  push:
+    branches:
+      - benchmark/discovery-netns-20261029
+    paths:
+      - 'bench/discovery/**'
+      - '.github/workflows/discovery-netns-benchmark.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  discovery:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 55
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install required Linux networking tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y iproute2
+      - name: Install pinned middleware Python binaries
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install eclipse-zenoh==1.10.1 cyclonedds==11.0.1
+          python -c 'import zenoh, cyclonedds; print("bindings imported")'
+      - name: Check namespace and traffic-control capabilities
+        run: |
+          set -euxo pipefail
+          ip -V
+          tc -V
+          sudo ip netns add db-probe
+          sudo ip netns exec db-probe ip link set lo up
+          sudo ip netns delete db-probe
+          cat /sys/fs/cgroup/memory.max || true
+      - name: Compare cold-start application presence convergence
+        env:
+          RUST_LOG: error
+        run: |
+          set -euxo pipefail
+          sudo -E "$(which python)" bench/discovery/run.py --sizes 10,30,100,200,300 --losses 0,10 --timeout 22 --output discovery-results
+          cat discovery-results/results.csv
+      - name: Upload detailed experiment artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: discovery-netns-results
+          path: discovery-results/
+          if-no-files-found: warn
+      - name: Print summary
+        if: always()
+        run: |
+          if [ -f discovery-results/results.csv ]; then
+            echo '## Discovery NetNS Benchmark' >> "$GITHUB_STEP_SUMMARY"
+            echo '~~~csv' >> "$GITHUB_STEP_SUMMARY"
+            cat discovery-results/results.csv >> "$GITHUB_STEP_SUMMARY"
+            echo '~~~' >> "$GITHUB_STEP_SUMMARY"
+          fi
