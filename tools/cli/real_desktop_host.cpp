@@ -124,6 +124,10 @@ LRESULT CALLBACK hostProc(HWND wnd,UINT message,WPARAM w,LPARAM p) {
     DestroyWindow(wnd);
     return 0;
   }
+  if (message==WM_DESTROY) {
+    PostQuitMessage(0); // Manual window close must terminate interactive run.
+    return 0;
+  }
   return DefWindowProcW(wnd,message,w,p);
 }
 HWND newWindow() {
