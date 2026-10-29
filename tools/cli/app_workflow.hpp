@@ -1,0 +1,238 @@
+#ifndef XYTRON_CLI_APP_WORKFLOW_HPP
+#define XYTRON_CLI_APP_WORKFLOW_HPP
+// Offline, explicit local Core-SDK restore and backend-only build/test.
+// No browser-engine download or standalone app publication is implied.
+#include "project_manifest.hpp"
+#include "offline_file_safety.hpp"
+#include <cstdio>
+#include <cstdlib>
+#include <fstream>
+#include <iomanip>
+#include <iostream>
+#include <sstream>
+#include <stdexcept>
+#include <string>
+#include <sys/stat.h>
+#ifdef _WIN32
+#include <direct.h>
+#include <windows.h>
+#else
+#include <limits.h>
+#include <unistd.h>
+#endif
+namespace xytron_cli {
+inline bool appExists(const std::string& path) {
+  struct stat st; return stat(path.c_str(),&st)==0;
+}
+inline void appDir(const std::string& path) {
+  struct stat st;
+  if(stat(path.c_str(),&st)==0) {
+#ifdef _WIN32
+    if(!(st.st_mode & _S_IFDIR)) throw std::runtime_error("Not a directory: "+path);
+#else
+    if(!S_ISDIR(st.st_mode))throw std::runtime_error("Not a directory: "+path);
+#endif
+    projectPath(path,true);
+    return;
+  }
+#ifdef _WIN32
+  if(_mkdir(path.c_str())!=0)
+#else
+  if(mkdir(path.c_str(),0755)!=0)
+#endif
+    throw std::runtime_error("Cannot create "+path);
+}
+inline bool sdkPathChars(const std::string& path) {
+  if(path.empty()||path.size()>700)return false;
+  for(std::size_t i=0;i<path.size();++i) {
+    const char c=path[i];
+    if(!((c>='a'&&c<='z')||(c>='A'&&c<='Z')||
+         (c>='0'&&c<='9')||c=='_'||c=='-'||c=='/'||
+         c=='\\'||c=='.'||c==':'||c==' '||c=='~'))return false;
+  }
+  return true;
+}
+inline std::string normalizeSdk(const std::string& input) {
+  if(!sdkPathChars(input))throw std::runtime_error("Unsafe SDK prefix");
+#ifdef _WIN32
+  char path[MAX_PATH*3];
+  if(!_fullpath(path,input.c_str(),sizeof(path)))
+    throw std::runtime_error("Cannot resolve SDK prefix");
+#else
+  char path[PATH_MAX];
+  if(!realpath(input.c_str(),path))
+    throw std::runtime_error("Cannot resolve SDK prefix");
+#endif
+  const std::string full(path);
+  if(!sdkPathChars(full))throw std::runtime_error("Unsafe resolved SDK prefix");
+  return full;
+}
+inline std::string sdkConfig(const std::string& prefix) {
+  const std::string name="/lib/cmake/NativeWeb/NativeWebConfig.cmake";
+  const std::string alt="/lib64/cmake/NativeWeb/NativeWebConfig.cmake";
+  const std::string header=prefix+"/include/nativeweb/webview.hpp";
+  if(!appExists(header))throw std::runtime_error("Core SDK header missing: "+header);
+  if(appExists(prefix+name))return prefix+name;
+  if(appExists(prefix+alt))return prefix+alt;
+  throw std::runtime_error("Installed NativeWeb CMake config missing: "+prefix);
+}
+// FNV-1a is a stable change detector, NOT a cryptographic distribution hash.
+inline std::string sdkFingerprint(const std::string& path) {
+  std::ifstream in(path.c_str(),std::ios::binary);
+  if(!in)throw std::runtime_error("Cannot open SDK config");
+  unsigned long long value=14695981039346656037ULL;
+  char data[4096];std::size_t bytes=0;
+  while(in.read(data,sizeof(data))||in.gcount()) {
+    const std::size_t n=static_cast<std::size_t>(in.gcount());
+    bytes+=n;
+    if(bytes>1024*1024)throw std::runtime_error("SDK config too large");
+    for(std::size_t i=0;i<n;++i) {
+      value^=static_cast<unsigned char>(data[i]);
+      value*=1099511628211ULL;
+    }
+  }
+  if(in.bad())throw std::runtime_error("SDK config read failed");
+  std::ostringstream out;
+  out<<std::hex<<std::setfill('0')<<std::setw(16)<<value;
+  return out.str();
+}
+inline std::string appMainLanguage() {
+  validateProjectManifest();
+  const JsonObjectFields fields(readProjectFile("xytron.json"));
+  return fields.object("main").string("language");
+}
+inline std::string lockPayload(const std::string& prefix) {
+  return "xytron-core-lock-v1\n"+prefix+"\n"+
+    sdkFingerprint(sdkConfig(prefix))+"\n";
+}
+inline std::string appReadAll(const std::string& path) {
+  projectPath(path,false);
+  std::ifstream in(path.c_str(),std::ios::binary);
+  if(!in)throw std::runtime_error("Missing "+path+"; run xytron restore --sdk PREFIX");
+  std::ostringstream out; out<<in.rdbuf();
+  if(in.bad()||out.str().size()>4096)throw std::runtime_error("Invalid SDK lock");
+  return out.str();
+}
+inline std::string restoredSdk() {
+  const std::string lock=appReadAll(".xytron/core.lock");
+  const std::string pre="xytron-core-lock-v1\n";
+  if(lock.compare(0,pre.size(),pre)!=0)throw std::runtime_error("Invalid lock format");
+  const std::size_t sep=lock.find('\n',pre.size());
+  if(sep==std::string::npos)throw std::runtime_error("Invalid lock path");
+  const std::string path=lock.substr(pre.size(),sep-pre.size());
+  if(!sdkPathChars(path)||normalizeSdk(path)!=path)
+    throw std::runtime_error("Invalid restored SDK path");
+  if(lock!=lockPayload(path))
+    throw std::runtime_error("Core SDK changed since restore; remove lock and re-restore");
+  return path;
+}
+inline void appRestore(const std::string& sdk) {
+  appMainLanguage();
+  const std::string canonical=normalizeSdk(sdk);
+  const std::string payload=lockPayload(canonical);
+  appDir(".xytron");
+  if(appExists(".xytron/core.lock")) {
+    projectPath(".xytron/core.lock",false);
+    if(appReadAll(".xytron/core.lock")!=payload)
+      throw std::runtime_error("Existing Core lock differs; explicit removal required");
+  } else {
+    // Refuse dangling symlinks and stale staging files before writing.
+    checkedProjectOutput(".xytron/core.lock",true);
+    checkedProjectOutput(".xytron/core.lock.tmp",true);
+    std::ofstream out(".xytron/core.lock.tmp",std::ios::binary|std::ios::trunc);
+    if(!out)throw std::runtime_error("Cannot stage Core SDK lock");
+    out<<payload;out.close();
+    if(!out||std::rename(".xytron/core.lock.tmp",".xytron/core.lock")!=0) {
+      std::remove(".xytron/core.lock.tmp");
+      throw std::runtime_error("Cannot commit Core SDK lock");
+    }
+  }
+  std::cout<<"Core SDK restored from locally installed prefix: "<<canonical<<"\n"
+           <<"Browser engines and managed dependencies NOT restored; app run/publish blocked.\n";
+}
+inline void appCommand(const char* command,const char* action) {
+  if(std::system(command)!=0)
+    throw std::runtime_error(std::string(action)+" failed: "+command);
+}
+inline void appDoctor() {
+  const std::string lang=appMainLanguage();
+  const std::string prefix=restoredSdk();
+  appCommand("cmake --version","CMake diagnostic");
+  if(lang=="python") appCommand("python --version","Python runtime diagnostic");
+  else if(lang=="csharp") appCommand("dotnet --version",".NET SDK diagnostic");
+  std::cout<<"Core SDK and backend tools verified: "<<prefix<<" ("<<lang<<")\n"
+           <<"Browser runtime, engine SDK, menu APIs and distribution NOT verified.\n";
+}
+inline void appBuild() {
+  const std::string lang=appMainLanguage();
+  restoredSdk();
+  appDir(".xytron-build");
+  if(lang=="cpp") {
+    appDir(".xytron-build/source");
+    appDir(".xytron-build/out");
+    checkedProjectOutput(".xytron-build/source/CMakeLists.txt",false);
+    const std::string makefile=
+      "cmake_minimum_required(VERSION 3.16)\n"
+      "project(xytron_user_backend LANGUAGES CXX)\n"
+      "add_executable(xytron_user_backend ../../backend/main.cpp)\n"
+      "set_target_properties(xytron_user_backend PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED YES)\n";
+    std::ofstream out(".xytron-build/source/CMakeLists.txt",std::ios::binary|std::ios::trunc);
+    if(!out)throw std::runtime_error("Cannot create backend build manifest");
+    out<<makefile;out.close();
+    if(!out)throw std::runtime_error("Cannot save backend build manifest");
+    appCommand("cmake -S .xytron-build/source -B .xytron-build/out","C++ backend configure");
+    appCommand("cmake --build .xytron-build/out --config Release","C++ backend build");
+  } else if(lang=="python") {
+    appCommand("python -m py_compile backend/main.py","Python backend syntax check");
+  } else {
+    appDir(".xytron-build/dotnet");
+    appCommand("dotnet build backend/MainBackend.csproj --configuration Release --output .xytron-build/dotnet --nologo","C# backend build");
+  }
+  std::cout<<"Backend build PASS ("<<lang<<"); desktop browser host NOT built.\n";
+}
+inline void appTest() {
+  const std::string lang=appMainLanguage();
+  restoredSdk();
+  if(lang=="cpp") {
+    const std::string exe=
+#ifdef _WIN32
+      appExists(".xytron-build/out/Release/xytron_user_backend.exe")?
+      ".xytron-build/out/Release/xytron_user_backend.exe":
+      ".xytron-build/out/xytron_user_backend.exe";
+#else
+      ".xytron-build/out/xytron_user_backend";
+#endif
+    if(!appExists(exe))throw std::runtime_error("Backend missing; run xytron build");
+    projectPath(exe,false); // No executable/path symlink substitution.
+    // Execute by absolute executable path rather than shelling through
+    // cmd.exe, which splits forward slashes and quotes in relative paths.
+#ifdef _WIN32
+    char absolute[MAX_PATH*3]={};
+    if(!_fullpath(absolute,exe.c_str(),sizeof(absolute)))
+      throw std::runtime_error("Cannot resolve backend executable");
+    STARTUPINFOA startup={}; startup.cb=sizeof(startup);
+    PROCESS_INFORMATION process={};
+    if(!CreateProcessA(absolute,nullptr,nullptr,nullptr,FALSE,0,nullptr,nullptr,
+                       &startup,&process))
+      throw std::runtime_error("CreateProcess failed for backend executable");
+    const DWORD wait=WaitForSingleObject(process.hProcess,60000);
+    if(wait!=WAIT_OBJECT_0)TerminateProcess(process.hProcess,1);
+    DWORD code=1;
+    if(wait==WAIT_OBJECT_0) GetExitCodeProcess(process.hProcess,&code);
+    CloseHandle(process.hThread); CloseHandle(process.hProcess);
+    if(wait!=WAIT_OBJECT_0||code!=0)
+      throw std::runtime_error("C++ backend smoke process failed");
+#else
+    appCommand((std::string("\"")+exe+"\"").c_str(),"C++ backend smoke test");
+#endif
+  } else if(lang=="python") {
+    appCommand("python -m py_compile backend/main.py","Python backend syntax test");
+  } else {
+    if(!appExists(".xytron-build/dotnet/MainBackend.dll"))
+      throw std::runtime_error("C# backend missing; run xytron build");
+    appCommand("dotnet .xytron-build/dotnet/MainBackend.dll","C# backend smoke test");
+  }
+  std::cout<<"Backend-only smoke test PASS; JS/browser E2E NOT exercised.\n";
+}
+} // namespace xytron_cli
+#endif

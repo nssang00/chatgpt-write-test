@@ -22,7 +22,7 @@ jobs:
       matrix:
         os: [ubuntu-24.04, windows-2022, macos-15, macos-15-intel]
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 35
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
         with:
@@ -40,6 +40,16 @@ jobs:
         run: python -m unittest discover -s bindings/python/tests -p "test_*.py" -v
       - name: Install Core SDK
         run: cmake --install build/a1-public --config Release --prefix "${{ github.workspace }}/a1-public-sdk"
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Test generated C++ Python and Csharp Core-only backend workflow
+        run: >
+          cmake
+          "-DXYTRON=${{ github.workspace }}/build/a1-public/${{ matrix.os == 'windows-2022' && 'Release/xytron.exe' || 'xytron' }}"
+          "-DSDK=${{ github.workspace }}/a1-public-sdk"
+          "-DTEST_ROOT=${{ github.workspace }}/build/a1-app-workflow"
+          -P tools/cli/test_app_workflow.cmake
       - name: Configure independent SDK consumer
         run: cmake -S examples/sdk_consumer -B build/a1-consumer -DCMAKE_BUILD_TYPE=Release "-DCMAKE_PREFIX_PATH=${{ github.workspace }}/a1-public-sdk"
       - name: Build independent SDK consumer

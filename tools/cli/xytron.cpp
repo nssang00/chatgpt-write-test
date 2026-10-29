@@ -9,6 +9,7 @@
 #include "json_fields.hpp"
 #include "file_tree.hpp"
 #include "existing_output_guard.hpp"
+#include "app_workflow.hpp"
 #include <iostream>
 #include <sstream>
 #include <stdexcept>
@@ -660,7 +661,10 @@ static void help() {
     "  plugin pack NAME (from parent project)\n"
     "  publish [--output DIR] (local archive copy, inside plugin project)\n"
     "  --help / --version\n"
-    "  restore/run/test/remote-publish: NOT IMPLEMENTED\n";
+    "  validate (inside a generated desktop project)\n"
+    "  restore --sdk INSTALLED_CORE_SDK (desktop project; Core only)\n"
+    "  build / test / doctor (desktop project; backend-only)\n"
+    "  run / desktop publish / engine restore: NOT IMPLEMENTED\n";
 }
 int main(int argc,char** argv) {
   try {
@@ -681,6 +685,8 @@ int main(int argc,char** argv) {
       newPlugin(argv[3],argc==4?"cpp":argv[5]);return 0;
     }
     if(argc==2 && std::string(argv[1])=="publish") {
+      if(exists("xytron.json"))
+        throw std::runtime_error("Desktop publish unavailable: browser runtime and app shell not packaged");
       pluginPublish("releases");return 0;
     }
     if(argc==4 && std::string(argv[1])=="publish"&&
@@ -704,7 +710,9 @@ int main(int argc,char** argv) {
       pluginPack(".");return 0;
     }
     if(argc==2 && std::string(argv[1])=="build") {
-      pluginBuildCurrent("");return 0;
+      if(exists("xytron.json")) xytron_cli::appBuild();
+      else pluginBuildCurrent("");
+      return 0;
     }
     if(argc==4 && std::string(argv[1])=="build"&&
        std::string(argv[2])=="--sdk") {
@@ -718,6 +726,25 @@ int main(int argc,char** argv) {
     if(argc==6&&std::string(argv[1])=="module"&&
        std::string(argv[2])=="add"&&std::string(argv[4])=="--language") {
       moduleAdd(argv[3],argv[5]);return 0;
+    }
+    if(argc==2 && std::string(argv[1])=="validate") {
+      xytron_cli::validateProjectManifest();
+      std::cout<<"Generated desktop project manifest validated (not a runtime acceptance test)\n";
+      return 0;
+    }
+    if(argc==4 && std::string(argv[1])=="restore"&&
+       std::string(argv[2])=="--sdk") {
+      xytron_cli::appRestore(argv[3]);return 0;
+    }
+    if(argc==2 && std::string(argv[1])=="test" && exists("xytron.json")) {
+      xytron_cli::appTest();return 0;
+    }
+    if(argc==2 && std::string(argv[1])=="doctor" && exists("xytron.json")) {
+      xytron_cli::appDoctor();return 0;
+    }
+    if(argc==2 && std::string(argv[1])=="run" && exists("xytron.json")) {
+      std::cerr<<"Desktop run unavailable: native shell and browser engine not integrated\n";
+      return 2;
     }
     if(argc==4&&std::string(argv[1])=="doctor"&&
        std::string(argv[2])=="--sdk") {

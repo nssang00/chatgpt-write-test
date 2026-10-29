@@ -98,6 +98,11 @@ if(NATIVEWEB_BUILD_TESTS)
     COMMAND $<TARGET_FILE:xytron_cli_output_guard_regression>)
   set_tests_properties(cli.existing_output_guard PROPERTIES
     WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}" TIMEOUT 15)
+  add_test(NAME cli.manifest_matrix COMMAND ${CMAKE_COMMAND}
+    -DXYTRON=$<TARGET_FILE:xytron>
+    -DTEST_ROOT=${CMAKE_CURRENT_BINARY_DIR}/xytron-manifest-matrix
+    -P ${CMAKE_CURRENT_SOURCE_DIR}/tools/cli/test_manifest_matrix.cmake)
+  set_tests_properties(cli.manifest_matrix PROPERTIES TIMEOUT 35)
   add_test(NAME cli.scaffold COMMAND ${CMAKE_COMMAND}
     -DXYTRON=$<TARGET_FILE:xytron>
     -DTEST_ROOT=${CMAKE_CURRENT_BINARY_DIR}/xytron-cli-smoke
