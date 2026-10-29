@@ -108,7 +108,7 @@ python3 -m osm2mbtiles convert seoul.osm.pbf --format vector --zoom 12-15 \
 - 실제 출력은 GitHub Actions의 원본 베이스라인과 디코딩된 MVT의 타일별
   피처 ID/Geometry/속성/중복도 및 메타데이터(출력 이름 제외)를 비교합니다.
 - 이 실험은 초기 전체 생성 방식의 개선입니다. OSM replication 기반
-  **증분 업데이트는 아직 구현/검증되지 않았습니다.** `--slim --drop`의
+  **증분 업데이트는 별도 실험용 CLI로 구현되었지만 이 `convert` 경로에는 연결되지 않았습니다.** `--slim --drop`의
   기존 최초 import 파이프라인도 그대로 유지되어 있습니다.
 - 실제 CI 자료: `.github/workflows/osm2mbtiles-batch-parity.yml`.
   Planetiler 벤치마크는 동일 PBF/BBOX/zoom이지만 출력 스타일과 피처 수가 달라
@@ -160,3 +160,57 @@ python3 -m osm2mbtiles.vector_incremental flush --output region.mbtiles
 - 아직 **PNG 증분 업데이트, 원격 replication sequence 수집/검증, 전국 규모,
   프로파일/줌 변경을 동반한 무중단 갱신은 지원/검증하지 않습니다.**
   유효 범위 밖의 변경이나 스타일 변경에는 전체 재생성이 필요합니다.
+
+
+## 새로운 타일 출력 옵션 및 전체 시간
+
+새 옵션은 기존 CLI를 깨지 않도록 별칭으로 추가했습니다.
+
+| 목적 | 신규 옵션 | 이전 옵션 (호환 유지) |
+|---|---|---|
+| 타일 종류 선택 | `--tile-type raster|vector|both` (기본 raster) | `--format raster|vector|both` |
+| Raster 인코딩 선택 | `--raster-format png|png256` (기본 png) | `--encoding png|png256` |
+
+`--format png|pbf`는 지원하지 않습니다. Raster는 PNG/PNG256, Vector는 gzip 압축된
+MVT/PBF로 출력합니다. 두 종류를 함께 생성하는 `both`는
+`<name>.raster.mbtiles`, `<name>.vector.mbtiles` 파일 2개를 작성합니다.
+신·구 옵션을 동시에 썼는데 값이 상충하면 즉시 오류가 납니다.
+Vector만 생성할 때 `--raster-format`은 지정할 수 없습니다.
+
+```bash
+python3 -m osm2mbtiles convert seoul.osm.pbf \
+  --tile-type both --raster-format png --zoom 12-14 \
+  --output seoul.mbtiles --processes 4 --vector-tiler batch
+```
+
+CLI는 성공·실패 모두 `[TIME] Total convert elapsed: ...` 형식으로 전체 변환
+시간(초 및 시:분:초)을 출력합니다. Windows 실행기는 다운로드 이후 WSL 생성,
+MBTiles 검증·Windows 복사 시간을 별도로 표시합니다.
+
+### Windows 서울 OSM 자동 다운로드·실생성 테스트
+
+프로젝트 폴더에서 다음 배치 파일을 실행하세요.
+
+```bat
+test-seoul.bat
+test-seoul.bat 12-15 vector
+test-seoul.bat 12-14 both
+```
+
+- 기본: **서울 OSM**(`https://tiles.osm.kr/download/seoul-non-military.osm.pbf`)을
+  `test-output` 폴더에 내려받고 재실행 시 재사용합니다.
+- 기본 출력: `--tile-type both`, z12~14, PNG + MVT/PBF MBTiles 두 개.
+  기본 Vector 엔진은 `batch`, Raster 인코딩은 손실 없는 `png`.
+- 실제 지도 스타일은 기존 `run_windows.ps1` / `run_wsl.sh`의 OSM Carto +
+  Mapnik 경로를 재사용합니다. 가짜 타일이나 fixture 출력이 아닙니다.
+- 출력 위치: `test-output/seoul-non-military.raster.mbtiles` 및
+  `test-output/seoul-non-military.vector.mbtiles`.
+- 배치 파일은 다운받은 PBF, 기존 WSL 설치 및 인터넷 연결이 필요합니다.
+  `run.bat`과 마찬가지로 Windows 10/11 + Ubuntu/Debian WSL이 필요합니다.
+  완료 시 다운로드부터 Windows 복사까지의 전체 시간도 출력합니다.
+- 기존 출력이 있으면 덮어쓰기 전에 사용자 확인을 요구합니다.
+- `run.bat --tile-type both 12-14`도 사용할 수 있습니다. 이때 원본은 기본
+  Geofabrik 한국 전체 PBF이므로 **서울 테스트와 다릅니다**.
+- 고급 환경변수 `OSM2MBTILES_VECTOR_TILER=postgis|batch`,
+  `OSM2MBTILES_VECTOR_BATCH_SIDE=1..8`,
+  `OSM2MBTILES_RASTER_FORMAT=png|png256`를 Windows 런처에 전달합니다.
