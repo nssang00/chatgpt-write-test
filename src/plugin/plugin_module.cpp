@@ -14,19 +14,36 @@
 namespace nativeweb {
 namespace detail {
 
+struct PluginEventState {
+    explicit PluginEventState(
+        const std::function<void(const std::string&,const Any&)>& callback)
+        : accepting(true), deliver(callback) {}
+    std::mutex mutex;
+    bool accepting;
+    std::string id;
+    std::function<void(const std::string&,const Any&)> deliver;
+};
+
 namespace {
 
 // A plugin may publish events only synchronously while one of its
 // registered C ABI functions is executing on this thread. This prevents
 // asynchronous publisher use after a module has been quiesced/unloaded.
 thread_local PluginModule* activePublisherModule = 0;
+thread_local std::shared_ptr<PluginEventState> activePublisherState;
 struct PluginPublishScope {
-    explicit PluginPublishScope(PluginModule* module)
-        : previous(activePublisherModule) {
+    PluginPublishScope(PluginModule* module,
+                       const std::shared_ptr<PluginEventState>& state)
+        : previous(activePublisherModule), previousState(activePublisherState) {
         activePublisherModule = module;
+        activePublisherState = state;
     }
-    ~PluginPublishScope() { activePublisherModule = previous; }
+    ~PluginPublishScope() {
+        activePublisherModule = previous;
+        activePublisherState = previousState;
+    }
     PluginModule* previous;
+    std::shared_ptr<PluginEventState> previousState;
 };
 
 std::string copyString(
@@ -292,14 +309,14 @@ Callable makePluginCallable(
     void* userData,
     const std::shared_ptr<void>& lifetime,
     const CallableSignature& signature,
-    PluginModule* module)
+    PluginModule* module, const std::shared_ptr<PluginEventState>& state)
 {
     // Preserve the lease even when a consumer extracts/copies dynamicFunction()
     // instead of copying the full Callable wrapper.
-    const DynamicFunction dynamic = [function, userData, lifetime, signature, module](
+    const DynamicFunction dynamic = [function, userData, lifetime, signature, module, state](
         const VariantList& args) -> Any {
         (void)lifetime;
-        PluginPublishScope scopedEventPublisher(module);
+        PluginPublishScope scopedEventPublisher(module,state);
         if (signature.result.kind != CallableTypeKind::Unknown)
         {
             if (args.size() != signature.arity())
@@ -406,7 +423,7 @@ PluginModule::PluginModule(
     const std::function<void(const std::string&)>& validateId,
     const std::function<void(const std::string&,const Any&)>& publishEvent)
     : registry_(registry),
-      publishEvent_(publishEvent),
+      eventState_(new PluginEventState(publishEvent)),
       lease_(new PluginLibraryLease(path)),
       quiescing_(false), unloaded_(false), path_(path)
 {
@@ -419,6 +436,10 @@ PluginModule::~PluginModule()
     // queued/running retain PluginLibraryLease and therefore the DLL/SO.
     std::lock_guard<std::mutex> lock(mutex_);
     quiescing_ = true;
+    {
+        std::lock_guard<std::mutex> eventLock(eventState_->mutex);
+        eventState_->accepting = false;
+    }
     registrations_.clear();
     lease_.reset();
 }
@@ -531,6 +552,10 @@ void PluginModule::unload()
 
     // No later lookups may acquire fresh callables from our registrations.
     quiescing_ = true;
+    {
+        std::lock_guard<std::mutex> eventLock(eventState_->mutex);
+        eventState_->accepting = false;
+    }
     registrations_.clear();
 
     // Existing callables (including worker-queued snapshots) and objects
@@ -699,6 +724,7 @@ void PluginModule::initialize(
     }
 
     id_ = lease_->api.id;
+    eventState_->id = id_;
     version_ =
         lease_->api.version
             ? lease_->api.version
@@ -752,39 +778,34 @@ void PluginModule::initialize(
 int32_t PluginModule::publishEventThunk(
     void* context, const char* event, const nw_value_v1* payload)
 {
-    if (!context || activePublisherModule != static_cast<PluginModule*>(context))
+    // Compare the opaque pointer only. The PluginModule object may already
+    // be destroyed while a copied callable still owns the DLL/SO lease.
+    // The shared event state is retained by that callable and its TLS scope.
+    if (!context || activePublisherModule != static_cast<PluginModule*>(context) ||
+        !activePublisherState)
         return -1;
     try {
-        return static_cast<PluginModule*>(context)->publishEvent(event,payload);
-    } catch (...) {
-        // Never leak C++ exceptions across a C ABI boundary.
-        return -1;
-    }
-}
-
-int32_t PluginModule::publishEvent(
-    const char* relative, const nw_value_v1* payload)
-{
-    if (!relative || !payload || !validPluginId(relative) ||
-        payload->struct_size < sizeof(nw_value_v1) ||
-        payload->type != NW_VALUE_STRING_V1 ||
-        payload->data.string_value.size > 4096 ||
-        (payload->data.string_value.size && !payload->data.string_value.data))
-        return -1;
-
-    std::function<void(const std::string&,const Any&)> publish;
-    std::string event;
-    {
-        std::lock_guard<std::mutex> lock(mutex_);
-        if (quiescing_ || unloaded_ || !publishEvent_)
+        if (!event || !payload || !validPluginId(event) ||
+            payload->struct_size < sizeof(nw_value_v1) ||
+            payload->type != NW_VALUE_STRING_V1 ||
+            payload->data.string_value.size > 4096 ||
+            (payload->data.string_value.size && !payload->data.string_value.data))
             return -1;
-        event=id_+"."+relative;
-        publish=publishEvent_;
+        const std::shared_ptr<PluginEventState> state=activePublisherState;
+        std::function<void(const std::string&,const Any&)> delivery;
+        std::string channel;
+        {
+            std::lock_guard<std::mutex> lock(state->mutex);
+            if (!state->accepting || !state->deliver)
+                return -1;
+            channel=state->id+"."+event;
+            delivery=state->deliver;
+        }
+        delivery(channel,pluginValueToAny(*payload));
+        return 0;
+    } catch (...) {
+        return -1; // No exceptions cross the C ABI.
     }
-    // Copies the ABI payload before returning. No plugin pointers survive
-    // into the queued browser event; the bridge owns document-session guards.
-    publish(event,pluginValueToAny(*payload));
-    return 0;
 }
 
 int32_t PluginModule::registerFunctionThunk(
@@ -904,7 +925,7 @@ int32_t PluginModule::registerFunctionImpl(
             makePluginCallable(
                 function,
                 userData,
-                lifetime, signature, this));
+                lifetime, signature, this, eventState_));
 
     registrations_.push_back(
         std::move(token));
