@@ -1,0 +1,46 @@
+name: Cyclone DDS Keyless vs Keyed Reader Cache Test
+on:
+  push:
+    branches: [diagnostic/cyclone-wire-timing-20261029]
+    paths: [.github/workflows/cyclone-keyed-instance-ab.yml]
+  workflow_dispatch:
+permissions: {contents: read}
+jobs:
+  instance:
+    name: 'n=${{ matrix.nodes }} key=${{ matrix.keyed }} seed=${{ matrix.seed }}'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    strategy:
+      fail-fast: false
+      max-parallel: 6
+      matrix:
+        include:
+          - {nodes: 10, keyed: false, seed: 1}
+          - {nodes: 10, keyed: true, seed: 1}
+          - {nodes: 10, keyed: true, seed: 2}
+          - {nodes: 10, keyed: true, seed: 3}
+          - {nodes: 20, keyed: true, seed: 1}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - name: Install native Cyclone DDS
+        run: python -m pip install cyclonedds==11.0.1
+      - name: Control only IDL instance key with Reader default KeepLast(1)
+        run: |
+          set -euo pipefail
+          keyed=()
+          if [ '${{ matrix.keyed }}' = 'true' ]; then keyed+=(--keyed); fi
+          sudo -E "$(which python)" bench/discovery/cyclone_wire_run.py \
+            --nodes '${{ matrix.nodes }}' \
+            --mode default --history default \
+            --seed '${{ matrix.seed }}' --duration 20 \
+            --output keyed-ab "${keyed[@]}"
+          cat keyed-ab/summary.json
+      - name: Upload per-node timestamp evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: 'keyed-${{ matrix.nodes }}-${{ matrix.keyed }}-seed${{ matrix.seed }}'
+          path: keyed-ab/
+          if-no-files-found: warn
