@@ -3,7 +3,8 @@ on:
   push:
     branches: [verify/cwv-p01-windows-20261029]
     paths:
-      - 'companywebview-p01/**'
+      - 'companywebview-p01/NativeSource/**'
+      - 'companywebview-p01/Validation/NativeRegistry/**'
       - '.github/workflows/cwv-p01-public-webview2.yml'
   workflow_dispatch:
 permissions:
