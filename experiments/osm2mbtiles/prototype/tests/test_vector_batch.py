@@ -41,3 +41,35 @@ def test_invalid_batch_size_rejected():
     for n in (0, 9):
         with pytest.raises(ValueError):
             list(microbatches((126, 37, 127, 38), 12, 12, side=n))
+
+
+def test_cli_opt_in_and_default():
+    from osm2mbtiles.cli import arguments
+    base = ["convert", "sample.pbf", "-o", "sample.mbtiles", "--format", "vector"]
+    a, _ = arguments(base)
+    assert a.vector_tiler == "postgis"
+    assert a.vector_batch_side == 2
+    a, _ = arguments(base + ["--vector-tiler", "batch", "--vector-batch-side", "4"])
+    assert a.vector_tiler == "batch"
+    assert a.vector_batch_side == 4
+
+
+def test_vector_worker_routes_explicit_batch_without_changing_default(monkeypatch):
+    from osm2mbtiles import vector_worker
+    from osm2mbtiles import vector_batch
+    calls = []
+    monkeypatch.setattr(vector_worker, "export",
+                        lambda *args: calls.append(("original", args)))
+    monkeypatch.setattr(vector_batch, "export_batch",
+                        lambda *args, **kwargs: calls.append(("batch", args, kwargs)))
+    job = {
+        "pbf": "sample.pbf", "output": "sample.mbtiles",
+        "bbox": [127.0, 37.0, 127.1, 37.1],
+        "minzoom": 12, "maxzoom": 13, "processes": 4,
+    }
+    vector_worker.run_job(job)
+    assert calls[-1][0] == "original"
+    job["tiler"] = "batch"
+    job["batch_side"] = 3
+    vector_worker.run_job(job)
+    assert calls[-1][0] == "batch" and calls[-1][2]["side"] == 3
