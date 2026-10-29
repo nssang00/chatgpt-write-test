@@ -8,6 +8,7 @@
 #include "json_validate.hpp"
 #include "json_fields.hpp"
 #include "file_tree.hpp"
+#include "existing_output_guard.hpp"
 #include <iostream>
 #include <sstream>
 #include <stdexcept>
@@ -265,6 +266,7 @@ static void moduleAdd(const std::string& id, const std::string& lang) {
   if(!valid(id,true)) throw std::runtime_error("Invalid feature Module id");
   if(lang!="cpp"&&lang!="python"&&lang!="csharp")
     throw std::runtime_error("Module must be cpp, python or csharp");
+  xytron_cli::checkedExistingOutput("xytron.json");
   std::ifstream in("xytron.json", std::ios::binary);
   if(!in) throw std::runtime_error("Run module add inside a xytron project");
   std::ostringstream ss;ss<<in.rdbuf();
@@ -331,6 +333,7 @@ static void moduleAdd(const std::string& id, const std::string& lang) {
     (items.empty()?"":",")+item+doc.substr(close);
   // Validate and create generated source before writing project metadata.
   // Transactional writes / generalized JSON migration remain follow-up.
+  xytron_cli::checkedExistingOutput("xytron.json");
   std::ofstream out("xytron.json",std::ios::binary|std::ios::trunc);
   if(!out) throw std::runtime_error("Cannot update xytron.json");
   out<<updated;out.close();

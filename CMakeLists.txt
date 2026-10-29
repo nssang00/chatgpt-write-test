@@ -89,6 +89,15 @@ install(FILES tools/cli/dotnet_reflector/Program.cs
 
 install(TARGETS xytron RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 if(NATIVEWEB_BUILD_TESTS)
+  add_executable(xytron_cli_output_guard_regression tools/cli/test_existing_output_guard.cpp)
+  target_include_directories(xytron_cli_output_guard_regression PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/tools/cli")
+  target_compile_features(xytron_cli_output_guard_regression PRIVATE cxx_std_11)
+  set_target_properties(xytron_cli_output_guard_regression PROPERTIES
+    CXX_STANDARD 11 CXX_STANDARD_REQUIRED YES CXX_EXTENSIONS NO)
+  add_test(NAME cli.existing_output_guard
+    COMMAND $<TARGET_FILE:xytron_cli_output_guard_regression>)
+  set_tests_properties(cli.existing_output_guard PROPERTIES
+    WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}" TIMEOUT 15)
   add_test(NAME cli.scaffold COMMAND ${CMAKE_COMMAND}
     -DXYTRON=$<TARGET_FILE:xytron>
     -DTEST_ROOT=${CMAKE_CURRENT_BINARY_DIR}/xytron-cli-smoke
