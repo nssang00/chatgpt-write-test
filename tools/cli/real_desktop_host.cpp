@@ -3,7 +3,9 @@
 // native menus, plugin callbacks or redistributable desktop packaging.
 #include "nativeweb/webview.hpp"
 #include "nativeweb/app_resources.hpp"
+#include <atomic>
 #include <fstream>
+#include <vector>
 #include <iostream>
 #include <memory>
 #include <sstream>
@@ -36,7 +38,7 @@ std::string flag(int argc, char** argv, const std::string& prefix) {
 }
 
 std::shared_ptr<nativeweb::AppResourceBundle>
-loadUi(const std::string& name) {
+loadUi(const std::string& name, const std::string& lang) {
   if (name.empty()) throw std::runtime_error("Explicit --ui path is required");
   std::ifstream in(name.c_str(),std::ios::binary);
   if (!in) throw std::runtime_error("UI index not found");
@@ -53,7 +55,7 @@ loadUi(const std::string& name) {
   std::string html=bytes.str();
   if (html.find('\0')!=std::string::npos)
     throw std::runtime_error("UI HTML contains invalid NUL");
-  if (smoke) {
+  if (smoke && lang=="cpp") {
     // Exercise real engine JS->native Promise. This probe does NOT claim
     // that the scaffold placeholder is the user's C++ backend.
     html+=R"HTML(
@@ -115,6 +117,45 @@ loadUi(const std::string& name) {
 </script>
 )HTML";
   }
+  if (smoke && (lang=="python" || lang=="csharp")) {
+    html+=R"HTML(
+<script>
+(async function() {
+  try {
+    let ready=false;
+    for (let i=0;i<200;i++) {
+      if (await xytron.app.managedReady()) { ready=true; break; }
+      await new Promise(r=>setTimeout(r,50));
+    }
+    if (!ready) throw new Error("Trusted managed worker was not registered");
+    const button=document.getElementById("xytron-managed");
+    const result=document.getElementById("xytron-managed-result");
+    if (!button || !result) throw new Error("Generated managed UI is missing");
+    button.click();
+    for(let i=0;i<200 && result.textContent!=="pong-edited-in-project";i++)
+      await new Promise(r=>setTimeout(r,50));
+    if (result.textContent!=="pong-edited-in-project")
+      throw new Error("Edited user managed Main did not respond: "+result.textContent);
+    let denied=false;
+    try { await xytron.app.Main.method.secret("no-handle"); }
+    catch(e) { denied=true; }
+    if(!denied)throw new Error("Unexported managed method reached worker");
+    const handle=await xytron.app.Main.create();
+    if(typeof handle!=="string" || !handle.startsWith("xy_"))
+      throw new Error("Opaque managed handle missing");
+    await xytron.app.Main.dispose(handle);
+    denied=false;
+    try { await xytron.app.Main.method.ping(handle); }
+    catch(e) { denied=true; }
+    if(!denied) throw new Error("Disposed managed handle remained accessible");
+    await xytron.app.complete();
+  } catch (error) {
+    await xytron.app.fail(String(error));
+  }
+})();
+</script>
+)HTML";
+  }
   std::shared_ptr<nativeweb::AppResourceBundle> bundle(
     new nativeweb::AppResourceBundle());
   bundle->add("app://desktop/index.html","text/html",html);
@@ -123,7 +164,14 @@ loadUi(const std::string& name) {
 
 class Listener : public nativeweb::WebViewListener {
 public:
-  explicit Listener(nativeweb::WebView& webview) : webview_(webview) {
+  Listener(nativeweb::WebView& webview,const std::string& lang,
+           const std::string& pythonRunner,const std::string& pythonProject,
+           const std::string& dotnetAssembly)
+      : webview_(webview), language_(lang), pythonRunner_(pythonRunner),
+        pythonProject_(pythonProject), dotnetAssembly_(dotnetAssembly),
+        ready_(false) {
+    if(language_!="cpp")
+      webview_.bind("app.managedReady",[this]() { return ready_.load(); });
     // app.ping now comes exclusively from user-authored backend/main.cpp
     // registered through ABI v1; never silently fall back to a host stub.
     if (smoke) {
@@ -131,7 +179,12 @@ public:
         verified=true;
         std::cout << "checkpoint: generated-app-js-native-pong" << std::endl;
         std::cout << "checkpoint: user-cpp-backend-and-feature-plugin" << std::endl;
-        std::cout << "checkpoint: plugin-native-js-event-unsubscribe" << std::endl;
+        if(language_=="cpp") {
+          std::cout << "checkpoint: plugin-native-js-event-unsubscribe" << std::endl;
+        } else {
+          std::cout << "checkpoint: user-managed-main-js-verified-" << language_ << std::endl;
+          webview_.revokeManagedWorker("app");
+        }
         webview_.destroy();
         return true;
       });
@@ -152,6 +205,26 @@ public:
   }
   void onLoadFinished(const std::string& url) override {
     std::cout << "checkpoint: native-app-ui-loaded " << url << std::endl;
+    if(language_=="cpp" || url!="app://desktop/index.html" || ready_.load()) return;
+    try {
+      const std::vector<std::string> operations={
+        "app.Main.create", "app.Main.method.ping", "app.Main.dispose"
+      };
+      if(language_=="python") {
+        webview_.bindManagedWorker("app",operations,
+          {"python",pythonRunner_,pythonProject_},5000);
+      } else if(language_=="csharp") {
+        webview_.bindManagedWorker("app",operations,
+          {"dotnet",dotnetAssembly_},5000);
+      } else {
+        throw std::runtime_error("Unsupported managed Main language");
+      }
+      ready_.store(true);
+      std::cout << "checkpoint: managed-main-worker-granted-" << language_ << std::endl;
+    } catch(const std::exception& error) {
+      problem=error.what();
+      webview_.destroy();
+    }
   }
   void onClosed() override {
 #ifdef XYTRON_APP_HOST_CEF
@@ -162,6 +235,8 @@ public:
   }
 private:
   nativeweb::WebView& webview_;
+  std::string language_,pythonRunner_,pythonProject_,dotnetAssembly_;
+  std::atomic<bool> ready_;
 };
 
 #ifndef XYTRON_APP_HOST_CEF
@@ -207,12 +282,23 @@ int main(int argc,char** argv) {
     for(int i=1;i<argc;++i) {
       if (std::string(argv[i])=="--smoke") smoke=true;
     }
+    const std::string languageFlag=flag(argc,argv,"--backend-language=");
+    const std::string language=languageFlag.empty()?"cpp":languageFlag;
+    if(language!="cpp"&&language!="python"&&language!="csharp")
+      throw std::runtime_error("Unsupported Main language");
     const std::shared_ptr<nativeweb::AppResourceBundle> assets=
-        loadUi(flag(argc,argv,"--ui="));
+        loadUi(flag(argc,argv,"--ui="),language);
     const std::string backendPlugin=flag(argc,argv,"--backend-plugin=");
     const std::string featurePlugin=flag(argc,argv,"--plugin-path=");
-    if (backendPlugin.empty())
+    const std::string pythonRunner=flag(argc,argv,"--python-runner=");
+    const std::string pythonProject=flag(argc,argv,"--python-project=");
+    const std::string dotnetAssembly=flag(argc,argv,"--dotnet-assembly=");
+    if(language=="cpp" && backendPlugin.empty())
       throw std::runtime_error("Explicit C++ backend ABI plugin is required");
+    if(language=="python" && (pythonRunner.empty()||pythonProject.empty()))
+      throw std::runtime_error("Missing trusted Python Main worker inputs");
+    if(language=="csharp" && dotnetAssembly.empty())
+      throw std::runtime_error("Missing trusted .NET Main assembly");
 
 #ifdef XYTRON_APP_HOST_CEF
     CefSettings settings;
@@ -221,9 +307,9 @@ int main(int argc,char** argv) {
     settings.log_severity=LOGSEVERITY_WARNING;
     nativeweb::detail::registerCefBackendFactory();
     nativeweb::WebView view;
-    Listener listener(view);
+    Listener listener(view,language,pythonRunner,pythonProject,dotnetAssembly);
     view.setListener(&listener);
-    if (view.loadPlugin(backendPlugin)!="app")
+    if(language=="cpp" && view.loadPlugin(backendPlugin)!="app")
       throw std::runtime_error("C++ backend plugin ID mismatch");
     if (!featurePlugin.empty() && view.loadPlugin(featurePlugin)!="feature")
       throw std::runtime_error("Feature plugin ID mismatch");
@@ -242,9 +328,9 @@ int main(int argc,char** argv) {
     if (!window) throw std::runtime_error("Cannot create Win32 window");
     nativeweb::detail::registerWebView2BackendFactory();
     nativeweb::WebView view;
-    Listener listener(view);
+    Listener listener(view,language,pythonRunner,pythonProject,dotnetAssembly);
     view.setListener(&listener);
-    if (view.loadPlugin(backendPlugin)!="app")
+    if(language=="cpp" && view.loadPlugin(backendPlugin)!="app")
       throw std::runtime_error("C++ backend plugin ID mismatch");
     if (!featurePlugin.empty() && view.loadPlugin(featurePlugin)!="feature")
       throw std::runtime_error("Feature plugin ID mismatch");
