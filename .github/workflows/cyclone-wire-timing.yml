@@ -1,0 +1,63 @@
+name: Cyclone DDS Writer to Wire to Reader Diagnosis
+on:
+  push:
+    branches: [diagnostic/cyclone-wire-timing-20261029]
+    paths: [.github/workflows/cyclone-wire-timing.yml]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  wire-timing:
+    name: 'nodes=${{ matrix.nodes }} mode=${{ matrix.mode }} seed=${{ matrix.seed }}'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    strategy:
+      fail-fast: false
+      max-parallel: 6
+      matrix:
+        include:
+          - {nodes: 2, mode: default, seed: 1, capture: true}
+          - {nodes: 10, mode: default, seed: 1, capture: true}
+          - {nodes: 10, mode: default, seed: 2, capture: false}
+          - {nodes: 10, mode: default, seed: 3, capture: false}
+          - {nodes: 10, mode: spdp, seed: 1, capture: false}
+          - {nodes: 10, mode: data-multicast, seed: 1, capture: true}
+          - {nodes: 10, mode: data-multicast, seed: 2, capture: false}
+          - {nodes: 20, mode: default, seed: 1, capture: false}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install DDS and packet tracing
+        run: |
+          set -euo pipefail
+          python -m pip install cyclonedds==11.0.1
+          sudo apt-get update -qq
+          sudo apt-get install -y tcpdump iproute2
+      - name: Measure sender call and receiver first-seen timings
+        run: |
+          set -euo pipefail
+          cap=()
+          if [ '${{ matrix.capture }}' = 'true' ]; then cap+=(--capture); fi
+          sudo -E "$(which python)" bench/discovery/cyclone_wire_run.py \
+            --nodes '${{ matrix.nodes }}' \
+            --mode '${{ matrix.mode }}' \
+            --seed '${{ matrix.seed }}' \
+            --duration 20 \
+            --output wire-results \
+            "${cap[@]}"
+          cat wire-results/summary.json
+          if [ '${{ matrix.capture }}' = 'true' ]; then
+            for p in wire-results/port-*.pcap; do
+              echo "PCAP: $p"
+              tcpdump -nn -r "$p" 2>/dev/null | head -15 || true
+            done
+          fi
+      - name: Upload time-series and pcap artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: 'cyclone-wire-${{ matrix.nodes }}-${{ matrix.mode }}-seed${{ matrix.seed }}'
+          path: wire-results/
+          if-no-files-found: warn
