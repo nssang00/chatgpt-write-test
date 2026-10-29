@@ -1,0 +1,63 @@
+name: R75 OLVT physical RTX validation (pinned cross-repo)
+on:
+  push:
+    branches: [ci/r75-rtx-validation-20261029]
+    paths:
+      - .github/workflows/r75-crossrepo-rtx.yml
+permissions:
+  contents: read
+concurrency:
+  group: r75-physical-crossrepo
+  cancel-in-progress: false
+jobs:
+  pinned-r75-physical:
+    runs-on: [self-hosted, Windows, X64, m5-gpu]
+    timeout-minutes: 70
+    defaults:
+      run:
+        working-directory: olvt-r75
+    steps:
+      - name: Check out immutable R75 candidate from the source repository
+        uses: actions/checkout@v4
+        with:
+          repository: rydolabs/ol-vt-gl-boost
+          ref: 5bbc2c1080db759f2bbc03a5d241dbc8cec7a91d
+          path: olvt-r75
+          persist-credentials: false
+      - name: Pin exact commit, require a physical RTX 5060 Ti
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $actual=(git rev-parse HEAD).Trim()
+          if ($actual -ne '5bbc2c1080db759f2bbc03a5d241dbc8cec7a91d') { throw "Unexpected source commit $actual" }
+          $gpu=@(Get-CimInstance Win32_VideoController | Select-Object Name,DriverVersion)
+          if (-not ($gpu|Where-Object {$_.Name -match 'NVIDIA.*RTX 5060 Ti'})) { throw 'Real NVIDIA RTX 5060 Ti not detected' }
+          $gpu | ConvertTo-Json -Depth 3
+          Write-Host "R75_COMMIT_VERIFIED: $actual"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Locked dependency restore
+        run: npm ci --no-audit --no-fund
+      - name: Original regression, R73 and R75 contracts
+        run: |
+          npm test
+          npm run test:contract
+          npm run test:r73
+          npm run test:r75
+      - name: Install browser harness and 32 independent PBF tiles
+        run: |
+          npm install --no-save --package-lock=false --ignore-scripts --no-audit --no-fund playwright@1.55.0
+          npm run test:rtx:prepare
+      - name: 12 physical RGBA8 / tile-ID matrix cases
+        run: npm run test:rtx
+      - name: Physical OpenLayers recovery and drag/zoom
+        run: npm run test:rtx:rollback
+      - name: Retain raw evidence even on failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: olvt-r75-rtx-physical-sha-5bbc2c1
+          path: olvt-r75/artifacts/**
+          retention-days: 30
+          if-no-files-found: warn
