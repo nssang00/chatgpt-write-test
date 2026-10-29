@@ -452,6 +452,12 @@ def main():
             and backup_durable_at is None and
             all(len(backup_acks.get(seq,set()))>=args.backup_quorum for seq in range(m))):
             backup_durable_at=elapsed
+            # Persist proof before the crash marker so a killed Publisher's
+            # per-sequence replica confirmations remain independently auditable.
+            proof={'source':i,'message_count':m,'quorum':args.backup_quorum,
+                   'replica_ids_by_sequence':{str(seq):sorted(backup_acks.get(seq,set()))
+                                              for seq in range(m)}}
+            (workdir/f'backup-proof-{i}.json').write_text(json.dumps(proof,sort_keys=True))
             (workdir/f'backed-{i}').touch()
         if args.v4 and i < publisher_count and len(sent_orig)==m:
             # Completion acknowledgments are local benchmark-only unless peer has read everything.
