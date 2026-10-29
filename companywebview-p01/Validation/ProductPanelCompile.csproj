@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <DefineConstants>UNITY_STANDALONE_WIN</DefineConstants>
+    <Nullable>disable</Nullable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <NoWarn>CS0169;CS0414;CS0649</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../Runtime/UnifiedWebViewPanel.cs" />
+    <Compile Include="../Runtime/CefTextureInputForwarder.cs" />
+    <Compile Include="../ExistingRuntime/*.cs" />
+    <Compile Include="../NativeSource/oneclick_bundle/Package/com.company.webview/Runtime/WebView.cs" />
+    <Compile Include="../NativeSource/oneclick_bundle/Package/com.company.webview/Runtime/Backends/CEF/WebViewRuntime.cs" />
+    <Compile Include="ProductPanelCompileStub.cs" />
+  </ItemGroup>
+</Project>
