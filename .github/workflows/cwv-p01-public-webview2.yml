@@ -48,6 +48,17 @@ jobs:
           if ($bytes -lt 8192) { throw 'Native DLL unexpectedly small' }
           $proof=[ordered]@{status='PASS';kind='Actual v8 WebView2 MSVC C++17 native DLL';version='1.0.4258.31';commit=$env:GITHUB_SHA;dllSha256=(Get-FileHash $dll -Algorithm SHA256).Hash.ToLowerInvariant();dllBytes=$bytes;unityPlayerExecuted=$false;cefCompiled=$false}
           $proof|ConvertTo-Json|Set-Content -Encoding utf8 (Join-Path $env:RUNNER_TEMP 'cwv-v8-public-msvc-evidence.json')
+      - name: Run security registry and lifecycle CTest with MSVC
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $out=Join-Path $env:RUNNER_TEMP 'cwv-registry-msvc'
+          cmake -S companywebview-p01/Validation/NativeRegistry -B $out -G 'Visual Studio 17 2022' -A x64
+          if ($LASTEXITCODE -ne 0) { throw 'Registry configure failed' }
+          cmake --build $out --config Release
+          if ($LASTEXITCODE -ne 0) { throw 'Registry compile failed' }
+          ctest --test-dir $out -C Release --output-on-failure
+          if ($LASTEXITCODE -ne 0) { throw 'Secure registry test failed' }
       - name: Publish compile evidence and native DLL
         if: always()
         uses: actions/upload-artifact@v4
