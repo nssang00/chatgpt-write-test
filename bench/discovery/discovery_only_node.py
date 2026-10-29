@@ -28,7 +28,7 @@ def main():
     p.add_argument('--id',type=int,required=True)
     p.add_argument('--count',type=int,required=True)
     p.add_argument('--workdir',required=True)
-    p.add_argument('--config',choices=['default','eth0','spdp-only'],default='default')
+    p.add_argument('--config',choices=['default','eth0','spdp-only','lease60','spdp1s','lease60-spdp1s'],default='default')
     p.add_argument('--seed',type=int,default=1)
     p.add_argument('--timeout',type=float,default=25)
     p.add_argument('--trace',action='store_true')
@@ -36,15 +36,18 @@ def main():
     a=p.parse_args()
     wd=Path(a.workdir)
     if a.config!='default' or a.trace:
-        iface=('' if a.config=='default' else
+        iface=('' if a.config not in ('eth0','spdp-only') else
             '<General><Interfaces><NetworkInterface name="eth0" multicast="true"/>'
             '</Interfaces><AllowMulticast>'+('spdp' if a.config=='spdp-only' else 'true')+
             '</AllowMulticast></General>')
+        lease=('<LeaseDuration>60s</LeaseDuration>' if 'lease60' in a.config else '')
+        spdp=('<SPDPInterval>1s</SPDPInterval>' if 'spdp1s' in a.config else '')
+        discovery=('<Discovery>'+lease+spdp+'</Discovery>') if lease or spdp else ''
         trace=('<Tracing><Verbosity>fine</Verbosity><OutputFile>'+
               str(wd/f'dds-trace-{a.id}.log')+'</OutputFile></Tracing>') if a.trace else ''
         os.environ['CYCLONEDDS_URI']=(
             '<CycloneDDS xmlns="https://cdds.io/config"><Domain id="any">'+
-            iface+trace+'</Domain></CycloneDDS>')
+            iface+discovery+trace+'</Domain></CycloneDDS>')
     # Imports complete before the common barrier; DDS entities created after it.
     from cyclonedds.domain import DomainParticipant
     from cyclonedds.topic import Topic
