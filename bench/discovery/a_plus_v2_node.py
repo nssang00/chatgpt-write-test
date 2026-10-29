@@ -35,9 +35,11 @@ def main():
     p.add_argument('--payload-bytes',type=int,default=128)
     p.add_argument('--ablation',default='full')
     p.add_argument('--v4',action='store_true')
-    p.add_argument('--repair-pps',type=float,default=12)
+    p.add_argument('--repair-pps',type=float,default=20)
+    p.add_argument('--gap-grace',type=float,default=1.5)
+    p.add_argument('--nack-suppress-seconds',type=float,default=2.0)
     p.add_argument('--repair-burst',type=float,default=6)
-    p.add_argument('--nack-period',type=float,default=.45)
+    p.add_argument('--nack-period',type=float,default=.8)
     args=p.parse_args()
     i,n,m=args.id,args.count,args.messages
     assert n>=2 and m>=1 and 1<=args.payload_bytes<=1200
@@ -111,8 +113,11 @@ def main():
             return
         last=watermark[src]
         if upto>last:
-            missing[src].update(range(last+1,upto+1))
-            missing[src].difference_update(have[src])
+            for seq in range(last+1,upto+1):
+                if seq not in have[src]:
+                    missing[src].add(seq)
+                    # Hold gaps briefly: out-of-order packets are not losses.
+                    peer_suppression[(src,seq)]=elapsed+args.gap_grace+rng.random()*.6
             watermark[src]=upto
 
     (wd/f'ready-{i}').touch()
@@ -196,7 +201,7 @@ def main():
                     continue
                 if send(retained[seq],GROUP,'repair_sent'):
                     repair_tokens-=1
-                    source_next[seq]=elapsed+.34+rng.random()*.16
+                    source_next[seq]=elapsed+.65+rng.random()*.25
                     repair_count[seq]=repair_count.get(seq,0)+1
             next_repair=elapsed+.025
         elif not source_q:
@@ -228,7 +233,7 @@ def main():
                     stats['bitmap_bits_requested']+=bits.bit_count()
                     for off in range(WINDOW):
                         if bits & (1<<off):
-                            peer_suppression[(src,base+off)]=elapsed+.65+rng.random()*.35
+                            peer_suppression[(src,base+off)]=elapsed+args.nack_suppress_seconds+rng.random()*.4
                     last_request[src]=elapsed
                     selected+=1
                     if selected>=args.repair_fanout:
@@ -293,6 +298,7 @@ def main():
                         have[src].add(seq)
                         note_progress(src,seq)
                         missing[src].discard(seq)
+                        peer_suppression.pop((src,seq),None)
                 elif typ=='q':
                     src,base=item.get('src'),item.get('base')
                     hx=item.get('bm')
@@ -309,7 +315,7 @@ def main():
                             if args.ablation!='no_nack_suppression':
                                 peer_suppression[(src,seq)]=max(
                                     peer_suppression.get((src,seq),0),
-                                    elapsed+.55+rng.random()*.25)
+                                    elapsed+args.nack_suppress_seconds+rng.random()*.4)
                             if src==i and seq in retained and seq not in source_q_set:
                                 source_q.append(seq)
                                 source_q_set.add(seq)
@@ -339,6 +345,8 @@ def main():
         duplicates=duplicates,pubsub_complete_s=complete_s,
         first_data_s=first_data_s,stats=stats,
         sent_original=sent,reported_done_sources=sum(done_marker),
+        gap_grace_s=args.gap_grace,nack_suppress_s=args.nack_suppress_seconds,
+        source_repair_pps=args.repair_pps,
         missing_by_origin=unresolved,
         max_repairs_per_sequence=max(repair_count.values(),default=0),
         samples_at_repair_limit=0,
