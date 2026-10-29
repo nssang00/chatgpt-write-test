@@ -100,3 +100,31 @@ def test_windows_wsl_forwards_new_options():
     for flag in ("--tile-type", "--raster-format", "--vector-tiler"):
         assert flag in sh
     assert 'if [[ "$FORMAT" != vector ]]' in sh
+
+
+def test_explicit_bbox_dry_run_does_not_require_header_bbox(tmp_path, capsys):
+    pbf = tmp_path / "seoul-no-header.osm.pbf"
+    pbf.write_bytes(b"fixture without a real OSM PBF header")
+    args, _ = cli.arguments([
+        "convert", str(pbf), "--tile-type", "both",
+        "--raster-format", "png", "--zoom", "12-14",
+        "--bbox", "126.75,37.40,127.20,37.72", "--dry-run",
+        "--output", str(tmp_path / "seoul.mbtiles")
+    ])
+    cli.convert(args)
+    output = capsys.readouterr().out
+    assert "zoom=12-14" in output
+    assert "tiles=" in output
+
+
+def test_seoul_launcher_has_explicit_bbox_and_wsl_forwards_it():
+    root = Path(__file__).resolve().parents[1]
+    seoul = (root / "tools" / "test_seoul.ps1").read_text(encoding="utf-8")
+    windows = (root / "tools" / "run_windows.ps1").read_text(encoding="utf-8")
+    linux = (root / "tools" / "run_wsl.sh").read_text(encoding="utf-8")
+    assert "126.75,37.40,127.20,37.72" in seoul
+    assert "OSM2MBTILES_BBOX" in windows
+    assert 'BBOX="${13:-}"' in linux
+    assert 'BBOX_ARGS=(--bbox "$BBOX")' in linux
+    assert linux.count('"${BBOX_ARGS[@]}"') >= 2
+    assert "Failed command at run_wsl.sh:" in linux
