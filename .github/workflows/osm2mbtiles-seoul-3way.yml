@@ -3,7 +3,7 @@ name: osm2mbtiles Seoul Same-Tile Three-Engine Comparison
 on:
   push:
     branches: [ci/osm2mbtiles-3way-seoul-tile]
-    paths: ['.github/workflows/osm2mbtiles-seoul-3way.yml']
+    paths: ['.github/workflows/osm2mbtiles-seoul-3way.yml', 'experiments/osm2mbtiles/prototype/benchmarks/seoul_generation_speed.py']
   workflow_dispatch:
 
 permissions:
@@ -27,7 +27,7 @@ jobs:
           sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
             postgresql-16 postgresql-client-16 postgresql-16-postgis-3 \
             postgresql-16-postgis-3-scripts osm2pgsql tilemaker \
-            python3-psycopg2 python3-pip curl ca-certificates
+            python3-psycopg2 python3-pip curl ca-certificates time
           /usr/bin/python3 -m pip install --break-system-packages mapbox-vector-tile
           tilemaker --version || true
       - name: Fetch one Seoul source PBF and pinned tool profiles
@@ -75,22 +75,31 @@ jobs:
           trap 'pg_ctl -D "$WORK/pgdata" -m immediate -w stop || true' EXIT
           createdb gis
           psql -v ON_ERROR_STOP=1 -c 'CREATE EXTENSION postgis; CREATE EXTENSION hstore;'
-          osm2pgsql --slim --drop --cache=256 --number-processes=4 \
-            -O flex -S "$PROJECT/vector/vector-flex.lua" -d gis "$WORK/seoul.osm.pbf" \
-            > "$WORK/postgis-import.log" 2>&1
-          psql -v ON_ERROR_STOP=1 -f "$PROJECT/vector/post-import.sql" >> "$WORK/postgis-import.log" 2>&1
-          /usr/bin/python3 - <<'PY'
-          import json,os
+          /usr/bin/time -f '%e' -o "$WORK/osm2mbtiles-import.seconds" \
+            bash -euo pipefail -c '
+              osm2pgsql --slim --drop --cache=256 --number-processes=4 \
+                -O flex -S "$PROJECT/vector/vector-flex.lua" -d gis "$WORK/seoul.osm.pbf"
+              psql -v ON_ERROR_STOP=1 -f "$PROJECT/vector/post-import.sql"
+            ' > "$WORK/postgis-import.log" 2>&1
+          for repeat in 1 2; do
+            /usr/bin/python3 - "$repeat" <<'PY'
+          import json,os,sys
           from pathlib import Path
           w=Path(os.environ['WORK'])
-          job=dict(pbf=str(w/'seoul.osm.pbf'),output=str(w/'osm2mbtiles.mbtiles'),
-                   bbox=[126.975,37.566,126.978,37.568],minzoom=14,maxzoom=14,
-                   processes=2,tiler='postgis',batch_side=2)
+          r=sys.argv[1]
+          job=dict(pbf=str(w/'seoul.osm.pbf'),
+                   output=str(w/f'osm2mbtiles-r{r}.mbtiles'),
+                   bbox=[126.975,37.566,126.978,37.568],
+                   minzoom=14,maxzoom=14,
+                   processes=4,tiler='postgis',batch_side=2)
           (w/'osm2mbtiles-job.json').write_text(json.dumps(job))
           PY
-          OSM2MBTILES_VECTOR_QUERY_MODE=projected \
-            /usr/bin/python3 "$PROJECT/src/osm2mbtiles/vector_worker.py" \
-            "$WORK/osm2mbtiles-job.json" | tee "$WORK/postgis-vector.log"
+            /usr/bin/time -f '%e' -o "$WORK/osm2mbtiles-r$repeat.seconds" \
+              env OSM2MBTILES_VECTOR_QUERY_MODE=projected \
+              /usr/bin/python3 "$PROJECT/src/osm2mbtiles/vector_worker.py" \
+              "$WORK/osm2mbtiles-job.json" | tee "$WORK/postgis-vector-r$repeat.log"
+          done
+          cp "$WORK/osm2mbtiles-r1.mbtiles" "$WORK/osm2mbtiles.mbtiles"
       - name: Run Planetiler custom Seoul detailed YAML profile on same PBF
         shell: bash
         run: |
@@ -99,35 +108,39 @@ jobs:
           WORK="$RUNNER_TEMP/seoul-3way"
           mkdir -p "$WORK/planetiler-work"
           ln -s "$WORK/seoul.osm.pbf" "$WORK/planetiler-work/seoul.osm.pbf"
-          (
-            cd "$WORK/planetiler-work"
-            java -Xmx3g -jar "$WORK/planetiler.jar" generate-custom \
-              --schema="$PROJECT/benchmarks/seoul-planetiler.yml" \
-              --output="$WORK/planetiler.mbtiles" \
-              --bounds=126.9581,37.5621,126.9798,37.5793 \
-              --minzoom=14 --maxzoom=14 \
-              --threads=4 --tmpdir="$WORK/planetiler-tmp" --force
-          ) > "$WORK/planetiler.log" 2>&1
+          for repeat in 1 2; do
+            (
+              cd "$WORK/planetiler-work"
+              /usr/bin/time -f '%e' -o "$WORK/planetiler-r$repeat.seconds" \
+                java -Xmx3g -jar "$WORK/planetiler.jar" generate-custom \
+                --schema="$PROJECT/benchmarks/seoul-planetiler.yml" \
+                --output="$WORK/planetiler-r$repeat.mbtiles" \
+                --bounds=126.9581,37.5621,126.9798,37.5793 \
+                --minzoom=14 --maxzoom=14 \
+                --threads=4 --tmpdir="$WORK/planetiler-tmp-$repeat" --force
+            ) > "$WORK/planetiler-r$repeat.log" 2>&1
+          done
+          cp "$WORK/planetiler-r1.mbtiles" "$WORK/planetiler.mbtiles"
           ls -lh "$WORK/planetiler.mbtiles"
       - name: Run Tilemaker 2.4 native OpenMapTiles-like / example profile
         shell: bash
         run: |
           set -euxo pipefail
           WORK="$RUNNER_TEMP/seoul-3way"
-          if (cd "$WORK" && tilemaker \
-                --input "$WORK/seoul.osm.pbf" --output "$WORK/tilemaker.mbtiles" \
+          for repeat in 1 2; do
+            (
+              cd "$WORK"
+              /usr/bin/time -f '%e' -o "$WORK/tilemaker-r$repeat.seconds" \
+                tilemaker --input "$WORK/seoul.osm.pbf" \
+                --output "$WORK/tilemaker-r$repeat.mbtiles" \
                 --config "$WORK/config-openmaptiles-local.json" \
-                --process "$WORK/process-openmaptiles.lua") > "$WORK/tilemaker-omt.log" 2>&1; then
-            echo 'tilemaker 2.4 OpenMapTiles-like; external shapefiles omitted' > "$WORK/tilemaker-profile.txt"
-          else
-            echo 'OpenMapTiles-like config failed; fallback to example' >&2
-            rm -f "$WORK/tilemaker.mbtiles"
-            (cd "$WORK" && tilemaker \
-                --input "$WORK/seoul.osm.pbf" --output "$WORK/tilemaker.mbtiles" \
-                --config "$WORK/config-example-local.json" \
-                --process "$WORK/process-example.lua") > "$WORK/tilemaker-example.log" 2>&1
-            echo 'tilemaker 2.4 example Lua+JSON; NOT full OpenMapTiles' > "$WORK/tilemaker-profile.txt"
-          fi
+                --process "$WORK/process-openmaptiles.lua" \
+                --bbox 126.9581,37.5621,126.9798,37.5793 \
+                --threads 4
+            ) > "$WORK/tilemaker-omt-r$repeat.log" 2>&1
+          done
+          echo 'tilemaker v2.4.0 OpenMapTiles-like, no external shapefiles; clipped to one Seoul tile using --bbox' > "$WORK/tilemaker-profile.txt"
+          cp "$WORK/tilemaker-r1.mbtiles" "$WORK/tilemaker.mbtiles"
           cat "$WORK/tilemaker-profile.txt"
           ls -lh "$WORK/tilemaker.mbtiles"
       - name: Compare real decoded layer and feature counts of exact z14/13970/6344
@@ -141,6 +154,8 @@ jobs:
             "osm2mbtiles=$WORK/osm2mbtiles.mbtiles" \
             "planetiler=$WORK/planetiler.mbtiles" \
             "tilemaker=$WORK/tilemaker.mbtiles"
+          /usr/bin/python3 "$PROJECT/benchmarks/seoul_generation_speed.py" "$WORK"
+          cat "$WORK/speed_summary.md" >> "$GITHUB_STEP_SUMMARY"
           cat "$WORK/summary.md" >> "$GITHUB_STEP_SUMMARY"
           cat "$WORK/tilemaker-profile.txt" >> "$GITHUB_STEP_SUMMARY"
       - name: Keep result and production logs
@@ -150,9 +165,14 @@ jobs:
           WORK="$RUNNER_TEMP/seoul-3way"
           mkdir -p seoul-three-way-evidence
           for f in input.sha256 three-way.json summary.md tilemaker-profile.txt \
-                   postgis-import.log postgis-vector.log planetiler.log \
-                   tilemaker-omt.log tilemaker-example.log; do
+                   postgis-import.log postgis-vector-r1.log postgis-vector-r2.log \
+                   planetiler-r1.log planetiler-r2.log \
+                   tilemaker-omt-r1.log tilemaker-omt-r2.log \
+                   speed_summary.md same-tile-speed.json; do
             cp "$WORK/$f" seoul-three-way-evidence/ 2>/dev/null || true
+          done
+          for f in "$WORK"/*.seconds; do
+            [ -f "$f" ] && cp "$f" seoul-three-way-evidence/
           done
       - uses: actions/upload-artifact@v4
         if: always()
