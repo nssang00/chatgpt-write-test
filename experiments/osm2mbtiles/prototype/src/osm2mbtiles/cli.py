@@ -7,6 +7,7 @@ import os
 import shutil
 import sys
 import tempfile
+import time
 from pathlib import Path
 from .pbf import read_bbox, PBFError
 from .runtime import Runtime, LocalDatabase, PipelineError, file_digest, run
@@ -32,7 +33,10 @@ def arguments(argv=None):
     export.add_argument('pbf',type=Path)
     export.add_argument('-z','--zoom',default='0-15',help='zoom range, e.g. 0-15')
     export.add_argument('-o','--output',type=Path,required=True)
-    export.add_argument('--format', choices=('raster','vector','both'),default='raster',help='output format, or both separate MBTiles files')
+    export.add_argument('--tile-type',choices=('raster','vector','both'),default=None,
+                        help='tile content to generate: raster PNG, vector MVT/PBF, or both')
+    export.add_argument('--format',choices=('raster','vector','both'),default=None,
+                        help='deprecated alias for --tile-type; maintained for older scripts')
     export.add_argument('--vector-import-profile',choices=('safe','fast'),default='safe',
                         help='vector OSM import: safe (default) or fast (4 threads, parallel indexes, no cluster)')
     export.add_argument('--vector-query-mode',choices=('baseline','cached','projected'),default='projected',
@@ -50,13 +54,29 @@ def arguments(argv=None):
     export.add_argument('--buffer',type=int,default=128,help='Mapnik rendering buffer (pixels)')
     export.add_argument('--metatile',type=int,default=8,help='metatile edge length (tiles)')
     export.add_argument('--processes',type=int,default=min(4,os.cpu_count() or 1),help='parallel Mapnik rendering workers (default: up to 4)')
-    export.add_argument('--encoding',choices=('png','png256'),default='png',help='PNG encoding; png256 is faster/smaller but lossy')
+    export.add_argument('--raster-format',choices=('png','png256'),default=None,
+                        help='raster image encoding (default: png); png256 is lossy')
+    export.add_argument('--encoding',choices=('png','png256'),default=None,
+                        help='deprecated alias for --raster-format')
     # Backwards-compatible one-command CLI without 'convert' keyword.
     if argv is None:
         argv = sys.argv[1:]
     if argv and argv[0] not in ('convert','doctor','verify','verify-vector','compare','-h','--help'):
         argv = ['convert',*argv]
-    return p.parse_args(argv),p
+    args = p.parse_args(argv)
+    if args.action == 'convert':
+        if args.tile_type is not None and args.format is not None and args.tile_type != args.format:
+            p.error('--tile-type and deprecated --format must agree if both are supplied')
+        if args.raster_format is not None and args.encoding is not None and args.raster_format != args.encoding:
+            p.error('--raster-format and deprecated --encoding must agree if both are supplied')
+        if args.tile_type == 'vector' and args.raster_format is not None:
+            p.error('--raster-format is not applicable to --tile-type vector')
+        # Normalize once to preserve all existing internal render/import paths.
+        args.tile_type = args.tile_type or args.format or 'raster'
+        args.format = args.tile_type
+        args.raster_format = args.raster_format or args.encoding or 'png'
+        args.encoding = args.raster_format
+    return args,p
 
 def parse_zoom(text):
     try:
@@ -249,6 +269,7 @@ def run_pipeline(pbf,out,bbox,lo,hi,args,work,runtime):
 
 def main(argv=None):
     args,parser=arguments(argv)
+    started = time.perf_counter() if args.action == 'convert' else None
     try:
         if args.action == 'doctor':
             runtime=get_runtime(args.runtime)
@@ -272,6 +293,13 @@ def main(argv=None):
     except (PipelineError,PBFError,ValueError, OSError) as exc:
         print(f'ERROR: {exc}',file=sys.stderr)
         return 2
+    finally:
+        if started is not None:
+            elapsed = time.perf_counter() - started
+            h, remainder = divmod(int(elapsed), 3600)
+            m, sec = divmod(remainder, 60)
+            print(f'[TIME] Total convert elapsed: {elapsed:.3f}s ({h:02d}:{m:02d}:{sec:02d})',
+                  flush=True)
 
 if __name__ == '__main__':
     sys.exit(main())
