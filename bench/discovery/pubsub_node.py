@@ -19,7 +19,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--id', type=int, required=True)
     ap.add_argument('--count', type=int, required=True)
-    ap.add_argument('--mode', choices=['multicast', 'tree', 'mesh'], required=True)
+    ap.add_argument('--mode', choices=['multicast', 'tree', 'mesh', 'hybrid'], required=True)
     ap.add_argument('--workdir', required=True)
     ap.add_argument('--discovery-seconds', type=float, default=9)
     ap.add_argument('--timeout', type=float, default=24)
@@ -33,10 +33,12 @@ def main():
     known = {i: own_ip}
     received = set()
     last_missing = set()
+    lazy_pending = {}
     duplicate = 0
     stats = dict(hello_sent=0, digest_sent=0, delta_sent=0,
                  data_sent=0, data_forwarded=0, nack_sent=0,
-                 repair_sent=0, packets_received=0)
+                 repair_sent=0, packets_received=0,
+                 ihave_sent=0, iwant_sent=0)
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 4 * 1024 * 1024)
@@ -69,12 +71,22 @@ def main():
         offsets = (1, -1, 7, -7)
         return sorted({(i + d) % n for d in offsets} - {i})
 
+    def advertise(origin, sequence):
+        # Plumtree-inspired lazy announcements on bounded secondary edges.
+        if args.mode != 'hybrid':
+            return
+        for peer in mesh_neighbors():
+            ip = known.get(peer)
+            if ip:
+                send({'t': 'a', 'i': i, 'src': origin, 's': sequence},
+                     (ip, GROUP[1]), 'ihave_sent')
+
     def relay(origin, sequence):
         msg = {'t': 'p', 'i': origin, 's': sequence, 'k': TOPIC, 'v': PAYLOAD}
         if args.mode == 'multicast':
             if origin == i:
                 send(msg, GROUP, 'data_sent')
-        elif args.mode == 'tree':
+        elif args.mode in ('tree', 'hybrid'):
             for peer in tree_children(origin):
                 ip = known.get(peer)
                 if ip:
@@ -84,6 +96,7 @@ def main():
                 ip = known.get(peer)
                 if ip:
                     send(msg, (ip, GROUP[1]), 'data_sent' if origin == i else 'data_forwarded')
+        advertise(origin, sequence)
 
     (workdir / f'ready-{i}').touch()
     while not (workdir / 'go').exists():
@@ -139,6 +152,15 @@ def main():
                      (known[src],GROUP[1]),'nack_sent')
             last_nack = elapsed
 
+        if args.mode == 'hybrid' and lazy_pending:
+            due = [key for key,(ip,at) in lazy_pending.items()
+                   if at <= elapsed and key not in received]
+            for src,seq in due[:12]:
+                ip,_ = lazy_pending[(src,seq)]
+                send({'t':'w','i':i,'src':src,'s':seq},
+                     (ip,GROUP[1]),'iwant_sent')
+                lazy_pending[(src,seq)] = (ip,elapsed + 1.0 + rnd.random()*.2)
+
         for _ in range(120):
             if not select.select([sock],[],[],0)[0]:
                 break
@@ -172,6 +194,19 @@ def main():
                     for j,ip in item.get('pairs',[]):
                         if isinstance(j,int) and 0 <= j < n and isinstance(ip,str):
                             known[j] = ip
+                elif typ == 'a':
+                    src, seq = item.get('src'), item.get('s')
+                    if (args.mode == 'hybrid'
+                        and isinstance(src,int) and isinstance(seq,int)
+                        and 0 <= src < n and 0 <= seq < m
+                        and (src,seq) not in received):
+                        lazy_pending[(src,seq)] = (address[0],
+                            elapsed + .12 + rnd.random()*.12)
+                elif typ == 'w':
+                    src, seq = item.get('src'), item.get('s')
+                    if args.mode == 'hybrid' and (src,seq) in received:
+                        send({'t':'p','i':src,'s':seq,'k':TOPIC,'v':PAYLOAD},
+                             address,'repair_sent')
                 elif typ == 'p':
                     src,seq = item.get('i'),item.get('s')
                     if (not isinstance(src,int) or not isinstance(seq,int)
@@ -183,6 +218,7 @@ def main():
                     key=(src,seq)
                     if key not in received:
                         received.add(key)
+                        lazy_pending.pop(key, None)
                         if args.mode != 'multicast':
                             relay(src,seq)
                     else:
