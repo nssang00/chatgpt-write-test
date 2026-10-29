@@ -47,6 +47,7 @@ jobs:
             https://tiles.osm.kr/download/seoul-non-military.osm.pbf \
             -o "$WORK/seoul-non-military.osm.pbf"
           sha256sum "$WORK/seoul-non-military.osm.pbf" > "$WORK/pbf.sha256"
+          export PATH="/usr/lib/postgresql/16/bin:$PATH"
           # The real vector style comes from PROJECT/vector. Dummy Carto files
           # satisfy shared Runtime.validate; they are NEVER used for raster
           # production in this vector-only CI job.
