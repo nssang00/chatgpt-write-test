@@ -44,8 +44,12 @@ jobs:
     needs: build
     runs-on: ubuntu-24.04
     timeout-minutes: 14
-    strategy: {fail-fast: false, max-parallel: 4}
-    matrix: {nodes: [50, 100, 200], loss: [0, 10]}
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix:
+        nodes: [50, 100, 200]
+        loss: [0, 10]
     name: 'Real Gossipsub retry N=${{ matrix.nodes }} loss=${{ matrix.loss }}%'
     steps:
       - uses: actions/checkout@v4
