@@ -29,7 +29,9 @@ jobs:
           bundle=pathlib.Path('companywebview-p01/source-bundle.txt')
           data=bundle.read_bytes().strip()
           expected='1bbf91d9907fe61a2733f023990c8b4861c08e721da0bbdea3703a78f47bc850'
-          if hashlib.sha256(data).hexdigest()!=expected:
+          actual=hashlib.sha256(data).hexdigest()
+          print('PUBLIC_BUNDLE_SHA256_OBSERVED',actual,'length',len(data))
+          if actual!=expected:
               raise SystemExit('P0-1 public source bundle checksum mismatch')
           raw=lzma.decompress(base64.b64decode(data))
           tar=tarfile.open(fileobj=io.BytesIO(raw))
