@@ -41,7 +41,7 @@ def _bad_constant(_):
 def decode_request(line, last_id):
     try:
         data = json.loads(line, object_pairs_hook=_unique_pairs, parse_constant=_bad_constant)
-    except (UnicodeDecodeError, ValueError) as exc:
+    except (UnicodeDecodeError, ValueError, RecursionError) as exc:
         raise ProtocolError("Invalid JSON request") from exc
     if type(data) is not dict or set(data) != {"id", "operation", "args"}:
         raise ProtocolError("Unexpected request fields")
@@ -62,7 +62,7 @@ def decode_request(line, last_id):
 
 def _reply(out, payload):
     encoded = json.dumps(payload, ensure_ascii=True, allow_nan=False, separators=(",", ":")).encode("utf-8")
-    if len(encoded) > MAX_LINE:
+    if len(encoded) + 1 > MAX_LINE:
         encoded = json.dumps({"id": payload.get("id"), "ok": False, "error": "ResultTooLarge"}).encode()
     out.write(encoded + b"\n")
     out.flush()
