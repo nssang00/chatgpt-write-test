@@ -1,6 +1,7 @@
 name: Kanto vector tile benchmark
 
 on:
+  pull_request:
   push:
     branches:
       - benchmarks/kanto-vector-tile-20261029
@@ -36,7 +37,7 @@ jobs:
         shell: bash
         run: |
           curl -fL --retry 5 --retry-delay 8 \
-            "https://download.geofabrik.de/asia/japan/kanto-261028.osm.pbf" \
+            "https://download.geofabrik.de/asia/japan/kanto-260901.osm.pbf" \
             -o bench/data/kanto.osm.pbf
           test -s bench/data/kanto.osm.pbf
           stat -c "%s" bench/data/kanto.osm.pbf > bench/results/input-bytes.txt
@@ -53,6 +54,19 @@ jobs:
           docker image inspect --format '{{json .RepoDigests}}' \
             ghcr.io/systemed/tilemaker:master > bench/results/tilemaker-image-digests.txt
 
+      - name: Prefetch Planetiler auxiliary sources outside timed run
+        shell: bash
+        run: |
+          docker run --rm --cpus=4 --memory=12g \
+            -e JAVA_TOOL_OPTIONS="-Xmx4g" \
+            -v "$PWD/bench/data:/data" \
+            ghcr.io/onthegomap/planetiler:latest \
+            --osm-path=/data/kanto.osm.pbf \
+            --output=/data/prefetch.mbtiles \
+            --only-download --download --threads=4 \
+            > bench/results/prefetch.log 2>&1
+          tail -n 25 bench/results/prefetch.log
+
       - name: Planetiler - generate MBTiles
         shell: bash
         continue-on-error: true
@@ -66,7 +80,7 @@ jobs:
             --osm-path=/data/kanto.osm.pbf \
             --output=/data/planetiler.mbtiles \
             --minzoom=0 --maxzoom=14 \
-            --threads=4 --download --force \
+            --threads=4 --force \
             --tmpdir=/data/planetiler-temp \
             > bench/results/planetiler.log 2>&1
           status=$?
@@ -157,3 +171,16 @@ jobs:
           path: bench/results/
           if-no-files-found: warn
           retention-days: 14
+
+      - name: Validate comparison completed
+        if: always()
+        shell: bash
+        run: |
+          test "$(cat bench/results/planetiler.status)" = "0"
+          test "$(cat bench/results/tilemaker.status)" = "0"
+          python3 - <<'PY'
+          import json
+          for name in ('planetiler', 'tilemaker'):
+              d=json.load(open('bench/results/'+name+'.json'))
+              assert d['size_bytes'] and d['tile_counts_by_zoom'], name + ' missing tile output'
+          PY
