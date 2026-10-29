@@ -68,6 +68,11 @@ jobs:
           target.parent.mkdir(parents=True, exist_ok=True)
           target.write_bytes(b)
           print('ORIGINAL_CEF_MANAGED_FACADE_SHA256_PASS')
+          src=pathlib.Path('companywebview-p01/CEFWebView.cs')
+          dest=pathlib.Path('companywebview-p01/FullManagedSource/NativeSource/oneclick_bundle/Package/com.company.webview/Runtime/WebView.cs')
+          dest.parent.mkdir(parents=True,exist_ok=True)
+          dest.write_bytes(src.read_bytes())
+          print('ORIGINAL_CEF_WEBVIEW_WRAPPER_PRESENT')
           '@ | python -
           if ($LASTEXITCODE -ne 0) { throw 'CEF managed facade restoration failed' }
       - name: Actual C# Roslyn compile of full C# panel with Unity stubs
