@@ -1,0 +1,69 @@
+name: R75 physical RTX bounded interaction stress
+on:
+  push:
+    branches: [ci/r75-release-gates-20261030]
+    paths:
+      - '.github/workflows/r75-stress.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: olvt-r75-bounded-stress
+  cancel-in-progress: false
+jobs:
+  bounded-stress:
+    runs-on: [self-hosted, Windows, X64, m5-gpu]
+    timeout-minutes: 35
+    defaults:
+      run:
+        shell: powershell
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: harness
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: rydolabs/ol-vt-gl-boost
+          ref: 5bbc2c1080db759f2bbc03a5d241dbc8cec7a91d
+          path: candidate
+          persist-credentials: false
+      - name: Verify immutable candidate and physical GPU
+        run: |
+          $s=(git -C candidate rev-parse HEAD).Trim()
+          if($s -ne '5bbc2c1080db759f2bbc03a5d241dbc8cec7a91d'){throw 'Candidate drift'}
+          if(-not (Get-CimInstance Win32_VideoController|Where-Object{$_.Name -match 'NVIDIA.*RTX 5060 Ti'})){throw 'Physical NVIDIA RTX 5060 Ti required'}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Restore immutable runtime and tiles
+        run: |
+          Push-Location candidate
+          try{
+            npm ci --no-audit --no-fund
+            if($LASTEXITCODE -ne 0){throw 'npm ci'}
+            npm install --no-save --package-lock=false --ignore-scripts --no-audit --no-fund playwright@1.55.0
+            if($LASTEXITCODE -ne 0){throw 'playwright'}
+            npm run test:rtx:prepare
+            if($LASTEXITCODE -ne 0){throw 'tiles'}
+          }finally{Pop-Location}
+      - name: Install stress-only harness
+        run: |
+          New-Item -Type Directory -Force candidate\examples\perf | Out-Null
+          Copy-Item harness\bench\r75\perf.html candidate\examples\perf\index.html
+          Copy-Item harness\bench\r75\run-stress.mjs candidate\examples\perf\run-stress.mjs
+      - name: Physical 150-pan-zoom-resize and host rollback probe
+        run: |
+          node candidate\examples\perf\run-stress.mjs candidate candidate\artifacts\r75-stress
+          if($LASTEXITCODE -ne 0){throw 'R75 bounded interaction stress failed'}
+          $r=Get-Content candidate\artifacts\r75-stress\summary.json -Raw | ConvertFrom-Json
+          if(-not $r.pass -or @($r.raw).Count -ne 150){throw 'Invalid stress evidence'}
+          Write-Host 'R75_PHYSICAL_150_INTERACTIONS_PASS'
+      - name: Save raw telemetry on failure and success
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: olvt-r75-bounded-150-interactions
+          path: candidate/artifacts/r75-stress/**
+          retention-days: 30
+          if-no-files-found: warn
