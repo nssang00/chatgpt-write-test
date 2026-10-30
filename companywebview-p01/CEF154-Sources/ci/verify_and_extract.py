@@ -19,6 +19,12 @@ with tarfile.open(fileobj=io.BytesIO(raw),mode='r:') as tar:
  for m in members:
   if not m.isfile():raise SystemExit('Unsafe archive file kind')
   data=tar.extractfile(m).read()
+  if m.name=='CMakeLists.txt':
+   if hashlib.sha256(data).hexdigest()!='2e32ff692bcd8efe043630985ba3dd6773485f1f4ae93feef57716963bc5bdc1':raise SystemExit('Unexpected original CMake source')
+   old=b'../../../../Validation/CefTexture/NativeSmoke'
+   new=b'../Validation/CefTexture/NativeSmoke'
+   if data.count(old)!=1:raise SystemExit('Unexpected CMake adaptation count')
+   data=data.replace(old,new)
   if hashlib.sha256(data).hexdigest()!=expected[m.name]:raise SystemExit('Native source SHA256 mismatch: '+m.name)
   destination=out.joinpath(*pathlib.PurePosixPath(m.name).parts)
   destination.parent.mkdir(parents=True,exist_ok=True)
