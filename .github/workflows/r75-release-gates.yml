@@ -90,6 +90,8 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: olvt-r75-deployment-gates-physical-rtx
-          path: |\n            candidate/artifacts/r75-context/**\n            candidate/artifacts/r75-benchmark/**
+          path: |
+            candidate/artifacts/r75-context/**
+            candidate/artifacts/r75-benchmark/**
           retention-days: 30
           if-no-files-found: warn
