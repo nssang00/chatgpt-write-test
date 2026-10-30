@@ -72,6 +72,7 @@ jobs:
           if(-not $r.pass -or @($r.cycles).Count -ne 2){throw 'Incomplete physical context restore evidence'}
           Write-Host 'R75_REAL_CONTEXT_TWO_CYCLES_PASS'
       - name: Same SHA 60-sample isolated ABBA performance comparison
+        if: success() || failure()
         env:
           R70_ROUNDS: '5'
         run: |
