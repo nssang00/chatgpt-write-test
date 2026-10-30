@@ -35,6 +35,8 @@ def main():
     ap.add_argument('--ablation',choices=['full','no_anti_entropy','no_hello','no_nack_suppression','unicast_repair'],default='full')
     ap.add_argument('--incremental-repair',action='store_true')
     ap.add_argument('--nack-batch-limit',type=int,default=32)
+    ap.add_argument('--repair-strategy',choices=['legacy','watermark','paced'],default='legacy')
+    ap.add_argument('--repair-pacing',type=float,default=0.025)
     args = ap.parse_args()
 
     i, n, m = args.id, args.count, args.messages
@@ -57,6 +59,8 @@ def main():
     suppressed = {}
     source_repair_last = {}
     source_repair_count = {}
+    repair_queue = {}
+    next_repair_at = 0.0
     last_completed_ack = set()
     duplicate = 0
     rx_overflow_report = 0
@@ -209,6 +213,16 @@ def main():
 
         # Explicit missing-data repair; discovery and data are independent.
         # First repair interval follows the last scheduled publish.
+        if args.repair_strategy=='paced' and repair_queue and elapsed>=next_repair_at:
+            key=min(repair_queue,key=lambda k:repair_queue[k])
+            del repair_queue[key]
+            src,seq=key
+            if src==i and seq in sent_orig and source_repair_count.get(key,0)<32:
+                send({'t':'p','i':i,'s':seq,'k':TOPIC,'v':PAYLOAD},GROUP,'repair_sent')
+                source_repair_last[key]=elapsed
+                source_repair_count[key]=source_repair_count.get(key,0)+1
+            next_repair_at=elapsed+args.repair_pacing
+
         if (elapsed > repair_start_at and elapsed-last_nack >= args.repair_interval):
             # A+/B+: NORM-inspired multicast feedback suppression; NOT NORM.
             suppressed={k:v for k,v in suppressed.items() if v>elapsed}
@@ -345,6 +359,10 @@ def main():
                                 suppressed[(src,seq)]=max(suppressed.get((src,seq),0),elapsed+0.65+rnd.random()*.4)
                             if src == i and seq in sent_orig:
                                 key=(src,seq)
+                                if args.repair_strategy=='paced':
+                                    if key not in repair_queue and source_repair_count.get(key,0)<32:
+                                        repair_queue[key]=elapsed
+                                    continue
                                 # Deduplicate NACKs across receivers and pace repair.
                                 if (elapsed-source_repair_last.get(key,-10)>0.7
                                     and source_repair_count.get(key,0)<32):
@@ -391,6 +409,7 @@ def main():
         'samples_at_repair_limit':sum(v>=32 for v in source_repair_count.values()),
         'ablation':args.ablation,'sent_original':len(sent_orig),
         'incremental_repair':args.incremental_repair,'nack_batch_limit':args.nack_batch_limit,
+        'repair_strategy':args.repair_strategy,'repair_queue_remaining':len(repair_queue),
         'watermarked_sources':len(source_watermark),
         'finished_sources':len(source_finished),
         'discovery_s':discovery_time,'ready_at_publish':ready_at_publish,
