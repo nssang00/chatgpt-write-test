@@ -14,17 +14,19 @@ from run import prepare, counters, cleanup, memory_available, ns, sh
 MODES=('multicast','tree','mesh','hybrid')
 
 def netem(n,loss):
-    # Keep base latency equal between 0% and 10% loss treatments.
+    # Match the CitoQ / Zenoh / CycloneDDS cohort's per-namespace egress
+    # qdisc: 10ms +/- 2ms and optional one-way 1% or 2% loss.
     for i in range(n):
         host=f'db{i:03d}h'
         sh('tc','qdisc','del','dev',host,'root',check=False)
         sh('ip','netns','exec',ns(i),'tc','qdisc','del','dev','eth0','root',check=False)
-        opts=['netem','delay','2ms']
+        opts=['netem','delay','10ms','2ms']
         if loss:
             opts.extend(['loss',f'{loss}%'])
-        sh('tc','qdisc','add','dev',host,'root',*opts)
-        sh('ip','netns','exec',ns(i),'tc','qdisc','add',
-           'dev','eth0','root',*opts)
+        sh('ip','netns','exec',ns(i),'tc','qdisc','add', 'dev','eth0','root',*opts)
+        observed=subprocess.run(['ip','netns','exec',ns(i),'tc','-s','qdisc','show','dev','eth0'],capture_output=True,text=True,check=True).stdout
+        if 'qdisc netem' not in observed or (loss and f'loss {loss:g}%' not in observed and f'loss {loss:.1f}%' not in observed):
+            raise RuntimeError(f'bad netem profile namespace {i}: {observed}')
 
 
 def execute(n,mode,loss,seconds,disc,m,spread,publishers,seed,fanout,interval,out,v4=False,
@@ -139,7 +141,7 @@ def execute(n,mode,loss,seconds,disc,m,spread,publishers,seed,fanout,interval,ou
             'pubsub_success':everyone,
             'fully_delivered_nodes':sum(r['remote_received']==r['remote_expected'] for r in rows),
             'total_expected_remote':sum(r['remote_expected'] for r in rows),
-            'expected_live_receives':(n-len(crashed))*(n-1)*m,
+            'expected_live_receives':(n-len(crashed))*(publishers or n)*m - (publishers or n)*m if not crashed else None,
             'all_published_marker_count':len(list(wd.glob('published-*'))),
             'total_missing_by_source':{},
             'max_repairs_per_sequence':max((r.get('max_repairs_per_sequence',0) for r in rows),default=0),
