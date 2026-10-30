@@ -14,6 +14,8 @@
 #include <vector>
 #include <iostream>
 #include <memory>
+#include <regex>
+#include <set>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -76,6 +78,33 @@ std::string trustedRuntime(const char* name) {
   }
   throw std::runtime_error(std::string("Missing installed worker runtime: ")+name);
 #endif
+}
+
+// CLI-generated grants are an upper bound; ObjectHost also requires
+// actual @export / [Export] on each callable and property.
+std::vector<std::string> readManagedGrant(const std::string& path) {
+  if(path.empty()) throw std::runtime_error("Missing managed exports grant");
+  std::ifstream input(path.c_str(),std::ios::binary);
+  if(!input)throw std::runtime_error("Cannot open managed exports grant");
+  const std::regex allowed(
+    R"(^app\.Main\.(create|dispose|(method|get|set)\.[A-Za-z][A-Za-z0-9_]*)$)");
+  std::vector<std::string> operations;
+  std::set<std::string> unique;
+  std::string line;
+  std::size_t bytes=0;
+  while(std::getline(input,line)) {
+    bytes+=line.size()+1;
+    if(bytes>4096||line.size()>90 || operations.size()>=34 ||
+       !std::regex_match(line,allowed) || !unique.insert(line).second)
+      throw std::runtime_error("Unsafe or duplicate managed operation grant");
+    operations.push_back(line);
+  }
+  if(!input.eof() && input.fail())
+    throw std::runtime_error("Cannot read managed operation grant");
+  if(operations.size()<3 || unique.count("app.Main.create")!=1 ||
+     unique.count("app.Main.dispose")!=1)
+    throw std::runtime_error("Incomplete exported Main operation grant");
+  return operations;
 }
 
 std::shared_ptr<nativeweb::AppResourceBundle>
@@ -177,6 +206,35 @@ loadUi(const std::string& name, const std::string& lang) {
       await new Promise(r=>setTimeout(r,50));
     if (result.textContent!=="pong-edited-in-project")
       throw new Error("Edited user managed Main did not respond: "+result.textContent);
+    // All of these APIs were authored AFTER scaffold generation and were
+    // discovered by the CLI build grant. No manually hardcoded native
+    // allowlist is permitted here.
+    const dynamic=await xytron.app.Main.create();
+    try {
+      if(await xytron.app.Main.method.add(dynamic,7,5)!==12)
+        throw new Error("User Main.add numeric result mismatch");
+      if(await xytron.app.Main.method.invert(dynamic,true)!==false)
+        throw new Error("User Main.invert bool result mismatch");
+      if(await xytron.app.Main.method.echo(dynamic,"hello-user")!=="hello-user")
+        throw new Error("User Main.echo string result mismatch");
+      if(await xytron.app.Main.method.nothing(dynamic)!==null)
+        throw new Error("User Main.nothing null result mismatch");
+      if(await xytron.app.Main.get.count(dynamic)!==0)
+        throw new Error("Exported count property initial value mismatch");
+      await xytron.app.Main.set.count(dynamic,33);
+      if(await xytron.app.Main.get.count(dynamic)!==33)
+        throw new Error("Exported count property setter failed");
+      let typeDenied=false;
+      try { await xytron.app.Main.method.add(dynamic,"seven",5); }
+      catch(e) { typeDenied=true; }
+      if(!typeDenied)throw new Error("Managed argument type validation missing");
+      let arityDenied=false;
+      try { await xytron.app.Main.method.add(dynamic,7); }
+      catch(e) { arityDenied=true; }
+      if(!arityDenied)throw new Error("Managed argument count validation missing");
+    } finally {
+      await xytron.app.Main.dispose(dynamic);
+    }
     let denied=false;
     try { await xytron.app.Main.method.secret("no-handle"); }
     catch(e) { denied=true; }
@@ -207,10 +265,11 @@ class Listener : public nativeweb::WebViewListener {
 public:
   Listener(nativeweb::WebView& webview,const std::string& lang,
            const std::string& pythonRunner,const std::string& pythonProject,
-           const std::string& dotnetAssembly)
+           const std::string& dotnetAssembly,
+           const std::vector<std::string>& managedOps)
       : webview_(webview), language_(lang), pythonRunner_(pythonRunner),
         pythonProject_(pythonProject), dotnetAssembly_(dotnetAssembly),
-        ready_(false) {
+        managedOps_(managedOps), ready_(false) {
     if(language_!="cpp")
       webview_.bind("app.managedReady",[this]() { return ready_.load(); });
     // app.ping now comes exclusively from user-authored backend/main.cpp
@@ -248,11 +307,10 @@ public:
     std::cout << "checkpoint: native-app-ui-loaded " << url << std::endl;
     if(language_=="cpp" || url!="app://desktop/index.html" || ready_.load()) return;
     try {
-      const std::vector<std::string> operations={
-        "app.Main.create", "app.Main.method.ping", "app.Main.dispose"
-      };
+      if(managedOps_.empty())
+        throw std::runtime_error("No trusted managed Main grant");
       if(language_=="python") {
-        webview_.bindManagedWorker("app",operations,
+        webview_.bindManagedWorker("app",managedOps_,
           {trustedRuntime(
 #ifdef _WIN32
              "python.exe"
@@ -261,7 +319,7 @@ public:
 #endif
            ),pythonRunner_,pythonProject_},5000);
       } else if(language_=="csharp") {
-        webview_.bindManagedWorker("app",operations,
+        webview_.bindManagedWorker("app",managedOps_,
           {trustedRuntime(
 #ifdef _WIN32
              "dotnet.exe"
@@ -289,6 +347,7 @@ public:
 private:
   nativeweb::WebView& webview_;
   std::string language_,pythonRunner_,pythonProject_,dotnetAssembly_;
+  std::vector<std::string> managedOps_;
   std::atomic<bool> ready_;
 };
 
@@ -346,6 +405,9 @@ int main(int argc,char** argv) {
     const std::string pythonRunner=flag(argc,argv,"--python-runner=");
     const std::string pythonProject=flag(argc,argv,"--python-project=");
     const std::string dotnetAssembly=flag(argc,argv,"--dotnet-assembly=");
+    const std::string managedGrant=flag(argc,argv,"--managed-operations=");
+    const std::vector<std::string> managedOps=language=="cpp"?
+      std::vector<std::string>():readManagedGrant(managedGrant);
     if(language=="cpp" && backendPlugin.empty())
       throw std::runtime_error("Explicit C++ backend ABI plugin is required");
     if(language=="python" && (pythonRunner.empty()||pythonProject.empty()))
@@ -360,7 +422,7 @@ int main(int argc,char** argv) {
     settings.log_severity=LOGSEVERITY_WARNING;
     nativeweb::detail::registerCefBackendFactory();
     nativeweb::WebView view;
-    Listener listener(view,language,pythonRunner,pythonProject,dotnetAssembly);
+    Listener listener(view,language,pythonRunner,pythonProject,dotnetAssembly,managedOps);
     view.setListener(&listener);
     if(language=="cpp" && view.loadPlugin(backendPlugin)!="app")
       throw std::runtime_error("C++ backend plugin ID mismatch");
@@ -381,7 +443,7 @@ int main(int argc,char** argv) {
     if (!window) throw std::runtime_error("Cannot create Win32 window");
     nativeweb::detail::registerWebView2BackendFactory();
     nativeweb::WebView view;
-    Listener listener(view,language,pythonRunner,pythonProject,dotnetAssembly);
+    Listener listener(view,language,pythonRunner,pythonProject,dotnetAssembly,managedOps);
     view.setListener(&listener);
     if(language=="cpp" && view.loadPlugin(backendPlugin)!="app")
       throw std::runtime_error("C++ backend plugin ID mismatch");
