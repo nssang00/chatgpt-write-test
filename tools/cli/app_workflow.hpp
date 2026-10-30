@@ -3,6 +3,7 @@
 // Offline, explicit local Core-SDK restore and backend-only build/test.
 // No browser-engine download or standalone app publication is implied.
 #include "project_manifest.hpp"
+#include "managed_export_discovery.hpp"
 #include "offline_file_safety.hpp"
 #include <cstdio>
 #include <cstdlib>
@@ -201,6 +202,20 @@ inline void appBuild() {
     const std::string build="dotnet build backend/MainBackend.csproj --configuration Release --output .xytron-build/dotnet --nologo \"-p:XytronSdkPrefix="+coreSdk+"\"";
     appCommand(build.c_str(),"C# backend build");
   }
+  if(lang=="python" || lang=="csharp") {
+    const std::vector<std::string> exports=discoverManagedExports(
+      lang,lang=="python"?"backend/main.py":"backend/Program.cs");
+    const std::string manifest=".xytron-build/managed_operations.txt";
+    checkedProjectOutput(manifest,false);
+    std::ofstream file(manifest.c_str(),std::ios::binary|std::ios::trunc);
+    if(!file)throw std::runtime_error("Cannot create managed operation grant");
+    for(std::size_t i=0;i<exports.size();++i)
+      file<<exports[i]<<"\n";
+    file.close();
+    if(!file)throw std::runtime_error("Cannot save managed operation grant");
+    std::cout<<"Discovered "<<exports.size()
+             <<" explicit Main operations (including create/dispose).\n";
+  }
   std::cout<<"Backend build PASS ("<<lang<<"); C++ app ABI plugin built, browser host is external.\n";
 }
 inline void appTest() {
@@ -271,6 +286,7 @@ inline void appRunHost(const std::string& path, bool smoke,
   appTest();
   projectPath("ui/index.html",false);
   const std::string backendPath=language=="cpp"?appBackendPlugin():std::string();
+  if(language!="cpp") projectPath(".xytron-build/managed_operations.txt",false);
   if(!featurePath.empty()) {
     if(language!="cpp") throw std::runtime_error("Native feature plugin run is C++-only in this slice");
     projectPath(featurePath,false);
@@ -309,6 +325,8 @@ inline void appRunHost(const std::string& path, bool smoke,
     std::string();
   const std::string managedDir=language=="python"?
     std::string("--python-project=")+project+"/backend":std::string();
+  const std::string operationsArg=language=="cpp"?std::string():
+    std::string("--managed-operations=")+project+"/.xytron-build/managed_operations.txt";
   const std::string featureArg=featurePath.empty()?std::string():
     std::string("--plugin-path=")+project+"/"+featurePath;
   const std::size_t slash=host.find_last_of("/\\");
@@ -323,6 +341,7 @@ inline void appRunHost(const std::string& path, bool smoke,
   if(!featureArg.empty()) command+=" \""+featureArg+"\"";
   if(!managedArg.empty()) command+=" \""+managedArg+"\"";
   if(!managedDir.empty()) command+=" \""+managedDir+"\"";
+  if(!operationsArg.empty()) command+=" \""+operationsArg+"\"";
   if(smoke) command+=" --smoke";
   std::vector<char> mutableCmd(command.begin(),command.end());
   mutableCmd.push_back('\0');
@@ -352,6 +371,7 @@ inline void appRunHost(const std::string& path, bool smoke,
     if(!featureArg.empty())args.push_back(featureArg);
     if(!managedArg.empty())args.push_back(managedArg);
     if(!managedDir.empty())args.push_back(managedDir);
+    if(!operationsArg.empty())args.push_back(operationsArg);
     if(smoke)args.push_back("--smoke");
     std::vector<char*> native;
     for(std::size_t i=0;i<args.size();++i)
