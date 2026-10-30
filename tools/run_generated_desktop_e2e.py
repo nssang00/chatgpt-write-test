@@ -142,10 +142,76 @@ def run():
             authored=authored_file.read_text(encoding="utf-8")
             if authored.count(before)!=1:
                 raise AssertionError("Generated "+language+" method is not editable")
-            authored_file.write_text(authored.replace(before,after),encoding="utf-8")
+            authored=authored.replace(before,after)
+            if language=="python":
+                # User-added exports, not generated defaults, prove discovery.
+                authored += """
+    @export
+    def add(self, a: int, b: int) -> int:
+        return a + b
+
+    @export
+    def invert(self, value: bool) -> bool:
+        return not value
+
+    @export
+    def echo(self, message: str) -> str:
+        return message
+
+    @export
+    def nothing(self):
+        return None
+
+    @property
+    @export
+    def count(self):
+        return getattr(self, "_count", 0)
+
+    @count.setter
+    def count(self, value: int):
+        self._count = value
+
+    def secret(self):
+        return "NOT_EXPORTED"
+"""
+            else:
+                token="}\ninternal static class Program"
+                if authored.count(token)!=1:
+                    raise AssertionError("Missing Main class insertion point")
+                authored=authored.replace(token,"""
+    [Export] public int add(int a, int b) => a + b;
+    [Export] public bool invert(bool value) => !value;
+    [Export] public string echo(string message) => message;
+    [Export] public string? nothing() => null;
+    [Export] public int count { get; set; }
+    public string secret() => "NOT_EXPORTED";
+}
+internal static class Program""")
+            authored_file.write_text(authored,encoding="utf-8")
             for step in (["restore","--sdk",str(sdk)], ["build"], ["test"]):
                 rc,_=execute(base+step,app)
                 if rc: raise AssertionError(language+" app "+step[0]+" failed")
+            grants=app/".xytron-build/managed_operations.txt"
+            operations=grants.read_text(encoding="utf-8").splitlines()
+            expected={
+                "app.Main.create", "app.Main.dispose", "app.Main.method.ping",
+                "app.Main.method.add", "app.Main.method.invert",
+                "app.Main.method.echo", "app.Main.method.nothing",
+                "app.Main.get.count", "app.Main.set.count",
+            }
+            if set(operations)!=expected or len(operations)!=len(expected):
+                raise AssertionError(language+" discovered export mismatch: "+repr(operations))
+            if "app.Main.method.secret" in operations:
+                raise AssertionError("Private method was exposed")
+            # A modified or stale manifest cannot be used to bypass the
+            # native host's finite/unique operation check.
+            grant_backup=grants.read_bytes()
+            grants.write_bytes(grant_backup+b"app.Main.method.secret\napp.Main.method.secret\n")
+            try:
+                rc,_=execute(base+["run","--host",str(host),"--smoke"],app)
+                if rc==0: raise AssertionError("Duplicate managed grant accepted")
+            finally:
+                grants.write_bytes(grant_backup)
             # A missing worker / assembly must fail closed before browser use.
             if language=="csharp":
                 required=app/".xytron-build/dotnet/MainBackend.dll"
