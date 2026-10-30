@@ -206,6 +206,35 @@ loadUi(const std::string& name, const std::string& lang) {
       await new Promise(r=>setTimeout(r,50));
     if (result.textContent!=="pong-edited-in-project")
       throw new Error("Edited user managed Main did not respond: "+result.textContent);
+    // All of these APIs were authored AFTER scaffold generation and were
+    // discovered by the CLI build grant. No manually hardcoded native
+    // allowlist is permitted here.
+    const dynamic=await xytron.app.Main.create();
+    try {
+      if(await xytron.app.Main.method.add(dynamic,7,5)!==12)
+        throw new Error("User Main.add numeric result mismatch");
+      if(await xytron.app.Main.method.invert(dynamic,true)!==false)
+        throw new Error("User Main.invert bool result mismatch");
+      if(await xytron.app.Main.method.echo(dynamic,"hello-user")!=="hello-user")
+        throw new Error("User Main.echo string result mismatch");
+      if(await xytron.app.Main.method.nothing(dynamic)!==null)
+        throw new Error("User Main.nothing null result mismatch");
+      if(await xytron.app.Main.get.count(dynamic)!==0)
+        throw new Error("Exported count property initial value mismatch");
+      await xytron.app.Main.set.count(dynamic,33);
+      if(await xytron.app.Main.get.count(dynamic)!==33)
+        throw new Error("Exported count property setter failed");
+      let typeDenied=false;
+      try { await xytron.app.Main.method.add(dynamic,"seven",5); }
+      catch(e) { typeDenied=true; }
+      if(!typeDenied)throw new Error("Managed argument type validation missing");
+      let arityDenied=false;
+      try { await xytron.app.Main.method.add(dynamic,7); }
+      catch(e) { arityDenied=true; }
+      if(!arityDenied)throw new Error("Managed argument count validation missing");
+    } finally {
+      await xytron.app.Main.dispose(dynamic);
+    }
     let denied=false;
     try { await xytron.app.Main.method.secret("no-handle"); }
     catch(e) { denied=true; }
