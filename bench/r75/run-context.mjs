@@ -43,6 +43,7 @@ try{
   browser=await chromium.launch({executablePath:process.env.M5_BROWSER||'C:/Program Files/Google/Chrome/Application/chrome.exe',
     headless:true,args:['--enable-webgl','--disable-software-rasterizer','--disable-background-networking','--window-size=560,580']});
   page=await browser.newPage({viewport:{width:512,height:512},deviceScaleFactor:1});
+  await page.route('**/favicon.ico',route=>route.fulfill({status:204,body:''}));
   page.on('pageerror',e=>report.errors.push('pageerror: '+String(e)));
   page.on('console',m=>{if(m.type()==='error')report.errors.push('console: '+m.text())});
   await page.goto(base+'/examples/perf/index.html?arm=boost&count=32&mode=exclusive-fbo',{waitUntil:'domcontentloaded',timeout:40000});
@@ -50,11 +51,12 @@ try{
   const initial=await page.evaluate(()=>{
     const s=globalThis.__r70,r=globalThis.__r75runtime;
     const ext=r?.backend.gl.getExtension('WEBGL_debug_renderer_info');
+    r.lossExt=r.backend.gl.getExtension('WEBGL_lose_context');
     return {ready:s.ready,errors:s.errors,loaded:s.loadedSources,packets:s.packets,frames:s.frames,
       workerOff:s.workerOff,glError:r?.backend.gl.getError(),fbo:!!r?.boost.scene._layerFbo,
       quad:!!r?.boost.scene._layerFboQuad,
       renderer:ext?r.backend.gl.getParameter(ext.UNMASKED_RENDERER_WEBGL):null,
-      contextExtension:!!r?.backend.gl.getExtension('WEBGL_lose_context')};
+      contextExtension:!!r.lossExt};
   });
   report.initial=initial;
   check(initial.ready&&initial.errors.length===0&&initial.loaded===32&&initial.packets>0&&initial.workerOff,'invalid initial Boost state '+JSON.stringify(initial));
@@ -70,7 +72,7 @@ try{
       let eventSeen=false;
       const lostEvt=event=>{event.preventDefault();eventSeen=true};
       cv.addEventListener('webglcontextlost',lostEvt,{once:true});
-      const ext=gl.getExtension('WEBGL_lose_context');
+      const ext=r.lossExt;
       if(!ext)throw Error('missing WEBGL_lose_context');
       ext.loseContext();
       await new Promise((resolve,reject)=>{let n=0;const tick=()=>eventSeen?resolve():++n>60?reject(Error('no webglcontextlost event')):setTimeout(tick,100);tick()});
@@ -82,9 +84,10 @@ try{
     const restored=await page.evaluate(async()=>{
       const r=globalThis.__r75runtime,cv=r.canvas,gl=r.backend.gl;
       let eventSeen=false;cv.addEventListener('webglcontextrestored',()=>{eventSeen=true},{once:true});
-      const ext=gl.getExtension('WEBGL_lose_context');ext.restoreContext();
+      const ext=r.lossExt;ext.restoreContext();
       await new Promise((resolve,reject)=>{let n=0;const tick=()=>eventSeen?resolve():++n>100?reject(Error('no webglcontextrestored event')):setTimeout(tick,100);tick()});
       r.backend.restoreContext();
+      r.lossExt=r.backend.gl.getExtension('WEBGL_lose_context');
       const rebuilt=r.boost.restoreAfterContextLoss(r.backend);
       r.map.renderSync();r.map.render();
       return {restoredEvent:eventSeen,contextLost:r.backend.gl.isContextLost(),rebuilt};
