@@ -44,7 +44,7 @@ jobs:
           if($LASTEXITCODE -ne 0){throw 'D3D11 Unity bridge CMake config failure'}
           cmake --build $build --config Release --target CompanyWebViewCefTextureProbe --parallel 2
           if($LASTEXITCODE -ne 0){throw 'D3D11 Unity bridge MSVC C++20 compilation failed'}
-          $dll=Join-Path $build 'stage/native/Release/CompanyWebViewCefTextureProbe.dll'
+          $dll=Join-Path $build 'Release/CompanyWebViewCefTextureProbe.dll'
           if(-not(Test-Path $dll -PathType Leaf)){throw 'D3D11 Unity bridge DLL missing'}
           $bytes=[IO.File]::ReadAllBytes($dll)
           if($bytes.Length -lt 256 -or [BitConverter]::ToUInt16($bytes,0) -ne 0x5A4D){throw 'Bridge DLL is not a PE'}
@@ -70,4 +70,4 @@ jobs:
           if-no-files-found: warn
           path: |
             ${{ runner.temp }}/cwv-d3d11-bridge-proof.json
-            ${{ runner.temp }}/cwv-d3d11-native/stage/native/Release/CompanyWebViewCefTextureProbe.dll
+            ${{ runner.temp }}/cwv-d3d11-native/Release/CompanyWebViewCefTextureProbe.dll
