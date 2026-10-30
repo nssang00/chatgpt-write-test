@@ -1,0 +1,51 @@
+name: CompanyWebView P0-1 / hosted Unity and GPU capability audit
+on:
+  push:
+    branches: [verify/cwv-p01-windows-20261029]
+    paths:
+      - '.github/workflows/cwv-p01-hosted-capabilities.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  inspect-hosted-runner:
+    runs-on: windows-2022
+    timeout-minutes: 6
+    steps:
+      - name: Inspect Unity Editor and physical graphics evidence without exposing credentials
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $editorPath='C:\Program Files\Unity\Hub\Editor'
+          $editors=@()
+          if(Test-Path $editorPath){
+            $editors=@(Get-ChildItem $editorPath -Directory | ForEach-Object { $_.Name })
+          }
+          $unityCli=Get-Command Unity.exe -ErrorAction SilentlyContinue
+          $video=@()
+          try {
+            $video=@(Get-CimInstance Win32_VideoController | ForEach-Object {
+              [ordered]@{name=$_.Name; adapterCompatibility=$_.AdapterCompatibility; videoProcessor=$_.VideoProcessor}
+            })
+          } catch {
+            $video=@([ordered]@{name='CIM_QUERY_UNAVAILABLE';adapterCompatibility='';videoProcessor=''})
+          }
+          $proof=[ordered]@{
+            status='HOSTED_ENVIRONMENT_AUDITED'
+            runner=$env:RUNNER_OS
+            availableUnityEditorVersions=$editors
+            unityExeOnPath=($null -ne $unityCli)
+            videoControllers=$video
+            cwvUnityEditorExecuted=$false
+            cwvUnityPlayerBuilt=$false
+            cwvGpuFrameRendered=$false
+            cwvImeTested=$false
+            conclusion='Environment inventory only; device listing is NOT actual GPU rendering proof'
+          }
+          $proof|ConvertTo-Json -Depth 5|Set-Content -Encoding utf8 (Join-Path $env:RUNNER_TEMP 'cwv-hosted-capability-evidence.json')
+          $proof|ConvertTo-Json -Depth 5|Write-Host
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cwv-p01-hosted-unity-gpu-capabilities
+          retention-days: 7
+          path: ${{ runner.temp }}/cwv-hosted-capability-evidence.json
