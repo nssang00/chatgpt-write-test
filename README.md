@@ -214,6 +214,19 @@ First-deliverable scope and gates:
 [Release test matrix](docs/RELEASE_TEST_MATRIX.md) ·
 [Acceptance criteria](docs/ACCEPTANCE_CRITERIA.md).
 
+## Xytron-branded C++ SDK (compatibility facade)
+
+The installed SDK now also supports `#include <xytron/xytron.hpp>`,
+`xytron::WebView`, and `find_package(Xytron CONFIG REQUIRED)` with
+`Xytron::Core`. Existing `<nativeweb/...>`, `nativeweb::WebView`,
+`NativeWeb::Core`, and the `nativeweb_plugin_init_v1` symbol are retained
+unchanged. Plugin authors still include `<xytron/plugin.hpp>` separately;
+it requires the manifest-supplied `XYTRON_PLUGIN_ID` macro.
+
+This is an API naming/compatibility increment, **not an engine-inclusive
+distribution or release**. See
+[API compatibility details](docs/XYTRON_PUBLIC_API_COMPATIBILITY.md).
+
 ## Installed Core SDK (first packaging slice)
 
 ```sh

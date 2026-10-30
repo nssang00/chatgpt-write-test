@@ -13,6 +13,8 @@ set(NATIVEWEB_ROOT "${CMAKE_CURRENT_SOURCE_DIR}")
 include("${NATIVEWEB_ROOT}/cmake/NativeWebCoreSources.cmake")
 add_library(nativeweb_core STATIC ${NATIVEWEB_CORE_SOURCES})
 add_library(NativeWeb::Core ALIAS nativeweb_core)
+# Branding-compatible build-tree target; NativeWeb::Core remains supported.
+add_library(Xytron::Core ALIAS nativeweb_core)
 set_target_properties(nativeweb_core PROPERTIES EXPORT_NAME Core)
 
 target_include_directories(nativeweb_core
@@ -72,6 +74,21 @@ install(EXPORT NativeWebTargets
     FILE NativeWebTargets.cmake
     NAMESPACE NativeWeb::
     DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/NativeWeb")
+
+# Public Xytron CMake facade. Keep the original NativeWeb package and
+# nativeweb:: Core ABI intact so existing consumers/plugins keep working.
+configure_package_config_file(
+    cmake/XytronConfig.cmake.in
+    "${CMAKE_CURRENT_BINARY_DIR}/XytronConfig.cmake"
+    INSTALL_DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/Xytron")
+write_basic_package_version_file(
+    "${CMAKE_CURRENT_BINARY_DIR}/XytronConfigVersion.cmake"
+    VERSION "${PROJECT_VERSION}"
+    COMPATIBILITY SameMajorVersion)
+install(FILES
+    "${CMAKE_CURRENT_BINARY_DIR}/XytronConfig.cmake"
+    "${CMAKE_CURRENT_BINARY_DIR}/XytronConfigVersion.cmake"
+    DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/Xytron")
 
 
 # A C++11-native bootstrap CLI; no Python/Node required for CLI itself.
