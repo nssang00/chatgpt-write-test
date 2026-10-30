@@ -1,0 +1,95 @@
+name: R75 physical RTX deployment gates (context recovery and ABBA)
+on:
+  push:
+    branches: [ci/r75-release-gates-20261030]
+    paths:
+      - '.github/workflows/r75-release-gates.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: olvt-r75-release-gates
+  cancel-in-progress: false
+jobs:
+  r75-release-gates:
+    runs-on: [self-hosted, Windows, X64, m5-gpu]
+    timeout-minutes: 85
+    defaults:
+      run:
+        shell: powershell
+    steps:
+      - name: Check out isolated validation harness
+        uses: actions/checkout@v4
+        with:
+          path: harness
+          persist-credentials: false
+      - name: Check out immutable R75 candidate
+        uses: actions/checkout@v4
+        with:
+          repository: rydolabs/ol-vt-gl-boost
+          ref: 5bbc2c1080db759f2bbc03a5d241dbc8cec7a91d
+          path: candidate
+          persist-credentials: false
+      - name: Require exact R75 source and physical RTX 5060 Ti
+        run: |
+          $ErrorActionPreference='Stop'
+          $sha=(git -C candidate rev-parse HEAD).Trim()
+          if($sha -ne '5bbc2c1080db759f2bbc03a5d241dbc8cec7a91d'){throw "R75 candidate drift: $sha"}
+          $gpu=@(Get-CimInstance Win32_VideoController|Select-Object Name,DriverVersion)
+          if(-not ($gpu|Where-Object {$_.Name -match 'NVIDIA.*RTX 5060 Ti'})){throw 'Physical RTX 5060 Ti required'}
+          $gpu | ConvertTo-Json -Depth 3
+          Write-Host "R75_RELEASE_SHA_PINNED: $sha"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Locked dependencies and actual 32 independent PBF tiles
+        run: |
+          $ErrorActionPreference='Stop'
+          Push-Location candidate
+          try{
+            npm ci --no-audit --no-fund
+            if($LASTEXITCODE -ne 0){throw 'npm ci failed'}
+            npm run test:vendor
+            if($LASTEXITCODE -ne 0){throw 'vendor check failed'}
+            npm install --no-save --package-lock=false --ignore-scripts --no-audit --no-fund playwright@1.55.0
+            if($LASTEXITCODE -ne 0){throw 'Playwright install failed'}
+            npm run test:rtx:prepare
+            if($LASTEXITCODE -ne 0){throw 'PBF preparation failed'}
+          }finally{Pop-Location}
+      - name: Install independent R75 physical verification harness
+        run: |
+          $ErrorActionPreference='Stop'
+          New-Item -ItemType Directory -Force candidate\examples\perf | Out-Null
+          Copy-Item harness\bench\r75\perf.html candidate\examples\perf\index.html -Force
+          Copy-Item harness\bench\r75\run-context.mjs candidate\examples\perf\run-context.mjs -Force
+          Copy-Item harness\bench\r75\run-perf.mjs candidate\examples\perf\run-perf.mjs -Force
+      - name: Two actual WebGL context loss and restore cycles with FBO
+        run: |
+          $ErrorActionPreference='Stop'
+          node candidate\examples\perf\run-context.mjs candidate candidate\artifacts\r75-context
+          if($LASTEXITCODE -ne 0){throw 'R75 physical context loss/recovery failed'}
+          $r=Get-Content candidate\artifacts\r75-context\summary.json -Raw | ConvertFrom-Json
+          if(-not $r.pass -or @($r.cycles).Count -ne 2){throw 'Incomplete physical context restore evidence'}
+          Write-Host 'R75_REAL_CONTEXT_TWO_CYCLES_PASS'
+      - name: Same SHA 60-sample isolated ABBA performance comparison
+        env:
+          R70_ROUNDS: '5'
+        run: |
+          $ErrorActionPreference='Stop'
+          node candidate\examples\perf\run-perf.mjs candidate candidate\artifacts\r75-benchmark
+          if($LASTEXITCODE -ne 0){throw 'R75 ABBA benchmark invalid'}
+          $r=Get-Content candidate\artifacts\r75-benchmark\summary.json -Raw | ConvertFrom-Json
+          if($r.candidate -ne '5bbc2c1080db759f2bbc03a5d241dbc8cec7a91d'){throw 'Benchmark R75 source mismatch'}
+          if(-not $r.valid -or @($r.raw).Count -ne 60 -or @($r.scenes).Count -ne 3){throw 'Incomplete ABBA raw proof'}
+          Write-Host 'R75_ABBA_60_RAW_SAMPLES_VALID'
+          $r.scenes | Select-Object count,olMedianMs,boostMedianMs,reductionPct,boostFasterBothArms | Format-Table
+          if(-not $r.performanceGate){throw 'R75 ABBA >=50% first frame improvement gate failed'}
+          Write-Host 'R75_ABBA_50_PERCENT_EACH_SCENE_PASS'
+      - name: Preserve context and benchmark raw evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: olvt-r75-deployment-gates-physical-rtx
+          path: |\n            candidate/artifacts/r75-context/**\n            candidate/artifacts/r75-benchmark/**
+          retention-days: 30
+          if-no-files-found: warn
