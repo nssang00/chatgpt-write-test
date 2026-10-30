@@ -1,0 +1,73 @@
+name: CompanyWebView P0-1 / CEF D3D11 Unity native bridge compile
+on:
+  push:
+    branches: [verify/cwv-p01-windows-20261029]
+    paths:
+      - '.github/workflows/cwv-p01-cef-d3d11-only.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  d3d11-unity:
+    runs-on: windows-2022
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Verify and materialize CEF154 native source
+        shell: pwsh
+        run: |
+          python companywebview-p01/CEF154-Sources/ci/verify_and_extract.py
+          if ($LASTEXITCODE -ne 0) {throw 'CEF source integrity gate failed'}
+      - name: Fetch pinned Unity native graphics headers
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $root=Join-Path $env:RUNNER_TEMP 'unity-api'
+          New-Item $root -ItemType Directory -Force|Out-Null
+          $commit='fd76832fc34a395fdf4212b4176f4c5ccb505788'
+          foreach($name in @('IUnityInterface.h','IUnityGraphics.h','IUnityGraphicsD3D11.h')){
+            $url="https://raw.githubusercontent.com/Unity-Technologies/NativeRenderingPlugin/$commit/PluginSource/source/Unity/$name"
+            curl.exe -L --fail --retry 1 --connect-timeout 10 --max-time 45 $url -o (Join-Path $root $name)
+            if($LASTEXITCODE -ne 0){throw "Unity header unavailable: $name"}
+          }
+          "CWV_UNITY_HEADERS=$root" >> $env:GITHUB_ENV
+      - name: Real MSVC compile of original Unity D3D11 texture bridge (no CEF)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $src=(Resolve-Path 'companywebview-p01/CEF154-Sources/Native').Path
+          $build=Join-Path $env:RUNNER_TEMP 'cwv-d3d11-native'
+          cmake -S $src -B $build -G 'Visual Studio 17 2022' -A x64 "-DUNITY_PLUGIN_API=$env:CWV_UNITY_HEADERS"
+          if($LASTEXITCODE -ne 0){throw 'D3D11 Unity bridge CMake config failure'}
+          cmake --build $build --config Release --target CompanyWebViewCefTextureProbe --parallel 2
+          if($LASTEXITCODE -ne 0){throw 'D3D11 Unity bridge MSVC C++20 compilation failed'}
+          $dll=Join-Path $build 'stage/native/Release/CompanyWebViewCefTextureProbe.dll'
+          if(-not(Test-Path $dll -PathType Leaf)){throw 'D3D11 Unity bridge DLL missing'}
+          $bytes=[IO.File]::ReadAllBytes($dll)
+          if($bytes.Length -lt 256 -or [BitConverter]::ToUInt16($bytes,0) -ne 0x5A4D){throw 'Bridge DLL is not a PE'}
+          $offset=[BitConverter]::ToInt32($bytes,0x3C)
+          if($offset -lt 64 -or $offset -gt $bytes.Length-24 -or [BitConverter]::ToUInt32($bytes,$offset) -ne 0x4550 -or [BitConverter]::ToUInt16($bytes,$offset+4) -ne 0x8664){throw 'Bridge DLL is not AMD64'}
+          $proof=[ordered]@{
+            status='D3D11_UNITY_BRIDGE_ONLY_MSVC_PASS'
+            sourceShaManifest='cf42cb10180098f70c340f7165f803f31f7f7dbafaa2be97634a0a266f6207b0'
+            dllSHA256=(Get-FileHash $dll -Algorithm SHA256).Hash.ToLowerInvariant()
+            dllBytes=$bytes.Length
+            cefBrowserHostLinked=$false
+            cef154SdkUsed=$false
+            upmAssembled=$false
+            unityPlayerExecuted=$false
+            gpuHardwareValidated=$false
+          }
+          $proof|ConvertTo-Json|Set-Content (Join-Path $env:RUNNER_TEMP 'cwv-d3d11-bridge-proof.json') -Encoding utf8
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: cwv-p01-cef-d3d11-unity-bridge-only
+          retention-days: 7
+          if-no-files-found: warn
+          path: |
+            ${{ runner.temp }}/cwv-d3d11-bridge-proof.json
+            ${{ runner.temp }}/cwv-d3d11-native/stage/native/Release/CompanyWebViewCefTextureProbe.dll
