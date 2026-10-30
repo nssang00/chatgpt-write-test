@@ -1,0 +1,64 @@
+name: Aplus vs CitoQ plus matched 100-200 netns validation
+on:
+  push:
+    branches: ['experiment/a-plus-citoqplus-compare-*']
+    paths:
+      - '.github/workflows/a-plus-citoqplus-compare.yml'
+      - 'bench/discovery/**'
+  workflow_dispatch:
+permissions: {contents: read}
+jobs:
+  aplus:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix:
+        nodes: [100, 200]
+        loss: [0, 1, 2]
+    name: Aplus N${{ matrix.nodes }} loss${{ matrix.loss }}pct seeds1,2
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - name: Verify namespace + netem dependency
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile bench/discovery/pubsub_run.py bench/discovery/pubsub_node.py bench/discovery/run.py
+          sudo -n true
+          command -v ip
+          command -v tc
+          sudo sysctl -w net.core.rmem_max=16777216
+          sudo sysctl -w net.core.wmem_max=16777216
+      - name: Full membership anti-entropy and multicast delivery under matched netem
+        shell: bash
+        run: |
+          set -euo pipefail
+          nodes='${{ matrix.nodes }}'
+          loss='${{ matrix.loss }}'
+          discovery=20; timeout=95
+          if [[ "$nodes" -ge 200 ]]; then discovery=27; timeout=110; fi
+          sudo -E "$(which python)" bench/discovery/pubsub_run.py \
+            --sizes "$nodes" --modes multicast --losses "$loss" \
+            --messages 8 --payload-bytes 256 --publishers 1 \
+            --discovery "$discovery" --timeout "$timeout" \
+            --publish-spread 2 --publish-interval 0.1 \
+            --repair-fanout 6 --repair-interval 0.9 \
+            --v4 --incremental-repair --nack-batch-limit 32 \
+            --seeds 1,2 --output aplus-citoqplus-evidence
+          python - <<'PY'
+          import json
+          rows=json.load(open('aplus-citoqplus-evidence/results.json'))
+          assert len(rows)==2, rows
+          for row in rows:
+            print('APLUS_COMPARE_TRIAL='+json.dumps(row,sort_keys=True))
+          assert all(row.get('status')=='PASS' for row in rows), rows
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: aplus-compare-n${{ matrix.nodes }}-loss${{ matrix.loss }}
+          path: aplus-citoqplus-evidence/
+          if-no-files-found: warn
