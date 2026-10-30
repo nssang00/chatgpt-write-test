@@ -1,0 +1,63 @@
+name: Aplus multicast gossip discovery probe 10-200 netns same egress loss profiles
+on:
+  push:
+    branches: ['experiment/a-plus-discovery-comparison-*']
+    paths:
+      - 'bench/discovery/pubsub_run.py'
+      - '.github/workflows/a-plus-discovery-comparison.yml'
+  workflow_dispatch:
+permissions: {contents: read}
+jobs:
+  gossip-discovery:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      max-parallel: 6
+      matrix:
+        nodes: [10, 30, 50, 100, 200]
+        loss: [0, 1, 2]
+    name: Aplus N=${{ matrix.nodes }} loss=${{ matrix.loss }}pct
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - name: Verify dependencies and kernel socket budgets
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m py_compile bench/discovery/pubsub_run.py bench/discovery/pubsub_node.py bench/discovery/run.py
+          sudo -n true
+          command -v ip && command -v tc
+          sudo sysctl -w net.core.rmem_max=16777216
+          sudo sysctl -w net.core.wmem_max=16777216
+      - name: Full-membership gossip and one-publisher multicast validation
+        shell: bash
+        run: |
+          set -euo pipefail
+          nodes='${{ matrix.nodes }}'
+          loss='${{ matrix.loss }}'
+          discovery=12; timeout=70; spread=2
+          if [[ "$nodes" -ge 100 ]]; then discovery=20; timeout=95; fi
+          if [[ "$nodes" -ge 200 ]]; then discovery=27; timeout=110; fi
+          sudo -E "$(which python)" bench/discovery/pubsub_run.py \
+            --sizes "$nodes" --modes multicast --losses "$loss" \
+            --messages 8 --payload-bytes 256 --publishers 1 \
+            --discovery "$discovery" --timeout "$timeout" \
+            --publish-spread "$spread" --publish-interval 0.1 \
+            --repair-fanout 6 --repair-interval 0.9 \
+            --v4 --incremental-repair --nack-batch-limit 32 \
+            --seeds 1 --output aplus-discovery-evidence
+          python - <<'PY'
+          import json
+          result=json.load(open('aplus-discovery-evidence/results.json'))[0]
+          print('APLUS_DISCOVERY_RESULT='+json.dumps(result,sort_keys=True))
+          assert result['nodes']==${{ matrix.nodes }} and result['discovery_success'], result
+          assert result['status']=='PASS' and result['pubsub_success'],result
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: aplus-n${{ matrix.nodes }}-loss${{ matrix.loss }}
+          path: aplus-discovery-evidence/
+          if-no-files-found: warn
