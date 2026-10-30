@@ -1,0 +1,153 @@
+name: CompanyWebView P0-1 / exact CEF154 source and real native build
+on:
+  push:
+    branches: [verify/cwv-p01-windows-20261029]
+    paths:
+      - '.github/workflows/cwv-p01-cef154-source-build.yml'
+      - 'companywebview-p01/CEF154-Sources/cef-native.tar.bz2.base64'
+      - 'companywebview-p01/CEF154-Sources/ci/**'
+      - 'companywebview-p01/CEF154-Sources/HostedBuild/**'
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  source-integrity:
+    runs-on: windows-2022
+    timeout-minutes: 7
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Verify exact 14 CEF native inputs and materialize editable C++ source
+        shell: pwsh
+        run: |
+          python companywebview-p01/CEF154-Sources/ci/verify_and_extract.py
+          if ($LASTEXITCODE -ne 0) { throw 'CEF P0-1 source hashes invalid' }
+      - name: Commit checked source files to public verification branch
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -- companywebview-p01/CEF154-Sources/Native/
+          git diff --cached --quiet
+          if ($LASTEXITCODE -eq 0) {
+            Write-Host 'All 14 CEF source files already committed'
+          } else {
+            git commit -m 'build: materialize checksum-verified CEF 154 native source files'
+            if ($LASTEXITCODE -ne 0) { throw 'Source commit failed' }
+            git push origin HEAD:refs/heads/verify/cwv-p01-windows-20261029
+            if ($LASTEXITCODE -ne 0) { throw 'GitHub Actions token cannot publish source files' }
+          }
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: cwv-p01-cef154-verified-source
+          retention-days: 7
+          if-no-files-found: warn
+          path: |
+            cwv-cef154-source-proof.json
+            companywebview-p01/CEF154-Sources/Native/
+  cef-native:
+    needs: source-integrity
+    runs-on: windows-2022
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Verify source at this commit
+        shell: pwsh
+        run: |
+          python companywebview-p01/CEF154-Sources/ci/verify_and_extract.py
+          if ($LASTEXITCODE -ne 0) { throw 'Exact CEF source unavailable' }
+      - name: Fetch pinned Unity 2022-era plugin headers
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $root=Join-Path $env:RUNNER_TEMP 'unity-headers'
+          New-Item -ItemType Directory -Force $root | Out-Null
+          $commit='fd76832fc34a395fdf4212b4176f4c5ccb505788'
+          foreach($name in @('IUnityInterface.h','IUnityGraphics.h','IUnityGraphicsD3D11.h')) {
+            $url="https://raw.githubusercontent.com/Unity-Technologies/NativeRenderingPlugin/$commit/PluginSource/source/Unity/$name"
+            curl.exe --fail --location --retry 1 --connect-timeout 10 --max-time 45 --output (Join-Path $root $name) $url
+            if($LASTEXITCODE -ne 0) { throw "Unity plugin header download failed: $name" }
+            if((Get-Item (Join-Path $root $name)).Length -lt 150) { throw "Unity plugin header truncated: $name" }
+            Write-Host "$name SHA256=$((Get-FileHash (Join-Path $root $name) -Algorithm SHA256).Hash)"
+          }
+          "UNITY_NATIVE_API=$root" >> $env:GITHUB_ENV
+      - name: Download exact CEF154 official SDK with bounded network time
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $ProgressPreference='SilentlyContinue'
+          $version='154.0.28+g564dd6c+chromium-154.0.8037.58'
+          $name="cef_binary_${version}_windows64_minimal.tar.bz2"
+          $url="https://cef-builds.spotifycdn.com/$name"
+          $download=Join-Path $env:RUNNER_TEMP $name
+          $expected='34a32277db8addfa355a009ed16c8dae939daed1'
+          curl.exe --fail --location --retry 1 --retry-delay 4 --connect-timeout 20 --max-time 540 --speed-limit 50000 --speed-time 75 --output $download $url
+          if($LASTEXITCODE -ne 0) { throw 'BLOCKED_CEF_SDK_NETWORK: official archive cannot be downloaded at usable speed' }
+          $sha=(Get-FileHash -LiteralPath $download -Algorithm SHA1).Hash.ToLowerInvariant()
+          if($sha -cne $expected) { throw 'BLOCKED_CEF_SDK_INTEGRITY: pinned official SHA1 mismatch' }
+          Write-Host "CEF154_SDK_VERIFIED_SHA1 $sha"
+          $dest=Join-Path $env:RUNNER_TEMP 'cef-sdk'
+          New-Item -ItemType Directory -Force $dest | Out-Null
+          tar.exe -xjf $download -C $dest
+          if($LASTEXITCODE -ne 0) { throw 'BLOCKED_CEF_SDK_EXTRACT: tar failed' }
+          $roots=@(Get-ChildItem $dest -Directory | Where-Object { Test-Path (Join-Path $_.FullName 'include/cef_version.h') })
+          if($roots.Count -ne 1) { throw 'BLOCKED_CEF_SDK_CONTENT: one pinned SDK root required' }
+          $cef=$roots[0].FullName
+          foreach($rel in @('include/cef_app.h','cmake/FindCEF.cmake','libcef_dll/CMakeLists.txt','Release/libcef.dll','Release/libcef.lib','Resources/icudtl.dat')) {
+            if(-not(Test-Path -LiteralPath (Join-Path $cef $rel) -PathType Leaf)) { throw "BLOCKED_CEF_SDK_CONTENT: $rel" }
+          }
+          $versionText=Get-Content -LiteralPath (Join-Path $cef 'include/cef_version.h') -Raw
+          if($versionText -notmatch '154\.0\.28\+g564dd6c\+chromium-154\.0\.8037\.58') {throw 'BLOCKED_CEF_SDK_VERSION'}
+          "CEF154_ROOT=$cef" >> $env:GITHUB_ENV
+          $record=@{status='CEF154_SDK_SHA1_PASS';version=$version;sha1=$sha}
+          $record|ConvertTo-Json|Set-Content (Join-Path $env:RUNNER_TEMP 'cef154-sdk-proof.json') -Encoding utf8
+          Remove-Item $download -Force
+      - name: Build exact native CEF DLL and subprocess using MSVC
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $source=(Resolve-Path 'companywebview-p01/CEF154-Sources/Native').Path
+          $out=Join-Path $env:RUNNER_TEMP 'cef154-product-msvc'
+          cmake -S companywebview-p01/CEF154-Sources/HostedBuild -B $out -G 'Visual Studio 17 2022' -A x64 "-DCWV_SOURCE=$source" "-DCEF_ROOT=$env:CEF154_ROOT" "-DUNITY_PLUGIN_API=$env:UNITY_NATIVE_API" -DUSE_SANDBOX=OFF
+          if($LASTEXITCODE -ne 0) {throw 'BLOCKED_CEF154_CMAKE_CONFIG'}
+          cmake --build $out --config Release --parallel 2 --target CompanyWebViewCefTextureProbe CompanyWebViewCefSubprocess
+          if($LASTEXITCODE -ne 0) {throw 'BLOCKED_CEF154_MSVC_COMPILATION'}
+          $dll=Join-Path $out 'stage/native/Release/CompanyWebViewCefTextureProbe.dll'
+          $exe=Join-Path $out 'stage/runtime/Release/CompanyWebViewCefSubprocess.exe'
+          foreach($f in @($dll,$exe)) {
+            if(-not(Test-Path $f -PathType Leaf)){throw "BLOCKED_NATIVE_OUTPUT_MISSING: $f"}
+            $bytes=[IO.File]::ReadAllBytes($f)
+            if($bytes.Length -lt 256 -or [BitConverter]::ToUInt16($bytes,0) -ne 0x5A4D) {throw "INVALID_PE: $f"}
+            $offset=[BitConverter]::ToInt32($bytes,0x3C)
+            if($offset -lt 64 -or $offset -gt $bytes.Length-24 -or [BitConverter]::ToUInt32($bytes,$offset) -ne 0x4550 -or [BitConverter]::ToUInt16($bytes,$offset+4) -ne 0x8664){throw "NOT_AMD64_PE: $f"}
+          }
+          $proof=[ordered]@{
+            status='P01_CEF154_REAL_MSVC_DLL_AND_SUBPROCESS_PASS'
+            sourceCount=14
+            cefVersion='154.0.28+g564dd6c+chromium-154.0.8037.58'
+            cefDllSHA256=(Get-FileHash $dll -Algorithm SHA256).Hash.ToLowerInvariant()
+            cefSubprocessSHA256=(Get-FileHash $exe -Algorithm SHA256).Hash.ToLowerInvariant()
+            completeUpmAssembled=$false
+            unityPlayerExecuted=$false
+            gpuVerified=$false
+          }
+          $proof|ConvertTo-Json|Set-Content (Join-Path $env:RUNNER_TEMP 'cef154-native-proof.json') -Encoding utf8
+      - name: Publish native evidence and project DLL/subprocess only
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: cwv-p01-cef154-real-native-evidence
+          retention-days: 7
+          if-no-files-found: warn
+          path: |
+            ${{ runner.temp }}/cef154-sdk-proof.json
+            ${{ runner.temp }}/cef154-native-proof.json
+            ${{ runner.temp }}/cef154-product-msvc/stage/native/Release/CompanyWebViewCefTextureProbe.dll
+            ${{ runner.temp }}/cef154-product-msvc/stage/runtime/Release/CompanyWebViewCefSubprocess.exe
