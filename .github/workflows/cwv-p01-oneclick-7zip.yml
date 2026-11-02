@@ -28,7 +28,7 @@ jobs:
             if($item.Executable -match ' 7-Zip 26.03 \(x64\) $') {throw 'Display name used as a path'}
           }
           Write-Host "CEF_EXTRACTOR_BAD_DISPLAY_NAME_SKIP_PASS candidates=$($items.Count)"
-          $dir=Join-Path $env:RUNNER_TEMP ' 7-Zip 26.03 (x64) '
+          $dir=Join-Path $env:RUNNER_TEMP '7-Zip 26.03 (x64)'
           New-Item -ItemType Directory -Force -Path $dir | Out-Null
           $exe=Join-Path $dir '7z.exe'
           Copy-Item "$env:SystemRoot\System32\where.exe" $exe -Force
