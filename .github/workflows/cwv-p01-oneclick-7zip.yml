@@ -1,0 +1,44 @@
+name: CompanyWebView / One-click 7-Zip path regression
+on:
+  push:
+    branches: [verify/cwv-p01-windows-20261029]
+    paths:
+      - 'companywebview-p01/Validation/RealDevice/CefExtractors.ps1'
+      - '.github/workflows/cwv-p01-oneclick-7zip.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  windows-extractor:
+    runs-on: windows-2022
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate PowerShell executable discovery with malformed 7-Zip display name
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          . ./companywebview-p01/Validation/RealDevice/CefExtractors.ps1
+          $env:CWV_7ZIP_EXE=' 7-Zip 26.03 (x64) '
+          $items=@(Get-CefExtractorCandidates)
+          if ($items.Count -lt 1) { throw 'System32 bsdtar not discovered' }
+          foreach($item in $items) {
+            if(-not [IO.Path]::IsPathRooted($item.Executable)) {throw "Nonrooted program was admitted: $($item.Executable)"}
+            if(-not [IO.File]::Exists($item.Executable)) {throw "Nonexistent program was admitted"}
+            if($item.Executable -match ' 7-Zip 26.03 \(x64\) $') {throw 'Display name used as a path'}
+          }
+          Write-Host "CEF_EXTRACTOR_BAD_DISPLAY_NAME_SKIP_PASS candidates=$($items.Count)"
+          $dir=Join-Path $env:RUNNER_TEMP ' 7-Zip 26.03 (x64) '
+          New-Item -ItemType Directory -Force -Path $dir | Out-Null
+          $exe=Join-Path $dir '7z.exe'
+          Copy-Item "$env:SystemRoot\System32\where.exe" $exe -Force
+          $env:CWV_7ZIP_EXE=$exe
+          $more=@(Get-CefExtractorCandidates)
+          if(@($more | Where-Object { $_.Executable -eq $exe -and $_.Kind -eq '7z' }).Count -ne 1) {
+            throw 'Executable within versioned folder with spaces was not admitted'
+          }
+          Write-Host 'CEF_EXTRACTOR_VERSIONED_ABSOLUTE_EXE_PASS'
+          Remove-Item -LiteralPath $exe -Force
+          $after=@(Get-CefExtractorCandidates)
+          if (@($after|Where-Object {$_.Executable -eq $exe}).Count -ne 0) {throw 'Deleted program still admitted'}
+          Write-Host 'CEF_EXTRACTOR_MISSING_EXE_SKIP_PASS'
