@@ -1,0 +1,74 @@
+name: R76 one-import BoostMap physical RTX migration smoke
+on:
+  push:
+    branches: [ci/r76-map-dropin-20261103]
+    paths:
+      - '.github/workflows/r76-dropin-rtx.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: olvt-r76-physical-dropin
+  cancel-in-progress: false
+jobs:
+  physical-dropin:
+    runs-on: [self-hosted, Windows, X64, m5-gpu]
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: powershell
+    steps:
+      - name: Check out verification harness
+        uses: actions/checkout@v4
+        with:
+          path: harness
+          persist-credentials: false
+      - name: Pin immutable R76 candidate source
+        uses: actions/checkout@v4
+        with:
+          repository: rydolabs/ol-vt-gl-boost
+          ref: 54e703ae833004b5764f58b6ff13785d1741482b
+          path: candidate
+          persist-credentials: false
+      - name: Verify exact source and RTX device
+        run: |
+          $ErrorActionPreference='Stop'
+          $sha=(git -C candidate rev-parse HEAD).Trim()
+          if($sha -ne '54e703ae833004b5764f58b6ff13785d1741482b'){throw "R76 candidate drift: $sha"}
+          if(-not (Get-CimInstance Win32_VideoController|Where-Object{$_.Name -match 'NVIDIA.*RTX 5060 Ti'})){throw 'Physical RTX 5060 Ti required'}
+          Write-Host "R76_EXACT_SOURCE_SHA: $sha"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Restore OL 10.10.0 and prepare independently sourced PBF data
+        run: |
+          $ErrorActionPreference='Stop'
+          Push-Location candidate
+          try{
+            npm ci --no-audit --no-fund
+            if($LASTEXITCODE -ne 0){throw 'npm ci failed'}
+            npm run test:r76
+            if($LASTEXITCODE -ne 0){throw 'R76 static compatibility contract failed'}
+            npm install --no-save --package-lock=false --ignore-scripts --no-audit --no-fund playwright@1.55.0
+            if($LASTEXITCODE -ne 0){throw 'playwright install failed'}
+            npm run test:rtx:prepare
+            if($LASTEXITCODE -ne 0){throw 'PBF preparation failed'}
+          }finally{Pop-Location}
+      - name: Real Chrome RTX Map import swap, 8 and 50 layers, and OL fallback
+        env:
+          R76_CANDIDATE_SHA: '54e703ae833004b5764f58b6ff13785d1741482b'
+        run: |
+          $ErrorActionPreference='Stop'
+          node candidate\tests\rtx\run_r76_dropin_map.mjs candidate candidate\artifacts\r76-dropin
+          if($LASTEXITCODE -ne 0){throw 'R76 physical Map compatibility failed'}
+          $s=Get-Content candidate\artifacts\r76-dropin\summary.json -Raw | ConvertFrom-Json
+          if(-not $s.pass -or @($s.scenes).Count -ne 2){throw 'Incomplete R76 physical proof'}
+          Write-Host 'R76_PHYSICAL_8_AND_50_LAYER_DROPIN_PASS'
+      - name: Preserve exact proof on failure and success
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: olvt-r76-exact-dropin-map-rtx
+          path: candidate/artifacts/r76-dropin/**
+          retention-days: 30
+          if-no-files-found: warn
