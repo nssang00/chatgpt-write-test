@@ -1,0 +1,83 @@
+name: R79 nonblocking GL error physical RTX 5060 Ti verification
+on:
+  push:
+    branches: [ci/r79-gl-check-rtx-20261103]
+    paths:
+      - '.github/workflows/r79-gl-error-rtx.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: olvt-r79-physical
+  cancel-in-progress: false
+jobs:
+  physical-gl-validation:
+    runs-on: [self-hosted, Windows, X64, m5-gpu]
+    timeout-minutes: 55
+    defaults:
+      run:
+        shell: powershell
+    steps:
+      - name: Checkout verification harness
+        uses: actions/checkout@v4
+        with:
+          path: harness
+          persist-credentials: false
+      - name: Checkout R79 exact candidate
+        uses: actions/checkout@v4
+        with:
+          repository: rydolabs/ol-vt-gl-boost
+          ref: 1eb41388f96e85d75f437ac28cb01a41df6e00c1
+          path: candidate
+          persist-credentials: false
+      - name: Verify exact source and physical NVIDIA GPU
+        run: |
+          $ErrorActionPreference='Stop'
+          $actual=(git -C candidate rev-parse HEAD).Trim()
+          if($actual -ne '1eb41388f96e85d75f437ac28cb01a41df6e00c1'){throw "R79 source SHA drift: $actual"}
+          $gpu=(Get-CimInstance Win32_VideoController|Where-Object{$_.Name -match 'NVIDIA.*RTX 5060 Ti'})
+          if(-not $gpu){throw 'Physical RTX 5060 Ti not detected'}
+          Write-Host "R79_SOURCE_SHA=$actual; GPU=$($gpu.Name)"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Restore OL 10.10.0 and 32 independent local MVT fixtures
+        run: |
+          $ErrorActionPreference='Stop'
+          Push-Location candidate
+          try{
+            npm ci --no-audit --no-fund
+            if($LASTEXITCODE -ne 0){throw 'npm ci failed'}
+            npm run test:r79
+            if($LASTEXITCODE -ne 0){throw 'R79 policy unit test failed'}
+            npm install --no-save --package-lock=false --ignore-scripts --no-audit --no-fund playwright@1.55.0
+            if($LASTEXITCODE -ne 0){throw 'Playwright install failed'}
+            npm run test:rtx:prepare
+            if($LASTEXITCODE -ne 0){throw '32-PBF fixture failed'}
+          }finally{Pop-Location}
+      - name: Physical RTX strict versus nonblocking error detection and fallback
+        env:
+          R79_CANDIDATE_SHA: '1eb41388f96e85d75f437ac28cb01a41df6e00c1'
+        run: |
+          $ErrorActionPreference='Stop'
+          node candidate\tests\browser\run_r79_gl_error_modes.mjs candidate candidate\artifacts\r79-physical-modes
+          if($LASTEXITCODE -ne 0){throw 'Physical R79 strict versus fast validation failed'}
+          $summary=Get-Content candidate\artifacts\r79-physical-modes\summary.json -Raw | ConvertFrom-Json
+          if(-not $summary.pass -or $summary.gpu -ne 'physical-rtx' -or @($summary.samples).Count -ne 8){throw 'Incomplete physical error mode evidence'}
+      - name: Physical RTX Stock OL versus Boost 32-case ABBA
+        env:
+          R77_CANDIDATE_SHA: '1eb41388f96e85d75f437ac28cb01a41df6e00c1'
+        run: |
+          $ErrorActionPreference='Stop'
+          node candidate\tests\browser\run_r77_webgl_vector_tiles.mjs candidate candidate\artifacts\r79-physical-stock
+          if($LASTEXITCODE -ne 0){throw 'Physical R79 stock performance failed'}
+          $summary=Get-Content candidate\artifacts\r79-physical-stock\summary.json -Raw | ConvertFrom-Json
+          if(-not $summary.pass -or $summary.mode -ne 'physical-rtx'){throw 'Incomplete physical stock evidence'}
+      - name: Retain exact GPU evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: r79-rtx-5060ti-gl-submit-and-fallback-evidence
+          path: candidate/artifacts/r79-physical*/**
+          retention-days: 30
+          if-no-files-found: warn
