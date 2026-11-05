@@ -1,0 +1,24 @@
+name: R81 generic Windows self-hosted runner availability probe
+on:
+  push:
+    branches: [ci/r81-pan-hardware-20261105]
+    paths: ['.github/workflows/r81-selfhosted-probe.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: [self-hosted, Windows, X64]
+    timeout-minutes: 5
+    defaults:
+      run:
+        shell: powershell
+    steps:
+      - name: Record runner identity and NVIDIA GPU without hard-coded m5-gpu label
+        run: |
+          $ErrorActionPreference='Stop'
+          Write-Host "R81_SELF_HOSTED_PROBE name=$env:RUNNER_NAME os=$env:RUNNER_OS arch=$env:RUNNER_ARCH"
+          $gpu=Get-CimInstance Win32_VideoController | Select-Object Name,DriverVersion
+          $gpu | ConvertTo-Json -Depth 2
+          $nvidia=@($gpu|Where-Object {$_.Name -match 'RTX 5060 Ti'})
+          Write-Host "R81_SELF_HOSTED_PROBE_RTX_COUNT=$($nvidia.Count)"
