@@ -1,0 +1,118 @@
+name: R81 physical RTX 5060 Ti pan cadence, error recovery and VRAM validation
+on:
+  push:
+    branches: [ci/r81-pan-hardware-20261105]
+    paths: ['.github/workflows/r81-physical-pan-rtx.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: olvt-r81-rtx-physical
+  cancel-in-progress: false
+jobs:
+  physical-pan-validation:
+    runs-on: [self-hosted, Windows, X64, m5-gpu]
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: powershell
+    steps:
+      - name: Confirm real self-hosted Windows RTX runner and NVIDIA monitoring
+        run: |
+          $ErrorActionPreference='Stop'
+          Write-Host "RUNNER_NAME=$env:RUNNER_NAME; RUNNER_OS=$env:RUNNER_OS; RUNNER_ARCH=$env:RUNNER_ARCH"
+          if($env:RUNNER_OS -ne 'Windows'){throw 'Self-hosted Windows runner required'}
+          $gpu=@(Get-CimInstance Win32_VideoController | Select-Object Name,DriverVersion)
+          $gpu | ConvertTo-Json -Depth 3
+          if(-not ($gpu|Where-Object {$_.Name -match 'NVIDIA.*RTX 5060 Ti'})){throw 'Physical RTX 5060 Ti required'}
+          $smi=Get-Command nvidia-smi.exe -ErrorAction SilentlyContinue
+          if(-not $smi){throw 'nvidia-smi required for GPU memory telemetry'}
+          & $smi.Source --query-gpu=name,driver_version,memory.total,memory.used --format=csv
+          if($LASTEXITCODE -ne 0){throw 'nvidia-smi not responding'}
+          Write-Host 'R81_SELF_HOSTED_PHYSICAL_GPU_CHECK_PASS'
+      - name: Checkout exact R81 diagnostic sources, not a moving branch
+        uses: actions/checkout@v4
+        with:
+          repository: rydolabs/ol-vt-gl-boost
+          ref: 5441ca870b94f89a89a1ac77ca8d30a252295571
+          path: candidate
+          persist-credentials: false
+      - name: Verify candidate SHA, original OL 10.10.0 and 32 PBF fixtures
+        run: |
+          $ErrorActionPreference='Stop'
+          $actual=(git -C candidate rev-parse HEAD).Trim()
+          if($actual -ne '5441ca870b94f89a89a1ac77ca8d30a252295571'){throw "Source drift: $actual"}
+          Push-Location candidate
+          try {
+            npm ci --no-audit --no-fund
+            if($LASTEXITCODE -ne 0){throw 'npm ci failed'}
+            npm run test:r79
+            if($LASTEXITCODE -ne 0){throw 'R79 strict error-mode contract failed'}
+            npm install --no-save --package-lock=false --ignore-scripts --no-audit --no-fund playwright@1.55.0
+            if($LASTEXITCODE -ne 0){throw 'Playwright install failed'}
+            npm run test:rtx:prepare
+            if($LASTEXITCODE -ne 0){throw 'Missing local MVT PBFs'}
+          } finally { Pop-Location }
+          Write-Host "R81_EXACT_CANDIDATE_SHA=$actual"
+      - name: Capture physical GPU VRAM and execute R81/R79/R80 hardware validation
+        env:
+          R81_CANDIDATE_SHA: '5441ca870b94f89a89a1ac77ca8d30a252295571'
+          R79_CANDIDATE_SHA: '5441ca870b94f89a89a1ac77ca8d30a252295571'
+          R80_CANDIDATE_SHA: '5441ca870b94f89a89a1ac77ca8d30a252295571'
+          R81_CASE_MS: '30000'
+          R80_CASE_MS: '7000'
+          R80_SOAK_MS: '60000'
+        run: |
+          $ErrorActionPreference='Stop'
+          $dir=Join-Path (Resolve-Path candidate).Path 'artifacts\r81-physical'
+          New-Item -ItemType Directory -Path $dir -Force | Out-Null
+          $smi=(Get-Command nvidia-smi.exe -ErrorAction Stop).Source
+          $path=Join-Path $dir 'gpu-vram-utilization.csv'
+          'utc,memory_used_mib,gpu_util_percent,gpu_temperature_c' | Set-Content $path
+          $sampler=Start-Job -ScriptBlock {
+            param($command,$file)
+            while($true){
+              $now=[DateTime]::UtcNow.ToString('o')
+              $value=& $command --query-gpu=memory.used,utilization.gpu,temperature.gpu --format=csv,noheader,nounits 2>$null | Select-Object -First 1
+              if($value){Add-Content -Path $file -Value "$now,$value"}
+              Start-Sleep -Seconds 2
+            }
+          } -ArgumentList $smi,$path
+          try {
+            node candidate\tests\browser\run_r81_raf_tail_diagnostic.mjs candidate candidate\artifacts\r81-physical\cadence
+            if($LASTEXITCODE -ne 0){throw 'R81 physical pan jitter experiment failed'}
+            $a=Get-Content candidate\artifacts\r81-physical\cadence\summary.json -Raw | ConvertFrom-Json
+            if(-not $a.pass -or $a.gpu -ne 'physical-rtx' -or @($a.cases).Count -ne 4){
+              throw 'Incomplete physical R81 rAF cadence evidence'
+            }
+            Write-Host 'R81_PHYSICAL_32_SOURCE_CADENCE_PASS'
+            node candidate\tests\browser\run_r79_gl_error_modes.mjs candidate candidate\artifacts\r81-physical\error-modes
+            if($LASTEXITCODE -ne 0){throw 'R79 strict/nonblocking hardware errors failed'}
+            $b=Get-Content candidate\artifacts\r81-physical\error-modes\summary.json -Raw | ConvertFrom-Json
+            if(-not $b.pass -or $b.gpu -ne 'physical-rtx' -or @($b.fallbacks).Count -ne 2){
+              throw 'Incomplete physical R79 errors and Stock OL fallback'
+            }
+            Write-Host 'R81_PHYSICAL_ERROR_AND_CONTEXT_LOSS_FALLBACK_PASS'
+            node candidate\tests\browser\run_r80_merge_gates.mjs candidate candidate\artifacts\r81-physical\soak
+            if($LASTEXITCODE -ne 0){throw 'R80 sustained hardware panning failed'}
+            $c=Get-Content candidate\artifacts\r81-physical\soak\summary.json -Raw | ConvertFrom-Json
+            if(-not $c.pass -or $c.gpuMode -ne 'physical-rtx' -or @($c.cases).Count -ne 8 -or -not $c.soak){
+              throw 'Incomplete physical R80 60-second soak'
+            }
+            Write-Host 'R81_PHYSICAL_60_SEC_PAN_SOAK_PASS'
+          } finally {
+            Stop-Job -Job $sampler -ErrorAction SilentlyContinue
+            Receive-Job -Job $sampler -ErrorAction SilentlyContinue | Out-Null
+            Remove-Job -Job $sampler -Force -ErrorAction SilentlyContinue
+          }
+          $lines=@(Get-Content $path)
+          if($lines.Count -lt 30){throw "GPU VRAM sampling incomplete: $($lines.Count) rows"}
+          Write-Host "R81_PHYSICAL_VRAM_TELEMETRY_PASS rows=$($lines.Count)"
+      - name: Preserve evidence even if a hardware gate fails
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: r81-rtx5060ti-raw-raf-fallback-soak-and-vram
+          path: candidate/artifacts/r81-physical/**
+          retention-days: 30
+          if-no-files-found: warn
