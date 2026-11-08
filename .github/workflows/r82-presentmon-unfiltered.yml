@@ -1,0 +1,75 @@
+name: R82 unfiltered PresentMon ETW fallback capture (diagnostic)
+on:
+  push:
+    branches: [ci/r82-gpu-present-probe-20261108]
+    paths: ['.github/workflows/r82-presentmon-unfiltered.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: olvt-r82-presentmon-unfiltered
+  cancel-in-progress: false
+jobs:
+  etw-capture:
+    runs-on: [self-hosted, Windows, X64, m5-gpu]
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: powershell
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: harness
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: rydolabs/ol-vt-gl-boost
+          ref: 5441ca870b94f89a89a1ac77ca8d30a252295571
+          path: candidate
+          persist-credentials: false
+      - name: Verify immutable renderer/GPU
+        run: |
+          $ErrorActionPreference='Stop'
+          $actual=(git -C candidate rev-parse HEAD).Trim()
+          if($actual -ne '5441ca870b94f89a89a1ac77ca8d30a252295571'){throw 'Candidate SHA drift'}
+          $gpu=Get-CimInstance Win32_VideoController | Where-Object {$_.Name -match 'NVIDIA.*RTX 5060 Ti'}
+          if(-not $gpu){throw 'RTX 5060 Ti not found'}
+          Write-Host "R82_CANDIDATE=$actual GPU=$($gpu.Name) SESSION=$env:SESSIONNAME"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Restore pinned runtime and 32 PBF fixtures
+        run: |
+          $ErrorActionPreference='Stop'
+          Push-Location candidate
+          try {
+            npm ci --no-audit --no-fund
+            if($LASTEXITCODE -ne 0){throw 'npm ci failed'}
+            npm install --no-save --package-lock=false --ignore-scripts --no-audit --no-fund playwright@1.55.0
+            if($LASTEXITCODE -ne 0){throw 'Playwright install failed'}
+            npm run test:rtx:prepare
+            if($LASTEXITCODE -ne 0){throw 'MVT fixtures failed'}
+          } finally {Pop-Location}
+      - name: Download official standalone PresentMon and validate SHA256
+        run: |
+          $ErrorActionPreference='Stop'
+          $url='https://github.com/GameTechDev/PresentMon/releases/download/v2.6.0/PresentMon-2.6.0-x64.exe'
+          $exe='harness/tools/PresentMon-2.6.0-x64.exe'
+          Invoke-WebRequest -Uri $url -OutFile $exe -MaximumRedirection 8
+          $actual=(Get-FileHash -Algorithm SHA256 $exe).Hash.ToLowerInvariant()
+          if($actual -ne 'b2a706bc6ad475749e3b7e3409263aa1e6906d45bdcf993f6dbc0f660188f1af'){throw "Unexpected PresentMon SHA $actual"}
+      - name: Attempt unfiltered ETW presentation capture, label RDP limitations
+        env:
+          R82_CANDIDATE_SHA: '5441ca870b94f89a89a1ac77ca8d30a252295571'
+        run: |
+          $ErrorActionPreference='Stop'
+          node harness/tools/run_r82_presentmon_compare.mjs candidate harness/artifacts/r82-unfiltered-presentmon harness/tools/PresentMon-2.6.0-x64.exe
+          if($LASTEXITCODE -ne 0){throw 'No fully attributed Chrome display frames; inspect artifact, do not claim presented FPS'}
+      - name: Preserve raw ETW evidence and negative outcomes
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: r82-unfiltered-presentmon-etw-raw
+          path: harness/artifacts/r82-unfiltered-presentmon/**
+          retention-days: 30
+          if-no-files-found: warn
