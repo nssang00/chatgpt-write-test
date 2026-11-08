@@ -98,6 +98,23 @@ jobs:
           $ErrorActionPreference='Stop'
           node harness/tools/run_r82_gpu_scene_timers.mjs candidate harness/artifacts/r82-probe/gpu-scenes
           if($LASTEXITCODE -ne 0){throw 'R82 GPU-scene comparison failed; inspect raw artifacts'}
+      - name: Obtain official portable PresentMon v2.6.0 with pinned SHA256
+        run: |
+          $ErrorActionPreference='Stop'
+          $url='https://github.com/GameTechDev/PresentMon/releases/download/v2.6.0/PresentMon-2.6.0-x64.exe'
+          $exe='harness/tools/PresentMon-2.6.0-x64.exe'
+          Invoke-WebRequest -Uri $url -OutFile $exe -MaximumRedirection 8
+          $sha=(Get-FileHash -Algorithm SHA256 $exe).Hash.ToLowerInvariant()
+          $expected='b2a706bc6ad475749e3b7e3409263aa1e6906d45bdcf993f6dbc0f660188f1af'
+          if($sha -ne $expected){throw "PresentMon SHA256 mismatch $sha"}
+          Write-Host "PRESENTMON_OFFICIAL_RELEASE_HASH_VERIFIED=$sha"
+      - name: Capture Windows ETW presentation over 32-layer Stock versus Boost ABBA
+        env:
+          R82_CANDIDATE_SHA: '5441ca870b94f89a89a1ac77ca8d30a252295571'
+        run: |
+          $ErrorActionPreference='Stop'
+          node harness/tools/run_r82_presentmon_compare.mjs candidate harness/artifacts/r82-probe/presentmon harness/tools/PresentMon-2.6.0-x64.exe
+          if($LASTEXITCODE -ne 0){throw 'ETW capture failed; review raw results and preserve prior GPU timings'}
       - name: Preserve capability evidence even if not supported
         if: always()
         uses: actions/upload-artifact@v4
