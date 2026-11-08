@@ -71,7 +71,7 @@ try{
    fail(state.ready&&state.loaded>=32&&!state.errors.length&&
     (mode==='stock'||state.exclusive===true),'incomplete scene '+JSON.stringify(state));
    const file=join(out,'presentmon-'+index+'-'+mode+'.csv');
-   const args=['--process_name','chrome.exe','--output_file',file,
+   const args=['--output_file',file,
     '--timed','17','--terminate_after_timed','--v2_metrics','--write_display_metadata'];
    pm=spawn(present,args,{windowsHide:true,stdio:'pipe'});
    pm.stdout.on('data',x=>pmOut+=String(x));
@@ -105,8 +105,10 @@ try{
      'exit: '+JSON.stringify(exit)+'\nSTDOUT\n'+pmOut+'\nSTDERR\n'+pmErr+'\n');
    let csv={headers:[],rows:[]},csvError=null;
    try{csv=parseCsv(await readFile(file,'utf8'))}catch(e){csvError=String(e)}
+   const chromeRows=csv.rows.filter(row=>String(row.Application||'').toLowerCase().includes('chrome.exe'));
+   const unknownRows=csv.rows.filter(row=>String(row.Application||'').includes('<unknown>'));
    const bySwapchain=new Map();
-   for(const row of csv.rows){
+   for(const row of chromeRows){
      const key=[row.ProcessID??row.ProcessId??'',row.SwapChainAddress??''].join(':');
      const values=bySwapchain.get(key)||[];values.push(row);bySwapchain.set(key,values);
    }
@@ -117,7 +119,8 @@ try{
    grouped.sort((a,b)=>b.displayedTime.n-a.displayedTime.n);
    const best=grouped[0]||null;
    const caseResult={index,mode,state,pan,presentMon:{exit,csvError,
-     csvRows:csv.rows.length,columns:csv.headers,streams:grouped,
+     csvRows:csv.rows.length,chromeRows:chromeRows.length,unknownRows:unknownRows.length,
+     columns:csv.headers,streams:grouped,
      dominantSwapchain:best?.key??null,dominantDisplayTime:best?.displayedTime??null,
      // This is ETW swapchain display cadence only; do not call monitor/app FPS.
      observedSwapchainDisplayHz:best?.displayedTime?.mean?
@@ -132,7 +135,10 @@ try{
   }
  }
  data.pass=data.cases.length===4&&data.cases.every(c=>
-  c.pageErrors.length===0&&c.state.errors.length===0);
+  c.pageErrors.length===0&&c.state.errors.length===0&&
+  c.presentMon.chromeRows>=50&&
+  c.presentMon.dominantDisplayTime?.n>=50);
+ data.displayCaptureVerified=data.pass;
 }catch(e){data.errors.push(String(e?.stack||e));console.error('R82_PM_FAILED',data.errors.at(-1));}
 finally{
  await writeFile(join(out,'summary.json'),JSON.stringify(data,null,2)+'\n');
@@ -140,7 +146,7 @@ finally{
  if(server.exitCode===null){server.kill();await wait(250)}
 }
 console.log('R82_PM_SUMMARY',JSON.stringify({pass:data.pass,errors:data.errors,
- cases:data.cases.map(c=>({mode:c.mode,rows:c.presentMon.csvRows,
+ cases:data.cases.map(c=>({mode:c.mode,rows:c.presentMon.csvRows,chromeRows:c.presentMon.chromeRows,
   displayedHz:c.presentMon.observedSwapchainDisplayHz,
   exit:c.presentMon.exit}))}));
 if(!data.pass)process.exitCode=1;
