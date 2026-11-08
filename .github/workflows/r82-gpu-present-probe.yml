@@ -41,6 +41,9 @@ jobs:
           if(-not ($gpu | Where-Object {$_.Name -match 'NVIDIA.*RTX 5060 Ti'})){throw 'Physical RTX 5060 Ti not present'}
           $monitors=@(Get-CimInstance Win32_DesktopMonitor | Select-Object Name,Status,ScreenWidth,ScreenHeight,PNPDeviceID)
           $sessions=(& query session 2>&1 | Out-String)
+          # Windows query.exe may return nonzero even when listing a valid active session.
+          # Preserve its text but do not accidentally fail the entire diagnostics step.
+          $global:LASTEXITCODE=0
           $presentCandidates=@('C:\Program Files\Intel\PresentMon\PresentMon.exe','C:\Program Files\PresentMon\PresentMon.exe')
           $pm=(Get-Command PresentMon.exe -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty Source)
           if(-not $pm){$pm=$presentCandidates | Where-Object {Test-Path $_} | Select-Object -First 1}
