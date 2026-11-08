@@ -1,0 +1,100 @@
+{
+  "schema": "ol-vt-gl-boost-r82-gpu-and-display-evidence-v1",
+  "date": "2026-11-08",
+  "candidate_source_sha": "5441ca870b94f89a89a1ac77ca8d30a252295571",
+  "renderer_runtime": "R79 unchanged since 1eb41388f96e85d75f437ac28cb01a41df6e00c1",
+  "gpu": "NVIDIA GeForce RTX 5060 Ti",
+  "driver": "32.0.16.1047",
+  "renderer_version": "OpenLayers 10.10.0",
+  "source_count": 32,
+  "workload": "controlled 32 distinct local MapLibre/OpenMapTiles MVT, literal styles, 512x512, warm",
+  "metrics": {
+    "type": "WebGL1 EXT_disjoint_timer_query TIME_ELAPSED_EXT; GPU command interval only, not display FPS",
+    "test_mode": "Chrome headed Windows RTX RDP environment, 32 source ABBA each run, 18 valid async queries per page",
+    "runs": [
+      {
+        "github_run": 42465958257,
+        "artifact_id": 13611712268,
+        "artifact_sha256": "76359a9dc68dcd15198228ff03c97d7ce0691ee6ee510caeea1fa9b89c60f39e",
+        "harness_head_sha": "6696484cb2486235d5b5fbc232f2ed12fd4fa114",
+        "stock": {
+          "n": 36,
+          "median_ms": 3.27976,
+          "mean_ms": 3.881736,
+          "p95_ms": 6.349184
+        },
+        "boost": {
+          "n": 36,
+          "median_ms": 0.528112,
+          "mean_ms": 0.6380737777777777,
+          "p95_ms": 1.385184
+        },
+        "result": "success",
+        "webgl_contexts_per_page": 1
+      },
+      {
+        "github_run": 42466288184,
+        "artifact_id": 13612020800,
+        "artifact_sha256": "333620d906f68e0d0141242442f3ea94879d3a316a2b93cdda6cbd2dffaebc15",
+        "harness_head_sha": "0123491929fec6b3ddd5e57fa491d46e28053d55",
+        "stock": {
+          "n": 36,
+          "median_ms": 3.537728,
+          "mean_ms": 4.06302,
+          "p95_ms": 12.64643
+        },
+        "boost": {
+          "n": 36,
+          "median_ms": 0.50718,
+          "mean_ms": 0.55011,
+          "p95_ms": 0.91318
+        },
+        "result": "gpu-timers-success",
+        "webgl_contexts_per_page": 1
+      }
+    ]
+  },
+  "presented_fps": {
+    "status": "NOT_MEASURED",
+    "reason": "PresentMon ETW capture emitted no CSV and zero attributable Chrome display frames in both filtered and unfiltered runs. Host has active RDP session; PM privileges warning. The workflows' successes are NOT presented-FPS validations.",
+    "attempts": [
+      {
+        "github_run": 42466288184,
+        "artifact_id": 13612020800,
+        "name_filter": "chrome.exe",
+        "rows": 0,
+        "reported_process_exit": 0
+      },
+      {
+        "github_run": 42466632028,
+        "artifact_id": 13611614269,
+        "artifact_sha256": "a288032281e9a6e3b17c6e4a57aefc44a9465c67a58b7d2a2884bd916942363f",
+        "harness_head_sha": "87cd08a96e763818ab213b3eb815ccb54ce372fe",
+        "name_filter": null,
+        "rows": 0,
+        "attributed_chrome_frames": 0,
+        "workflow_conclusion": "failure on required displayed frame gate"
+      }
+    ],
+    "presentmon": "GameTechDev/PresentMon v2.6.0 portable x64, verified SHA256 b2a706bc6ad475749e3b7e3409263aa1e6906d45bdcf993f6dbc0f660188f1af"
+  },
+  "release_decision": {
+    "experimental_merge": "NOT_APPROVED",
+    "production": "NO_GO",
+    "reasons": [
+      "nonblocking non-context-loss GL error fail-closed unproven",
+      "dynamic layer compatibility fallback unproven",
+      "32-layer Stock/Boost raster differs by 4.06% pixels",
+      "real presented FPS still unmeasured",
+      "production duration VRAM leak not verified",
+      "repository source redistribution license absent; no human PR reviews",
+      "final integrated SHA untested"
+    ]
+  },
+  "notes": [
+    "All raw ZIPs independently SHA256 and CRC verified on download.",
+    "Rendering source SHA was not modified; only separate diagnostic harness branch updated.",
+    "Do not infer FPS from GPU query times or rAF callback cadence.",
+    "Artifacts are retained for about 30 days; preserve before expiry."
+  ]
+}
