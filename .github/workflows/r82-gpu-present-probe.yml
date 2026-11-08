@@ -1,0 +1,90 @@
+name: R82 RTX GPU timer and Windows display capability probe
+on:
+  push:
+    branches: [ci/r82-gpu-present-probe-20261108]
+    paths:
+      - '.github/workflows/r82-gpu-present-probe.yml'
+      - 'tools/run_r82_capability_probe.mjs'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: olvt-r82-gpu-probe
+  cancel-in-progress: false
+jobs:
+  capability:
+    runs-on: [self-hosted, Windows, X64, m5-gpu]
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: powershell
+    steps:
+      - name: Checkout independent diagnostic harness
+        uses: actions/checkout@v4
+        with:
+          path: harness
+          persist-credentials: false
+      - name: Checkout immutable R81 diagnostic source with unchanged R79 runtime
+        uses: actions/checkout@v4
+        with:
+          repository: rydolabs/ol-vt-gl-boost
+          ref: 5441ca870b94f89a89a1ac77ca8d30a252295571
+          path: candidate
+          persist-credentials: false
+      - name: Collect GPU, desktop session, monitor and PresentMon prerequisites
+        run: |
+          $ErrorActionPreference='Stop'
+          New-Item -ItemType Directory -Force 'harness/artifacts/r82-probe' | Out-Null
+          $sha=(git -C candidate rev-parse HEAD).Trim()
+          if($sha -ne '5441ca870b94f89a89a1ac77ca8d30a252295571'){throw "Unexpected renderer SHA: $sha"}
+          $gpu=@(Get-CimInstance Win32_VideoController | Select-Object Name,DriverVersion,CurrentHorizontalResolution,CurrentVerticalResolution,CurrentRefreshRate)
+          if(-not ($gpu | Where-Object {$_.Name -match 'NVIDIA.*RTX 5060 Ti'})){throw 'Physical RTX 5060 Ti not present'}
+          $monitors=@(Get-CimInstance Win32_DesktopMonitor | Select-Object Name,Status,ScreenWidth,ScreenHeight,PNPDeviceID)
+          $sessions=(& query session 2>&1 | Out-String)
+          $presentCandidates=@('C:\Program Files\Intel\PresentMon\PresentMon.exe','C:\Program Files\PresentMon\PresentMon.exe')
+          $pm=(Get-Command PresentMon.exe -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty Source)
+          if(-not $pm){$pm=$presentCandidates | Where-Object {Test-Path $_} | Select-Object -First 1}
+          $data=[ordered]@{
+            measured_at_utc=[DateTime]::UtcNow.ToString('o')
+            candidate_sha=$sha
+            runner_name=$env:RUNNER_NAME
+            runner_os=$env:RUNNER_OS
+            username=$env:USERNAME
+            session_name=$env:SESSIONNAME
+            gpu=$gpu
+            monitors=$monitors
+            sessions=$sessions
+            presentmon_path=$pm
+            presentmon_available=[bool]$pm
+            note='Desktop availability and PresentMon capture have NOT been proven by this environment probe.'
+          }
+          $data | ConvertTo-Json -Depth 8 | Set-Content 'harness/artifacts/r82-probe/environment.json'
+          $data | ConvertTo-Json -Depth 8
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Restore pinned candidate and browser driver
+        run: |
+          $ErrorActionPreference='Stop'
+          Push-Location candidate
+          try {
+            npm ci --no-audit --no-fund
+            if($LASTEXITCODE -ne 0){throw 'npm ci failed'}
+            npm install --no-save --package-lock=false --ignore-scripts --no-audit --no-fund playwright@1.55.0
+            if($LASTEXITCODE -ne 0){throw 'playwright install failed'}
+          } finally {Pop-Location}
+      - name: Probe asynchronous WebGL1 GPU timer query and headed Chrome
+        env:
+          R82_CANDIDATE_SHA: '5441ca870b94f89a89a1ac77ca8d30a252295571'
+        run: |
+          $ErrorActionPreference='Stop'
+          node harness/tools/run_r82_capability_probe.mjs candidate harness/artifacts/r82-probe
+          if($LASTEXITCODE -ne 0){throw 'Hardware WebGL capability probe failed; inspect artifact'}
+      - name: Preserve capability evidence even if not supported
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: r82-rtx5060ti-gpu-and-present-preflight
+          path: harness/artifacts/r82-probe/**
+          retention-days: 30
+          if-no-files-found: warn
