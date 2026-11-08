@@ -40,14 +40,14 @@
         "stock": {
           "n": 36,
           "median_ms": 3.537728,
-          "mean_ms": 4.06302,
-          "p95_ms": 12.64643
+          "mean_ms": 4.063023111111111,
+          "p95_ms": 12.646432
         },
         "boost": {
           "n": 36,
-          "median_ms": 0.50718,
-          "mean_ms": 0.55011,
-          "p95_ms": 0.91318
+          "median_ms": 0.507184,
+          "mean_ms": 0.550112,
+          "p95_ms": 0.913184
         },
         "result": "gpu-timers-success",
         "webgl_contexts_per_page": 1
