@@ -83,6 +83,21 @@ jobs:
           $ErrorActionPreference='Stop'
           node harness/tools/run_r82_capability_probe.mjs candidate harness/artifacts/r82-probe
           if($LASTEXITCODE -ne 0){throw 'Hardware WebGL capability probe failed; inspect artifact'}
+      - name: Prepare 32 unique identical MVT fixtures for real 32-layer GPU tests
+        run: |
+          $ErrorActionPreference='Stop'
+          Push-Location candidate
+          try{
+            npm run test:rtx:prepare
+            if($LASTEXITCODE -ne 0){throw 'MVT fixtures unavailable'}
+          }finally{Pop-Location}
+      - name: Measure OL 10.10.0 and Boost WebGL GPU time with asynchronous disjoint timer queries
+        env:
+          R82_CANDIDATE_SHA: '5441ca870b94f89a89a1ac77ca8d30a252295571'
+        run: |
+          $ErrorActionPreference='Stop'
+          node harness/tools/run_r82_gpu_scene_timers.mjs candidate harness/artifacts/r82-probe/gpu-scenes
+          if($LASTEXITCODE -ne 0){throw 'R82 GPU-scene comparison failed; inspect raw artifacts'}
       - name: Preserve capability evidence even if not supported
         if: always()
         uses: actions/upload-artifact@v4
