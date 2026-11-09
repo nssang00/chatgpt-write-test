@@ -1,0 +1,82 @@
+name: R83 physical RTX 5060 Ti strict release safety and GPU comparison
+on:
+  push:
+    branches: [ci/r83-release-safety-rtx-20261109]
+    paths:
+      - '.github/workflows/r83-physical-rtx-release-gates.yml'
+      - 'tools/run_r83_strict_gpu_scene_timers.mjs'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: olvt-r83-physical-rtx
+  cancel-in-progress: false
+jobs:
+  r83-physical:
+    runs-on: [self-hosted, Windows, X64, m5-gpu]
+    timeout-minutes: 50
+    defaults:
+      run:
+        shell: powershell
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: harness
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: rydolabs/ol-vt-gl-boost
+          ref: 4e616701f84ff867fbb2d53f2cadcfa90c6bda39
+          path: candidate
+          persist-credentials: false
+      - name: Verify immutable candidate SHA and physical GPU
+        run: |
+          $ErrorActionPreference='Stop'
+          $sha=(git -C candidate rev-parse HEAD).Trim()
+          if($sha -ne '4e616701f84ff867fbb2d53f2cadcfa90c6bda39'){throw "R83 sha drift $sha"}
+          $gpu=Get-CimInstance Win32_VideoController | Where-Object {$_.Name -match 'NVIDIA.*RTX 5060 Ti'}
+          if(-not $gpu){throw 'Physical RTX 5060 Ti missing'}
+          Write-Host "R83_PHYSICAL_GPU=$($gpu.Name) SHA=$sha"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Restore exact OL 10.10.0 and local 32 MVT fixtures
+        run: |
+          $ErrorActionPreference='Stop'
+          Push-Location candidate
+          try{
+            npm ci --no-audit --no-fund
+            if($LASTEXITCODE -ne 0){throw 'npm ci failed'}
+            npm run test:r83
+            if($LASTEXITCODE -ne 0){throw 'R83 unit safety failed'}
+            npm install --no-save --package-lock=false --ignore-scripts --no-audit --no-fund playwright@1.55.0
+            if($LASTEXITCODE -ne 0){throw 'Playwright driver install failed'}
+            npm run test:rtx:prepare
+            if($LASTEXITCODE -ne 0){throw 'MVT download failed'}
+          }finally{Pop-Location}
+      - name: Real OL 10.10.0 native renderer fail-close 5-scenario RTX test
+        env:
+          R83_CANDIDATE_SHA: '4e616701f84ff867fbb2d53f2cadcfa90c6bda39'
+        run: |
+          $ErrorActionPreference='Stop'
+          node candidate/tests/browser/run_r83_release_safety.mjs candidate harness/artifacts/r83-physical/safety
+          if($LASTEXITCODE -ne 0){throw 'Physical RTX R83 safety gate failed'}
+          $result=Get-Content harness/artifacts/r83-physical/safety/summary.json -Raw | ConvertFrom-Json
+          if(-not $result.pass -or @($result.cases).Count -ne 5 -or $result.gpu -ne 'physical-rtx'){throw 'R83 physical safety proof missing'}
+      - name: Strict BoostMap vs Stock OL real WebGL GPU and CPU submit ABBA
+        env:
+          R83_CANDIDATE_SHA: '4e616701f84ff867fbb2d53f2cadcfa90c6bda39'
+        run: |
+          $ErrorActionPreference='Stop'
+          node harness/tools/run_r83_strict_gpu_scene_timers.mjs candidate harness/artifacts/r83-physical/gpu-time
+          if($LASTEXITCODE -ne 0){throw 'Physical RTX R83 strict GPU timing failed'}
+          $result=Get-Content harness/artifacts/r83-physical/gpu-time/summary.json -Raw | ConvertFrom-Json
+          if(-not $result.pass -or @($result.cases).Count -ne 4){throw 'Missing strict-default GPU timing evidence'}
+      - name: Preserve exact candidate, real browser and raw query evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: r83-rtx5060ti-strict-release-safety-and-gpu-abba
+          path: harness/artifacts/r83-physical/**
+          retention-days: 30
+          if-no-files-found: warn
