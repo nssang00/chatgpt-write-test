@@ -1,0 +1,60 @@
+name: R83 hosted strict vs nonblocking WebGL error cost isolation
+on:
+  push:
+    branches: [ci/r83-release-safety-rtx-20261109]
+    paths: ['.github/workflows/r83-hosted-gl-cost.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  r83-gl-cost:
+    runs-on: windows-latest
+    timeout-minutes: 35
+    defaults:
+      run:
+        shell: powershell
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: harness
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: rydolabs/ol-vt-gl-boost
+          ref: 4e616701f84ff867fbb2d53f2cadcfa90c6bda39
+          path: candidate
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Bootstrap identical MVT fixtures and browser
+        run: |
+          $ErrorActionPreference='Stop'
+          $sha=(git -C candidate rev-parse HEAD).Trim()
+          if($sha -ne '4e616701f84ff867fbb2d53f2cadcfa90c6bda39'){throw 'R83 source drift'}
+          Push-Location candidate
+          try{
+            npm ci --no-audit --no-fund
+            if($LASTEXITCODE -ne 0){throw 'npm ci failed'}
+            npm install --no-save --package-lock=false --ignore-scripts --no-audit --no-fund playwright@1.55.0
+            if($LASTEXITCODE -ne 0){throw 'Playwright failed'}
+            npm run test:rtx:prepare
+            if($LASTEXITCODE -ne 0){throw 'MVT fixture failed'}
+          } finally {Pop-Location}
+      - name: Isolate GL getError strict cost using 8/32 identical Boost ABBA
+        env:
+          R79_ALLOW_SOFTWARE_GL: '1'
+          R79_CANDIDATE_SHA: '4e616701f84ff867fbb2d53f2cadcfa90c6bda39'
+        run: |
+          $ErrorActionPreference='Stop'
+          node candidate/tests/browser/run_r79_gl_error_modes.mjs candidate harness/artifacts/r83-gl-cost
+          if($LASTEXITCODE -ne 0){throw 'R83 GL cost ABBA regression failed'}
+          $s=Get-Content harness/artifacts/r83-gl-cost/summary.json -Raw | ConvertFrom-Json
+          if(-not $s.pass -or @($s.samples).Count -ne 8){throw 'Incomplete strict vs nonblocking evidence'}
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: r83-hosted-strict-vs-nonblocking-gl-cost-8-32
+          path: harness/artifacts/r83-gl-cost/**
+          retention-days: 30
+          if-no-files-found: warn
