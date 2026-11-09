@@ -1,0 +1,62 @@
+name: R83 hosted Windows Stock vs strict Boost visual and soak gates
+on:
+  push:
+    branches: [ci/r83-release-safety-rtx-20261109]
+    paths: ['.github/workflows/r83-hosted-visual-strict.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  hosted-strict-visual:
+    runs-on: windows-latest
+    timeout-minutes: 40
+    defaults:
+      run:
+        shell: powershell
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: harness
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: rydolabs/ol-vt-gl-boost
+          ref: 4e616701f84ff867fbb2d53f2cadcfa90c6bda39
+          path: candidate
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Prepare exact runtime and local MVTs
+        run: |
+          $ErrorActionPreference='Stop'
+          $sha=(git -C candidate rev-parse HEAD).Trim()
+          if($sha -ne '4e616701f84ff867fbb2d53f2cadcfa90c6bda39'){throw 'SHA drift'}
+          Push-Location candidate
+          try {
+            npm ci --no-audit --no-fund
+            if($LASTEXITCODE -ne 0){throw 'npm ci failed'}
+            npm install --no-save --package-lock=false --ignore-scripts --no-audit --no-fund playwright@1.55.0
+            if($LASTEXITCODE -ne 0){throw 'Playwright failed'}
+            npm run test:rtx:prepare
+            if($LASTEXITCODE -ne 0){throw 'MVT fixtures failed'}
+          }finally{Pop-Location}
+      - name: Strict BoostMap versus Stock OL 8/32 ABBA screenshots and 90-second pan soak
+        env:
+          R83_ALLOW_SOFTWARE_GL: '1'
+          R83_CANDIDATE_SHA: '4e616701f84ff867fbb2d53f2cadcfa90c6bda39'
+          R83_CASE_MS: '7000'
+          R83_SOAK_MS: '90000'
+        run: |
+          $ErrorActionPreference='Stop'
+          node harness/tools/run_r83_strict_visual_soak.mjs candidate harness/artifacts/r83-hosted-visual
+          if($LASTEXITCODE -ne 0){throw 'Strict Stock-vs-Boost visual/soak failure'}
+          $z=Get-Content harness/artifacts/r83-hosted-visual/summary.json -Raw | ConvertFrom-Json
+          if(-not $z.pass -or @($z.cases).Count -ne 8 -or @($z.comparisons).Count -ne 4){throw 'Incomplete visual evidence'}
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: r83-hosted-stock-vs-strict-boost-visual-90s-soak
+          path: harness/artifacts/r83-hosted-visual/**
+          retention-days: 30
+          if-no-files-found: warn
