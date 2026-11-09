@@ -1,0 +1,65 @@
+name: R83 30-minute RTX 5060 Ti strict pan and GPU memory evidence
+on:
+  push:
+    branches: [ci/r83-release-safety-rtx-20261109]
+    paths: ['.github/workflows/r83-physical-long-soak.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: olvt-r83-physical-rtx
+  cancel-in-progress: false
+jobs:
+  long-soak:
+    runs-on: [self-hosted, Windows, X64, m5-gpu]
+    timeout-minutes: 48
+    defaults:
+      run:
+        shell: powershell
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: harness
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: rydolabs/ol-vt-gl-boost
+          ref: 4e616701f84ff867fbb2d53f2cadcfa90c6bda39
+          path: candidate
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Restore immutable R83 candidate and 32 local MVTs
+        run: |
+          $ErrorActionPreference='Stop'
+          $sha=(git -C candidate rev-parse HEAD).Trim()
+          if($sha -ne '4e616701f84ff867fbb2d53f2cadcfa90c6bda39'){throw 'R83 SHA mismatch'}
+          if(-not (Get-CimInstance Win32_VideoController | Where-Object {$_.Name -match 'NVIDIA.*RTX 5060 Ti'})){throw 'RTX not found'}
+          Push-Location candidate
+          try{
+            npm ci --no-audit --no-fund
+            if($LASTEXITCODE -ne 0){throw 'npm ci failed'}
+            npm install --no-save --package-lock=false --ignore-scripts --no-audit --no-fund playwright@1.55.0
+            if($LASTEXITCODE -ne 0){throw 'Playwright install failed'}
+            npm run test:rtx:prepare
+            if($LASTEXITCODE -ne 0){throw 'PBF preparation failed'}
+          }finally{Pop-Location}
+      - name: Strict-mode 32-source 30min hardware soak, track WDDM counters without mislabeling global VRAM
+        env:
+          R83_CANDIDATE_SHA: '4e616701f84ff867fbb2d53f2cadcfa90c6bda39'
+          R83_SOAK_DURATION_MS: '1800000'
+        run: |
+          $ErrorActionPreference='Stop'
+          node harness/tools/run_r83_30min_strict_soak.mjs candidate harness/artifacts/r83-30min-soak
+          if($LASTEXITCODE -ne 0){throw 'R83 30min strict soak failed or incomplete'}
+          $result=Get-Content harness/artifacts/r83-30min-soak/summary.json -Raw | ConvertFrom-Json
+          if(-not $result.pass -or $result.wallMs -lt 1800000 -or @($result.chunks).Count -lt 30){throw '30min evidence incomplete'}
+      - name: Preserve 30min raw strict and WDDM counter evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: r83-rtx5060ti-strict-30min-pan-soak
+          path: harness/artifacts/r83-30min-soak/**
+          retention-days: 30
+          if-no-files-found: warn
