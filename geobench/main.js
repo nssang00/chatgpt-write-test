@@ -21,10 +21,17 @@ function createCesiumPrimitive(input,color,modelMatrix){
   // Common input coordinates: east, up, north. Cesium ENU: east, north, up.
   const v=new Float64Array(input.positions.length);
   for(let i=0;i<v.length;i+=3){v[i]=input.positions[i];v[i+1]=input.positions[i+2];v[i+2]=input.positions[i+1];}
+  const normals=new Float32Array(v.length);
+  for(let i=0;i<normals.length;i+=3){normals[i]=0;normals[i+1]=0;normals[i+2]=1;}
   const geometry=new Cesium.Geometry({
-    attributes:{position:new Cesium.GeometryAttribute({
-      componentDatatype:Cesium.ComponentDatatype.DOUBLE,componentsPerAttribute:3,values:v
-    })},
+    attributes:{
+      position:new Cesium.GeometryAttribute({
+        componentDatatype:Cesium.ComponentDatatype.DOUBLE,componentsPerAttribute:3,values:v
+      }),
+      normal:new Cesium.GeometryAttribute({
+        componentDatatype:Cesium.ComponentDatatype.FLOAT,componentsPerAttribute:3,values:normals
+      })
+    },
     indices:new Uint32Array(input.indices),
     primitiveType:Cesium.PrimitiveType.TRIANGLES,
     boundingSphere:Cesium.BoundingSphere.fromVertices(v)
