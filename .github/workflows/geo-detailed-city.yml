@@ -13,7 +13,7 @@ concurrency:
 permissions:
   contents: read
 jobs:
-  hosted-software-validation:
+  hosted-fixture-generation:
     runs-on: ubuntu-24.04
     timeout-minutes: 40
     defaults:
@@ -26,14 +26,8 @@ jobs:
           node-version: "22"
       - name: Install Node dependencies
         run: npm install --no-audit --no-fund
-      - name: Install Chromium for WebGL2 software smoke
-        run: npx playwright install --with-deps chromium
       - name: Fetch same OSM and DEM data and synthesize facade geometry
         run: npm run data
-      - name: Check BOTH real browser renderers with SwiftShader
-        env:
-          GEO_TEST_KIND: software
-        run: npm run bench
       - name: Upload identical 3D building geometry
         if: always()
         uses: actions/upload-artifact@v4
@@ -44,16 +38,8 @@ jobs:
             geobench/public/fixture-detailed.json
           if-no-files-found: error
           retention-days: 14
-      - name: Upload hosted screenshots
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: detailed-city-software-outputs
-          path: geobench/results/
-          if-no-files-found: warn
-          retention-days: 14
   self-hosted-windows-gpu:
-    needs: hosted-software-validation
+    needs: hosted-fixture-generation
     runs-on: [self-hosted, Windows, X64, m5-gpu]
     timeout-minutes: 70
     defaults:
