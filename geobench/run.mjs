@@ -44,7 +44,7 @@ try{
       if(errors.length)throw new Error('Browser errors: '+errors.join('\n').slice(0,2000));
       const test=await page.evaluate(async()=>{
         const b=window.__geoBench;
-        const n=kind==='software'?65:260, warmup=kind==='software'?15:70;
+        const n=260, warmup=70;
         const deltas=[];
         let start=0,last=0,end=0;
         let initialRendered=0;
