@@ -62,7 +62,8 @@ if(engine==='cesium'){
   const frame=Cesium.Transforms.eastNorthUpToFixedFrame(Cesium.Cartesian3.fromDegrees(lon,lat,0));
   scene.primitives.add(createCesiumPrimitive(fixture.terrain,Cesium.Color.fromCssColorString('#75876b'),frame));
   scene.primitives.add(createCesiumPrimitive(fixture.buildings,Cesium.Color.fromCssColorString('#c7b6a1'),frame));
-  viewer.camera.frustum.fov=Math.PI/3;
+  // Cesium's fov is horizontal for landscape view; PlayCanvas uses vertical fov.
+  viewer.camera.frustum.fov=2*Math.atan(Math.tan(Math.PI/6)*(1280/720));
   const up=Cesium.Matrix4.multiplyByPointAsVector(frame,new Cesium.Cartesian3(0,0,1),new Cesium.Cartesian3());
   Cesium.Cartesian3.normalize(up,up);
   const toWorld=([x,y,z])=>Cesium.Matrix4.multiplyByPoint(frame,new Cesium.Cartesian3(x,z,y),new Cesium.Cartesian3());
@@ -96,7 +97,10 @@ if(engine==='cesium'){
   };
   function addMesh(input,mat){
     const mesh=new pc.Mesh(app.graphicsDevice);
-    mesh.setPositions(input.positions);
+    // Mirror local north to -Z to keep PlayCanvas right-handed and align Cesium ENU.
+    const positions=new Float32Array(input.positions);
+    for(let i=2;i<positions.length;i+=3)positions[i]=-positions[i];
+    mesh.setPositions(positions);
     mesh.setIndices(input.indices);
     mesh.update();
     const entity=new pc.Entity('geometry');
@@ -111,8 +115,8 @@ if(engine==='cesium'){
   app.root.addChild(camera);
   step=(n)=>{
     const {eye,target}=cameraTrack(n);
-    camera.setPosition(...eye);
-    camera.lookAt(...target);
+    camera.setPosition(eye[0],eye[1],-eye[2]);
+    camera.lookAt(target[0],target[1],-target[2]);
   };
   app.on('postrender',()=>rendered++);
   app.start();
