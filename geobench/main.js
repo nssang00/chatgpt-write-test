@@ -3,19 +3,23 @@ import * as pc from 'playcanvas';
 import 'cesium/Build/Cesium/Widgets/widgets.css';
 
 const engine=new URLSearchParams(location.search).get('engine') || 'cesium';
-const fixture=await (await fetch('/fixture.json')).json();
+const style=new URLSearchParams(location.search).get('style') || 'detailed';
+const fixture=await (await fetch(style==='plain'?'/fixture.json':'/fixture-detailed.json')).json();
 const mount=document.getElementById('mount');
-document.getElementById('meta').textContent=engine+' | OSM buildings '+fixture.metadata.buildingCount+
-  ' | triangles '+(fixture.metadata.triangles.terrain+fixture.metadata.triangles.buildings);
+document.getElementById('meta').textContent=engine.toUpperCase()+' | OSM buildings '+fixture.metadata.buildingCount+
+  ' | '+(style==='detailed'?'procedural facades + windows + real roads':'plain extrusions')+
+  ' | '+(style==='detailed'?Object.values(fixture.metadata.trianglesByMaterial).reduce((a,b)=>a+b,0):fixture.metadata.triangles.terrain+fixture.metadata.triangles.buildings)+' triangles';
 const lon=fixture.metadata.center[0],lat=fixture.metadata.center[1];
 let rendered=0, step, canvas, softwareRenderer=null;
 
 function cameraTrack(n){
+  if(style==='detailed'){
+    const [x,y,z]=fixture.metadata.focus;
+    const theta=.18+.065*Math.sin(n/120);
+    return {eye:[x+118*Math.sin(theta)+72,y+80,z-178*Math.cos(theta)],target:[x,y,z]};
+  }
   const angle=0.20+0.12*Math.sin(n/90);
-  return {
-    eye:[670*Math.sin(angle),440+28*Math.sin(n/150),-670*Math.cos(angle)],
-    target:[0,120,0]
-  };
+  return {eye:[670*Math.sin(angle),440+28*Math.sin(n/150),-670*Math.cos(angle)],target:[0,120,0]};
 }
 function createCesiumPrimitive(input,color,modelMatrix){
   // Common input coordinates: east, up, north. Cesium ENU: east, north, up.
@@ -57,11 +61,20 @@ if(engine==='cesium'){
     contextOptions:{webgl:{alpha:false,antialias:false,preserveDrawingBuffer:true}}
   });
   const scene=viewer.scene;
-  scene.backgroundColor=Cesium.Color.fromCssColorString('#101c29');
+  scene.backgroundColor=Cesium.Color.fromCssColorString(style==='detailed'?'#acbdcb':'#101c29');
   scene.screenSpaceCameraController.enableInputs=false;
   const frame=Cesium.Transforms.eastNorthUpToFixedFrame(Cesium.Cartesian3.fromDegrees(lon,lat,0));
-  scene.primitives.add(createCesiumPrimitive(fixture.terrain,Cesium.Color.fromCssColorString('#75876b'),frame));
-  scene.primitives.add(createCesiumPrimitive(fixture.buildings,Cesium.Color.fromCssColorString('#c7b6a1'),frame));
+  if(style==='detailed'){
+    const colors=fixture.metadata.materialColors;
+    const terrainColor=colors.terrain;
+    scene.primitives.add(createCesiumPrimitive(fixture.terrain,new Cesium.Color(...terrainColor,1),frame));
+    for(const [material,mesh] of Object.entries(fixture.surfaces)){
+      scene.primitives.add(createCesiumPrimitive(mesh,new Cesium.Color(...colors[material],1),frame));
+    }
+  } else {
+    scene.primitives.add(createCesiumPrimitive(fixture.terrain,Cesium.Color.fromCssColorString('#75876b'),frame));
+    scene.primitives.add(createCesiumPrimitive(fixture.buildings,Cesium.Color.fromCssColorString('#c7b6a1'),frame));
+  }
   // Cesium's fov is horizontal for landscape view; PlayCanvas uses vertical fov.
   viewer.camera.frustum.fov=2*Math.atan(Math.tan(Math.PI/6)*(1280/720));
   const up=Cesium.Matrix4.multiplyByPointAsVector(frame,new Cesium.Cartesian3(0,0,1),new Cesium.Cartesian3());
@@ -108,10 +121,16 @@ if(engine==='cesium'){
     entity.addComponent('render',{meshInstances:[mi]});
     app.root.addChild(entity);
   }
-  addMesh(fixture.terrain,makeMaterial(0.459,0.529,0.420));
-  addMesh(fixture.buildings,makeMaterial(0.780,0.714,0.631));
+  if(style==='detailed'){
+    const colors=fixture.metadata.materialColors;
+    addMesh(fixture.terrain,makeMaterial(...colors.terrain));
+    for(const [material,mesh] of Object.entries(fixture.surfaces))addMesh(mesh,makeMaterial(...colors[material]));
+  } else {
+    addMesh(fixture.terrain,makeMaterial(0.459,0.529,0.420));
+    addMesh(fixture.buildings,makeMaterial(0.780,0.714,0.631));
+  }
   const camera=new pc.Entity('camera');
-  camera.addComponent('camera',{clearColor:new pc.Color(0.063,0.110,0.161),fov:60,nearClip:0.1,farClip:5000});
+  camera.addComponent('camera',{clearColor:style==='detailed'?new pc.Color(.674,.741,.796):new pc.Color(0.063,0.110,0.161),fov:60,nearClip:0.1,farClip:5000});
   app.root.addChild(camera);
   step=(n)=>{
     const {eye,target}=cameraTrack(n);
