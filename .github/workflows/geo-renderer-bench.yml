@@ -67,10 +67,10 @@ jobs:
           name: geo-osm-dem-fixture
           path: geobench/public
       - name: Install dependencies
-        shell: pwsh
+        shell: powershell
         run: npm install --no-audit --no-fund
       - name: Select installed hardware-capable browser
-        shell: pwsh
+        shell: powershell
         run: |
           $pf86 = [Environment]::GetFolderPath('ProgramFilesX86')
           $chrome = @(
@@ -87,7 +87,7 @@ jobs:
           else { throw 'No Chrome/Edge browser found on GPU runner' }
           Get-CimInstance Win32_VideoController | Select-Object Name,DriverVersion | Format-Table
       - name: Run real GPU side-by-side benchmark
-        shell: pwsh
+        shell: powershell
         env:
           GEO_TEST_KIND: hardware
         run: |
