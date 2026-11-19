@@ -1,0 +1,100 @@
+name: Cesium vs PlayCanvas OSM DEM benchmark
+on:
+  push:
+    branches:
+      - bench/cesium-playcanvas-osm-dem-20261120
+    paths:
+      - geobench/**
+      - .github/workflows/geo-renderer-bench.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  hosted-software-validation:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    defaults:
+      run:
+        working-directory: geobench
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+      - name: Install headless Chromium
+        run: npx playwright install --with-deps chromium
+      - name: Generate common real-world OSM and DEM fixture
+        run: npm run data
+      - name: Hosted software smoke and screenshots (not GPU evidence)
+        run: npm run bench
+        env:
+          GEO_TEST_KIND: software
+      - name: Upload identical real-world fixture
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: geo-osm-dem-fixture
+          path: geobench/public/fixture.json
+          if-no-files-found: warn
+          retention-days: 14
+      - name: Upload hosted measurements and screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: geo-hosted-software-results
+          path: geobench/results/
+          if-no-files-found: warn
+          retention-days: 14
+  self-hosted-windows-gpu:
+    needs: [hosted-software-validation]
+    runs-on: [self-hosted, Windows, X64, m5-gpu]
+    timeout-minutes: 60
+    defaults:
+      run:
+        working-directory: geobench
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - uses: actions/download-artifact@v4
+        with:
+          name: geo-osm-dem-fixture
+          path: geobench/public
+      - name: Install dependencies
+        shell: pwsh
+        run: npm install --no-audit --no-fund
+      - name: Select installed hardware-capable browser
+        shell: pwsh
+        run: |
+          $pf86 = [Environment]::GetFolderPath('ProgramFilesX86')
+          $chrome = @(
+            "$env:ProgramFiles\Google\Chrome\Application\chrome.exe",
+            (Join-Path $pf86 'Google\Chrome\Application\chrome.exe'),
+            "$env:LOCALAPPDATA\Google\Chrome\Application\chrome.exe"
+          ) | Where-Object { Test-Path $_ } | Select-Object -First 1
+          $edge = @(
+            (Join-Path $pf86 'Microsoft\Edge\Application\msedge.exe'),
+            "$env:ProgramFiles\Microsoft\Edge\Application\msedge.exe"
+          ) | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if ($chrome) { "GEO_BROWSER_CHANNEL=chrome" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV }
+          elseif ($edge) { "GEO_BROWSER_CHANNEL=msedge" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV }
+          else { throw 'No Chrome/Edge browser found on GPU runner' }
+          Get-CimInstance Win32_VideoController | Select-Object Name,DriverVersion | Format-Table
+      - name: Run real GPU side-by-side benchmark
+        shell: pwsh
+        env:
+          GEO_TEST_KIND: hardware
+        run: |
+          npm run bench
+          if ($LASTEXITCODE -ne 0) { throw 'Hardware renderer benchmark failed' }
+      - name: Upload measured GPU screenshots and results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: geo-self-hosted-gpu-results
+          path: geobench/results/
+          if-no-files-found: warn
+          retention-days: 14
