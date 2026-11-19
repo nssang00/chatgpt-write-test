@@ -1,5 +1,7 @@
 import * as Cesium from 'cesium';
 import * as pc from 'playcanvas';
+import * as THREE from 'three';
+import * as BABYLON from '@babylonjs/core';
 import 'cesium/Build/Cesium/Widgets/widgets.css';
 
 const engine=new URLSearchParams(location.search).get('engine') || 'cesium';
@@ -139,6 +141,110 @@ if(engine==='cesium'){
   };
   app.on('postrender',()=>rendered++);
   app.start();
+} else if(engine==='three'){
+  canvas=document.createElement('canvas');
+  canvas.width=1280; canvas.height=720;
+  canvas.style.width='100%'; canvas.style.height='100%';
+  mount.appendChild(canvas);
+  const renderer=new THREE.WebGLRenderer({
+    canvas,antialias:false,alpha:false,preserveDrawingBuffer:true,powerPreference:'high-performance'
+  });
+  renderer.setPixelRatio(1);
+  renderer.setSize(1280,720,false);
+  // Numeric colors are used as unlit linear RGB in all four viewers.
+  renderer.outputColorSpace=THREE.LinearSRGBColorSpace;
+  renderer.toneMapping=THREE.NoToneMapping;
+  const scene=new THREE.Scene();
+  scene.background=new THREE.Color(...(style==='detailed'?[.674,.741,.796]:[.063,.110,.161]));
+  const camera=new THREE.PerspectiveCamera(60,1280/720,.1,5000);
+  scene.add(camera);
+  const makeMaterial=(color)=>new THREE.MeshBasicMaterial({
+    color:new THREE.Color(...color),side:THREE.DoubleSide,
+    transparent:false,depthTest:true,depthWrite:true,toneMapped:false
+  });
+  function addMesh(input,material){
+    const geometry=new THREE.BufferGeometry();
+    const positions=new Float32Array(input.positions);
+    // Same right-handed coordinates as the PlayCanvas viewer.
+    for(let i=2;i<positions.length;i+=3)positions[i]=-positions[i];
+    geometry.setAttribute('position',new THREE.BufferAttribute(positions,3));
+    geometry.setIndex(new THREE.BufferAttribute(new Uint32Array(input.indices),1));
+    geometry.computeBoundingSphere();
+    const object=new THREE.Mesh(geometry,material);
+    object.frustumCulled=false;
+    scene.add(object);
+  }
+  if(style==='detailed'){
+    const colors=fixture.metadata.materialColors;
+    addMesh(fixture.terrain,makeMaterial(colors.terrain));
+    for(const [material,mesh] of Object.entries(fixture.surfaces)){
+      addMesh(mesh,makeMaterial(colors[material]));
+    }
+  } else {
+    addMesh(fixture.terrain,makeMaterial([.459,.529,.420]));
+    addMesh(fixture.buildings,makeMaterial([.780,.714,.631]));
+  }
+  step=(n)=>{
+    const {eye,target}=cameraTrack(n);
+    camera.position.set(eye[0],eye[1],-eye[2]);
+    camera.lookAt(target[0],target[1],-target[2]);
+    camera.updateMatrixWorld();
+  };
+  renderer.setAnimationLoop(()=>{renderer.render(scene,camera);rendered++});
+} else if(engine==='babylon'){
+  canvas=document.createElement('canvas');
+  canvas.width=1280;canvas.height=720;
+  canvas.style.width='100%';canvas.style.height='100%';
+  mount.appendChild(canvas);
+  const engine3d=new BABYLON.Engine(canvas,false,{
+    preserveDrawingBuffer:true,stencil:false,disableWebGL2Support:false,
+    powerPreference:'high-performance'
+  });
+  const scene=new BABYLON.Scene(engine3d);
+  scene.useRightHandedSystem=true;
+  const background=style==='detailed'?[.674,.741,.796]:[.063,.110,.161];
+  scene.clearColor=new BABYLON.Color4(...background,1);
+  const camera=new BABYLON.FreeCamera('camera',new BABYLON.Vector3(0,200,0),scene);
+  camera.minZ=.1;camera.maxZ=5000;
+  camera.fov=Math.PI/3;
+  camera.fovMode=BABYLON.Camera.FOVMODE_VERTICAL_FIXED;
+  scene.activeCamera=camera;
+  const materialFor=(rgb,name)=>{
+    const m=new BABYLON.StandardMaterial(name,scene);
+    m.diffuseColor=BABYLON.Color3.Black();
+    m.emissiveColor=new BABYLON.Color3(...rgb);
+    m.specularColor=BABYLON.Color3.Black();
+    m.disableLighting=true;
+    m.backFaceCulling=false;
+    return m;
+  };
+  function addMesh(input,material,label){
+    const mesh=new BABYLON.Mesh(label,scene);
+    const vd=new BABYLON.VertexData();
+    const p=new Float32Array(input.positions);
+    for(let i=2;i<p.length;i+=3)p[i]=-p[i];
+    vd.positions=Array.from(p);
+    vd.indices=input.indices;
+    vd.applyToMesh(mesh,false);
+    mesh.material=material;
+    mesh.alwaysSelectAsActiveMesh=true;
+  }
+  if(style==='detailed'){
+    const colors=fixture.metadata.materialColors;
+    addMesh(fixture.terrain,materialFor(colors.terrain,'terrain'),'terrain');
+    for(const [material,mesh] of Object.entries(fixture.surfaces)){
+      addMesh(mesh,materialFor(colors[material],material),material);
+    }
+  } else {
+    addMesh(fixture.terrain,materialFor([.459,.529,.420],'terrain'),'terrain');
+    addMesh(fixture.buildings,materialFor([.780,.714,.631],'buildings'),'buildings');
+  }
+  step=(n)=>{
+    const {eye,target}=cameraTrack(n);
+    camera.position.set(eye[0],eye[1],-eye[2]);
+    camera.setTarget(new BABYLON.Vector3(target[0],target[1],-target[2]));
+  };
+  engine3d.runRenderLoop(()=>{scene.render();rendered++});
 } else {
   throw new Error('Unknown engine '+engine);
 }
