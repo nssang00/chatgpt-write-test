@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "data": "node generate.mjs",
+    "data": "node generate.mjs && node enhance.mjs",
     "dev": "vite --host 127.0.0.1",
     "bench": "node run.mjs"
   },
