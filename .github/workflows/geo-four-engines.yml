@@ -1,0 +1,91 @@
+name: Four-engine OSM DEM detailed city GPU comparison
+on:
+  push:
+    branches:
+      - bench/four-engines-osm-dem-20261120
+    paths:
+      - geobench/**
+      - .github/workflows/geo-four-engines.yml
+  workflow_dispatch:
+concurrency:
+  group: four-engine-city-benchmark-${{ github.ref }}
+  cancel-in-progress: true
+permissions:
+  contents: read
+jobs:
+  hosted-fixture-generation:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    defaults:
+      run:
+        working-directory: geobench
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install Node dependencies
+        run: npm install --no-audit --no-fund
+      - name: Fetch same OSM and DEM data and synthesize facade geometry
+        run: npm run data
+      - name: Upload identical 3D building geometry
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: four-engine-city-fixtures
+          path: |
+            geobench/public/fixture.json
+            geobench/public/fixture-detailed.json
+          if-no-files-found: error
+          retention-days: 14
+  self-hosted-windows-gpu:
+    needs: hosted-fixture-generation
+    runs-on: [self-hosted, Windows, X64, m5-gpu]
+    timeout-minutes: 70
+    defaults:
+      run:
+        working-directory: geobench
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - uses: actions/download-artifact@v4
+        with:
+          name: four-engine-city-fixtures
+          path: geobench/public
+      - name: Install Node dependencies
+        shell: powershell
+        run: npm install --no-audit --no-fund
+      - name: Find installed GPU-enabled Chrome/Edge
+        shell: powershell
+        run: |
+          $pf86=[Environment]::GetFolderPath('ProgramFilesX86')
+          $chrome = @(
+            "$env:ProgramFiles\Google\Chrome\Application\chrome.exe",
+            (Join-Path $pf86 'Google\Chrome\Application\chrome.exe'),
+            "$env:LOCALAPPDATA\Google\Chrome\Application\chrome.exe"
+          ) | Where-Object { Test-Path $_ } | Select-Object -First 1
+          $edge = @(
+            (Join-Path $pf86 'Microsoft\Edge\Application\msedge.exe'),
+            "$env:ProgramFiles\Microsoft\Edge\Application\msedge.exe"
+          ) | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if ($chrome) { "GEO_BROWSER_CHANNEL=chrome" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV }
+          elseif ($edge) { "GEO_BROWSER_CHANNEL=msedge" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV }
+          else { throw 'No Chrome/Edge installed on GPU runner' }
+          Get-CimInstance Win32_VideoController | Select-Object Name,DriverVersion | Format-Table
+      - name: Benchmark Cesium PlayCanvas Three Babylon with REAL GPU
+        shell: powershell
+        env:
+          GEO_TEST_KIND: hardware
+        run: |
+          npm run bench
+          if ($LASTEXITCODE -ne 0) { throw 'Four-engine city GPU benchmark failed' }
+      - name: Upload GPU screenshots and frame results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: four-engine-gpu-outputs
+          path: geobench/results/
+          if-no-files-found: warn
+          retention-days: 14
