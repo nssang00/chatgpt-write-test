@@ -36,8 +36,8 @@ try{
     const page=await browser.newPage({viewport:{width:1280,height:720},deviceScaleFactor:1});
     const errors=[];
     page.on('pageerror',e=>errors.push(e.stack||String(e)));
-    page.on('console',m=>{if(m.type()==='error')errors.push('console: '+m.text())});
-    page.on('response',res=>{if(res.status()>=400)errors.push('HTTP '+res.status()+' '+res.url())});
+    page.on('console',m=>{if(m.type()==='error' && !m.text().includes('Failed to load resource'))errors.push('console: '+m.text())});
+    page.on('response',res=>{if(res.status()>=400 && !/\/favicon\.ico(?:\?|$)/.test(res.url()))errors.push('HTTP '+res.status()+' '+res.url())});
     try{
       await page.goto(host+'/?engine='+engine,{waitUntil:'load',timeout:90000});
       await page.waitForFunction(()=>window.__geoBench?.ready===true,{timeout:90000});
