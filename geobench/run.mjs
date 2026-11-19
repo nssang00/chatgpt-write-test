@@ -30,7 +30,7 @@ try{
   browser=await chromium.launch(launch);
   await fs.mkdir('results',{recursive:true});
   const results=[];
-  const sequence=['cesium','playcanvas','playcanvas','cesium'];
+  const sequence=kind==='software'?['cesium','playcanvas']:['cesium','playcanvas','playcanvas','cesium'];
   for(let round=0;round<sequence.length;round++){
     const engine=sequence[round];
     const page=await browser.newPage({viewport:{width:1280,height:720},deviceScaleFactor:1});
@@ -44,7 +44,7 @@ try{
       if(errors.length)throw new Error('Browser errors: '+errors.join('\n').slice(0,2000));
       const test=await page.evaluate(async()=>{
         const b=window.__geoBench;
-        const n=260, warmup=70;
+        const n=kind==='software'?65:260, warmup=kind==='software'?15:70;
         const deltas=[];
         let start=0,last=0,end=0;
         let initialRendered=0;
@@ -87,7 +87,7 @@ try{
     };
   }
   const report={
-    kind,method:'same OSM and DEM meshes; flat material; no globe/imagery/shadows; fixed orbit; vsync-limited rAF intervals; browser render count',
+    kind,method:'same OSM + DEM and procedural architectural facade/roads/roof/window meshes; material-color shading (unlit); no imagery, photogrammetry, globe or shadows; close orbit; vsync-limited rAF intervals',
     createdAt:new Date().toISOString(),browser:browser.version(),rounds:results,summary:byEngine
   };
   await fs.writeFile('results/benchmark.json',JSON.stringify(report,null,2));
