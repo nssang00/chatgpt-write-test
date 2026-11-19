@@ -30,7 +30,7 @@ try{
   browser=await chromium.launch(launch);
   await fs.mkdir('results',{recursive:true});
   const results=[];
-  const sequence=kind==='software'?['cesium','playcanvas']:['cesium','playcanvas','playcanvas','cesium'];
+  const sequence=kind==='software'?['cesium','playcanvas','three','babylon']:['cesium','playcanvas','three','babylon','babylon','three','playcanvas','cesium'];
   for(let round=0;round<sequence.length;round++){
     const engine=sequence[round];
     const page=await browser.newPage({viewport:{width:1280,height:720},deviceScaleFactor:1});
@@ -78,7 +78,7 @@ try{
     }finally{await page.close();}
   }
   const byEngine={};
-  for(const engine of ['cesium','playcanvas']){
+  for(const engine of ['cesium','playcanvas','three','babylon']){
     const a=results.filter(x=>x.engine===engine);
     byEngine[engine]={
       p50FrameMs:percentile(a.map(x=>x.p50FrameMs),0.50),
@@ -87,7 +87,7 @@ try{
     };
   }
   const report={
-    kind,method:'same OSM + DEM and procedural architectural facade/roads/roof/window meshes; material-color shading (unlit); no imagery, photogrammetry, globe or shadows; close orbit; vsync-limited rAF intervals',
+    kind,method:'four engines; same OSM + DEM and procedural architectural facade/roads/roof/window meshes; material-color shading (unlit); no imagery, photogrammetry, globe or shadows; close orbit; vsync-limited rAF intervals',
     createdAt:new Date().toISOString(),browser:browser.version(),rounds:results,summary:byEngine
   };
   await fs.writeFile('results/benchmark.json',JSON.stringify(report,null,2));
