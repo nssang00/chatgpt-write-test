@@ -7,6 +7,9 @@ on:
       - geobench/**
       - .github/workflows/geo-renderer-bench.yml
   workflow_dispatch:
+concurrency:
+  group: geo-engine-benchmark-${{ github.ref }}
+  cancel-in-progress: true
 permissions:
   contents: read
 jobs:
