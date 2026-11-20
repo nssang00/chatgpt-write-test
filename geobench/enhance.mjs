@@ -1,6 +1,7 @@
 import fs from 'node:fs/promises';
 import { XMLParser } from 'fast-xml-parser';
 import earcut from 'earcut';
+import { buildRoadGeometry } from './road_geometry.mjs';
 
 // Procedural architectural DETAIL, not surveyed facade or actual building heights.
 // All coordinates stay in meters: x east, y up, z north.
@@ -16,15 +17,16 @@ const toLocal=([lon,lat])=>project(lon,lat);
 const NX=base.metadata.terrainGrid[0]-1,NZ=base.metadata.terrainGrid[1]-1;
 const xMin=project(west,lat0)[0],xMax=project(east,lat0)[0];
 const zMin=project(lon0,south)[1],zMax=project(lon0,north)[1];
+// Exact triangle-barycentric interpolation of the RENDERED terrain mesh,
+// rather than bilinear filtering that can dip below/above the two real triangles.
 function ground(x,z){
-  const fx=clamp((x-xMin)/(xMax-xMin)*NX,0,NX-0.00001);
-  const fz=clamp((z-zMin)/(zMax-zMin)*NZ,0,NZ-0.00001);
-  const xi=Math.floor(fx),zi=Math.floor(fz);
-  const index=(i,j)=>(j*(NX+1)+i)*3+1;
-  const p=base.terrain.positions;
-  const a=lerp(p[index(xi,zi)],p[index(xi+1,zi)],fx-xi);
-  const b=lerp(p[index(xi,zi+1)],p[index(xi+1,zi+1)],fx-xi);
-  return lerp(a,b,fz-zi);
+  const fx=clamp((x-xMin)/(xMax-xMin)*NX,0,NX-1e-7);
+  const fz=clamp((z-zMin)/(zMax-zMin)*NZ,0,NZ-1e-7);
+  const xi=Math.floor(fx),zi=Math.floor(fz),u=fx-xi,v=fz-zi;
+  const y=(i,j)=>base.terrain.positions[(j*(NX+1)+i)*3+1];
+  const a=y(xi,zi),b=y(xi+1,zi),c=y(xi,zi+1),d=y(xi+1,zi+1);
+  if(u+v<=1)return a*(1-u-v)+b*u+c*v;
+  return d*(u+v-1)+b*(1-v)+c*(1-u);
 }
 const palette={
   'terrain':[0.43,0.49,0.38],
@@ -105,12 +107,26 @@ const buildingCenters=[];
 const roads=[];
 for(const way of parsed.way||[]){
   const tags=Object.fromEntries((way.tag||[]).map(t=>[t['@_k'],t['@_v']]));
-  const refs=(way.nd||[]).map(n=>nodes.get(String(n['@_ref']))).filter(Boolean);
-  if(tags.highway && refs.length>=2){
+  const roadRefs=(way.nd||[]).map(n=>{
+    const id=String(n['@_ref']);
+    return {id,coords:nodes.get(id)};
+  }).filter(n=>n.coords);
+  const refs=roadRefs.map(n=>n.coords);
+  if(tags.highway&&roadRefs.length>=2){
     const level=tags.highway;
-    if(!['footway','path','pedestrian','residential','service','tertiary','secondary','primary','living_street','unclassified','cycleway'].includes(level))continue;
-    const width=level==='primary'?12:level==='secondary'?10:level==='tertiary'?9:level==='footway'?2:level==='path'?2:level==='cycleway'?2.3:level==='service'?5:7.5;
-    roads.push({refs,width,id:String(way['@_id'])});
+    const types=new Set(['motorway','trunk','primary','secondary','tertiary',
+      'motorway_link','trunk_link','primary_link','secondary_link','tertiary_link',
+      'footway','path','pedestrian','residential','service','living_street',
+      'unclassified','cycleway','steps']);
+    if(types.has(level)){
+      const defaults={motorway:22,trunk:18,primary:13,secondary:11,tertiary:9,
+        motorway_link:8,trunk_link:8,primary_link:7.5,secondary_link:7,tertiary_link:6,
+        residential:7.5,service:5,living_street:6,unclassified:7.5,
+        footway:2.2,path:2,cycleway:2.4,pedestrian:4,steps:2.2};
+      const measured=Number.parseFloat(tags.width);
+      const width=Number.isFinite(measured)&&measured>0?clamp(measured,1.8,35):defaults[level];
+      roads.push({refs,nodeIds:roadRefs.map(n=>n.id),width,tags,id:String(way['@_id'])});
+    }
   }
   if(!tags.building || tags.building==='no'||refs.length<4)continue;
   const points=refs.map(toLocal);
@@ -200,35 +216,28 @@ for(const way of parsed.way||[]){
   buildingCenters.push({x:cx,z:cz,y:yBase,height,footprint:roofWidth*roofDepth});
   stats.buildings++;
 }
+// Build ONE common topological road surface BEFORE rendering engines diverge.
+// All four engines and native 3D Tiles consume exactly these mesh arrays.
+const roadOutput=buildRoadGeometry(roads,{
+  project,ground,bounds:[xMin,zMin,xMax,zMax],maxStep:6
+});
+for(const [key,mesh] of Object.entries(roadOutput.meshes))meshes[key]=mesh;
+stats.roads=roadOutput.stats.sourceWays;
+stats.roadSegments=roadOutput.stats.sourceSegments;
+stats.roadSubsegments=roadOutput.stats.emittedSubsegments;
+stats.roadJoins=roadOutput.stats.joinVertices;
+stats.roadJunctions=roadOutput.stats.junctionPatches;
+stats.roadClippedPaths=roadOutput.stats.clippedPaths;
+stats.roadMarkings=roadOutput.stats.markingDashes;
+stats.roadProtectedGradeWays=roadOutput.stats.protectedGradeWays;
+// Retain the original illustrative road-side trees, separately from meshing.
 for(const road of roads){
-  let segs=0;
   const pts=road.refs.map(toLocal);
   for(let i=0;i<pts.length-1;i++){
     const A=pts[i],B=pts[i+1],dx=B[0]-A[0],dz=B[1]-A[1],length=Math.hypot(dx,dz);
-    if(length<.6 || length>300 || (!inside(A)&&!inside(B)))continue;
+    if(length<14||length>300||(!inside(A)&&!inside(B)))continue;
     const nx=dz/length,nz=-dx/length;
-    const y0=ground(A[0],A[1])+0.22,y1=ground(B[0],B[1])+0.22;
-    function strip(material,wide,offset){
-      const half=wide/2;
-      quad(material,[A[0]+nx*half,y0+offset,A[1]+nz*half],
-        [B[0]+nx*half,y1+offset,B[1]+nz*half],
-        [B[0]-nx*half,y1+offset,B[1]-nz*half],
-        [A[0]-nx*half,y0+offset,A[1]-nz*half]);
-    }
-    strip('road-edge',road.width+3.3,-0.07);
-    strip('road',road.width,0);
-    if(road.width>=7 && length>10){
-      for(let s=2;s<length-2;s+=12){
-        const end=Math.min(s+5,length-2),t0=s/length,t1=end/length;
-        const x0=lerp(A[0],B[0],t0),z0=lerp(A[1],B[1],t0);
-        const x1=lerp(A[0],B[0],t1),z1=lerp(A[1],B[1],t1);
-        const h0=lerp(y0,y1,t0)+.035,h1=lerp(y0,y1,t1)+.035;
-        quad('road-marking',[x0+nx*.085,h0,z0+nz*.085],[x1+nx*.085,h1,z1+nz*.085],
-           [x1-nx*.085,h1,z1-nz*.085],[x0-nx*.085,h0,z0-nz*.085]);
-      }
-    }
-    segs++;stats.roadSegments++;
-    if(road.width>=5 && length>14){
+    if(road.width>=5){
       for(let t=10;t<length-3;t+=21){
         if(((hash(road.id)+i*7+t)|0)%4===0)continue;
         const q=t/length,side=((hash(road.id)+i+Math.round(t))%2)?1:-1;
@@ -238,7 +247,6 @@ for(const road of roads){
       }
     }
   }
-  if(segs)stats.roads++;
 }
 if(stats.buildings<10)throw new Error('Building fixture unexpectedly empty');
 // Focus near the business-district center so all engines show a dense skyline.
@@ -254,6 +262,7 @@ const detailed={
     terrainTriangles:base.terrain.indices.length/3,
     materialColors:palette,
     meshStats:stats,
+    roadGeometryQuality:{mesh:'shared OSM-node joins, bounded miter, at-grade intersection patches, 6m densification',ground:'triangle-exact height',caveat:'Bridge/tunnel actual elevation and true carriageway junction polygon unions are NOT surveyed or implemented',...roadOutput.stats},
     focus:[focus.x,focus.y+focus.height*.40,focus.z],
     trianglesByMaterial:Object.fromEntries(Object.entries(meshes).map(([k,v])=>[k,v.indices.length/3]))
   },
