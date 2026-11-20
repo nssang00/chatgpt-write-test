@@ -41,7 +41,8 @@ function nearXYZ(a,b){
   ]);
   assert.equal(r.stats.junctionPatches,1);
   assert.equal(r.stats.junctionsByDegree['3'],1);
-  assert.ok(triCount(r.meshes.road)>=16+3*2);
+  assert.ok(triCount(r.meshes.road)>=4);
+  assert.ok(r.stats.mergedRoadPolygons>=1);
 }
 // Roads with a shared x/z crossing but different OSM node IDs are not
 // accidentally made into a graph intersection.
@@ -103,5 +104,5 @@ console.log('ROAD_TOPOLOGY_UNIT_TEST_PASS',{
   tests:8,
   algorithms:['continuous miter','T junction','shared-node topology',
     'layer/bridge separation','bbox clipping','triangulated terrain drape',
-    'miter spike bounds','one-way markings']
+    'miter spike bounds','one-way markings','polygon union without circular patches']
 });
