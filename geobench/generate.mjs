@@ -24,21 +24,34 @@ async function download(url) {
 const tiles = new Map();
 const [minX,minY] = tileXY(west,north,TERR_Z);
 const [maxX,maxY] = tileXY(east,south,TERR_Z);
-for (let y=Math.floor(minY);y<=Math.floor(maxY);y++) {
-  for (let x=Math.floor(minX);x<=Math.floor(maxX);x++) {
+// One-tile halo is needed for exact bilinear interpolation at tile edges.
+for (let y=Math.floor(minY)-1;y<=Math.floor(maxY)+1;y++) {
+  for (let x=Math.floor(minX)-1;x<=Math.floor(maxX)+1;x++) {
     const url = 'https://s3.amazonaws.com/elevation-tiles-prod/terrarium/'+TERR_Z+'/'+x+'/'+y+'.png';
     const data=PNG.sync.read(await download(url));
     tiles.set(x+':'+y,data);
     console.log('DEM',x,y,data.width,data.height);
   }
 }
+// DEM tiles are pixel-centered. The old nearest-neighbour read caused
+// artificial ~20m cliffs between adjacent 14m terrain grid vertices.
+// Bilinear sampling of four TERRARIUM elevations makes a continuous terrain
+// at tile seams, with a one-tile halo for neighbor sampling.
 function sampleHeight(lon,lat) {
-  const [tx,ty]=tileXY(lon,lat,TERR_Z), x=Math.floor(tx),y=Math.floor(ty),png=tiles.get(x+':'+y);
-  if(!png) throw new Error('Missing DEM tile '+x+':'+y);
-  const px=clamp(Math.floor((tx-x)*png.width),0,png.width-1);
-  const py=clamp(Math.floor((ty-y)*png.height),0,png.height-1);
-  const i=(py*png.width+px)*4;
-  return png.data[i]*256+png.data[i+1]+png.data[i+2]/256-32768;
+  const [tx,ty]=tileXY(lon,lat,TERR_Z);
+  const px=tx*256-.5,py=ty*256-.5;
+  const x0=Math.floor(px),y0=Math.floor(py),fx=px-x0,fy=py-y0;
+  function pixel(ix,iy){
+    const tileX=Math.floor(ix/256),tileY=Math.floor(iy/256);
+    const png=tiles.get(tileX+':'+tileY);
+    if(!png)throw Error('Missing surrounding DEM tile '+tileX+':'+tileY);
+    if(png.width!==256||png.height!==256)throw Error('Unexpected Terrarium tile size');
+    const col=((ix%256)+256)%256,row=((iy%256)+256)%256;
+    const i=(row*png.width+col)*4;
+    return png.data[i]*256+png.data[i+1]+png.data[i+2]/256-32768;
+  }
+  const a=pixel(x0,y0),b=pixel(x0+1,y0),c=pixel(x0,y0+1),d=pixel(x0+1,y0+1);
+  return (a*(1-fx)+b*fx)*(1-fy)+(c*(1-fx)+d*fx)*fy;
 }
 const terrain={positions:[],indices:[]};
 const NX=96, NZ=96;
@@ -90,10 +103,28 @@ for(const way of parsed.way){
   count++;
 }
 if(count<100)throw new Error('Expected dense Seoul district with 100+ OSM buildings, found only '+count+'; refusing fake building count');
+// Test-relevant terrain discontinuity diagnostics at the actual grid
+// resolution.  Measured before OSM road draping or GLB export.
+let maxGridSlope=0,maxAdjacentRise=0,steepGridEdges=0;
+const dx=(east-west)*111320*cosLat/NX,dz=(north-south)*111320/NZ;
+for(let j=0;j<=NZ;j++)for(let i=0;i<=NX;i++){
+  const h=terrain.positions[(j*(NX+1)+i)*3+1];
+  for(const [di,dj,d] of [[1,0,dx],[0,1,dz]]){
+    if(i+di>NX||j+dj>NZ)continue;
+    const next=terrain.positions[((j+dj)*(NX+1)+i+di)*3+1];
+    const rise=Math.abs(next-h),slope=rise/d;
+    maxAdjacentRise=Math.max(maxAdjacentRise,rise);
+    maxGridSlope=Math.max(maxGridSlope,slope);
+    if(slope>1)steepGridEdges++;
+  }
+}
+if(maxGridSlope>1.2)throw Error('Unrealistic Seoul terrain slope >120%, inspect DEM sampling and source tiles: '+maxGridSlope);
 const fixture={
   metadata:{
     areaLabel:'Seoul Gangnam / Yeoksam Teheran-ro',demSource:'AWS Mapzen Terrarium',
     bbox:BBOX,center:[lon0,lat0],terrainZoom:TERR_Z,terrainGrid:[NX+1,NZ+1],
+    demInterpolation:'bilinear on pixel centers across adjacent Terrarium tiles',
+    terrainDiagnostics:{maxGridSlope,maxAdjacentRise,steepGridEdges},
     osmEndpoint:osmUrl,demPrefix:'https://s3.amazonaws.com/elevation-tiles-prod/terrarium/',
     generatedAt:new Date().toISOString(),buildingCount:count,skippedBuildings:skipped,
     inferredBuildingHeights:inferred,triangles:{terrain:terrain.indices.length/3,buildings:buildings.indices.length/3},
