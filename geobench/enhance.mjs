@@ -221,7 +221,8 @@ for(const way of parsed.way||[]){
 const roadOutput=buildRoadGeometry(roads,{
   project,ground,bounds:[xMin,zMin,xMax,zMax],maxStep:6,
   // Same 97x97 terrain grid used by ground() and generate.mjs.
-  terrainGrid:{xmin:xMin,zmin:zMin,xmax:xMax,zmax:zMax,nx:NX,nz:NZ}
+  terrainGrid:{xmin:xMin,zmin:zMin,xmax:xMax,zmax:zMax,nx:NX,nz:NZ},
+  roadProfile:process.env.GEO_ROAD_PROFILE_SMOOTH==='1'
 });
 for(const [key,mesh] of Object.entries(roadOutput.meshes))meshes[key]=mesh;
 stats.roads=roadOutput.stats.sourceWays;
@@ -264,7 +265,7 @@ const detailed={
     terrainTriangles:base.terrain.indices.length/3,
     materialColors:palette,
     meshStats:stats,
-    roadGeometryQuality:{mesh:'OSM-node joins, bounded miters, planar polygon union and terrain-grid-conforming triangles',ground:'terrain-triangle-exact draping',caveat:'Bridge/tunnel elevations and actual carriageway intersection boundaries are not surveyed',...roadOutput.stats},
+    roadGeometryQuality:{mesh:'OSM-node joins, bounded miters, planar polygon union and terrain-grid subdivision',ground:process.env.GEO_ROAD_PROFILE_SMOOTH==='1'?'experimental graph-smoothed road grade, not exact DEM drape':'terrain-triangle-exact draping',caveat:'Road grades are inferred, not surveyed. Smooth profiles may overlap raw terrain and require cut/fill. Bridge/tunnel elevations and carriageway boundaries are not surveyed.',...roadOutput.stats},
     focus:[focus.x,focus.y+focus.height*.40,focus.z],
     trianglesByMaterial:Object.fromEntries(Object.entries(meshes).map(([k,v])=>[k,v.indices.length/3]))
   },
