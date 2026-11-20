@@ -18,8 +18,16 @@ try{
   browser=await chromium.launch(options);
   const page=await browser.newPage({viewport:{width:1280,height:720},deviceScaleFactor:1});
   const errors=[];const requested=new Set(),success=new Set();
+  const failedResponses=[];
+  page.on('response',r=>{
+    if(r.status()>=400){
+      failedResponses.push({status:r.status(),url:r.url()});
+      if(!new URL(r.url()).pathname.endsWith('/favicon.ico'))
+        errors.push('HTTP '+r.status()+' '+r.url());
+    }
+  });
   page.on('pageerror',e=>errors.push('pageerror '+String(e.stack||e)));
-  page.on('console',m=>{if(m.type()==='error')errors.push('console '+m.text())});
+  page.on('console',m=>{if(m.type()==='error'&&!m.text().includes('Failed to load resource'))errors.push('console '+m.text())});
   page.on('request',r=>{if(new URL(r.url()).pathname.endsWith('.glb'))requested.add(r.url())});
   page.on('response',r=>{if(new URL(r.url()).pathname.endsWith('.glb')&&r.ok())success.add(r.url())});
   await page.goto(host+'/native-3dtiles.html'+(process.env.GEO_ROAD_VIEW==='1'?'?roadview=1':''),{waitUntil:'load',timeout:180000});
@@ -45,7 +53,7 @@ try{
   }));
   await fs.mkdir('results',{recursive:true});
   await page.screenshot({path:process.env.GEO_ROAD_VIEW==='1'?'results/native-3dtiles-roadview.png':'results/native-3dtiles-real-browser.png',fullPage:true});
-  const report={status,requestedGLB:requested.size,loadedGLB:success.size,errors};
+  const report={status,requestedGLB:requested.size,loadedGLB:success.size,failedResponses,errors};
   await fs.writeFile('results/native-smoke.json',JSON.stringify(report,null,2));
   console.log('NATIVE_3DTILES_SMOKE_RESULT',JSON.stringify(report));
   if(status.stats.errors||errors.length)throw Error('Native 3D Tiles errors: '+JSON.stringify(errors).slice(0,1800));
