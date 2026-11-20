@@ -49,7 +49,9 @@ const stats={
 };
 let tileset;
 try{
-  tileset=await Cesium.Cesium3DTileset.fromUrl('/native-3dtiles/tileset.json',{
+  const tilePath=new URLSearchParams(location.search).get('tileset')||'/native-3dtiles/tileset.json';
+  if(!/^\/[a-z0-9/-]+\/tileset\.json$/.test(tilePath))throw Error('Invalid tileset URL');
+  tileset=await Cesium.Cesium3DTileset.fromUrl(tilePath,{
     maximumScreenSpaceError:16,
     cacheBytes:512*1024*1024,
     skipLevelOfDetail:false,
@@ -116,5 +118,5 @@ window.__streamBench={
 console.log('NATIVE_3DTILES_VIEWER_READY',JSON.stringify({
   gpu,tilesetRootGeometricError:tileset.root?.geometricError,
   maximumScreenSpaceError:tileset.maximumScreenSpaceError,
-  url:'/native-3dtiles/tileset.json'
+  url:new URLSearchParams(location.search).get('tileset')||'/native-3dtiles/tileset.json'
 }));
