@@ -1,3 +1,4 @@
+import { mergedRoadSurface } from './road_polygon_union.mjs';
 // Shared topological OSM road mesher for four engines and Cesium 3D Tiles.
 // Uses actual OSM node IDs, continuous bounded-miter joins and ground-draped
 // triangles, including roads crossing the region boundary.
@@ -174,11 +175,11 @@ export function buildRoadGeometry(roads,{project,ground,bounds,maxStep=6}){
     const half=Math.max(...n.widths)/2;
     // Approximate visually rounded intersection. Accurate traffic/lane
     // polygons require a separate polygon-union and junction design stage.
-    circle(meshes['road-edge'],n.pos,half+1.65,(x,z)=>ground(x,z)+.155);
-    circle(meshes.road,n.pos,half+.35,(x,z)=>ground(x,z)+.245);
+    // Surface is now joined by planar polygon union, not overlapping circle fans.
     junctionCoords.push({x:n.pos.x,z:n.pos.z,r:half+2,grade:n.grade});
     stats.junctionPatches++;stats.junctionsByDegree[degree]=(stats.junctionsByDegree[degree]||0)+1;
   }
+  const corridorAsphalt=[],corridorEdge=[];
   for(const entry of classified){
     const {width,grade,tags,paths}=entry;
     const yRoad=(x,z)=>ground(x,z)+.22;
@@ -192,17 +193,22 @@ export function buildRoadGeometry(roads,{project,ground,bounds,maxStep=6}){
       const boundary=pts.map((p,i)=>joinedEdge(pts,i,width/2,stats));
       const dummy={joinVertices:0,bevelLimitedJoins:0,reversalJoins:0};
       const border=pts.map((p,i)=>joinedEdge(pts,i,width/2+1.65,dummy));
+      // Separate, ordered corridor outline for polygon boolean union.
+      // Eliminates coplanar overlaps of adjacent OSM ways and the former
+      // circular junction patches that created jagged rooftop-like shards.
+      corridorAsphalt.push({grade,points:[
+        ...boundary.map(b=>b.r),...boundary.toReversed().map(b=>b.l)
+      ]});
+      corridorEdge.push({grade,points:[
+        ...border.map(b=>b.r),...border.toReversed().map(b=>b.l)
+      ]});
       for(let i=0;i<pts.length-1;i++){
         const a=pts[i],b=pts[i+1],dist=length(b.x-a.x,b.z-a.z);
         if(dist<EPS)continue;
         const r0=boundary[i].r,l0=boundary[i].l,r1=boundary[i+1].r,l1=boundary[i+1].l;
         const e0=border[i].r,f0=border[i].l,e1=border[i+1].r,f1=border[i+1].l;
-        addQuad(meshes['road-edge'],
-          [e0.x,yEdge(e0.x,e0.z),e0.z],[e1.x,yEdge(e1.x,e1.z),e1.z],
-          [f1.x,yEdge(f1.x,f1.z),f1.z],[f0.x,yEdge(f0.x,f0.z),f0.z]);
-        addQuad(meshes.road,
-          [r0.x,yRoad(r0.x,r0.z),r0.z],[r1.x,yRoad(r1.x,r1.z),r1.z],
-          [l1.x,yRoad(l1.x,l1.z),l1.z],[l0.x,yRoad(l0.x,l0.z),l0.z]);
+        // Do NOT emit overlapping strip quads. A single hole-aware union
+        // surface is triangulated below after all ways are processed.
         stats.emittedSubsegments++;
         const oneway=['yes','1','-1','true'].includes(tags.oneway);
         const laneCount=Number(tags.lanes);
@@ -232,6 +238,11 @@ export function buildRoadGeometry(roads,{project,ground,bounds,maxStep=6}){
       }
     }
   }
+  stats.discardedRoadRings=0;
+  meshes.road=mergedRoadSurface(corridorAsphalt,ground,.22,stats);
+  meshes['road-edge']=mergedRoadSurface(corridorEdge,ground,.15,stats);
+  // Union meshes do not contain overlapping per-way pieces; drawing order
+  // is deterministic, junctions are part of the single asphalt polygon.
   for(const [name,mesh] of Object.entries(meshes)){
     if(mesh.positions.some(v=>!Number.isFinite(v)))throw Error('Nonfinite road mesh '+name);
     if(mesh.indices.length%3!==0)throw Error('Bad road indices '+name);
