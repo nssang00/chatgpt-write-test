@@ -178,7 +178,7 @@ try{
     }
   }
   const out={createdAt:new Date().toISOString(),kind,cpuThrottle,browser:browser.version(),
-    methodology:'FIVE modes: native Cesium3DTileset on real 3D Tiles 1.1 GLB REPLACE hierarchy versus four custom shared-scheduler JSON mesh paths. Same Seoul 2085 OSM geometry and two geometric LODs, DIFFERENT glTF vs JSON representation and DIFFERENT native Cesium SSE vs custom radius selection; NOT equal tile counts/transfer bytes and not an apples-to-apples runtime-only comparison. 1280x720; RTX; 360 samples per camera movement mode; frame pacing near 57fps. Native tile GLB bytes from Content-Length; native tile upload time/triangles not measured. Use native path to assess practical built-in GIS 3D Tiles streaming.'
+    methodology:'FIVE modes: native Cesium3DTileset on real 3D Tiles 1.1 GLB REPLACE hierarchy versus four custom shared-scheduler JSON mesh paths. Same Seoul 2085 OSM geometry and two geometric LODs, DIFFERENT glTF vs JSON representation and DIFFERENT native Cesium SSE vs custom radius selection; NOT equal tile counts/transfer bytes and not an apples-to-apples runtime-only comparison. 1280x720; RTX; 360 samples per camera movement mode; frame pacing near 57fps. Native tile GLB bytes from Content-Length; native tile upload time/triangles not measured. Use native path to assess practical built-in GIS 3D Tiles streaming.',
     rounds,summary};
   await fs.writeFile('results/streaming-benchmark.json',JSON.stringify(out,null,2));
   console.log('STREAM_SUMMARY '+JSON.stringify(summary));
