@@ -1,0 +1,48 @@
+name: Seoul filtered terrain software visual QA (real Cesium3DTileset)
+on:
+  push:
+    branches:
+      - fix/seoul-road-ground-spikes-20261120
+    paths:
+      - .github/workflows/geo-seoul-ground-software-visual.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  verify-real-glbs-with-chromium-swiftshader:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: geobench
+    env:
+      GEO_TEST_KIND: software
+      GEO_ROAD_VIEW: '1'
+      NODE_OPTIONS: --max-old-space-size=6144
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/download-artifact@v4
+        with:
+          repository: nssang00/chatgpt-write-test
+          run-id: 44686712942
+          name: seoul-ground-repaired-native-tiles
+          github-token: ${{ github.token }}
+          path: geobench/public
+      - name: Install JavaScript engines
+        run: npm install --no-audit --no-fund
+      - name: Install Chromium software renderer
+        run: npx playwright install --with-deps chromium
+      - name: Render repaired terrain / joined roads with real Cesium 3D Tiles
+        run: npm run native-smoke
+      - name: Upload screenshot and exact failed URLs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: seoul-ground-corrected-software-roadview
+          path: geobench/results/
+          if-no-files-found: warn
+          retention-days: 14
