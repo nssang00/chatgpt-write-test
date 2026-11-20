@@ -6,7 +6,9 @@
     "data": "node generate.mjs && node enhance.mjs",
     "dev": "vite --host 127.0.0.1",
     "bench": "node run.mjs",
-    "pan-bench": "node run-panning.mjs"
+    "pan-bench": "node run-panning.mjs",
+    "pack-tiles": "node pack_stream_tiles.mjs",
+    "stream-bench": "node run-streaming.mjs"
   },
   "dependencies": {
     "cesium": "^1.130.0",
