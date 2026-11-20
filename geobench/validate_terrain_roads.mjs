@@ -13,11 +13,12 @@ const summary={buildings:metadata.buildingCount,terrain:repair,roads:metadata.ro
 for(const name of ['road','road-edge','road-marking']){
   const mesh=surfaces[name];
   if(!mesh)throw Error('Missing road material '+name);
-  const v=mesh.positions;
+  const v=mesh.positions,idx=mesh.indices;
   let maxYSpan=0,maxGrade=0,maxHorizontalEdge=0,degenerated=0;
-  let edgeGradeOver50pct=0,triangles=v.length/9;
-  for(let k=0;k<v.length;k+=9){
-    const vtx=[[v[k],v[k+1],v[k+2]],[v[k+3],v[k+4],v[k+5]],[v[k+6],v[k+7],v[k+8]]];
+  let edgeGradeOver50pct=0,triangles=idx.length/3;
+  for(let k=0;k<idx.length;k+=3){
+    const vertex=n=>v.slice(idx[k+n]*3,idx[k+n]*3+3);
+    const vtx=[vertex(0),vertex(1),vertex(2)];
     const yy=vtx.map(p=>p[1]);
     maxYSpan=Math.max(maxYSpan,Math.max(...yy)-Math.min(...yy));
     for(const [a,b] of [[0,1],[1,2],[2,0]]){
