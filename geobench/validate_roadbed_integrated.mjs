@@ -46,8 +46,24 @@ for(const [name,offset] of [['road',.22],['road-edge',.15],['road-marking',.285]
  const mesh=scene.surfaces[name];
  if(!mesh)throw Error('Missing road surface '+name);
  let maxAbs=0,invalid=0,degenerate=0,samples=0,area=0;
+ let atGradeTriangles=0,separatedGradeTriangles=0,rangeIndex=0;
+ const ranges=scene.metadata.roadGeometryQuality?.gradeRanges?.[name]??[];
+ if(name!=='road-marking'&&!ranges.length)throw Error('Missing grade spans for '+name);
  let above20=0,above40=0;
  for(let i=0;i<mesh.indices.length;i+=3){
+   // Only at-grade surfaces are required to lie on the roadbed. A bridge
+   // or tunnel must NOT be tested against (or flattened onto) surface DEM.
+   let checkContact=true;
+   if(name!=='road-marking'){
+     const triId=i/3;
+     while(rangeIndex<ranges.length&&triId>=ranges[rangeIndex].to)rangeIndex++;
+     const span=ranges[rangeIndex];
+     if(!span||triId<span.from||triId>=span.to)
+       throw Error('Road triangle is missing a grade classification '+triId);
+     checkContact=span.grade==='0||';
+   }
+   if(checkContact)atGradeTriangles++;
+   else separatedGradeTriangles++;
    const p=mesh.indices.slice(i,i+3).map(k=>mesh.positions.slice(k*3,k*3+3));
    if(p.some(a=>a.some(n=>!Number.isFinite(n)))){invalid++;continue;}
    const [a,b,c]=p;
@@ -59,7 +75,7 @@ for(const [name,offset] of [['road',.22],['road-edge',.15],['road-marking',.285]
    const gradient=Math.hypot((dy1*acz-dy2*abz)/det,(abx*dy2-acx*dy1)/det);
    if(gradient>.20)above20+=triArea;
    if(gradient>.40)above40+=triArea;
-   for(const [u,v,w] of [[1,0,0],[1/3,1/3,1/3],[.5,.5,0],[0,.5,.5],[.5,0,.5]]){
+   if(checkContact)for(const [u,v,w] of [[1,0,0],[1/3,1/3,1/3],[.5,.5,0],[0,.5,.5],[.5,0,.5]]){
      const x=a[0]*u+b[0]*v+c[0]*w,z=a[2]*u+b[2]*v+c[2]*w;
      const y=a[1]*u+b[1]*v+c[1]*w;
      const error=Math.abs(y-ground(x,z)-offset);
@@ -68,7 +84,8 @@ for(const [name,offset] of [['road',.22],['road-edge',.15],['road-marking',.285]
    }
  }
  report.materials[name]={
-  triangles:mesh.indices.length/3,contactSamples:samples,
+  triangles:mesh.indices.length/3,atGradeTriangles,separatedGradeTriangles,
+  contactSamples:samples,
   maxContactErrorMeters:maxAbs,
   degenerateTriangles:degenerate,invalidTriangles:invalid,
   area,areaOver20Pct:above20/area*100,areaOver40Pct:above40/area*100,
