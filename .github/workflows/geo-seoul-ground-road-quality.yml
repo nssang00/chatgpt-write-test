@@ -61,7 +61,7 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           name: seoul-ground-repaired-native-tiles
-          path: geobench/public
+          path: geobench
       - name: Install dependencies
         shell: powershell
         run: |
