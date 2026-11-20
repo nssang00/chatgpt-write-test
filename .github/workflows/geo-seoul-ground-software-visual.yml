@@ -31,7 +31,7 @@ jobs:
           run-id: 44686712942
           name: seoul-ground-repaired-native-tiles
           github-token: ${{ github.token }}
-          path: geobench/public
+          path: geobench
       - name: Install JavaScript engines
         run: npm install --no-audit --no-fund
       - name: Install Chromium software renderer
