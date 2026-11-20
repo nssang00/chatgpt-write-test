@@ -5,7 +5,7 @@ import {chromium} from 'playwright';
 const port=4173,host='http://127.0.0.1:'+port;
 const kind=process.env.GEO_TEST_KIND||'hardware';
 const cpuThrottle=Number(process.env.GEO_CPU_THROTTLE||'1');
-const runs=process.env.GEO_FAST_SMOKE==='1'?['cesium','playcanvas','three','babylon']:
+const runs=process.env.GEO_FAST_SMOKE==='1'?['cesium','playcanvas','three','babylon','babylon','three','playcanvas','cesium']:
   ['cesium','playcanvas','three','babylon','babylon','three','playcanvas','cesium'];
 const server=spawn(process.execPath,['node_modules/vite/bin/vite.js','--host','127.0.0.1','--port',String(port),'--strictPort'],{
   stdio:['ignore','pipe','pipe'],env:process.env
