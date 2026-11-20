@@ -190,7 +190,7 @@ export function buildRoadGeometry(roads,{project,ground,bounds,maxStep=6,terrain
     const {width,grade,tags,paths}=entry;
     const yRoad=(x,z)=>ground(x,z)+.22;
     const yEdge=(x,z)=>ground(x,z)+.15;
-    const yMark=(x,z)=>(profile&&!roadbedIntegrated?profile.heightAt(x,z,grade):ground(x,z))+.285;
+    const yMark=(x,z)=>(profile&&(!roadbedIntegrated||grade!=='0||')?profile.heightAt(x,z,grade):ground(x,z))+.285;
     let distanceAlong=0;
     for(const path of paths){
       const pts=subdivide(path,maxStep);
@@ -257,7 +257,11 @@ export function buildRoadGeometry(roads,{project,ground,bounds,maxStep=6,terrain
   }
   stats.discardedRoadRings=0;
   const atGradeMask=profile&&terrainGrid&&!roadbedIntegrated?[]:null;
-  const sampledProfileHeight=profile&&!roadbedIntegrated?profile.heightAt:null;
+  // At-grade asphalt follows the shared roadbed. Bridge/tunnel/layer
+  // geometry remains on its own profile instead of being flattened onto
+  // the surface-road earthwork.
+  const sampledProfileHeight=profile?((x,z,grade)=>
+    roadbedIntegrated&&grade==='0||'?ground(x,z):profile.heightAt(x,z,grade)):null;
   meshes.road=mergedRoadSurface(corridorAsphalt,ground,.22,stats,terrainGrid,sampledProfileHeight);
   meshes['road-edge']=mergedRoadSurface(corridorEdge,ground,.15,stats,terrainGrid,sampledProfileHeight,atGradeMask);
   if(profile)stats.roadProfile=profile.stats();
