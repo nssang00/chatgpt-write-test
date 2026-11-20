@@ -85,7 +85,7 @@ const EW=(east-west)*111320*cosLat/NX,NS=(north-south)*111320/NZ;
 const sourceMaximumSlope=.18;
 const neighborhood=[[1,0,EW],[0,1,NS],[1,-1,Math.hypot(EW,NS)]];
 let gradientPasses=0,maxGradient=0;
-for(let pass=0;pass<180;pass++){
+for(let pass=0;pass<1200;pass++){
   let violation=0;
   for(let j=0;j<=NZ;j++)for(let i=0;i<=NX;i++){
     const at=j*(NX+1)+i;
