@@ -1,5 +1,6 @@
 import pc from 'polygon-clipping';
 import earcut from 'earcut';
+import { emitTerrainAlignedTriangle } from './terrain_triangle_clip.mjs';
 
 // Validated planar polygon union (per OSM grade) to avoid overlapping road
 // strip triangles, disc junction patches, and stretched/overlapping joins.
@@ -28,7 +29,7 @@ function addTriangle(mesh,a,b,c,ground,elevation){
   mesh.indices.push(offset,offset+1,offset+2);
   return true;
 }
-export function mergedRoadSurface(entries,ground,elevation,stats){
+export function mergedRoadSurface(entries,ground,elevation,stats,terrainGrid=null){
   const mesh={positions:[],indices:[]};
   const grouped=new Map();
   for(const item of entries){
@@ -66,8 +67,21 @@ export function mergedRoadSurface(entries,ground,elevation,stats){
     const triangles=earcut(flat,holes,2);
     for(let i=0;i<triangles.length;i+=3){
       const indexToPt=k=>[flat[k*2],flat[k*2+1]];
-      addTriangle(mesh,indexToPt(triangles[i]),
-        indexToPt(triangles[i+1]),indexToPt(triangles[i+2]),ground,elevation);
+      const a=indexToPt(triangles[i]);
+      const b=indexToPt(triangles[i+1]);
+      const c=indexToPt(triangles[i+2]);
+      if(terrainGrid){
+        // Union/earcut can make 500m road triangles. Matching only the three
+        // vertex heights lets those planes cut through real terrain between
+        // vertices. Split at *both* terrain grid diagonals and cell edges.
+        // A 2D polygon outside the DEM bbox is clipped at its boundary.
+        emitTerrainAlignedTriangle(a,b,c,terrainGrid,(u,v,w)=>{
+          if(addTriangle(mesh,u,v,w,ground,elevation))
+            stats.terrainAlignedTriangles=(stats.terrainAlignedTriangles||0)+1;
+        });
+      }else{
+        addTriangle(mesh,a,b,c,ground,elevation);
+      }
     }
   }
   if(!mesh.indices.length&&entries.length)throw Error('No valid triangles from road polygon union');
