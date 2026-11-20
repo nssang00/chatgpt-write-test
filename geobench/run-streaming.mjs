@@ -5,8 +5,8 @@ import {chromium} from 'playwright';
 const port=4173,host='http://127.0.0.1:'+port;
 const kind=process.env.GEO_TEST_KIND||'hardware';
 const cpuThrottle=Number(process.env.GEO_CPU_THROTTLE||'1');
-const runs=process.env.GEO_FAST_SMOKE==='1'?['cesium','playcanvas','three','babylon']:
-  ['cesium','playcanvas','three','babylon','babylon','three','playcanvas','cesium'];
+const runs=process.env.GEO_FAST_SMOKE==='1'?['cesium3dtileset','cesium','playcanvas','three','babylon']:
+  ['cesium3dtileset','cesium','playcanvas','three','babylon','babylon','three','playcanvas','cesium','cesium3dtileset'];
 const server=spawn(process.execPath,['node_modules/vite/bin/vite.js','--host','127.0.0.1','--port',String(port),'--strictPort'],{
   stdio:['ignore','pipe','pipe'],env:process.env
 });
@@ -50,16 +50,26 @@ try{
     const name=runs[round];
     const page=await browser.newPage({viewport:{width:1280,height:720},deviceScaleFactor:1});
     const errors=[];
+    let nativeGlbRequests=0,nativeGlbBytes=0,nativeGlbLoaded=0;
+    page.on('request',request=>{
+      if(new URL(request.url()).pathname.endsWith('.glb'))nativeGlbRequests++;
+    });
     page.on('pageerror',e=>errors.push(e.stack||String(e)));
     page.on('console',m=>{if(m.type()==='error'&&!m.text().includes('Failed to load resource'))errors.push(m.text())});
-    page.on('response',r=>{if(r.status()>=400&&!r.url().includes('favicon'))errors.push('HTTP '+r.status()+' '+r.url())});
+    page.on('response',r=>{
+      if(r.status()>=400&&!r.url().includes('favicon'))errors.push('HTTP '+r.status()+' '+r.url());
+      if(new URL(r.url()).pathname.endsWith('.glb') && r.ok()){
+        nativeGlbLoaded++;
+        nativeGlbBytes+=Number(r.headers()['content-length']||0);
+      }
+    });
     try{
       if(cpuThrottle>1){
         const session=await page.context().newCDPSession(page);
         await session.send('Emulation.setCPUThrottlingRate',{rate:cpuThrottle});
       }
       const navigationStarted=Date.now();
-      await page.goto(host+'/streaming.html?engine='+name,{waitUntil:'load',timeout:180000});
+      await page.goto(name==='cesium3dtileset' ? host+'/native-3dtiles.html' : host+'/streaming.html?engine='+name,{waitUntil:'load',timeout:180000});
       // The scheduler allows at most 3 concurrent initial requests and only
       // refills when camera.step() is next called. Requiring >=4 here deadlocks.
       // Playwright waitForFunction takes (fn, arg, options), not (fn, options).
@@ -85,6 +95,7 @@ try{
       const modes=process.env.GEO_FAST_SMOKE==='1'?['sweep']:['sweep','scrub'];
       const phases={};
       for(const mode of modes){
+        const priorBytes=nativeGlbBytes,priorRequests=nativeGlbRequests,priorLoaded=nativeGlbLoaded;
         const record=await page.evaluate(async mode=>{
           const b=window.__streamBench;
           const samples=[],total=400,warmup=40;
@@ -115,15 +126,28 @@ try{
               peakHeapBytes:s.peakHeapBytes},gpu:b.gpu,manifest:b.manifest
           };
         },mode);
+        if(name==='cesium3dtileset'){
+          record.stream.bytesFetched=nativeGlbBytes-priorBytes;
+          record.stream.requests=nativeGlbRequests-priorRequests;
+          record.stream.nativeGlbLoaded=nativeGlbLoaded-priorLoaded;
+        }
         if(record.stream.errors)throw Error(name+' tile fetch errors '+record.stream.errors);
         const summary=toStats(record);
+        if(name==='cesium3dtileset'){
+          // Cesium3DTileset controls uploads internally; caller cannot measure that time.
+          summary.uploadMsTotal=null;
+          summary.uploadP95Ms=null;
+          summary.peakActiveTriangles=null;
+          summary.networkBytesSource='Chrome GLB response Content-Length, not equivalent to JSON byte totals';
+          summary.nativeGLBResponses=record.stream.nativeGlbLoaded;
+        }
         if(record.renderedFrames<250)throw Error(name+' '+mode+' rendered too few frames '+record.renderedFrames);
         phases[mode]=summary;
         console.log('STREAM_PHASE '+JSON.stringify({round,engine:name,mode,coldStartMs,gpu,summary}));
         // Save screenshot from EXACT same midpoint pose regardless of traversal.
         if(mode==='sweep'){
           await page.evaluate(()=>window.__streamBench.move(0));
-          for(let n=0;n<12;n++)await page.evaluate(()=>new Promise(requestAnimationFrame));
+          for(let n=0;n<(name==='cesium3dtileset'?30:12);n++)await page.evaluate(()=>new Promise(requestAnimationFrame));
           await page.screenshot({path:'results/'+name+'-stream-round'+round+'.png',fullPage:true});
         }
       }
@@ -132,7 +156,7 @@ try{
     }finally{await page.close();}
   }
   const summary={};
-  for(const name of ['cesium','playcanvas','three','babylon']){
+  for(const name of ['cesium3dtileset','cesium','playcanvas','three','babylon']){
     const a=rounds.filter(x=>x.engine===name);
     summary[name]={coldStartMs:a.reduce((s,x)=>s+x.coldStartMs,0)/a.length};
     for(const mode of Object.keys(a[0].phases)){
@@ -145,16 +169,16 @@ try{
         longFrames50ms:v.reduce((s,x)=>s+x.longFrames50ms,0),
         avgDownloadMB:v.reduce((s,x)=>s+x.downloadedMB,0)/v.length,
         avgLoadedTiles:v.reduce((s,x)=>s+x.tileSuccess,0)/v.length,
-        meanTotalUploadMs:v.reduce((s,x)=>s+x.uploadMsTotal,0)/v.length,
-        uploadP95Ms:percentile(v.map(x=>x.uploadP95Ms),.50),
+        meanTotalUploadMs:name==='cesium3dtileset'?null:v.reduce((s,x)=>s+x.uploadMsTotal,0)/v.length,
+        uploadP95Ms:name==='cesium3dtileset'?null:percentile(v.map(x=>x.uploadP95Ms),.50),
         peakJSHeapMB:Math.max(...v.map(x=>x.peakJSHeapMB)),
-        peakActiveTriangles:Math.max(...v.map(x=>x.peakActiveTriangles)),
+        peakActiveTriangles:name==='cesium3dtileset'?null:Math.max(...v.map(x=>x.peakActiveTriangles)),
         totalTileErrors:v.reduce((s,x)=>s+x.tileErrors,0)
       };
     }
   }
   const out={createdAt:new Date().toISOString(),kind,cpuThrottle,browser:browser.version(),
-    methodology:'Identical 144 local 2-LOD JSON geometry tiles with common JS tile scheduler. All four engines create/dispose native scene meshes, material per surface. Seoul 2085 OSM buildings. Each viewer starts empty, camera sweeps 1080m (360 samples) or scrubs ±480m every 45 frames (360 samples). Browser rAF is vsync-capped. This is not engine-native 3D Tiles or independently optimized game engines.',
+    methodology:'FIVE modes: native Cesium3DTileset on real 3D Tiles 1.1 GLB REPLACE hierarchy versus four custom shared-scheduler JSON mesh paths. Same Seoul 2085 OSM geometry and two geometric LODs, DIFFERENT glTF vs JSON representation and DIFFERENT native Cesium SSE vs custom radius selection; NOT equal tile counts/transfer bytes and not an apples-to-apples runtime-only comparison. 1280x720; RTX; 360 samples per camera movement mode; frame pacing near 57fps. Native tile GLB bytes from Content-Length; native tile upload time/triangles not measured. Use native path to assess practical built-in GIS 3D Tiles streaming.'
     rounds,summary};
   await fs.writeFile('results/streaming-benchmark.json',JSON.stringify(out,null,2));
   console.log('STREAM_SUMMARY '+JSON.stringify(summary));
