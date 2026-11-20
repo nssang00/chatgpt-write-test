@@ -5,7 +5,8 @@
   "scripts": {
     "data": "node generate.mjs && node enhance.mjs",
     "dev": "vite --host 127.0.0.1",
-    "bench": "node run.mjs"
+    "bench": "node run.mjs",
+    "pan-bench": "node run-panning.mjs"
   },
   "dependencies": {
     "cesium": "^1.130.0",
