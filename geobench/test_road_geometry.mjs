@@ -99,6 +99,44 @@ function nearXYZ(a,b){
   assert.equal(triCount(one.meshes['road-marking']),0);
   assert.equal(triCount(oneLane.meshes['road-marking']),0);
 }
+
+ // Regression: a long union triangle can diverge from a piecewise-planar DEM
+ // even when its three vertices match the rendered terrain exactly.
+ {
+   const terrainGrid={xmin:-30,zmin:-30,xmax:30,zmax:30,nx:12,nz:12};
+   const heights=[];
+   for(let j=0;j<=12;j++)for(let i=0;i<=12;i++){
+     const x=-30+i*5,z=-30+j*5;
+     heights.push(27+6*Math.sin(x/6)+5*Math.cos(z/7));
+   }
+   const dem=(x,z)=>{
+     const u=Math.max(0,Math.min(12-1e-7,(x+30)/5));
+     const v=Math.max(0,Math.min(12-1e-7,(z+30)/5));
+     const i=Math.floor(u),j=Math.floor(v),a=u-i,b=v-j;
+     const y=(di,dj)=>heights[(j+dj)*13+i+di];
+     return a+b<=1 ? y(0,0)*(1-a-b)+y(1,0)*a+y(0,1)*b
+       : y(1,1)*(a+b-1)+y(1,0)*(1-b)+y(0,1)*(1-a);
+   };
+   const result=run('nonplanar DEM road',[
+     road('terrain-wave',[[-26,-6],[26,6]],['left','right'],12)
+   ],{...settings,ground:dem,terrainGrid});
+   let maxAbsError=0,checkedSamples=0;
+   const positions=result.meshes.road.positions;
+   for(let i=0;i<positions.length;i+=9){
+     const a=positions.slice(i,i+3),b=positions.slice(i+3,i+6),c=positions.slice(i+6,i+9);
+     for(const [u,v,w] of [[1/3,1/3,1/3],[.5,.5,0],[.5,0,.5],[0,.5,.5]]){
+       const x=a[0]*u+b[0]*v+c[0]*w;
+       const z=a[2]*u+b[2]*v+c[2]*w;
+       const roadY=a[1]*u+b[1]*v+c[1]*w;
+       maxAbsError=Math.max(maxAbsError,Math.abs(roadY-dem(x,z)-.22));
+       checkedSamples++;
+     }
+   }
+   console.log('ROAD_NONPLANAR_DEM_REGRESSION',{triangles:positions.length/9,checkedSamples,maxAbsError});
+   assert.ok(checkedSamples>20);
+   assert.ok(maxAbsError<=.01,'Road interior diverges from terrain by '+maxAbsError+'m');
+ }
+
 console.log('ROAD_TOPOLOGY_UNIT_TEST_PASS',{
   tests:8,
   algorithms:['continuous miter','T junction','shared-node topology',
