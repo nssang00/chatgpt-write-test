@@ -11,7 +11,9 @@
     "stream-bench": "node run-streaming.mjs",
     "pack-native-tiles": "node pack_native_3dtiles.mjs",
     "native-smoke": "node run-native-smoke.mjs",
-    "test:roads": "node test_road_geometry.mjs"
+    "test:roads": "node test_road_geometry.mjs",
+    "test:terrain": "node test_urban_terrain_repair.mjs",
+    "audit:terrain-roads": "node validate_terrain_roads.mjs"
   },
   "dependencies": {
     "cesium": "^1.130.0",
