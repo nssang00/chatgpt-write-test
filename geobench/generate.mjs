@@ -3,8 +3,9 @@ import { XMLParser } from 'fast-xml-parser';
 import { PNG } from 'pngjs';
 import earcut from 'earcut';
 
-// Fixed ~800m x 780m urban area in Daejeon. Both renderers use this exact fixture.
-const BBOX = [127.3810, 36.3450, 127.3900, 36.3520];
+// Seoul Gangnam / Yeoksam business district, approximately 1.25 x 1.33 km.
+// Dense OSM building district. All four engines receive exactly the same fixture.
+const BBOX = [127.0310, 37.4960, 127.0450, 37.5080];
 const TERR_Z = 13;
 const [west, south, east, north] = BBOX;
 const lon0 = (west + east) / 2, lat0 = (south + north) / 2;
@@ -40,7 +41,7 @@ function sampleHeight(lon,lat) {
   return png.data[i]*256+png.data[i+1]+png.data[i+2]/256-32768;
 }
 const terrain={positions:[],indices:[]};
-const NX=64, NZ=64;
+const NX=96, NZ=96;
 for(let j=0;j<=NZ;j++){
   for(let i=0;i<=NX;i++){
     const lon=west+(east-west)*i/NX,lat=south+(north-south)*j/NZ;
@@ -88,9 +89,10 @@ for(const way of parsed.way){
   }
   count++;
 }
-if(count<10)throw new Error('Too few OSM buildings; refusing synthetic fallback: '+count);
+if(count<100)throw new Error('Expected dense Seoul district with 100+ OSM buildings, found only '+count+'; refusing fake building count');
 const fixture={
   metadata:{
+    areaLabel:'Seoul Gangnam / Yeoksam Teheran-ro',demSource:'AWS Mapzen Terrarium',
     bbox:BBOX,center:[lon0,lat0],terrainZoom:TERR_Z,terrainGrid:[NX+1,NZ+1],
     osmEndpoint:osmUrl,demPrefix:'https://s3.amazonaws.com/elevation-tiles-prod/terrarium/',
     generatedAt:new Date().toISOString(),buildingCount:count,skippedBuildings:skipped,
