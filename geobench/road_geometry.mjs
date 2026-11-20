@@ -128,7 +128,7 @@ function circle(mesh,center,radius,yFn,segments=16){
  * ground(x,z) must match the actual triangulated ground surface.
  * bounds = local [xmin,zmin,xmax,zmax].
  */
-export function buildRoadGeometry(roads,{project,ground,bounds,maxStep=6}){
+export function buildRoadGeometry(roads,{project,ground,bounds,maxStep=6,terrainGrid=null}){
   if(maxStep<=0)throw Error('maxStep must be positive');
   const meshes={'road':flatMesh(),'road-edge':flatMesh(),'road-marking':flatMesh()};
   const stats={sourceWays:0,clippedPaths:0,sourceSegments:0,emittedSubsegments:0,
@@ -239,8 +239,8 @@ export function buildRoadGeometry(roads,{project,ground,bounds,maxStep=6}){
     }
   }
   stats.discardedRoadRings=0;
-  meshes.road=mergedRoadSurface(corridorAsphalt,ground,.22,stats);
-  meshes['road-edge']=mergedRoadSurface(corridorEdge,ground,.15,stats);
+  meshes.road=mergedRoadSurface(corridorAsphalt,ground,.22,stats,terrainGrid);
+  meshes['road-edge']=mergedRoadSurface(corridorEdge,ground,.15,stats,terrainGrid);
   // Union meshes do not contain overlapping per-way pieces; drawing order
   // is deterministic, junctions are part of the single asphalt polygon.
   for(const [name,mesh] of Object.entries(meshes)){
