@@ -10,8 +10,9 @@ const manifest=await manifestRes.json();
 const [lon,lat]=manifest.center;
 const [fx,fy,fz]=manifest.focus;
 const theta=.18;
-const baseEye=[fx+250*Math.sin(theta)+120,fy+155,fz-360*Math.cos(theta)];
-const baseTarget=[fx,fy,fz];
+const roadView=new URLSearchParams(location.search).has('roadview');
+const baseEye=roadView?[fx+100,fy+75,fz-155]:[fx+250*Math.sin(theta)+120,fy+155,fz-360*Math.cos(theta)];
+const baseTarget=roadView?[fx,fy-42,fz]:[fx,fy,fz];
 const viewer=new Cesium.Viewer('mount',{
   animation:false,timeline:false,geocoder:false,homeButton:false,
   baseLayerPicker:false,sceneModePicker:false,navigationHelpButton:false,
