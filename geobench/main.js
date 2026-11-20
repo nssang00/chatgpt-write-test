@@ -20,13 +20,23 @@ document.getElementById('meta').textContent=engine.toUpperCase()+' | OSM buildin
 const lon=fixture.metadata.center[0],lat=fixture.metadata.center[1];
 let rendered=0, step, canvas, softwareRenderer=null;
 
-function cameraTrack(n){
+// Shared pan: translate both camera eye and target in local east (X),
+// maintaining heading, FOV, altitude, and identical geometry on every engine.
+function cameraTrack(n,motion='orbit'){
   if(style==='detailed'){
     const [x,y,z]=fixture.metadata.focus;
+    if(motion==='pan'||motion==='static'){
+      const pan=motion==='pan'? -420+840*Math.max(0,Math.min(259,n))/259 : 0;
+      const theta=.18;
+      return {
+        eye:[x+250*Math.sin(theta)+120+pan,y+155,z-360*Math.cos(theta)],
+        target:[x+pan,y,z]
+      };
+    }
     const theta=.18+.065*Math.sin(n/120);
     return {eye:[x+250*Math.sin(theta)+120,y+155,z-360*Math.cos(theta)],target:[x,y,z]};
   }
-  const angle=0.20+0.12*Math.sin(n/90);
+  const angle=.20+.12*Math.sin(n/90);
   return {eye:[670*Math.sin(angle),440+28*Math.sin(n/150),-670*Math.cos(angle)],target:[0,120,0]};
 }
 function createCesiumPrimitive(input,color,modelMatrix){
@@ -88,8 +98,8 @@ if(engine==='cesium'){
   const up=Cesium.Matrix4.multiplyByPointAsVector(frame,new Cesium.Cartesian3(0,0,1),new Cesium.Cartesian3());
   Cesium.Cartesian3.normalize(up,up);
   const toWorld=([x,y,z])=>Cesium.Matrix4.multiplyByPoint(frame,new Cesium.Cartesian3(x,z,y),new Cesium.Cartesian3());
-  step=(n)=>{
-    const {eye,target}=cameraTrack(n),pos=toWorld(eye),toward=toWorld(target);
+  step=(n,motion='orbit')=>{
+    const {eye,target}=cameraTrack(n,motion),pos=toWorld(eye),toward=toWorld(target);
     const dir=Cesium.Cartesian3.subtract(toward,pos,new Cesium.Cartesian3());
     Cesium.Cartesian3.normalize(dir,dir);
     viewer.camera.setView({destination:pos,orientation:{direction:dir,up}});
@@ -140,8 +150,8 @@ if(engine==='cesium'){
   const camera=new pc.Entity('camera');
   camera.addComponent('camera',{clearColor:style==='detailed'?new pc.Color(.674,.741,.796):new pc.Color(0.063,0.110,0.161),fov:60,nearClip:0.1,farClip:5000});
   app.root.addChild(camera);
-  step=(n)=>{
-    const {eye,target}=cameraTrack(n);
+  step=(n,motion='orbit')=>{
+    const {eye,target}=cameraTrack(n,motion);
     camera.setPosition(eye[0],eye[1],-eye[2]);
     camera.lookAt(target[0],target[1],-target[2]);
   };
@@ -190,8 +200,8 @@ if(engine==='cesium'){
     addMesh(fixture.terrain,makeMaterial([.459,.529,.420]));
     addMesh(fixture.buildings,makeMaterial([.780,.714,.631]));
   }
-  step=(n)=>{
-    const {eye,target}=cameraTrack(n);
+  step=(n,motion='orbit')=>{
+    const {eye,target}=cameraTrack(n,motion);
     camera.position.set(eye[0],eye[1],-eye[2]);
     camera.lookAt(target[0],target[1],-target[2]);
     camera.updateMatrixWorld();
@@ -245,8 +255,8 @@ if(engine==='cesium'){
     addMesh(fixture.terrain,materialFor([.459,.529,.420],'terrain'),'terrain');
     addMesh(fixture.buildings,materialFor([.780,.714,.631],'buildings'),'buildings');
   }
-  step=(n)=>{
-    const {eye,target}=cameraTrack(n);
+  step=(n,motion='orbit')=>{
+    const {eye,target}=cameraTrack(n,motion);
     camera.position.set(eye[0],eye[1],-eye[2]);
     camera.setTarget(new BABYLON.Vector3(target[0],target[1],-target[2]));
   };
@@ -264,5 +274,6 @@ window.__geoBench={
   ready:true,engine,fixture:fixture.metadata,
   get rendered(){return rendered},
   gpu:{vendor,renderer:softwareRenderer,version:gl.getParameter(gl.VERSION)},
-  step
+  step,
+  panParameters:{direction:'east (+x)',fullDistanceMeters:840,measuredFrames:260,cameraHeading:'fixed',cameraFovVerticalDegrees:60}
 };
