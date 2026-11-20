@@ -17,11 +17,26 @@ try{
   if(process.env.GEO_TEST_KIND!=='hardware')options.args.push('--use-gl=angle','--use-angle=swiftshader');
   browser=await chromium.launch(options);
   const page=await browser.newPage({viewport:{width:1280,height:720},deviceScaleFactor:1});
-  const errors=[];const requested=new Set(),success=new Set();
+  const errors=[],ignoredFavicon404=[];const requested=new Set(),success=new Set();
   page.on('pageerror',e=>errors.push('pageerror '+String(e.stack||e)));
-  page.on('console',m=>{if(m.type()==='error')errors.push('console '+m.text())});
+  // Browser emits a generic, URL-less message for favicon.ico 404.
+  // Record concrete failed response URLs below; never ignore a failed GLB/JS.
+  page.on('console',m=>{
+    if(m.type()==='error'&&!m.text().startsWith('Failed to load resource'))
+      errors.push('console '+m.text());
+  });
   page.on('request',r=>{if(new URL(r.url()).pathname.endsWith('.glb'))requested.add(r.url())});
-  page.on('response',r=>{if(new URL(r.url()).pathname.endsWith('.glb')&&r.ok())success.add(r.url())});
+  page.on('response',r=>{
+    const pathname=new URL(r.url()).pathname;
+    if(!r.ok()){
+      if(r.status()===404&&pathname==='/favicon.ico')ignoredFavicon404.push(r.url());
+      else errors.push('HTTP '+r.status()+' '+r.url());
+    }
+    if(pathname.endsWith('.glb')&&r.ok())success.add(r.url());
+  });
+  page.on('requestfailed',r=>{
+    errors.push('request failed '+r.url()+' '+r.failure()?.errorText);
+  });
   await page.goto(host+'/native-3dtiles.html'+(process.env.GEO_ROAD_VIEW==='1'?'?roadview=1':''),{waitUntil:'load',timeout:180000});
   try{
     await page.waitForFunction(()=>window.__streamBench?.ready===true,null,{timeout:120000});
@@ -45,7 +60,7 @@ try{
   }));
   await fs.mkdir('results',{recursive:true});
   await page.screenshot({path:process.env.GEO_ROAD_VIEW==='1'?'results/native-3dtiles-roadview.png':'results/native-3dtiles-real-browser.png',fullPage:true});
-  const report={status,requestedGLB:requested.size,loadedGLB:success.size,errors};
+  const report={status,requestedGLB:requested.size,loadedGLB:success.size,errors,ignoredFavicon404};
   await fs.writeFile('results/native-smoke.json',JSON.stringify(report,null,2));
   console.log('NATIVE_3DTILES_SMOKE_RESULT',JSON.stringify(report));
   if(status.stats.errors||errors.length)throw Error('Native 3D Tiles errors: '+JSON.stringify(errors).slice(0,1800));
