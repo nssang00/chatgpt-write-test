@@ -243,8 +243,9 @@ export function buildRoadGeometry(roads,{project,ground,bounds,maxStep=6,terrain
     }
   }
   stats.discardedRoadRings=0;
+  const atGradeMask=profile&&terrainGrid?[]:null;
   meshes.road=mergedRoadSurface(corridorAsphalt,ground,.22,stats,terrainGrid,profile?.heightAt);
-  meshes['road-edge']=mergedRoadSurface(corridorEdge,ground,.15,stats,terrainGrid,profile?.heightAt);
+  meshes['road-edge']=mergedRoadSurface(corridorEdge,ground,.15,stats,terrainGrid,profile?.heightAt,atGradeMask);
   if(profile)stats.roadProfile=profile.stats();
   // Union meshes do not contain overlapping per-way pieces; drawing order
   // is deterministic, junctions are part of the single asphalt polygon.
@@ -253,5 +254,5 @@ export function buildRoadGeometry(roads,{project,ground,bounds,maxStep=6,terrain
     if(mesh.indices.length%3!==0)throw Error('Bad road indices '+name);
   }
   stats.triangles=Object.fromEntries(Object.entries(meshes).map(([k,v])=>[k,v.indices.length/3]));
-  return {meshes,stats};
+  return {meshes,stats,atGradeMask};
 }
