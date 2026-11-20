@@ -24,7 +24,7 @@ function cameraTrack(n){
   if(style==='detailed'){
     const [x,y,z]=fixture.metadata.focus;
     const theta=.18+.065*Math.sin(n/120);
-    return {eye:[x+118*Math.sin(theta)+72,y+80,z-178*Math.cos(theta)],target:[x,y,z]};
+    return {eye:[x+250*Math.sin(theta)+120,y+155,z-360*Math.cos(theta)],target:[x,y,z]};
   }
   const angle=0.20+0.12*Math.sin(n/90);
   return {eye:[670*Math.sin(angle),440+28*Math.sin(n/150),-670*Math.cos(angle)],target:[0,120,0]};
