@@ -1,0 +1,47 @@
+name: Seoul OSM Polygon Union road geometry validation
+on:
+  push:
+    branches:
+      - fix/seoul-road-polygon-union-20261120
+    paths:
+      - geobench/**
+      - .github/workflows/geo-road-polygon-union.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: road-union-Seoul-20261120
+  cancel-in-progress: true
+jobs:
+  road-mesh-topology-and-real-osm:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    defaults:
+      run:
+        working-directory: geobench
+    env:
+      NODE_OPTIONS: --max-old-space-size=6144
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm install --no-audit --no-fund
+      - name: Eight synthetic cases to validate road topology and exact terrain draping
+        run: npm run test:roads
+      - name: Rebuild real Seoul OSM DEM city with road joins
+        run: npm run data
+      - name: Package exactly same new road geometry for all four engines
+        run: npm run pack-tiles
+      - name: Package joined roads for Cesium native 3D Tiles
+        run: npm run pack-native-tiles
+      - name: Validate resulting city still contains coherent OSM scene
+        run: |
+          node --input-type=module -e "import fs from 'node:fs'; const f=JSON.parse(fs.readFileSync('public/fixture-detailed.json')); const s=f.metadata.meshStats; console.log('SEOUL_ROAD_JOIN_RESULT',JSON.stringify({buildings:s.buildings,roadWays:s.roads,roadOriginalSegments:s.roadSegments,roadSubsegments:s.roadSubsegments,roadJunctions:s.roadJunctions,roadJoins:s.roadJoins,roadClipPaths:s.roadClippedPaths,roadMarkings:s.roadMarkings,triangles:f.metadata.trianglesByMaterial})); if(s.buildings<1000||s.roads<100||s.roadJunctions<10||s.roadJoins<100||s.roadSubsegments<1000)process.exit(2)"
+      - name: Upload metadata reports only (no huge geometry)
+        uses: actions/upload-artifact@v4
+        with:
+          name: seoul-road-polygon-union-validation
+          path: geobench/public/native-3dtiles/build-report.json
+          retention-days: 14
+          if-no-files-found: error
