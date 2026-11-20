@@ -17,11 +17,13 @@ try{
   if(process.env.GEO_TEST_KIND!=='hardware')options.args.push('--use-gl=angle','--use-angle=swiftshader');
   browser=await chromium.launch(options);
   const page=await browser.newPage({viewport:{width:1280,height:720},deviceScaleFactor:1});
-  const errors=[];const requested=new Set(),success=new Set();
+  const errors=[];const requested=new Set(),success=new Set(),badResponses=[];
   page.on('pageerror',e=>errors.push('pageerror '+String(e.stack||e)));
-  page.on('console',m=>{if(m.type()==='error')errors.push('console '+m.text())});
+  // Chrome prints generic 'Failed to load resource' without the URL; the
+  // response observer below checks actual HTTP status and file path instead.
+  page.on('console',m=>{if(m.type()==='error'&&!m.text().includes('Failed to load resource'))errors.push('console '+m.text())});
   page.on('request',r=>{if(new URL(r.url()).pathname.endsWith('.glb'))requested.add(r.url())});
-  page.on('response',r=>{if(new URL(r.url()).pathname.endsWith('.glb')&&r.ok())success.add(r.url())});
+  page.on('response',r=>{const u=new URL(r.url());if(u.pathname.endsWith('.glb')&&r.ok())success.add(r.url());if(r.status()>=400&&!u.pathname.endsWith('/favicon.ico'))badResponses.push({status:r.status(),url:r.url()});});
   await page.goto(host+'/native-3dtiles.html'+(process.env.GEO_ROAD_VIEW==='1'?'?roadview=1':''),{waitUntil:'load',timeout:180000});
   try{
     await page.waitForFunction(()=>window.__streamBench?.ready===true,null,{timeout:120000});
@@ -45,10 +47,10 @@ try{
   }));
   await fs.mkdir('results',{recursive:true});
   await page.screenshot({path:process.env.GEO_ROAD_VIEW==='1'?'results/native-3dtiles-roadview.png':'results/native-3dtiles-real-browser.png',fullPage:true});
-  const report={status,requestedGLB:requested.size,loadedGLB:success.size,errors};
+  const report={status,requestedGLB:requested.size,loadedGLB:success.size,errors,badResponses};
   await fs.writeFile('results/native-smoke.json',JSON.stringify(report,null,2));
   console.log('NATIVE_3DTILES_SMOKE_RESULT',JSON.stringify(report));
-  if(status.stats.errors||errors.length)throw Error('Native 3D Tiles errors: '+JSON.stringify(errors).slice(0,1800));
+  if(status.stats.errors||errors.length||badResponses.length)throw Error('Native 3D Tiles errors: '+JSON.stringify({errors,badResponses}).slice(0,1800));
   if(status.rendered<20||status.stats.success<2||success.size<2)throw Error('Native 3D Tiles did not render/load sufficient GLBs');
   await page.close();
 }finally{
