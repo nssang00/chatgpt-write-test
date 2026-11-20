@@ -48,12 +48,69 @@ jobs:
             geobench/public/native-3dtiles/tileset.json
           retention-days: 14
           if-no-files-found: warn
-      - name: Upload native GLB assets for GPU benchmark
+      - name: Upload both formats of the exact same Seoul geometry for GPU comparison
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: seoul-native-3dtiles-assets
-          path: geobench/public/native-3dtiles/
+          name: seoul-5engine-streaming-assets
+          path: |
+            geobench/public/native-3dtiles/
+            geobench/public/stream-tiles/
+            geobench/public/stream-manifest.json
           retention-days: 7
           if-no-files-found: error
           compression-level: 6
+  rtx-five-renderer-streaming:
+    needs: hosted-native-3dtiles-browser
+    runs-on: [self-hosted, Windows, X64, m5-gpu]
+    timeout-minutes: 85
+    defaults:
+      run:
+        working-directory: geobench
+    env:
+      GEO_TEST_KIND: hardware
+      NODE_OPTIONS: --max-old-space-size=6144
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/download-artifact@v4
+        with:
+          name: seoul-5engine-streaming-assets
+          path: geobench/public
+      - name: Install libraries
+        shell: powershell
+        run: |
+          npm install --no-audit --no-fund
+          if ($LASTEXITCODE -ne 0) { throw 'Dependencies failed' }
+      - name: Select RTX-enabled Chrome/Edge
+        shell: powershell
+        run: |
+          $pf86=[Environment]::GetFolderPath('ProgramFilesX86')
+          $chrome = @(
+            "$env:ProgramFiles\Google\Chrome\Application\chrome.exe",
+            (Join-Path $pf86 'Google\Chrome\Application\chrome.exe'),
+            "$env:LOCALAPPDATA\Google\Chrome\Application\chrome.exe"
+          ) | Where-Object { Test-Path $_ } | Select-Object -First 1
+          $edge = @(
+            (Join-Path $pf86 'Microsoft\Edge\Application\msedge.exe'),
+            "$env:ProgramFiles\Microsoft\Edge\Application\msedge.exe"
+          ) | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if ($chrome) { "GEO_BROWSER_CHANNEL=chrome" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV }
+          elseif ($edge) { "GEO_BROWSER_CHANNEL=msedge" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV }
+          else { throw 'No GPU browser found' }
+          Get-CimInstance Win32_VideoController | Select-Object Name,DriverVersion | Format-Table
+      - name: Test Cesium3DTileset plus custom Cesium Three PlayCanvas Babylon on RTX
+        shell: powershell
+        run: |
+          npm run stream-bench
+          if ($LASTEXITCODE -ne 0) { throw 'Five-renderer streaming benchmark failed' }
+      - name: Upload real GPU screenshots and timing results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: seoul-cesium-native-vs-four-rtx-results
+          path: geobench/results/
+          if-no-files-found: warn
+          retention-days: 14
