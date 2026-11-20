@@ -29,7 +29,7 @@ function addTriangle(mesh,a,b,c,sampledHeight,elevation){
   mesh.indices.push(offset,offset+1,offset+2);
   return true;
 }
-export function mergedRoadSurface(entries,ground,elevation,stats,terrainGrid=null,roadHeight=null){
+export function mergedRoadSurface(entries,ground,elevation,stats,terrainGrid=null,roadHeight=null,atGradeMask=null){
   const mesh={positions:[],indices:[]};
   const grouped=new Map();
   for(const item of entries){
@@ -77,11 +77,14 @@ export function mergedRoadSurface(entries,ground,elevation,stats,terrainGrid=nul
         // vertices. Split at *both* terrain grid diagonals and cell edges.
         // A 2D polygon outside the DEM bbox is clipped at its boundary.
         emitTerrainAlignedTriangle(a,b,c,terrainGrid,(u,v,w)=>{
-          if(addTriangle(mesh,u,v,w,sampledHeight,elevation))
+          if(addTriangle(mesh,u,v,w,sampledHeight,elevation)){
             stats.terrainAlignedTriangles=(stats.terrainAlignedTriangles||0)+1;
+            if(atGradeMask&&item.grade==='0||')atGradeMask.push([u,v,w]);
+          }
         });
       }else{
-        addTriangle(mesh,a,b,c,sampledHeight,elevation);
+        if(addTriangle(mesh,a,b,c,sampledHeight,elevation)&&atGradeMask&&item.grade==='0||')
+          atGradeMask.push([a,b,c]);
       }
     }
   }
