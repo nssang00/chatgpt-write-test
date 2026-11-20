@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Replace Terrarium heights with AUTHENTIC supplied NGII DEM raster heights.
-Fails closed if NGII raster files are missing or fail to cover the test bbox.
+Fails closed if NGII raster files are missing or fail to cover the Seoul test bbox.
 Required: numpy, rasterio. Supports NGII Erdas Imagine .img and GeoTIFF.
 No source DEM raster or derived mesh is uploaded by this script.
 """
@@ -15,7 +15,7 @@ from rasterio.transform import Affine
 from rasterio.warp import reproject, Resampling
 
 ROOT=Path(__file__).resolve().parent
-BBOX_REQUIRED=[127.381,36.345,127.39,36.352]
+BBOX_REQUIRED=[127.031,37.496,127.045,37.508]
 def die(message):
     raise RuntimeError("NGII DEM INPUT ERROR: "+message)
 
@@ -95,7 +95,7 @@ def main():
             die(f"Cannot read {path.name}: {err}")
     coverage=float(np.mean(np.isfinite(target)))
     if coverage<0.999999:
-        die(f"NGII input does not cover full Daejeon test area: {coverage:.2%}; supply all adjacent sheets")
+        die(f"NGII input does not cover full Seoul test area: {coverage:.2%}; supply all adjacent sheets")
     if float(np.nanmin(target))<-500 or float(np.nanmax(target))>2000:
         die("Unexpected elevation range. Check input raster band and units.")
     # target row 0 is north. Scene terrain rows progress from south to north.
