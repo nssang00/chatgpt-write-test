@@ -1,0 +1,49 @@
+name: Seoul road surface fixed — fast hosted Chrome screenshot
+on:
+  push:
+    branches:
+      - fix/seoul-road-ground-spikes-20261120
+    paths:
+      - .github/workflows/geo-seoul-ground-chrome-fast.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  chrome-preinstalled-software-screenshot:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: geobench
+    env:
+      GEO_TEST_KIND: software
+      GEO_ROAD_VIEW: '1'
+      GEO_BROWSER_CHANNEL: chrome
+      NODE_OPTIONS: --max-old-space-size=6144
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/download-artifact@v4
+        with:
+          repository: nssang00/chatgpt-write-test
+          run-id: 44686712942
+          name: seoul-ground-repaired-native-tiles
+          github-token: ${{ github.token }}
+          path: geobench/public
+      - name: Verify system Chrome available
+        run: google-chrome --version
+      - name: Install npm packages (reuse preinstalled Chrome)
+        run: npm install --no-audit --no-fund
+      - name: Render real Cesium 3D Tiles with corrected ground in system Chrome
+        run: npm run native-smoke
+      - name: Upload actual Chrome screenshot
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: seoul-ground-corrected-chrome-visual
+          path: geobench/results/
+          if-no-files-found: warn
+          retention-days: 14
