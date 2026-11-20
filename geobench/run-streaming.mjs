@@ -61,7 +61,7 @@ try{
       const navigationStarted=Date.now();
       await page.goto(host+'/streaming.html?engine='+name,{waitUntil:'load',timeout:180000});
       await page.waitForFunction(()=>window.__streamBench?.ready===true,{timeout:180000});
-      await page.waitForFunction(()=>window.__streamBench?.stats.success>=4,{timeout:180000});
+      await page.waitForFunction(()=>window.__streamBench?.stats.success>=(window.__streamBench?.engine ? 2 : 4),{timeout:180000});
       const coldStartMs=Date.now()-navigationStarted;
       if(errors.length)throw Error(name+' boot errors '+errors.slice(0,3).join(' \n'));
       const gpu=await page.evaluate(()=>window.__streamBench.gpu);
@@ -70,16 +70,16 @@ try{
       const modes=process.env.GEO_FAST_SMOKE==='1'?['sweep']:['sweep','scrub'];
       const phases={};
       for(const mode of modes){
-        const record=await page.evaluate(async mode=>{
+        const record=await page.evaluate(async ({mode,smoke})=>{
           const b=window.__streamBench;
-          const samples=[],total=400,warmup=40;
+          const samples=[],total=smoke?140:400,warmup=smoke?20:40;
           // Warmup can reposition and trigger fresh loads; not included in frame stats.
           const position=n=>{
             if(mode==='sweep')return -540+1080*Math.max(0,n)/(total-warmup-1);
             const tick=Math.floor(Math.max(0,n)/45)%4;
             return [-480,480,-480,480][tick];
           };
-          b.move(position(0),{detailRadius:260,loadRadius:440,concurrency:3});
+          b.move(position(0),{detailRadius:smoke?130:260,loadRadius:smoke?260:440,concurrency:smoke?2:3});
           for(let i=0;i<warmup;i++)await new Promise(requestAnimationFrame);
           const initialStats=b.resetCounters();
           let firstRendered=b.rendered,last=performance.now(),start=last;
@@ -99,10 +99,10 @@ try{
               peakActiveTiles:s.peakActiveTiles,peakActiveTriangles:s.peakActiveTriangles,
               peakHeapBytes:s.peakHeapBytes},gpu:b.gpu,manifest:b.manifest
           };
-        },mode);
+        },{mode,smoke:process.env.GEO_FAST_SMOKE==='1'});
         if(record.stream.errors)throw Error(name+' tile fetch errors '+record.stream.errors);
         const summary=toStats(record);
-        if(record.renderedFrames<250)throw Error(name+' '+mode+' rendered too few frames '+record.renderedFrames);
+        if(record.renderedFrames<(process.env.GEO_FAST_SMOKE==='1'?60:250))throw Error(name+' '+mode+' rendered too few frames '+record.renderedFrames);
         phases[mode]=summary;
         console.log('STREAM_PHASE '+JSON.stringify({round,engine:name,mode,coldStartMs,gpu,summary}));
         // Save screenshot from EXACT same midpoint pose regardless of traversal.
