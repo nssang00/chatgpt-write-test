@@ -41,7 +41,13 @@ function nearXYZ(a,b){
   ]);
   assert.equal(r.stats.junctionPatches,1);
   assert.equal(r.stats.junctionsByDegree['3'],1);
-  assert.ok(triCount(r.meshes.road)>=16+3*2);
+  assert.ok(triCount(r.meshes.road)>=6);
+  // An intersection patch should follow incident road widths, not create
+  // unbounded circular fan triangles or extreme side protrusions.
+  const p=r.meshes.road.positions;
+  for(let v=0;v<p.length;v+=3){
+    assert.ok(Math.abs(p[v])<38&&Math.abs(p[v+2])<38);
+  }
 }
 // Roads with a shared x/z crossing but different OSM node IDs are not
 // accidentally made into a graph intersection.
