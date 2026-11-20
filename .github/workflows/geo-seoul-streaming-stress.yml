@@ -1,0 +1,107 @@
+name: Seoul Streaming LOD stress | 4 engines RTX
+on:
+  push:
+    branches:
+      - bench/seoul-streaming-stress-four-20261120
+    paths:
+      - geobench/**
+      - .github/workflows/geo-seoul-streaming-stress.yml
+  workflow_dispatch:
+    inputs:
+      cpu_throttle:
+        description: 'Browser CPU throttling multiplier (1=normal, 4=stress)'
+        default: '1'
+        required: false
+        type: choice
+        options:
+          - '1'
+          - '4'
+concurrency:
+  group: seoul-stream-${{ github.ref }}
+  cancel-in-progress: true
+permissions:
+  contents: read
+jobs:
+  create-streaming-osm-tiles:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: geobench
+    env:
+      NODE_OPTIONS: --max-old-space-size=6144
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install 4 engine libraries and tools
+        run: npm install --no-audit --no-fund
+      - name: Generate real Seoul OSM buildings and AWS Mapzen terrain fixture
+        run: npm run data
+      - name: Pack 144 common 2-level geometry tiles on disk (no preloading)
+        run: npm run pack-tiles
+      - name: Upload identical streaming tile assets for physical GPU test
+        uses: actions/upload-artifact@v4
+        with:
+          name: seoul-streaming-tile-assets
+          path: |
+            geobench/public/stream-tiles/
+            geobench/public/stream-manifest.json
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 6
+  physical-gpu-streaming-comparison:
+    needs: create-streaming-osm-tiles
+    runs-on: [self-hosted, Windows, X64, m5-gpu]
+    timeout-minutes: 70
+    defaults:
+      run:
+        working-directory: geobench
+    env:
+      GEO_TEST_KIND: hardware
+      GEO_CPU_THROTTLE: ${{ inputs.cpu_throttle || '1' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/download-artifact@v4
+        with:
+          name: seoul-streaming-tile-assets
+          path: geobench/public
+      - name: Install dependencies
+        shell: powershell
+        run: |
+          npm install --no-audit --no-fund
+          if ($LASTEXITCODE -ne 0) { throw 'npm dependencies installation failed' }
+      - name: Select native hardware GPU browser
+        shell: powershell
+        run: |
+          $pf86=[Environment]::GetFolderPath('ProgramFilesX86')
+          $chrome = @(
+            "$env:ProgramFiles\Google\Chrome\Application\chrome.exe",
+            (Join-Path $pf86 'Google\Chrome\Application\chrome.exe'),
+            "$env:LOCALAPPDATA\Google\Chrome\Application\chrome.exe"
+          ) | Where-Object { Test-Path $_ } | Select-Object -First 1
+          $edge = @(
+            (Join-Path $pf86 'Microsoft\Edge\Application\msedge.exe'),
+            "$env:ProgramFiles\Microsoft\Edge\Application\msedge.exe"
+          ) | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if ($chrome) { "GEO_BROWSER_CHANNEL=chrome" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV }
+          elseif ($edge) { "GEO_BROWSER_CHANNEL=msedge" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV }
+          else { throw 'No native GPU browser found' }
+          Get-CimInstance Win32_VideoController | Select-Object Name,DriverVersion | Format-Table
+      - name: Compare shared streaming and fast-scrubbing scene on RTX
+        shell: powershell
+        run: |
+          npm run stream-bench
+          if ($LASTEXITCODE -ne 0) { throw 'Four-engine streaming GPU test failed' }
+      - name: Upload streaming results and true screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: seoul-stream-4engine-rtx-results
+          path: geobench/results/
+          if-no-files-found: warn
+          retention-days: 14
