@@ -5,6 +5,7 @@ on:
       - fix/seoul-road-junction-polygon-20261120
     paths:
       - .github/workflows/geo-seoul-junction-polygon-qa.yml
+      - geobench/run-native-smoke.mjs
   workflow_dispatch:
 permissions:
   contents: read
