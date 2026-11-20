@@ -21,6 +21,7 @@ jobs:
         working-directory: geobench
     env:
       NODE_OPTIONS: --max-old-space-size=6144
+      GEO_VISUAL_TERRAIN_SMOOTH: '1'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
