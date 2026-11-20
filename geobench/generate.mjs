@@ -66,6 +66,49 @@ for(let j=0;j<NZ;j++)for(let i=0;i<NX;i++){
   const a=j*(NX+1)+i,b=a+1,c=a+(NX+1),d=c+1;
   terrain.indices.push(a,c,b,b,c,d);
 }
+// The source DEM can exhibit extremely steep local ridges in the urban area.
+// This is explicitly an OPTIONAL VISUAL-ONLY low-pass filter, NOT a measured
+// NGII terrain or improved source DEM. It must be enabled deliberately, and
+// the raw elevation slope is always recorded for audit.
+const visualSmooth=process.env.GEO_VISUAL_TERRAIN_SMOOTH==='1';
+let unfilteredMaxSlope=0;
+const gridDX=(east-west)*111320*cosLat/NX,gridDZ=(north-south)*111320/NZ;
+const gridY=(i,j)=>terrain.positions[(j*(NX+1)+i)*3+1];
+for(let j=0;j<=NZ;j++)for(let i=0;i<=NX;i++){
+  if(i<NX)unfilteredMaxSlope=Math.max(unfilteredMaxSlope,Math.abs(gridY(i+1,j)-gridY(i,j))/gridDX);
+  if(j<NZ)unfilteredMaxSlope=Math.max(unfilteredMaxSlope,Math.abs(gridY(i,j+1)-gridY(i,j))/gridDZ);
+}
+if(visualSmooth){
+  const gaussian=[1,4,6,4,1],dimX=NX+1,dimZ=NZ+1;
+  let values=Array.from({length:dimX*dimZ},(_,idx)=>terrain.positions[idx*3+1]);
+  const axisPass=(data,axis)=>{
+    const out=new Array(data.length);
+    for(let j=0;j<dimZ;j++)for(let i=0;i<dimX;i++){
+      let value=0;
+      for(let k=-2;k<=2;k++){
+        const ix=axis===0?clamp(i+k,0,NX):i;
+        const jz=axis===1?clamp(j+k,0,NZ):j;
+        value+=data[jz*dimX+ix]*gaussian[k+2]/16;
+      }
+      out[j*dimX+i]=value;
+    }
+    return out;
+  };
+  // Four separable 5-tap passes, sigma~2 terrain grid cells (~26m).
+  // This is an illustrative presentation filter, NOT a surveying operation.
+  for(let n=0;n<4;n++){values=axisPass(values,0);values=axisPass(values,1);}
+  for(let i=0;i<values.length;i++)terrain.positions[i*3+1]=values[i];
+}
+function visualTerrainFloor(lon,lat){
+  const [x,z]=project(lon,lat);
+  const minPX=project(west,lat0)[0],minPZ=project(lon0,south)[1];
+  const u=clamp((x-minPX)/((east-west)*111320*cosLat)*NX,0,NX-1e-8);
+  const v=clamp((z-minPZ)/((north-south)*111320)*NZ,0,NZ-1e-8);
+  const i=Math.floor(u),j=Math.floor(v),fx=u-i,fz=v-j;
+  const a=gridY(i,j),b=gridY(i+1,j),c=gridY(i,j+1),d=gridY(i+1,j+1);
+  return fx+fz<=1?a*(1-fx-fz)+b*fx+c*fz:d*(fx+fz-1)+b*(1-fz)+c*(1-fx);
+}
+
 const osmUrl='https://api.openstreetmap.org/api/0.6/map?bbox='+BBOX.join(',');
 const xml=(await download(osmUrl)).toString('utf8');
 const parser=new XMLParser({ignoreAttributes:false,attributeNamePrefix:'@_',isArray:(tag)=>['node','way','nd','tag'].includes(tag)});
@@ -87,7 +130,7 @@ for(const way of parsed.way){
   const hTag=Number.parseFloat(tags.height), levelTag=Number.parseFloat(tags['building:levels']);
   const height=Number.isFinite(hTag)&&hTag>0? hTag : (Number.isFinite(levelTag)&&levelTag>0 ? levelTag*3 : 12);
   if(!(Number.isFinite(hTag)&&hTag>0) && !(Number.isFinite(levelTag)&&levelTag>0))inferred++;
-  const floor=sampleHeight(centerLon,centerLat);
+  const floor=visualTerrainFloor(centerLon,centerLat);
   const pts=refs.map(([lon,lat])=>project(lon,lat));
   const triangles=earcut(pts.flat());
   if(!triangles.length){skipped++;continue;}
@@ -124,6 +167,8 @@ const fixture={
     areaLabel:'Seoul Gangnam / Yeoksam Teheran-ro',demSource:'AWS Mapzen Terrarium',
     bbox:BBOX,center:[lon0,lat0],terrainZoom:TERR_Z,terrainGrid:[NX+1,NZ+1],
     demInterpolation:'bilinear on pixel centers across adjacent Terrarium tiles',
+    visualTerrainFilter:visualSmooth?'four separable 5-tap Gaussian passes (sigma approx 2 terrain cells); VISUAL ONLY, not NGII':'none',
+    unfilteredMaxSlope,
     terrainDiagnostics:{maxGridSlope,maxAdjacentRise,steepGridEdges},
     osmEndpoint:osmUrl,demPrefix:'https://s3.amazonaws.com/elevation-tiles-prod/terrarium/',
     generatedAt:new Date().toISOString(),buildingCount:count,skippedBuildings:skipped,
