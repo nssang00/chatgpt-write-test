@@ -8,7 +8,9 @@
     "bench": "node run.mjs",
     "pan-bench": "node run-panning.mjs",
     "pack-tiles": "node pack_stream_tiles.mjs",
-    "stream-bench": "node run-streaming.mjs"
+    "stream-bench": "node run-streaming.mjs",
+    "pack-native-tiles": "node pack_native_3dtiles.mjs",
+    "native-smoke": "node run-native-smoke.mjs"
   },
   "dependencies": {
     "cesium": "^1.130.0",
