@@ -21,7 +21,7 @@ function polygonArea(points){
   for(let i=0;i<points.length-1;i++)sum+=points[i][0]*points[i+1][1]-points[i+1][0]*points[i][1];
   return Math.abs(sum)*.5;
 }
-function addTriangle(mesh,a,b,c,ground,elevation){
+function addTriangle(mesh,a,b,c,sampledHeight,elevation){
   const cross=(b[0]-a[0])*(c[1]-a[1])-(b[1]-a[1])*(c[0]-a[0]);
   if(Math.abs(cross)<small)return false;
   const offset=mesh.positions.length/3;
@@ -29,7 +29,7 @@ function addTriangle(mesh,a,b,c,ground,elevation){
   mesh.indices.push(offset,offset+1,offset+2);
   return true;
 }
-export function mergedRoadSurface(entries,ground,elevation,stats,terrainGrid=null){
+export function mergedRoadSurface(entries,ground,elevation,stats,terrainGrid=null,roadHeight=null){
   const mesh={positions:[],indices:[]};
   const grouped=new Map();
   for(const item of entries){
@@ -55,6 +55,7 @@ export function mergedRoadSurface(entries,ground,elevation,stats,terrainGrid=nul
   }
   stats.mergedRoadPolygons=unionPolygons.length;
   for(const item of unionPolygons){
+    const sampledHeight=roadHeight?((x,z)=>roadHeight(x,z,item.grade)):ground;
     const flat=[],holes=[];
     let index=0;
     for(let r=0;r<item.rings.length;r++){
@@ -76,7 +77,7 @@ export function mergedRoadSurface(entries,ground,elevation,stats,terrainGrid=nul
         // vertices. Split at *both* terrain grid diagonals and cell edges.
         // A 2D polygon outside the DEM bbox is clipped at its boundary.
         emitTerrainAlignedTriangle(a,b,c,terrainGrid,(u,v,w)=>{
-          if(addTriangle(mesh,u,v,w,ground,elevation))
+          if(addTriangle(mesh,u,v,w,sampledHeight,elevation))
             stats.terrainAlignedTriangles=(stats.terrainAlignedTriangles||0)+1;
         });
       }else{
