@@ -1,0 +1,108 @@
+name: NGII DEM four-engine verification
+on:
+  push:
+    branches:
+      - bench/ngii-dem-four-engines-20261120
+    paths:
+      - geobench/**
+      - .github/workflows/ngii-four-engine.yml
+  workflow_dispatch:
+    inputs:
+      ngii_dem_dir:
+        description: 'Absolute directory on the Windows GPU runner with genuine NGII .img/.tif DEM sheets covering Daejeon'
+        required: true
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: ngii-four-engines-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  validate-converter-synthetic-only:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: python -m pip install rasterio numpy
+      - name: Synthetic Korean CRS and failure-safety tests (NOT real NGII result)
+        run: python geobench/test_ngii_converter.py
+  gpu-with-genuine-ngii:
+    if: github.event_name == 'workflow_dispatch'
+    needs: validate-converter-synthetic-only
+    runs-on: [self-hosted, Windows, X64, m5-gpu]
+    timeout-minutes: 75
+    defaults:
+      run:
+        working-directory: geobench
+    env:
+      GEO_DEM_SOURCE: ngii
+      GEO_TEST_KIND: hardware
+      NGII_DEM_DIR: ${{ inputs.ngii_dem_dir }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install Node packages and GeoTIFF/IMG support
+        shell: powershell
+        run: |
+          npm install --no-audit --no-fund
+          if ($LASTEXITCODE -ne 0) { throw 'npm install failed' }
+          python -m pip install rasterio numpy
+          if ($LASTEXITCODE -ne 0) { throw 'rasterio install failed' }
+      - name: Confirm required NGII DEM data exists locally (no fallback)
+        shell: powershell
+        run: |
+          if (-not (Test-Path -LiteralPath $env:NGII_DEM_DIR -PathType Container)) {
+            throw 'NGII DEM directory not found on GPU runner. Obtain official NGII raster and specify its absolute local folder.'
+          }
+          $rasters = @(Get-ChildItem -LiteralPath $env:NGII_DEM_DIR -Recurse -File |
+            Where-Object { $_.Extension -in @('.img','.tif','.tiff','.vrt') })
+          if ($rasters.Count -eq 0) { throw 'No genuine NGII IMG/GeoTIFF rasters found. Refusing AWS substitution.' }
+          Write-Output "Input raster count: $($rasters.Count)"
+      - name: Generate OSM mesh baseline
+        shell: powershell
+        run: |
+          npm run data
+          if ($LASTEXITCODE -ne 0) { throw 'OSM geometry generation failed' }
+      - name: Replace all terrain and architectural heights with real NGII DEM
+        shell: powershell
+        run: |
+          python ngii_rebase.py --dem-dir "$env:NGII_DEM_DIR" --grid-step 5
+          if ($LASTEXITCODE -ne 0) { throw 'NGII coverage/CRS invalid; stopping WITHOUT AWS fallback' }
+      - name: Select installed GPU browser
+        shell: powershell
+        run: |
+          $pf86=[Environment]::GetFolderPath('ProgramFilesX86')
+          $chrome = @(
+            "$env:ProgramFiles\Google\Chrome\Application\chrome.exe",
+            (Join-Path $pf86 'Google\Chrome\Application\chrome.exe'),
+            "$env:LOCALAPPDATA\Google\Chrome\Application\chrome.exe"
+          ) | Where-Object { Test-Path $_ } | Select-Object -First 1
+          $edge = @(
+            (Join-Path $pf86 'Microsoft\Edge\Application\msedge.exe'),
+            "$env:ProgramFiles\Microsoft\Edge\Application\msedge.exe"
+          ) | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if ($chrome) { "GEO_BROWSER_CHANNEL=chrome" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV }
+          elseif ($edge) { "GEO_BROWSER_CHANNEL=msedge" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV }
+          else { throw 'No Chrome/Edge browser found' }
+          Get-CimInstance Win32_VideoController | Select-Object Name,DriverVersion | Format-Table
+      - name: Measure Cesium PlayCanvas Three Babylon on NGII terrain
+        shell: powershell
+        run: |
+          npm run bench
+          if ($LASTEXITCODE -ne 0) { throw 'Authentic NGII benchmark failed' }
+      - name: Upload screenshots and timing results only (no terrain source or derived vertex data)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ngii-four-engine-gpu-measurements
+          path: geobench/results/
+          if-no-files-found: warn
+          retention-days: 14
