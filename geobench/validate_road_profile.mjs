@@ -11,7 +11,10 @@ const cos=Math.cos(lat0*Math.PI/180);
 const xmin=(west-lon0)*111320*cos,xmax=(east-lon0)*111320*cos;
 const zmin=(south-lat0)*111320,zmax=(north-lat0)*111320;
 const stepX=(xmax-xmin)/nx,stepZ=(zmax-zmin)/nz;
-const source=data.terrain.positions;
+// The displayed terrain may have road cutouts; reference the preserved
+// original 97x97 DEM in fixture.json when calculating penetration diagnostics.
+const original=JSON.parse(await fs.readFile('public/fixture.json','utf8'));
+const source=original.terrain.positions;
 const clamp=(x,a,b)=>Math.max(a,Math.min(b,x));
 const ground=(x,z)=>{
   const fx=clamp((x-xmin)/stepX,0,nx-1e-7);
@@ -31,6 +34,7 @@ function weightedPercentile(samples,total,percentile){
   return samples.at(-1)?.[0]??0;
 }
 const result={profile,source:data.metadata.demSource,
+  terrainCut:data.metadata.roadTerrainCut??null,
   bbox:data.metadata.bbox,materials:{},note:
   'Surface triangle grade is not necessarily centerline longitudinal grade. Below-DEM fractions diagnose required local cut/fill, not proof of a geometry algorithm failure.'};
 let invalid=0;
