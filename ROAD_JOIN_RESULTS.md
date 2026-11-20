@@ -1,5 +1,19 @@
 # Seoul road topology and join preprocessing — completed first iteration
 
+## RTX visual QA outcome (updated after GPU screenshot inspection)
+
+**VISUAL QUALITY: NOT PASSED.**
+
+Run: https://github.com/nssang00/chatgpt-write-test/actions/runs/44670492874  
+Its RTX 5060 Ti screenshot artifact: `seoul-native-road-joins-rtx-visual`, including `native-3dtiles-roadview.png`.
+
+- Genuine RTX Cesium3DTileset rendered the new geometry, with 89 tile load events, 0 native tile loader errors and 91 rendered frames.
+- The GitHub Action ended in FAILURE because a generic browser console 404 was recorded; its URL was not captured, so the source of the 404 remains unknown. Do NOT assert that it was a favicon or an ignorable error.
+- **Manual pixel inspection of the actual screenshot found large jagged grey polygonal road/ground fragments and irregular overlaps at the foreground.** This is not the natural road topology target. The 8 synthetic unit tests and successful GLB export test the code path, not perceptual/geometry quality.
+- Do **not** merge this into the production branch or declare the city roads visually fixed on the strength of the numerical topology counters.
+- Next actions: (a) log exact failing HTTP resource URL, (b) isolate road / road-edge / junction surface overlays in fixed-camera screenshots, (c) inspect false miter/width/degenerate triangles and intersection-patch overlaps, (d) use planar polygon clipping and union for robust crossing geometry where needed, (e) rebuild native 3D Tiles and manually compare before/after screenshots.
+
+
 **Date**: 2026-11-20.  
 **Successful CI**: https://github.com/nssang00/chatgpt-write-test/actions/runs/44670068132  
 **Original region**: Seoul Gangnam / Yeoksam OSM bbox [127.0310,37.4960,127.0450,37.5080].  
