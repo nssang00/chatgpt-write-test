@@ -6,7 +6,13 @@ import 'cesium/Build/Cesium/Widgets/widgets.css';
 
 const engine=new URLSearchParams(location.search).get('engine') || 'cesium';
 const style=new URLSearchParams(location.search).get('style') || 'detailed';
-const fixture=await (await fetch(style==='plain'?'/fixture.json':'/fixture-detailed.json')).json();
+const demSource=new URLSearchParams(location.search).get('dem') || 'aws';
+if(!['ngii','aws'].includes(demSource))throw new Error('Unsupported DEM source '+demSource);
+const fixtureUrl=demSource==='ngii'?(style==='plain'?'/fixture-ngii.json':'/fixture-ngii-detailed.json'):(style==='plain'?'/fixture.json':'/fixture-detailed.json');
+const response=await fetch(fixtureUrl);
+if(!response.ok)throw new Error('Required DEM fixture missing: '+fixtureUrl+' / HTTP '+response.status);
+const fixture=await response.json();
+if(demSource==='ngii' && fixture.metadata.demSource!=='NGII')throw new Error('NGII provenance mismatch; refusing AWS fallback');
 const mount=document.getElementById('mount');
 document.getElementById('meta').textContent=engine.toUpperCase()+' | OSM buildings '+fixture.metadata.buildingCount+
   ' | '+(style==='detailed'?'procedural facades + windows + real roads':'plain extrusions')+
