@@ -3,6 +3,8 @@ import { XMLParser } from 'fast-xml-parser';
 import earcut from 'earcut';
 import { buildRoadGeometry } from './road_geometry.mjs';
 import { cutTerrainUnderRoads } from './terrain_road_cut.mjs';
+import { buildRoadElevationProfile } from './road_elevation_profile.mjs';
+import { buildIntegratedRoadbed } from './roadbed_terrain.mjs';
 
 // Procedural architectural DETAIL, not surveyed facade or actual building heights.
 // All coordinates stay in meters: x east, y up, z north.
@@ -20,7 +22,7 @@ const xMin=project(west,lat0)[0],xMax=project(east,lat0)[0];
 const zMin=project(lon0,south)[1],zMax=project(lon0,north)[1];
 // Exact triangle-barycentric interpolation of the RENDERED terrain mesh,
 // rather than bilinear filtering that can dip below/above the two real triangles.
-function ground(x,z){
+function sourceGround(x,z){
   const fx=clamp((x-xMin)/(xMax-xMin)*NX,0,NX-1e-7);
   const fz=clamp((z-zMin)/(zMax-zMin)*NZ,0,NZ-1e-7);
   const xi=Math.floor(fx),zi=Math.floor(fz),u=fx-xi,v=fz-zi;
@@ -29,6 +31,10 @@ function ground(x,z){
   if(u+v<=1)return a*(1-u-v)+b*u+c*v;
   return d*(u+v-1)+b*(1-v)+c*(1-u);
 }
+// Building bases, road markings and roadside vegetation share the rendered
+// surface once the integrated roadbed has been built.
+let renderedGround=sourceGround;
+const ground=(x,z)=>renderedGround(x,z);
 const palette={
   'terrain':[0.43,0.49,0.38],
   'park':[0.31,0.42,0.31],
@@ -104,7 +110,6 @@ const parsed=new XMLParser({ignoreAttributes:false,attributeNamePrefix:'@_',isAr
   .parse(await res.text()).osm;
 const nodes=new Map((parsed.node||[]).map(n=>[String(n['@_id']),[Number(n['@_lon']),Number(n['@_lat'])]]));
 const inside=([x,z])=>x>=xMin&&x<=xMax&&z>=zMin&&z<=zMax;
-const buildingCenters=[];
 const roads=[];
 for(const way of parsed.way||[]){
   const tags=Object.fromEntries((way.tag||[]).map(t=>[t['@_k'],t['@_v']]));
@@ -129,6 +134,40 @@ for(const way of parsed.way||[]){
       roads.push({refs,nodeIds:roadRefs.map(n=>n.id),width,tags,id:String(way['@_id'])});
     }
   }
+}
+// The at-grade roadway and adjacent terrain are solved *before* placing
+// buildings and vegetation. This keeps building bases on the same surface.
+const integratedRoadbed=process.env.GEO_ROADBED_INTEGRATED==='1';
+const baseGrid={xmin:xMin,zmin:zMin,xmax:xMax,zmax:zMax,nx:NX,nz:NZ};
+let renderedGrid=baseGrid,roadbed=null,sharedRoadProfile=null;
+if(integratedRoadbed){
+  const classified=roads.map(road=>{
+    const tags=road.tags||{};
+    const bridge=tags.bridge&&tags.bridge!=='no';
+    const tunnel=tags.tunnel&&tags.tunnel!=='no';
+    const layer=Number.parseInt(tags.layer||'0',10)||0;
+    const grade=String(layer)+'|'+(bridge?'bridge':'')+'|'+(tunnel?'tunnel':'');
+    const pts=road.refs.map((coords,i)=>{
+      const [x,z]=project(...coords);
+      return {x,z,id:String(road.nodeIds[i]??road.id+'-'+i)};
+    });
+    return {road,pts,grade,width:road.width};
+  });
+  sharedRoadProfile=buildRoadElevationProfile(classified,sourceGround,{step:6});
+  roadbed=buildIntegratedRoadbed({
+    terrain:base.terrain,sourceGround,profile:sharedRoadProfile,grid:baseGrid,
+    subdivisions:2,shoulderMeters:50
+  });
+  renderedGrid=roadbed.grid;
+  renderedGround=roadbed.ground;
+  console.log('ROADBED_PREBUILD_RESULT',JSON.stringify({
+    ...roadbed.stats,roadProfile:sharedRoadProfile.stats()
+  }));
+}
+const buildingCenters=[];
+for(const way of parsed.way||[]){
+  const tags=Object.fromEntries((way.tag||[]).map(t=>[t['@_k'],t['@_v']]));
+  const refs=(way.nd||[]).map(n=>nodes.get(String(n['@_ref']))).filter(Boolean);
   if(!tags.building || tags.building==='no'||refs.length<4)continue;
   const points=refs.map(toLocal);
   if(points.length>=2&&Math.hypot(points[0][0]-points.at(-1)[0],points[0][1]-points.at(-1)[1])<.1)points.pop();
@@ -221,9 +260,10 @@ for(const way of parsed.way||[]){
 // All four engines and native 3D Tiles consume exactly these mesh arrays.
 const roadOutput=buildRoadGeometry(roads,{
   project,ground,bounds:[xMin,zMin,xMax,zMax],maxStep:6,
-  // Same 97x97 terrain grid used by ground() and generate.mjs.
-  terrainGrid:{xmin:xMin,zmin:zMin,xmax:xMax,zmax:zMax,nx:NX,nz:NZ},
-  roadProfile:process.env.GEO_ROAD_PROFILE_SMOOTH==='1'
+  // Shared terrain triangle grid (193x193 in integrated roadbed mode).
+  terrainGrid:renderedGrid,
+  roadProfile:integratedRoadbed?sharedRoadProfile:process.env.GEO_ROAD_PROFILE_SMOOTH==='1',
+  roadbedIntegrated:integratedRoadbed
 });
 for(const [key,mesh] of Object.entries(roadOutput.meshes))meshes[key]=mesh;
 stats.roads=roadOutput.stats.sourceWays;
@@ -262,21 +302,23 @@ const focus=buildingCenters.toSorted((a,b)=>
 // leaves buried roads wherever original Terrarium lies above the profile.
 // This creates visible cut/fill boundaries but not engineered earthwork
 // slopes. Original DEM stays untouched for statistical validation.
-const roadTerrainCut=roadOutput.atGradeMask?
-  cutTerrainUnderRoads(base.terrain,roadOutput.atGradeMask,
-    {xmin:xMin,zmin:zMin,xmax:xMax,zmax:zMax,nx:NX,nz:NZ},ground):null;
-const displayTerrain=roadTerrainCut?.terrain||base.terrain;
+const roadTerrainCut=!integratedRoadbed&&roadOutput.atGradeMask?
+  cutTerrainUnderRoads(base.terrain,roadOutput.atGradeMask,baseGrid,ground):null;
+const displayTerrain=roadbed?.terrain||roadTerrainCut?.terrain||base.terrain;
 const detailed={
   metadata:{
-    ...base.metadata,style:'procedural-architectural-visualization',
+    ...base.metadata,
+    terrainGrid:[renderedGrid.nx+1,renderedGrid.nz+1],
+    style:'procedural-architectural-visualization',
     visualAccuracy:'Building footprints from OSM, terrain from Terrarium; facades/windows/colors/rooftop units/trees are stylized procedural inventions, NOT surveyed real buildings.',
     inferredBuildingHeights:stats.inferredHeights,
     buildingCount:stats.buildings,
     terrainTriangles:displayTerrain.indices.length/3,
     roadTerrainCut:roadTerrainCut?.stats||null,
+    roadbed:roadbed?.stats||null,
     materialColors:palette,
     meshStats:stats,
-    roadGeometryQuality:{mesh:'OSM-node joins, bounded miters, planar polygon union and terrain-grid subdivision',ground:process.env.GEO_ROAD_PROFILE_SMOOTH==='1'?'experimental graph-smoothed road grade, not exact DEM drape':'terrain-triangle-exact draping',caveat:'Road grades are inferred, not surveyed. Smooth profiles may overlap raw terrain and require cut/fill. Bridge/tunnel elevations and carriageway boundaries are not surveyed.',...roadOutput.stats},
+    roadGeometryQuality:{mesh:'OSM-node joins, bounded miters, planar polygon union and terrain-grid subdivision',ground:integratedRoadbed?'shared smoothed roadbed terrain and asphalt heightfield':process.env.GEO_ROAD_PROFILE_SMOOTH==='1'?'experimental graph-smoothed road grade, not exact DEM drape':'terrain-triangle-exact draping',caveat:'Road grades are inferred, not surveyed. Smooth profiles may overlap raw terrain and require cut/fill. Bridge/tunnel elevations and carriageway boundaries are not surveyed.',...roadOutput.stats},
     focus:[focus.x,focus.y+focus.height*.40,focus.z],
     trianglesByMaterial:Object.fromEntries(Object.entries(meshes).map(([k,v])=>[k,v.indices.length/3]))
   },
