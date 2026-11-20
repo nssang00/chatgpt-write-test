@@ -24,6 +24,7 @@ export function buildRoadElevationProfile(classified,ground,{step=6,maximumGrade
   }
   for(const entry of classified){
     const {pts,grade,road}=entry;
+    const width=Number(entry.width??road.width??8);
     for(let i=0;i<pts.length-1;i++){
       const a=pts[i],b=pts[i+1];
       const d=distance(a,b);
@@ -40,7 +41,7 @@ export function buildRoadElevationProfile(classified,ground,{step=6,maximumGrade
         const n=node(grade+':'+id,x,z);
         if(last&&last!==n){
           const len=distance(last,n);
-          edges.push({a:last,b:n,length:len,grade});
+          edges.push({a:last,b:n,length:len,grade,width});
           last.neighbors.add(n);
           n.neighbors.add(last);
         }
@@ -114,7 +115,7 @@ export function buildRoadElevationProfile(classified,ground,{step=6,maximumGrade
   const bucketKey=(ix,iz,grade)=>grade+':'+ix+':'+iz;
   // Store every segment into all buckets overlapping its lateral corridor.
   // Avoid scanning all OSM roads per triangulated road vertex.
-  const margin=25;
+  const margin=95; // includes road half-width, miter and a broad cut/fill transition
   for(const e of edges){
     const i0=Math.floor((Math.min(e.a.x,e.b.x)-margin)/cellSize);
     const i1=Math.floor((Math.max(e.a.x,e.b.x)+margin)/cellSize);
@@ -128,38 +129,38 @@ export function buildRoadElevationProfile(classified,ground,{step=6,maximumGrade
   }
   const cache=new Map();
   let cacheMiss=0,unmatched=0;
-  function heightAt(x,z,grade){
+  function sampleAt(x,z,grade){
     const key=grade+':'+Math.round(x*1e4)+':'+Math.round(z*1e4);
     if(cache.has(key))return cache.get(key);
     const candidates=buckets.get(bucketKey(Math.floor(x/cellSize),Math.floor(z/cellSize),grade))||[];
     const nearby=[];
-    let minDistance=Infinity;
+    let minDistance=Infinity,nearestWidth=0;
     for(const e of candidates){
       const dx=e.b.x-e.a.x,dz=e.b.z-e.a.z;
       const t=clamp(((x-e.a.x)*dx+(z-e.a.z)*dz)/(e.length*e.length),0,1);
       const px=e.a.x+t*dx,pz=e.a.z+t*dz;
       const d=Math.hypot(x-px,z-pz);
-      if(d<minDistance)minDistance=d;
+      if(d<minDistance){minDistance=d;nearestWidth=e.width;}
       nearby.push([d,e.a.y+t*(e.b.y-e.a.y)]);
     }
-    let h;
+    let height;
     if(!nearby.length){
-      h=ground(x,z);unmatched++;
+      height=ground(x,z);unmatched++;
     }else{
-      // A small blending band prevents a step when the nearest segment
-      // changes at an OSM junction. Grade keys protect bridge/tunnel levels.
       let weighted=0,sum=0;
       for(const [d,y] of nearby){
         if(d>minDistance+2.5)continue;
         const w=1/Math.pow(.75+d,2);
         weighted+=w*y;sum+=w;
       }
-      h=weighted/sum;
+      height=weighted/sum;
     }
+    const result={height,distance:minDistance,halfWidth:nearestWidth/2};
     cacheMiss++;
-    cache.set(key,h);
-    return h;
+    cache.set(key,result);
+    return result;
   }
+  function heightAt(x,z,grade){return sampleAt(x,z,grade).height;}
   let rawMaxGrade=0,maxResultGrade=0,maxChange=0;
   for(const e of edges){
     rawMaxGrade=Math.max(rawMaxGrade,Math.abs(e.b.raw-e.a.raw)/e.length);
@@ -168,6 +169,7 @@ export function buildRoadElevationProfile(classified,ground,{step=6,maximumGrade
   for(const n of vertices)maxChange=Math.max(maxChange,Math.abs(n.y-n.raw));
   return {
     heightAt,
+    sampleAt,
     segments:edges,
     vertices,
     stats:()=>({nodeCount:vertices.length,segmentCount:edges.length,
