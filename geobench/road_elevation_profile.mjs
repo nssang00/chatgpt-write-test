@@ -62,21 +62,54 @@ export function buildRoadElevationProfile(classified,ground,{step=6,maximumGrade
     }
     for(let k=0;k<vertices.length;k++)vertices[k].y=next[k];
   }
-  // Enforce a bounded vertical change per longitudinal segment. A shared OSM
-  // junction stays exactly shared even when several ways meet.
-  for(let it=0;it<120;it++){
-    let maxExcess=0;
-    for(const e of edges){
-      const delta=e.b.y-e.a.y,limit=maximumGrade*e.length;
-      const excess=Math.abs(delta)-limit;
-      if(excess>0){
-        maxExcess=Math.max(maxExcess,excess);
-        const change=Math.sign(delta)*excess*.5;
-        e.a.y+=change;e.b.y-=change;
+  // Exact graph Lipschitz projection: the infimum of slope-limited cones
+  // from every node is maximumGrade-Lipschitz. The symmetric supremum is
+  // also Lipschitz; their mean stays within the grade limit everywhere.
+  // Unlike a fixed number of edge-relaxation sweeps, this converges in
+  // O((vertices+edges) log vertices) even on dense real OSM junctions.
+  for(let k=0;k<vertices.length;k++)vertices[k].index=k;
+  function envelope(sign){
+    const dist=vertices.map(n=>sign*n.y),heap=[];
+    const push=(d,i)=>{
+      let k=heap.length;heap.push([d,i]);
+      while(k>0){
+        const parent=(k-1)>>1;
+        if(heap[parent][0]<=d)break;
+        heap[k]=heap[parent];k=parent;
+      }
+      heap[k]=[d,i];
+    };
+    const pop=()=>{
+      const top=heap[0],last=heap.pop();
+      if(heap.length){
+        let k=0;
+        while((2*k+1)<heap.length){
+          const left=2*k+1,right=left+1;
+          const child=right<heap.length&&heap[right][0]<heap[left][0]?right:left;
+          if(last[0]<=heap[child][0])break;
+          heap[k]=heap[child];k=child;
+        }
+        heap[k]=last;
+      }
+      return top;
+    };
+    for(let k=0;k<dist.length;k++)push(dist[k],k);
+    while(heap.length){
+      const [d,i]=pop();
+      if(d>dist[i]+1e-10)continue;
+      const n=vertices[i];
+      for(const q of n.neighbors){
+        const next=d+maximumGrade*distance(n,q);
+        if(next<dist[q.index]-1e-10){
+          dist[q.index]=next;push(next,q.index);
+        }
       }
     }
-    if(maxExcess<1e-8)break;
+    return dist;
   }
+  const upper=envelope(1),negLower=envelope(-1);
+  for(let k=0;k<vertices.length;k++)
+    vertices[k].y=(upper[k]-negLower[k])*.5;
   const buckets=new Map();
   const bucketKey=(ix,iz,grade)=>grade+':'+ix+':'+iz;
   // Store every segment into all buckets overlapping its lateral corridor.
