@@ -32,7 +32,7 @@ jobs:
           run-id: 44686712942
           name: seoul-ground-repaired-native-tiles
           github-token: ${{ github.token }}
-          path: geobench/public
+          path: geobench
       - name: Verify system Chrome available
         run: google-chrome --version
       - name: Install npm packages (reuse preinstalled Chrome)
