@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { buildRoadGeometry } from './road_geometry.mjs';
+import { cutTerrainUnderRoads } from './terrain_road_cut.mjs';
 import { buildRoadElevationProfile } from './road_elevation_profile.mjs';
 
 // A high-frequency noisy DEM does not imply an equally corrugated asphalt
@@ -40,6 +41,21 @@ for(const [material,mesh] of Object.entries(result.meshes)){
   assert.ok(mesh.positions.every(Number.isFinite),'nonfinite '+material);
 }
 assert.equal(result.stats.protectedGradeWays,0);
+assert.ok(result.atGradeMask?.length>0,'at-grade road-edge mask is required');
+const terrain={positions:[],indices:[]};
+for(let j=0;j<=16;j++)for(let i=0;i<=16;i++){
+  const x=-40+i*5,z=-40+j*5;
+  terrain.positions.push(x,ground(x,z),z);
+}
+for(let j=0;j<16;j++)for(let i=0;i<16;i++){
+  const a=j*17+i,b=a+1,c=a+17,d=c+1;
+  terrain.indices.push(a,c,b,b,c,d);
+}
+const clipped=cutTerrainUnderRoads(terrain,result.atGradeMask,grid,ground);
+assert.ok(clipped.stats.affectedTerrainTriangles>0,'road mask must modify the DEM');
+assert.ok(clipped.terrain.indices.length>0,'road-masked DEM must remain nonempty');
+assert.equal(clipped.stats.clipFailures,0,'road mask boolean operation failed');
+
 console.log('ROAD_PROFILE_UNIT_PASS',JSON.stringify({
   ...stats,crossSlopeTarget:.03,
   finalMeshTriangles:result.stats.triangles
