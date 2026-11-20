@@ -1,0 +1,38 @@
+name: Seoul road mesh triangle anomaly diagnosis
+on:
+  push:
+    branches:
+      - fix/seoul-road-geometry-debug-20261120
+    paths:
+      - geobench/**
+      - .github/workflows/geo-road-geometry-audit.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  inspect-road-triangles:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: geobench
+    env:
+      NODE_OPTIONS: --max-old-space-size=6144
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm install --no-audit --no-fund
+      - run: npm run test:roads
+      - run: npm run data
+      - name: Measure real road triangle outliers
+        run: node audit_road_geometry.mjs
+      - name: Archive triangle anomaly coordinates
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: seoul-road-geometry-audit
+          path: geobench/results/road-geometry-audit.json
+          if-no-files-found: warn
+          retention-days: 14
