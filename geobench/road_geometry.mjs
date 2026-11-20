@@ -112,14 +112,54 @@ function clipPolyline(points,bounds){
   flush();
   return paths.filter(p=>p.length>=2);
 }
-function circle(mesh,center,radius,yFn,segments=16){
-  const centre=[center.x,yFn(center.x,center.z),center.z];
-  for(let i=0;i<segments;i++){
-    const angle0=-i*2*Math.PI/segments,angle1=-(i+1)*2*Math.PI/segments;
-    const x0=center.x+radius*Math.cos(angle0),z0=center.z+radius*Math.sin(angle0);
-    const x1=center.x+radius*Math.cos(angle1),z1=center.z+radius*Math.sin(angle1);
-    addTriangle(mesh,centre,[x0,yFn(x0,z0),z0],[x1,yFn(x1,z1),z1]);
+// 2D convex hull of incident road corridor edges. This replaces the
+// previous round disks, whose wide bulges looked like huge road blobs.
+function convexHull(points){
+  const pts=points.filter(p=>Number.isFinite(p.x)&&Number.isFinite(p.z))
+    .toSorted((a,b)=>a.x-b.x||a.z-b.z);
+  const cross=(o,a,b)=>(a.x-o.x)*(b.z-o.z)-(a.z-o.z)*(b.x-o.x);
+  const lower=[],upper=[];
+  for(const p of pts){
+    while(lower.length>=2&&cross(lower.at(-2),lower.at(-1),p)<=1e-7)lower.pop();
+    lower.push(p);
   }
+  for(let k=pts.length-1;k>=0;k--){
+    const p=pts[k];
+    while(upper.length>=2&&cross(upper.at(-2),upper.at(-1),p)<=1e-7)upper.pop();
+    upper.push(p);
+  }
+  lower.pop();upper.pop();
+  return lower.concat(upper);
+}
+function patchPolygon(mesh,junction,extraWidth,heightFn){
+  const points=[];
+  const maxHalf=Math.max(...junction.widths)/2;
+  const reach=Math.min(maxHalf+2.5,14);
+  for(const neighbor of junction.neighbors.values()){
+    const d=length(neighbor.dx,neighbor.dz);
+    if(d<EPS)continue;
+    const ux=neighbor.dx/d,uz=neighbor.dz/d;
+    const nx=uz,nz=-ux;
+    const half=neighbor.width/2+extraWidth;
+    // Butt-end cross-section at the actual OSM node, plus a small section
+    // along each incident corridor. Their hull fills ONLY the local junction.
+    for(const side of [-1,1]){
+      points.push({x:junction.pos.x+side*nx*half,
+        z:junction.pos.z+side*nz*half});
+      points.push({x:junction.pos.x+ux*reach+side*nx*half,
+        z:junction.pos.z+uz*reach+side*nz*half});
+    }
+  }
+  const polygon=convexHull(points);
+  if(polygon.length<3)return false;
+  const center={x:polygon.reduce((a,p)=>a+p.x,0)/polygon.length,
+    z:polygon.reduce((a,p)=>a+p.z,0)/polygon.length};
+  const a=[center.x,heightFn(center.x,center.z),center.z];
+  for(let k=0;k<polygon.length;k++){
+    const p=polygon[k],q=polygon[(k+1)%polygon.length];
+    addTriangle(mesh,a,[p.x,heightFn(p.x,p.z),p.z],[q.x,heightFn(q.x,q.z),q.z]);
+  }
+  return true;
 }
 /**
  * roads: {refs:[[lon,lat]...],nodeIds:[OSM IDs...],width:number,
@@ -154,7 +194,7 @@ export function buildRoadGeometry(roads,{project,ground,bounds,maxStep=6}){
         if(node.x<expanded[0]||node.x>expanded[2]||node.z<expanded[1]||node.z>expanded[3])continue;
         const key=grade+':'+node.id;
         const record=nodes.get(key)||{pos:node,neighbors:new Map(),widths:[],ways:new Set(),grade};
-        record.neighbors.set(other.id,{dx:other.x-node.x,dz:other.z-node.z});
+        record.neighbors.set(other.id,{dx:other.x-node.x,dz:other.z-node.z,width});
         record.ways.add(road.id);
         record.widths.push(width);
         nodes.set(key,record);
@@ -172,11 +212,15 @@ export function buildRoadGeometry(roads,{project,ground,bounds,maxStep=6}){
     }
     if(!isJunction)continue;
     const half=Math.max(...n.widths)/2;
-    // Approximate visually rounded intersection. Accurate traffic/lane
-    // polygons require a separate polygon-union and junction design stage.
-    circle(meshes['road-edge'],n.pos,half+1.65,(x,z)=>ground(x,z)+.155);
-    circle(meshes.road,n.pos,half+.35,(x,z)=>ground(x,z)+.245);
-    junctionCoords.push({x:n.pos.x,z:n.pos.z,r:half+2,grade:n.grade});
+    // Bounded local polygons derived from actual incident roadway widths,
+    // replacing the previous bulbous circular patches. Not yet a full road
+    // polygon union or lane-accurate intersection model.
+    const borderBuilt=patchPolygon(meshes['road-edge'],n,1.65,
+      (x,z)=>ground(x,z)+.155);
+    const roadBuilt=patchPolygon(meshes.road,n,.15,
+      (x,z)=>ground(x,z)+.245);
+    if(!roadBuilt||!borderBuilt)continue;
+    junctionCoords.push({x:n.pos.x,z:n.pos.z,r:Math.min(half+5,17),grade:n.grade});
     stats.junctionPatches++;stats.junctionsByDegree[degree]=(stats.junctionsByDegree[degree]||0)+1;
   }
   for(const entry of classified){
