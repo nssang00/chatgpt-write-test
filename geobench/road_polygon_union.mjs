@@ -29,7 +29,7 @@ function addTriangle(mesh,a,b,c,sampledHeight,elevation){
   mesh.indices.push(offset,offset+1,offset+2);
   return true;
 }
-export function mergedRoadSurface(entries,ground,elevation,stats,terrainGrid=null,roadHeight=null,atGradeMask=null){
+export function mergedRoadSurface(entries,ground,elevation,stats,terrainGrid=null,roadHeight=null,atGradeMask=null,gradeRanges=null){
   const mesh={positions:[],indices:[]};
   const grouped=new Map();
   for(const item of entries){
@@ -55,6 +55,7 @@ export function mergedRoadSurface(entries,ground,elevation,stats,terrainGrid=nul
   }
   stats.mergedRoadPolygons=unionPolygons.length;
   for(const item of unionPolygons){
+    const firstTriangle=mesh.indices.length/3;
     const sampledHeight=roadHeight?((x,z)=>roadHeight(x,z,item.grade)):ground;
     const flat=[],holes=[];
     let index=0;
@@ -87,6 +88,8 @@ export function mergedRoadSurface(entries,ground,elevation,stats,terrainGrid=nul
           atGradeMask.push([a,b,c]);
       }
     }
+    if(gradeRanges&&mesh.indices.length/3>firstTriangle)
+      gradeRanges.push({grade:item.grade,from:firstTriangle,to:mesh.indices.length/3});
   }
   if(!mesh.indices.length&&entries.length)throw Error('No valid triangles from road polygon union');
   return mesh;
