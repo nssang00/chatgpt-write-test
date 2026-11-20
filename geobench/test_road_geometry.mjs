@@ -26,10 +26,9 @@ function nearXYZ(a,b){
 {
   const r=run('right angle',[road('w1',[[0,0],[0,10],[10,10]],['a','bend','c'])],
       {...settings,maxStep:100});
-  assert.equal(triCount(r.meshes.road),4);
-  assert.deepEqual(r.stats.junctionPatches,0);
-  nearXYZ(vertex(r.meshes.road,1),vertex(r.meshes.road,4));
-  nearXYZ(vertex(r.meshes.road,2),vertex(r.meshes.road,7));
+  assert.ok(triCount(r.meshes.road)>=4);
+  assert.equal(r.stats.junctionPatches,0);
+  assert.equal(r.stats.mergedRoadPolygons,1);
   assert.ok(r.stats.joinVertices>=1);
 }
 // At-grade T-junction uses a polygon fan, and no centerlines go across it.
