@@ -46,7 +46,16 @@ The fallback changed the original height by more than 2m at 3,471 of 9,409 terra
 ## Quality gate
 
 **Topology and numeric geometry checks: PASSED.**  
-**Visual screenshot QA: NOT YET PASSED at time of this report.**
+**Browser visual screenshot QA: PASSED for removing the large ground/road spikes, but remaining junction accuracy NOT PASSED.**
+
+A genuine Cesium3DTileset capture in Google Chrome with ANGLE SwiftShader succeeded:
+https://github.com/nssang00/chatgpt-write-test/actions/runs/44688126032
+
+- Native GLB tile requests: 80 successful of 80 requested; Cesium tileLoad events: 80; browser errors: 0.
+- Screenshot: GitHub artifact `seoul-ground-corrected-chrome-visual/native-3dtiles-roadview.png`.
+- Direct visual comparison with the previous RTX screenshot shows the dominant tall, jagged grey road triangles and the large green elevation mound in front of the skyscrapers are gone.
+- The road boundary and large intersections remain simplified and angular because the mesh still uses approximate bounded miters and circle-fan junction patches, not a surveyed planar union or exact lane geometry.
+- This Chrome result does not replace the *pending* physical RTX 5060 Ti visual QA, and changes the underlying ground elevation in ways unsuitable for geodetic accuracy.
 
 The new RTX original-screenshot workflow captures the same near-road camera with Cesium native 3D Tiles: https://github.com/nssang00/chatgpt-write-test/actions/runs/44686712942
 
