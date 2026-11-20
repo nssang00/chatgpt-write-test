@@ -10,9 +10,15 @@ const manifest=await manifestRes.json();
 const [lon,lat]=manifest.center;
 const [fx,fy,fz]=manifest.focus;
 const theta=.18;
-const roadView=new URLSearchParams(location.search).has('roadview');
-const baseEye=roadView?[fx+100,fy+75,fz-155]:[fx+250*Math.sin(theta)+120,fy+155,fz-360*Math.cos(theta)];
-const baseTarget=roadView?[fx,fy-42,fz]:[fx,fy,fz];
+const viewParams=new URLSearchParams(location.search);
+const roadView=viewParams.has('roadview');
+const lowView=viewParams.has('lowview');
+// Low roadside angle is a diagnostic camera for longitudinal road waviness.
+const baseEye=lowView?[fx+85,fy+35,fz-115]:
+  roadView?[fx+100,fy+75,fz-155]:
+  [fx+250*Math.sin(theta)+120,fy+155,fz-360*Math.cos(theta)];
+const baseTarget=lowView?[fx,fy-45,fz]:
+  roadView?[fx,fy-42,fz]:[fx,fy,fz];
 const viewer=new Cesium.Viewer('mount',{
   animation:false,timeline:false,geocoder:false,homeButton:false,
   baseLayerPicker:false,sceneModePicker:false,navigationHelpButton:false,
