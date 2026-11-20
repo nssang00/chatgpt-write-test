@@ -145,6 +145,13 @@ def main():
       "dataIntegrity":"NGII raster is required; NO automatic fallback to Mapzen/AWS is permitted"
     }
     newbase=read_json(public/"fixture.json")
+    # Also rebase the plain extruded building mesh.
+    plain_positions=newbase["buildings"]["positions"]
+    for k in range(0,len(plain_positions),3):
+        x,y,z=plain_positions[k:k+3]
+        plain_positions[k+1]=float(y+
+            interpolate(new_grid,x,z,x0,z0,x1,z1)-
+            interpolate(old_grid,x,z,x0,z0,x1,z1))
     newbase["terrain"]=terrain
     newbase["metadata"].update(audit)
     newbase["metadata"]["triangles"]["terrain"]=len(terrain["indices"])//3
