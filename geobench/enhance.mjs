@@ -219,7 +219,9 @@ for(const way of parsed.way||[]){
 // Build ONE common topological road surface BEFORE rendering engines diverge.
 // All four engines and native 3D Tiles consume exactly these mesh arrays.
 const roadOutput=buildRoadGeometry(roads,{
-  project,ground,bounds:[xMin,zMin,xMax,zMax],maxStep:6
+  project,ground,bounds:[xMin,zMin,xMax,zMax],maxStep:6,
+  // Same 97x97 terrain grid used by ground() and generate.mjs.
+  terrainGrid:{xmin:xMin,zmin:zMin,xmax:xMax,zmax:zMax,nx:NX,nz:NZ}
 });
 for(const [key,mesh] of Object.entries(roadOutput.meshes))meshes[key]=mesh;
 stats.roads=roadOutput.stats.sourceWays;
@@ -262,7 +264,7 @@ const detailed={
     terrainTriangles:base.terrain.indices.length/3,
     materialColors:palette,
     meshStats:stats,
-    roadGeometryQuality:{mesh:'shared OSM-node joins, bounded miter, at-grade intersection patches, 6m densification',ground:'triangle-exact height',caveat:'Bridge/tunnel actual elevation and true carriageway junction polygon unions are NOT surveyed or implemented',...roadOutput.stats},
+    roadGeometryQuality:{mesh:'OSM-node joins, bounded miters, planar polygon union and terrain-grid-conforming triangles',ground:'terrain-triangle-exact draping',caveat:'Bridge/tunnel elevations and actual carriageway intersection boundaries are not surveyed',...roadOutput.stats},
     focus:[focus.x,focus.y+focus.height*.40,focus.z],
     trianglesByMaterial:Object.fromEntries(Object.entries(meshes).map(([k,v])=>[k,v.indices.length/3]))
   },
