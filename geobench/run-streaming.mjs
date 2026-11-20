@@ -60,8 +60,23 @@ try{
       }
       const navigationStarted=Date.now();
       await page.goto(host+'/streaming.html?engine='+name,{waitUntil:'load',timeout:180000});
-      await page.waitForFunction(()=>window.__streamBench?.ready===true,{timeout:180000});
-      await page.waitForFunction(()=>window.__streamBench?.stats.success>=4,{timeout:180000});
+      // The scheduler allows at most 3 concurrent initial requests and only
+      // refills when camera.step() is next called. Requiring >=4 here deadlocks.
+      // Playwright waitForFunction takes (fn, arg, options), not (fn, options).
+      try {
+        await page.waitForFunction(()=>window.__streamBench?.ready===true,null,{timeout:180000});
+        await page.waitForFunction(()=>window.__streamBench?.stats.success>=2,null,{timeout:180000});
+      } catch (e) {
+        const debug=await page.evaluate(()=>({
+          ready:window.__streamBench?.ready,
+          success:window.__streamBench?.stats?.success,
+          errors:window.__streamBench?.stats?.errors,
+          pending:window.__streamBench?.pending,
+          info:document.getElementById('info')?.textContent
+        })).catch(error=>({evaluateError:String(error)}));
+        console.error('STREAM_INITIALIZATION_DIAGNOSTICS',JSON.stringify({engine:name,debug,errors:errors.slice(0,8)}));
+        throw e;
+      }
       const coldStartMs=Date.now()-navigationStarted;
       if(errors.length)throw Error(name+' boot errors '+errors.slice(0,3).join(' \n'));
       const gpu=await page.evaluate(()=>window.__streamBench.gpu);
