@@ -2,6 +2,7 @@ import fs from 'node:fs/promises';
 import { XMLParser } from 'fast-xml-parser';
 import { PNG } from 'pngjs';
 import earcut from 'earcut';
+import {urbanTerrainRepair,gridGradeStats} from './urban_terrain_repair.mjs';
 
 // Seoul Gangnam / Yeoksam business district, approximately 1.25 x 1.33 km.
 // Dense OSM building district. All four engines receive exactly the same fixture.
@@ -32,7 +33,7 @@ for (let y=Math.floor(minY);y<=Math.floor(maxY);y++) {
     console.log('DEM',x,y,data.width,data.height);
   }
 }
-function sampleHeight(lon,lat) {
+function sampleRawHeight(lon,lat) {
   const [tx,ty]=tileXY(lon,lat,TERR_Z), x=Math.floor(tx),y=Math.floor(ty),png=tiles.get(x+':'+y);
   if(!png) throw new Error('Missing DEM tile '+x+':'+y);
   const px=clamp(Math.floor((tx-x)*png.width),0,png.width-1);
@@ -46,13 +47,43 @@ for(let j=0;j<=NZ;j++){
   for(let i=0;i<=NX;i++){
     const lon=west+(east-west)*i/NX,lat=south+(north-south)*j/NZ;
     const [x,z]=project(lon,lat);
-    terrain.positions.push(x,sampleHeight(lon,lat),z);
+    terrain.positions.push(x,sampleRawHeight(lon,lat),z);
   }
 }
 for(let j=0;j<NZ;j++)for(let i=0;i<NX;i++){
   const a=j*(NX+1)+i,b=a+1,c=a+(NX+1),d=c+1;
   terrain.indices.push(a,c,b,b,c,d);
 }
+// The raw Terrarium surface may contain tall DSM-like spikes; using these
+// directly as road ground makes jagged vertical wedges (verified in Seoul GLBs).
+// Filter the source BEFORE placing buildings and constructing joined roads.
+const nx=NX+1,nz=NZ+1;
+const sampleDx=(project(east,lat0)[0]-project(west,lat0)[0])/NX;
+const sampleDz=(project(lon0,north)[1]-project(lon0,south)[1])/NZ;
+const rawHeights=Float64Array.from({length:nx*nz},(_,i)=>terrain.positions[i*3+1]);
+const filterMode=process.env.GEO_TERRAIN_FILTER||'urban';
+if(!['urban','off'].includes(filterMode))throw Error('Invalid GEO_TERRAIN_FILTER');
+const repaired=filterMode==='urban'
+  ?urbanTerrainRepair(rawHeights,nx,nz,sampleDx,sampleDz)
+  :{heights:rawHeights,diagnostics:{method:'none: raw AWS Mapzen elevation',original:gridGradeStats(rawHeights,nx,nz,sampleDx,sampleDz),
+      repaired:gridGradeStats(rawHeights,nx,nz,sampleDx,sampleDz),visualizationOnly:true}};
+for(let i=0;i<repaired.heights.length;i++)terrain.positions[i*3+1]=repaired.heights[i];
+const terrainRepair={...repaired.diagnostics,filterMode,
+  note:'Approximate urban ground correction for AWS terrain ONLY; not a surveyed NGII DTM.'};
+// Buildings and roads sample the same terrain TRIANGLES that are rendered.
+function sampleHeight(lon,lat){
+  const [x,z]=project(lon,lat);
+  const xMin=project(west,lat0)[0],zMin=project(lon0,south)[1];
+  const fx=clamp((x-xMin)/sampleDx,0,NX-1e-7);
+  const fz=clamp((z-zMin)/sampleDz,0,NZ-1e-7);
+  const xi=Math.floor(fx),zi=Math.floor(fz),u=fx-xi,v=fz-zi;
+  const h=(i,j)=>terrain.positions[(j*(NX+1)+i)*3+1];
+  const a=h(xi,zi),b=h(xi+1,zi),c=h(xi,zi+1),d=h(xi+1,zi+1);
+  return u+v<=1 ? a*(1-u-v)+b*u+c*v :
+    d*(u+v-1)+b*(1-v)+c*(1-u);
+}
+console.log('TERRAIN_GROUND_REPAIR_RESULT',JSON.stringify(terrainRepair));
+
 const osmUrl='https://api.openstreetmap.org/api/0.6/map?bbox='+BBOX.join(',');
 const xml=(await download(osmUrl)).toString('utf8');
 const parser=new XMLParser({ignoreAttributes:false,attributeNamePrefix:'@_',isArray:(tag)=>['node','way','nd','tag'].includes(tag)});
@@ -94,6 +125,7 @@ const fixture={
   metadata:{
     areaLabel:'Seoul Gangnam / Yeoksam Teheran-ro',demSource:'AWS Mapzen Terrarium',
     bbox:BBOX,center:[lon0,lat0],terrainZoom:TERR_Z,terrainGrid:[NX+1,NZ+1],
+    terrainRepair,
     osmEndpoint:osmUrl,demPrefix:'https://s3.amazonaws.com/elevation-tiles-prod/terrarium/',
     generatedAt:new Date().toISOString(),buildingCount:count,skippedBuildings:skipped,
     inferredBuildingHeights:inferred,triangles:{terrain:terrain.indices.length/3,buildings:buildings.indices.length/3},
