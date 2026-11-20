@@ -3,6 +3,8 @@ import { spawn } from 'node:child_process';
 import { chromium } from 'playwright';
 
 const kind=process.env.GEO_TEST_KIND||'software';
+const demSource=process.env.GEO_DEM_SOURCE||'aws';
+if(!['ngii','aws'].includes(demSource))throw new Error('Invalid GEO_DEM_SOURCE: '+demSource);
 const port=4173, host='http://127.0.0.1:'+port;
 const server=spawn(process.execPath,['node_modules/vite/bin/vite.js','--host','127.0.0.1','--port',String(port),'--strictPort'],{
   stdio:['ignore','pipe','pipe'],env:process.env
@@ -39,7 +41,7 @@ try{
     page.on('console',m=>{if(m.type()==='error' && !m.text().includes('Failed to load resource'))errors.push('console: '+m.text())});
     page.on('response',res=>{if(res.status()>=400 && !/\/favicon\.ico(?:\?|$)/.test(res.url()))errors.push('HTTP '+res.status()+' '+res.url())});
     try{
-      await page.goto(host+'/?engine='+engine,{waitUntil:'load',timeout:90000});
+      await page.goto(host+'/?engine='+engine+'&dem='+demSource,{waitUntil:'load',timeout:90000});
       await page.waitForFunction(()=>window.__geoBench?.ready===true,{timeout:90000});
       if(errors.length)throw new Error('Browser errors: '+errors.join('\n').slice(0,2000));
       const test=await page.evaluate(async()=>{
@@ -61,6 +63,7 @@ try{
           sampledFrames:deltas.length,renderedFrames:finalRendered-initialRendered,
           durationMs:end-start,frameDeltaMs:deltas};
       });
+      if(demSource==='ngii' && test.fixture.demSource!=='NGII')throw new Error('DEM provenance failed: expected NGII, got '+test.fixture.demSource);
       const g=test.gpu.renderer||'';
       if(kind==='hardware' && /swiftshader|llvmpipe|softpipe|software/i.test(g))throw new Error('Hardware GPU REQUIRED, got '+g);
       if(test.renderedFrames<test.sampledFrames*0.5)throw new Error('Too few rendered frames: '+test.renderedFrames+' / '+test.sampledFrames);
@@ -87,7 +90,7 @@ try{
     };
   }
   const report={
-    kind,method:'four engines; same OSM + DEM and procedural architectural facade/roads/roof/window meshes; material-color shading (unlit); no imagery, photogrammetry, globe or shadows; close orbit; vsync-limited rAF intervals',
+    kind,demSource,method:'four engines; same OSM + DEM and procedural architectural facade/roads/roof/window meshes; material-color shading (unlit); no imagery, photogrammetry, globe or shadows; close orbit; vsync-limited rAF intervals',
     createdAt:new Date().toISOString(),browser:browser.version(),rounds:results,summary:byEngine
   };
   await fs.writeFile('results/benchmark.json',JSON.stringify(report,null,2));
