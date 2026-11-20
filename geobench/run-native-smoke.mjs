@@ -22,7 +22,7 @@ try{
   page.on('console',m=>{if(m.type()==='error')errors.push('console '+m.text())});
   page.on('request',r=>{if(new URL(r.url()).pathname.endsWith('.glb'))requested.add(r.url())});
   page.on('response',r=>{if(new URL(r.url()).pathname.endsWith('.glb')&&r.ok())success.add(r.url())});
-  await page.goto(host+'/native-3dtiles.html',{waitUntil:'load',timeout:180000});
+  await page.goto(host+'/native-3dtiles.html'+(process.env.GEO_ROAD_VIEW==='1'?'?roadview=1':''),{waitUntil:'load',timeout:180000});
   try{
     await page.waitForFunction(()=>window.__streamBench?.ready===true,null,{timeout:120000});
     await page.waitForFunction(()=>window.__streamBench?.stats.success>=2,null,{timeout:120000});
@@ -35,6 +35,8 @@ try{
     await page.evaluate(i=>window.__streamBench.move(-160+320*i/59),i);
     await page.evaluate(()=>new Promise(requestAnimationFrame));
   }
+  await page.evaluate(()=>window.__streamBench.move(0));
+  for(let k=0;k<15;k++)await page.evaluate(()=>new Promise(requestAnimationFrame));
   const status=await page.evaluate(()=>({
     gpu:window.__streamBench.gpu,
     stats:window.__streamBench.stats,
@@ -42,7 +44,7 @@ try{
     manifest:window.__streamBench.manifest
   }));
   await fs.mkdir('results',{recursive:true});
-  await page.screenshot({path:'results/native-3dtiles-real-browser.png',fullPage:true});
+  await page.screenshot({path:process.env.GEO_ROAD_VIEW==='1'?'results/native-3dtiles-roadview.png':'results/native-3dtiles-real-browser.png',fullPage:true});
   const report={status,requestedGLB:requested.size,loadedGLB:success.size,errors};
   await fs.writeFile('results/native-smoke.json',JSON.stringify(report,null,2));
   console.log('NATIVE_3DTILES_SMOKE_RESULT',JSON.stringify(report));
