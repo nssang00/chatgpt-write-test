@@ -1,0 +1,107 @@
+name: Seoul urban DEM spikes and roads RTX visual quality verification
+on:
+  push:
+    branches:
+      - fix/seoul-road-ground-spikes-20261120
+    paths:
+      - .github/workflows/geo-seoul-ground-road-quality.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: seoul-roads-visual-quality-fixed
+  cancel-in-progress: true
+jobs:
+  package-real-seoul-road-joins:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    defaults:
+      run:
+        working-directory: geobench
+    env:
+      NODE_OPTIONS: --max-old-space-size=6144
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm install --no-audit --no-fund
+      - run: npm run test:roads
+      - run: npm run test:terrain
+      - run: npm run data
+      - name: Reject extreme terrain slopes and triangle spikes
+        run: npm run audit:terrain-roads
+      - run: npm run pack-tiles
+      - run: npm run pack-native-tiles
+      - name: Stage actual 3D Tiles + metadata
+        uses: actions/upload-artifact@v4
+        with:
+          name: seoul-ground-repaired-native-tiles
+          path: |
+            geobench/public/native-3dtiles/
+            geobench/public/stream-manifest.json
+            geobench/results/terrain-road-geometry-audit.json
+          retention-days: 7
+          if-no-files-found: error
+  actual-rtx-road-visual:
+    needs: package-real-seoul-road-joins
+    runs-on: [self-hosted, Windows, X64, m5-gpu]
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: geobench
+    env:
+      GEO_TEST_KIND: hardware
+      NODE_OPTIONS: --max-old-space-size=6144
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/download-artifact@v4
+        with:
+          name: seoul-ground-repaired-native-tiles
+          path: geobench/public
+      - name: Install dependencies
+        shell: powershell
+        run: |
+          npm install --no-audit --no-fund
+          if ($LASTEXITCODE -ne 0) { throw 'npm failed' }
+      - name: Select hardware browser
+        shell: powershell
+        run: |
+          $pf86=[Environment]::GetFolderPath('ProgramFilesX86')
+          $chrome = @(
+            "$env:ProgramFiles\Google\Chrome\Application\chrome.exe",
+            (Join-Path $pf86 'Google\Chrome\Application\chrome.exe'),
+            "$env:LOCALAPPDATA\Google\Chrome\Application\chrome.exe"
+          ) | Where-Object { Test-Path $_ } | Select-Object -First 1
+          $edge = @(
+            (Join-Path $pf86 'Microsoft\Edge\Application\msedge.exe'),
+            "$env:ProgramFiles\Microsoft\Edge\Application\msedge.exe"
+          ) | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if ($chrome) { "GEO_BROWSER_CHANNEL=chrome" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV }
+          elseif ($edge) { "GEO_BROWSER_CHANNEL=msedge" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV }
+          else { throw 'No Chrome/Edge found' }
+          Get-CimInstance Win32_VideoController | Select-Object Name,DriverVersion | Format-Table
+      - name: Capture close roadway camera in native Cesium 3D Tiles
+        shell: powershell
+        run: |
+          $env:GEO_ROAD_VIEW='1'
+          npm run native-smoke
+          if ($LASTEXITCODE -ne 0) { throw 'Roadview native screenshot failed' }
+      - name: Capture same original city overview camera
+        shell: powershell
+        run: |
+          Remove-Item Env:GEO_ROAD_VIEW -ErrorAction SilentlyContinue
+          Start-Sleep -Seconds 2
+          npm run native-smoke
+          if ($LASTEXITCODE -ne 0) { throw 'City overview native screenshot failed' }
+      - name: Upload original RTX screenshots (never AI-generated)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: seoul-ground-repaired-rtx-screenshots
+          path: geobench/results/
+          retention-days: 14
+          if-no-files-found: warn
