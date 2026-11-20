@@ -23,6 +23,7 @@
     "earcut": "^3.0.1",
     "vite-plugin-cesium": "^1.2.23",
     "three": "^0.180.0",
-    "@babylonjs/core": "^8.0.0"
+    "@babylonjs/core": "^8.0.0",
+    "polygon-clipping": "^0.15.7"
   }
 }
