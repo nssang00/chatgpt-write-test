@@ -1,0 +1,142 @@
+name: Seoul integrated roadbed and RTX surface-contact QA
+on:
+  push:
+    branches:
+      - fix/seoul-road-roadbed-integrated-20261120
+    paths:
+      - geobench/**
+      - .github/workflows/geo-roadbed-integrated.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: seoul-roadbed-integrated
+  cancel-in-progress: true
+jobs:
+  terrain-unit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: geobench
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm install --no-audit --no-fund
+      - run: npm run test:roads
+      - name: Check smooth road profile on synthetic noisy DEM
+        run: node test_road_profile.mjs
+      - name: Check unified roadbed contact on synthetic DEM
+        run: node test_roadbed_integrated.mjs
+
+  seoul-geometry:
+    needs: terrain-unit
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    defaults:
+      run:
+        working-directory: geobench
+    env:
+      NODE_OPTIONS: --max-old-space-size=6144
+      GEO_VISUAL_TERRAIN_SMOOTH: '1'
+      GEO_ROADBED_INTEGRATED: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm install --no-audit --no-fund
+      - name: Rebuild actual Seoul OSM and Terrarium DEM
+        run: npm run data
+      - name: Check road grades and DEM penetration diagnostics
+        run: node validate_roadbed_integrated.mjs
+      - name: Package common four-engine streaming tiles
+        run: npm run pack-tiles
+      - name: Package actual Cesium 3D Tiles GLB
+        run: npm run pack-native-tiles
+      - name: Save numerical QA report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: seoul-roadbed-integrated-report
+          path: geobench/results/roadbed-integrated-validation.json
+          retention-days: 14
+          if-no-files-found: warn
+      - name: Save same geometry for RTX hardware inspection
+        uses: actions/upload-artifact@v4
+        with:
+          name: seoul-roadbed-integrated-native-tiles
+          path: |
+            geobench/public/native-3dtiles/
+            geobench/public/stream-manifest.json
+          retention-days: 7
+          if-no-files-found: error
+
+  actual-rtx-road-visual:
+    needs: seoul-geometry
+    runs-on: [self-hosted, Windows, X64, m5-gpu]
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: geobench
+    env:
+      GEO_TEST_KIND: hardware
+      NODE_OPTIONS: --max-old-space-size=6144
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/download-artifact@v4
+        with:
+          name: seoul-roadbed-integrated-native-tiles
+          path: geobench/public
+      - name: Install dependencies and select real GPU browser
+        shell: powershell
+        run: |
+          npm install --no-audit --no-fund
+          if ($LASTEXITCODE -ne 0) { throw 'npm failed' }
+          $pf86=[Environment]::GetFolderPath('ProgramFilesX86')
+          $chrome = @(
+            "$env:ProgramFiles\Google\Chrome\Application\chrome.exe",
+            (Join-Path $pf86 'Google\Chrome\Application\chrome.exe'),
+            "$env:LOCALAPPDATA\Google\Chrome\Application\chrome.exe"
+          ) | Where-Object { Test-Path $_ } | Select-Object -First 1
+          $edge = @(
+            (Join-Path $pf86 'Microsoft\Edge\Application\msedge.exe'),
+            "$env:ProgramFiles\Microsoft\Edge\Application\msedge.exe"
+          ) | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if ($chrome) { "GEO_BROWSER_CHANNEL=chrome" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV }
+          elseif ($edge) { "GEO_BROWSER_CHANNEL=msedge" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV }
+          else { throw 'No Chrome/Edge found' }
+          Get-CimInstance Win32_VideoController | Select-Object Name,DriverVersion | Format-Table
+      - name: Capture fixed close road camera
+        shell: powershell
+        run: |
+          $env:GEO_ROAD_VIEW='1'
+          npm run native-smoke
+          if ($LASTEXITCODE -ne 0) { throw 'Roadview native screenshot failed' }
+      - name: Capture fixed overview camera
+        shell: powershell
+        run: |
+          Remove-Item Env:GEO_ROAD_VIEW -ErrorAction SilentlyContinue
+          Start-Sleep -Seconds 2
+          npm run native-smoke
+          if ($LASTEXITCODE -ne 0) { throw 'Overview native screenshot failed' }
+      - name: Capture low-angle road profile camera
+        shell: powershell
+        run: |
+          Remove-Item Env:GEO_ROAD_VIEW -ErrorAction SilentlyContinue
+          $env:GEO_LOW_ROAD_VIEW='1'
+          npm run native-smoke
+          if ($LASTEXITCODE -ne 0) { throw 'Low-angle native screenshot failed' }
+      - name: Upload real RTX captures
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: seoul-roadbed-integrated-rtx-visual
+          path: geobench/results/
+          retention-days: 14
+          if-no-files-found: warn
