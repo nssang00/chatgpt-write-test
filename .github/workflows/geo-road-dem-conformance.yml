@@ -1,0 +1,28 @@
+name: Seoul road DEM conformance regression
+on:
+  push:
+    branches:
+      - fix/seoul-road-dem-conformance-20261120
+    paths:
+      - geobench/**
+      - .github/workflows/geo-road-dem-conformance.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: seoul-road-dem-conformance
+  cancel-in-progress: true
+jobs:
+  terrain-unit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: geobench
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm install --no-audit --no-fund
+      - run: npm run test:roads
