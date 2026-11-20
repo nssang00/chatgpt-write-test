@@ -25,7 +25,7 @@ function addTriangle(mesh,a,b,c,sampledHeight,elevation){
   const cross=(b[0]-a[0])*(c[1]-a[1])-(b[1]-a[1])*(c[0]-a[0]);
   if(Math.abs(cross)<small)return false;
   const offset=mesh.positions.length/3;
-  for(const [x,z] of [a,b,c])mesh.positions.push(x,ground(x,z)+elevation,z);
+  for(const [x,z] of [a,b,c])mesh.positions.push(x,sampledHeight(x,z)+elevation,z);
   mesh.indices.push(offset,offset+1,offset+2);
   return true;
 }
@@ -81,7 +81,7 @@ export function mergedRoadSurface(entries,ground,elevation,stats,terrainGrid=nul
             stats.terrainAlignedTriangles=(stats.terrainAlignedTriangles||0)+1;
         });
       }else{
-        addTriangle(mesh,a,b,c,ground,elevation);
+        addTriangle(mesh,a,b,c,sampledHeight,elevation);
       }
     }
   }
