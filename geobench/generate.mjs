@@ -37,21 +37,33 @@ for (let y=Math.floor(minY)-1;y<=Math.floor(maxY)+1;y++) {
 // artificial ~20m cliffs between adjacent 14m terrain grid vertices.
 // Bilinear sampling of four TERRARIUM elevations makes a continuous terrain
 // at tile seams, with a one-tile halo for neighbor sampling.
+// Bilinear interpolation over native Terrarium raster pixel CENTERS.
+// Previously Math.floor selected the nearest tile cell and introduced sharp
+// artificial steps (up to 38m height jumps inside one rendered triangle).
+function terrariumPixel(x,y,i,j) {
+  let xx=x,yy=y,px=i,py=j;
+  while(px<0){xx--;px+=256;}
+  while(px>=256){xx++;px-=256;}
+  while(py<0){yy--;py+=256;}
+  while(py>=256){yy++;py-=256;}
+  const image=tiles.get(xx+':'+yy);
+  if(!image) {
+    const source=tiles.get(x+':'+y);
+    if(!source)throw new Error('Missing DEM tile '+x+':'+y);
+    const q=(clamp(j,0,source.height-1)*source.width+clamp(i,0,source.width-1))*4;
+    return source.data[q]*256+source.data[q+1]+source.data[q+2]/256-32768;
+  }
+  const q=(py*image.width+px)*4;
+  return image.data[q]*256+image.data[q+1]+image.data[q+2]/256-32768;
+}
 function sampleHeight(lon,lat) {
   const [tx,ty]=tileXY(lon,lat,TERR_Z);
-  const px=tx*256-.5,py=ty*256-.5;
-  const x0=Math.floor(px),y0=Math.floor(py),fx=px-x0,fy=py-y0;
-  function pixel(ix,iy){
-    const tileX=Math.floor(ix/256),tileY=Math.floor(iy/256);
-    const png=tiles.get(tileX+':'+tileY);
-    if(!png)throw Error('Missing surrounding DEM tile '+tileX+':'+tileY);
-    if(png.width!==256||png.height!==256)throw Error('Unexpected Terrarium tile size');
-    const col=((ix%256)+256)%256,row=((iy%256)+256)%256;
-    const i=(row*png.width+col)*4;
-    return png.data[i]*256+png.data[i+1]+png.data[i+2]/256-32768;
-  }
-  const a=pixel(x0,y0),b=pixel(x0+1,y0),c=pixel(x0,y0+1),d=pixel(x0+1,y0+1);
-  return (a*(1-fx)+b*fx)*(1-fy)+(c*(1-fx)+d*fx)*fy;
+  const x=Math.floor(tx),y=Math.floor(ty);
+  const fx=(tx-x)*256-.5,fy=(ty-y)*256-.5;
+  const i=Math.floor(fx),j=Math.floor(fy),u=fx-i,v=fy-j;
+  const a=terrariumPixel(x,y,i,j),b=terrariumPixel(x,y,i+1,j);
+  const c=terrariumPixel(x,y,i,j+1),d=terrariumPixel(x,y,i+1,j+1);
+  return (a*(1-u)+b*u)*(1-v)+(c*(1-u)+d*u)*v;
 }
 const terrain={positions:[],indices:[]};
 const NX=96, NZ=96;
@@ -62,6 +74,74 @@ for(let j=0;j<=NZ;j++){
     terrain.positions.push(x,sampleHeight(lon,lat),z);
   }
 }
+// This scene needs a visually coherent city-scale surface, not the
+// unsmoothed heightfield's steep pixel artifacts. Preserve source provenance,
+// but explicitly label this as a VISUALIZATION-ONLY slope-limited DEM.
+// Terrain is shared upstream by buildings, roads and all five render paths.
+const terrainRawY=[];
+for(let v=1;v<terrain.positions.length;v+=3)terrainRawY.push(terrain.positions[v]);
+const terrainY=Float64Array.from(terrainRawY);
+const EW=(east-west)*111320*cosLat/NX,NS=(north-south)*111320/NZ;
+const sourceMaximumSlope=.18;
+const neighborhood=[[1,0,EW],[0,1,NS],[1,-1,Math.hypot(EW,NS)]];
+let gradientPasses=0,maxGradient=0;
+for(let pass=0;pass<180;pass++){
+  let violation=0;
+  for(let j=0;j<=NZ;j++)for(let i=0;i<=NX;i++){
+    const at=j*(NX+1)+i;
+    for(const [di,dj,meters] of neighborhood){
+      const ni=i+di,nj=j+dj;
+      if(ni<0||ni>NX||nj<0||nj>NZ)continue;
+      const next=nj*(NX+1)+ni;
+      const allowed=sourceMaximumSlope*meters;
+      const difference=terrainY[at]-terrainY[next];
+      const over=Math.abs(difference)-allowed;
+      if(over>0){
+        const correction=Math.sign(difference)*over/2;
+        terrainY[at]-=correction;
+        terrainY[next]+=correction;
+        violation=Math.max(violation,over);
+      }
+    }
+  }
+  gradientPasses++;
+  if(violation<1e-5)break;
+}
+let terrainElevationChanged=0,terrainElevationMaxAdjustment=0;
+for(let i=0;i<terrainY.length;i++){
+  const shift=terrainY[i]-terrainRawY[i];
+  terrainElevationChanged+=Math.abs(shift)>.01?1:0;
+  terrainElevationMaxAdjustment=Math.max(terrainElevationMaxAdjustment,Math.abs(shift));
+  terrain.positions[i*3+1]=terrainY[i];
+}
+for(let j=0;j<=NZ;j++)for(let i=0;i<=NX;i++){
+  const at=j*(NX+1)+i;
+  for(const [di,dj,meters] of neighborhood){
+    const ni=i+di,nj=j+dj;
+    if(ni<0||ni>NX||nj<0||nj>NZ)continue;
+    maxGradient=Math.max(maxGradient,Math.abs(terrainY[at]-terrainY[nj*(NX+1)+ni])/meters);
+  }
+}
+if(maxGradient>sourceMaximumSlope+.0005)throw new Error('Terrain slope limiter did not converge: '+maxGradient);
+// Exactly sample the rendered two-triangle surface for plain-mode buildings.
+function terrainHeight(lon,lat){
+  const fx=clamp((lon-west)/(east-west)*NX,0,NX-1e-7);
+  const fz=clamp((lat-south)/(north-south)*NZ,0,NZ-1e-7);
+  const i=Math.floor(fx),j=Math.floor(fz),u=fx-i,v=fz-j;
+  const h=(x,z)=>terrain.positions[(z*(NX+1)+x)*3+1];
+  const a=h(i,j),b=h(i+1,j),c=h(i,j+1),d=h(i+1,j+1);
+  return u+v<=1?a*(1-u-v)+b*u+c*v:d*(u+v-1)+b*(1-v)+c*(1-u);
+}
+const terrainAudit={
+  sourceSampleMethod:'Terrarium RGB, bilinear source-pixel-center interpolation',
+  visualHeightfieldFilter:'neighbor edge slope limiting; VISUALIZATION ONLY, NOT surveyed heights',
+  outputMaximumSlope:sourceMaximumSlope,observedMaximumSlope:maxGradient,
+  filterIterations:gradientPasses,terrainChangedVertices:terrainElevationChanged,
+  maxHeightAdjustmentMeters:terrainElevationMaxAdjustment,
+  warning:'Do not use these filtered terrain elevations for engineering, navigation or surveying'
+};
+console.log('TERRAIN_SLOPE_AUDIT',JSON.stringify(terrainAudit));
+
 for(let j=0;j<NZ;j++)for(let i=0;i<NX;i++){
   const a=j*(NX+1)+i,b=a+1,c=a+(NX+1),d=c+1;
   terrain.indices.push(a,c,b,b,c,d);
@@ -87,7 +167,7 @@ for(const way of parsed.way){
   const hTag=Number.parseFloat(tags.height), levelTag=Number.parseFloat(tags['building:levels']);
   const height=Number.isFinite(hTag)&&hTag>0? hTag : (Number.isFinite(levelTag)&&levelTag>0 ? levelTag*3 : 12);
   if(!(Number.isFinite(hTag)&&hTag>0) && !(Number.isFinite(levelTag)&&levelTag>0))inferred++;
-  const floor=sampleHeight(centerLon,centerLat);
+  const floor=terrainHeight(centerLon,centerLat);
   const pts=refs.map(([lon,lat])=>project(lon,lat));
   const triangles=earcut(pts.flat());
   if(!triangles.length){skipped++;continue;}
@@ -121,7 +201,7 @@ for(let j=0;j<=NZ;j++)for(let i=0;i<=NX;i++){
 if(maxGridSlope>1.2)throw Error('Unrealistic Seoul terrain slope >120%, inspect DEM sampling and source tiles: '+maxGridSlope);
 const fixture={
   metadata:{
-    areaLabel:'Seoul Gangnam / Yeoksam Teheran-ro',demSource:'AWS Mapzen Terrarium',
+    areaLabel:'Seoul Gangnam / Yeoksam Teheran-ro',demSource:'AWS Mapzen Terrarium',terrainAudit,
     bbox:BBOX,center:[lon0,lat0],terrainZoom:TERR_Z,terrainGrid:[NX+1,NZ+1],
     demInterpolation:'bilinear on pixel centers across adjacent Terrarium tiles',
     terrainDiagnostics:{maxGridSlope,maxAdjacentRise,steepGridEdges},
