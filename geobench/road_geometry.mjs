@@ -1,5 +1,6 @@
 import { mergedRoadSurface } from './road_polygon_union.mjs';
 import { buildRoadElevationProfile } from './road_elevation_profile.mjs';
+import { emitTerrainAlignedTriangle } from './terrain_triangle_clip.mjs';
 // Shared topological OSM road mesher for four engines and Cesium 3D Tiles.
 // Uses actual OSM node IDs, continuous bounded-miter joins and ground-draped
 // triangles, including roads crossing the region boundary.
@@ -233,9 +234,20 @@ export function buildRoadGeometry(roads,{project,ground,bounds,maxStep=6,terrain
             const a1={x:p1.x+nx*w,z:p1.z+nz*w};
             const b0={x:p0.x-nx*w,z:p0.z-nz*w};
             const b1={x:p1.x-nx*w,z:p1.z-nz*w};
-            addQuad(meshes['road-marking'],
-              [a0.x,yMark(a0.x,a0.z),a0.z],[a1.x,yMark(a1.x,a1.z),a1.z],
-              [b1.x,yMark(b1.x,b1.z),b1.z],[b0.x,yMark(b0.x,b0.z),b0.z]);
+            if(roadbedIntegrated&&terrainGrid){
+              // A marking that crosses a terrain-grid diagonal otherwise
+              // interpolates heights differently from the shared roadbed.
+              const emit=(a,b,c)=>emitTerrainAlignedTriangle(a,b,c,terrainGrid,(u,v,w)=>{
+                const point=([x,z])=>[x,yMark(x,z),z];
+                addTriangle(meshes['road-marking'],point(u),point(v),point(w));
+              });
+              emit([a0.x,a0.z],[a1.x,a1.z],[b1.x,b1.z]);
+              emit([a0.x,a0.z],[b1.x,b1.z],[b0.x,b0.z]);
+            }else{
+              addQuad(meshes['road-marking'],
+                [a0.x,yMark(a0.x,a0.z),a0.z],[a1.x,yMark(a1.x,a1.z),a1.z],
+                [b1.x,yMark(b1.x,b1.z),b1.z],[b0.x,yMark(b0.x,b0.z),b0.z]);
+            }
             stats.markingDashes++;
           }
         }
