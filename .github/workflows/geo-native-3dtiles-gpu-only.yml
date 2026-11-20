@@ -1,0 +1,72 @@
+name: Seoul five renderers RTX GPU from verified GLB assets
+on:
+  push:
+    branches:
+      - bench/seoul-cesium-native-3dtiles-20261120
+    paths:
+      - .github/workflows/geo-native-3dtiles-gpu-only.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: native-five-gpu-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  rtx-5060ti-5-engine-streaming:
+    runs-on: [self-hosted, Windows, X64, m5-gpu]
+    timeout-minutes: 85
+    defaults:
+      run:
+        working-directory: geobench
+    env:
+      GEO_TEST_KIND: hardware
+      NODE_OPTIONS: --max-old-space-size=6144
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Reuse validated real Seoul OSM 144 JSON + 3D Tiles GLB datasets
+        uses: actions/download-artifact@v4
+        with:
+          repository: nssang00/chatgpt-write-test
+          run-id: 44658526582
+          name: seoul-5engine-streaming-assets
+          github-token: ${{ github.token }}
+          path: geobench/public
+      - name: Install JavaScript engines and benchmark runner
+        shell: powershell
+        run: |
+          npm install --no-audit --no-fund
+          if ($LASTEXITCODE -ne 0) { throw 'npm dependencies failed' }
+      - name: Validate RTX hardware and choose Chrome/Edge
+        shell: powershell
+        run: |
+          $pf86=[Environment]::GetFolderPath('ProgramFilesX86')
+          $chrome = @(
+            "$env:ProgramFiles\\Google\\Chrome\\Application\\chrome.exe",
+            (Join-Path $pf86 'Google\\Chrome\\Application\\chrome.exe'),
+            "$env:LOCALAPPDATA\\Google\\Chrome\\Application\\chrome.exe"
+          ) | Where-Object { Test-Path $_ } | Select-Object -First 1
+          $edge = @(
+            (Join-Path $pf86 'Microsoft\\Edge\\Application\\msedge.exe'),
+            "$env:ProgramFiles\\Microsoft\\Edge\\Application\\msedge.exe"
+          ) | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if ($chrome) { "GEO_BROWSER_CHANNEL=chrome" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV }
+          elseif ($edge) { "GEO_BROWSER_CHANNEL=msedge" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV }
+          else { throw 'No GPU Chrome/Edge found' }
+          Get-CimInstance Win32_VideoController | Select-Object Name,DriverVersion | Format-Table
+      - name: Benchmark native 3D Tiles and four custom renderers on physical RTX
+        shell: powershell
+        run: |
+          npm run stream-bench
+          if ($LASTEXITCODE -ne 0) { throw '5-engine GPU streaming benchmark failed' }
+      - name: Upload GPU screenshots and performance JSON
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: seoul-five-renderer-native-3dtiles-rtx-results
+          path: geobench/results/
+          if-no-files-found: warn
+          retention-days: 14
