@@ -2,6 +2,7 @@ import fs from 'node:fs/promises';
 import { XMLParser } from 'fast-xml-parser';
 import earcut from 'earcut';
 import { buildRoadGeometry } from './road_geometry.mjs';
+import { cutTerrainUnderRoads } from './terrain_road_cut.mjs';
 
 // Procedural architectural DETAIL, not surveyed facade or actual building heights.
 // All coordinates stay in meters: x east, y up, z north.
@@ -256,20 +257,30 @@ if(stats.buildings<10)throw new Error('Building fixture unexpectedly empty');
 const focus=buildingCenters.toSorted((a,b)=>
   (Math.hypot(a.x,a.z)-Math.min(a.height,100)*.8)-
   (Math.hypot(b.x,b.z)-Math.min(b.height,100)*.8))[0];
+// Subtract the actual at-grade road-edge footprint from the original DEM
+// surface. The road itself uses a smoothed graph profile; simply draping it
+// leaves buried roads wherever original Terrarium lies above the profile.
+// This creates visible cut/fill boundaries but not engineered earthwork
+// slopes. Original DEM stays untouched for statistical validation.
+const roadTerrainCut=roadOutput.atGradeMask?
+  cutTerrainUnderRoads(base.terrain,roadOutput.atGradeMask,
+    {xmin:xMin,zmin:zMin,xmax:xMax,zmax:zMax,nx:NX,nz:NZ},ground):null;
+const displayTerrain=roadTerrainCut?.terrain||base.terrain;
 const detailed={
   metadata:{
     ...base.metadata,style:'procedural-architectural-visualization',
     visualAccuracy:'Building footprints from OSM, terrain from Terrarium; facades/windows/colors/rooftop units/trees are stylized procedural inventions, NOT surveyed real buildings.',
     inferredBuildingHeights:stats.inferredHeights,
     buildingCount:stats.buildings,
-    terrainTriangles:base.terrain.indices.length/3,
+    terrainTriangles:displayTerrain.indices.length/3,
+    roadTerrainCut:roadTerrainCut?.stats||null,
     materialColors:palette,
     meshStats:stats,
     roadGeometryQuality:{mesh:'OSM-node joins, bounded miters, planar polygon union and terrain-grid subdivision',ground:process.env.GEO_ROAD_PROFILE_SMOOTH==='1'?'experimental graph-smoothed road grade, not exact DEM drape':'terrain-triangle-exact draping',caveat:'Road grades are inferred, not surveyed. Smooth profiles may overlap raw terrain and require cut/fill. Bridge/tunnel elevations and carriageway boundaries are not surveyed.',...roadOutput.stats},
     focus:[focus.x,focus.y+focus.height*.40,focus.z],
     trianglesByMaterial:Object.fromEntries(Object.entries(meshes).map(([k,v])=>[k,v.indices.length/3]))
   },
-  terrain:base.terrain,
+  terrain:displayTerrain,
   surfaces:Object.fromEntries(Object.entries(meshes).filter(([,v])=>v.indices.length>0))
 };
 await fs.writeFile('public/fixture-detailed.json',JSON.stringify(detailed));
