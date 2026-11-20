@@ -1,0 +1,59 @@
+name: Cesium Native OGC 3D Tiles Seoul Browser Validation
+on:
+  push:
+    branches:
+      - bench/seoul-cesium-native-3dtiles-20261120
+    paths:
+      - geobench/**
+      - .github/workflows/geo-native-3dtiles-test.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: seoul-native-tiles-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  hosted-native-3dtiles-browser:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: geobench
+    env:
+      NODE_OPTIONS: --max-old-space-size=6144
+      GEO_TEST_KIND: software
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm install --no-audit --no-fund
+      - run: npx playwright install --with-deps chromium
+      - name: Generate authentic Seoul OSM and Mapzen DEM geometry
+        run: npm run data
+      - name: Package source mesh into common 144 spatial tiles
+        run: npm run pack-tiles
+      - name: Generate actual 3D Tiles 1.1 tileset.json GLB assets
+        run: npm run pack-native-tiles
+      - name: Verify Cesium3DTileset.fromUrl renders correct tiles in Chrome
+        run: npm run native-smoke
+      - name: Save screenshot and valid tileset build report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-cesium3dtileset-software-validation
+          path: |
+            geobench/results/
+            geobench/public/native-3dtiles/build-report.json
+            geobench/public/native-3dtiles/tileset.json
+          retention-days: 14
+          if-no-files-found: warn
+      - name: Upload native GLB assets for GPU benchmark
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: seoul-native-3dtiles-assets
+          path: geobench/public/native-3dtiles/
+          retention-days: 7
+          if-no-files-found: error
+          compression-level: 6
