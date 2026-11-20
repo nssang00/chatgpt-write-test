@@ -1,0 +1,44 @@
+name: Seoul Streaming Four Engines Software Validation
+on:
+  push:
+    branches:
+      - bench/seoul-streaming-hosted-smoke-20261120
+    paths:
+      - geobench/**
+      - .github/workflows/geo-seoul-streaming-software.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  software-smoke:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    defaults:
+      run:
+        working-directory: geobench
+    env:
+      NODE_OPTIONS: --max-old-space-size=6144
+      GEO_TEST_KIND: software
+      GEO_FAST_SMOKE: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install JS engines
+        run: npm install --no-audit --no-fund
+      - name: Install software chromium and system libraries
+        run: npx playwright install --with-deps chromium
+      - name: Generate real OSM and DEM base fixture
+        run: npm run data
+      - name: Pack shared streaming and two-LOD files
+        run: npm run pack-tiles
+      - name: Verify four browser engine streaming implementations (software only)
+        run: npm run stream-bench
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: seoul-streaming-sw-renderer-validation
+          path: geobench/results/
+          if-no-files-found: warn
+          retention-days: 14
