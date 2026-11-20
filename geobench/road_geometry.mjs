@@ -1,4 +1,5 @@
 import { mergedRoadSurface } from './road_polygon_union.mjs';
+import { buildRoadElevationProfile } from './road_elevation_profile.mjs';
 // Shared topological OSM road mesher for four engines and Cesium 3D Tiles.
 // Uses actual OSM node IDs, continuous bounded-miter joins and ground-draped
 // triangles, including roads crossing the region boundary.
@@ -128,7 +129,7 @@ function circle(mesh,center,radius,yFn,segments=16){
  * ground(x,z) must match the actual triangulated ground surface.
  * bounds = local [xmin,zmin,xmax,zmax].
  */
-export function buildRoadGeometry(roads,{project,ground,bounds,maxStep=6,terrainGrid=null}){
+export function buildRoadGeometry(roads,{project,ground,bounds,maxStep=6,terrainGrid=null,roadProfile=false}){
   if(maxStep<=0)throw Error('maxStep must be positive');
   const meshes={'road':flatMesh(),'road-edge':flatMesh(),'road-marking':flatMesh()};
   const stats={sourceWays:0,clippedPaths:0,sourceSegments:0,emittedSubsegments:0,
@@ -162,6 +163,9 @@ export function buildRoadGeometry(roads,{project,ground,bounds,maxStep=6,terrain
       }
     }
   }
+  // Opt-in road-only vertical alignment. The default DEM-drapped mode remains
+  // available for prior regression tests and controlled A/B comparison.
+  const profile=roadProfile?buildRoadElevationProfile(classified,ground,{step:maxStep}):null;
   const junctionCoords=[];
   for(const n of nodes.values()){
     const degree=n.neighbors.size;
@@ -184,7 +188,7 @@ export function buildRoadGeometry(roads,{project,ground,bounds,maxStep=6,terrain
     const {width,grade,tags,paths}=entry;
     const yRoad=(x,z)=>ground(x,z)+.22;
     const yEdge=(x,z)=>ground(x,z)+.15;
-    const yMark=(x,z)=>ground(x,z)+.285;
+    const yMark=(x,z)=>(profile?profile.heightAt(x,z,grade):ground(x,z))+.285;
     let distanceAlong=0;
     for(const path of paths){
       const pts=subdivide(path,maxStep);
@@ -239,8 +243,9 @@ export function buildRoadGeometry(roads,{project,ground,bounds,maxStep=6,terrain
     }
   }
   stats.discardedRoadRings=0;
-  meshes.road=mergedRoadSurface(corridorAsphalt,ground,.22,stats,terrainGrid);
-  meshes['road-edge']=mergedRoadSurface(corridorEdge,ground,.15,stats,terrainGrid);
+  meshes.road=mergedRoadSurface(corridorAsphalt,ground,.22,stats,terrainGrid,profile?.heightAt);
+  meshes['road-edge']=mergedRoadSurface(corridorEdge,ground,.15,stats,terrainGrid,profile?.heightAt);
+  if(profile)stats.roadProfile=profile.stats();
   // Union meshes do not contain overlapping per-way pieces; drawing order
   // is deterministic, junctions are part of the single asphalt polygon.
   for(const [name,mesh] of Object.entries(meshes)){
