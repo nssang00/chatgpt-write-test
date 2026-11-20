@@ -12,7 +12,7 @@ from rasterio.transform import from_bounds
 from rasterio.warp import transform_bounds
 
 HERE=Path(__file__).resolve().parent
-BBOX=[127.381,36.345,127.39,36.352]
+BBOX=[127.031,37.496,127.045,37.508]
 def main():
     with tempfile.TemporaryDirectory(prefix="synthetic-ngii-unit-test-") as tmp:
         root=Path(tmp);source=root/"raster";source.mkdir()
