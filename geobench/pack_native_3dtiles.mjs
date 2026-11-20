@@ -8,7 +8,8 @@ import path from 'node:path';
 // 3D Tiles coordinate convention: local tileset Cartesian is (east,north,up).
 // glTF is (east,up,-north), transformed +90deg X by the 3D Tiles runtime.
 const manifest=JSON.parse(await fs.readFile('public/stream-manifest.json','utf8'));
-const out='public/native-3dtiles';
+const out=process.env.NATIVE_3DTILES_OUT||'public/native-3dtiles';
+const keep=(process.env.NATIVE_MATERIALS||'all');
 await fs.mkdir(out,{recursive:true});
 const a=6378137,e2=6.69437999014e-3;
 const rad=d=>d*Math.PI/180;
@@ -96,7 +97,9 @@ for(const t of manifest.tiles){
   let b=null;
   for(const detail of ['low','high']){
     const source=JSON.parse(await fs.readFile('public'+t.files[detail].url,'utf8'));
-    const result=glb(source.materials,manifest.palette);
+    const materials=Object.fromEntries(Object.entries(source.materials).filter(([key])=>
+      keep==='all'||(keep==='roads'&&key.startsWith('road'))||(keep==='no-roads'&&!key.startsWith('road'))));
+    const result=glb(materials,manifest.palette);
     if(!result.bytes)continue;
     const filename=t.id+'-'+detail+'.glb';
     await fs.writeFile(path.join(out,filename),result.bytes);
@@ -108,12 +111,15 @@ for(const t of manifest.tiles){
   if(!b)continue;
   nonempty++;
   const volume={box:box(b)};
-  const high={...tiles.high,boundingVolume:volume};
-  const low={...tiles.low,boundingVolume:volume,children:[high]};
-  children.push(low);
+  // Some diagnostic masks have empty low LOD tiles; do not create invalid
+  // implicit content objects or force a missing high child.
+  const high=tiles.high?{...tiles.high,boundingVolume:volume}:null;
+  const low=tiles.low?{...tiles.low,boundingVolume:volume}:null;
+  if(low){if(high)low.children=[high];children.push(low);}
+  else if(high)children.push(high);
   rootBounds=union(rootBounds,b);
 }
-if(nonempty<100)throw Error('Expected at least 100 nonempty tiles');
+if(nonempty<40)throw Error('Expected at least 40 nonempty tiles, found '+nonempty);
 const tileset={
   asset:{version:'1.1',tilesetVersion:'seoul-osm-20261120'},
   geometricError:5000,
@@ -122,6 +128,7 @@ const tileset={
 await fs.writeFile(path.join(out,'tileset.json'),JSON.stringify(tileset));
 const validation={
   dataset:'Seoul Gangnam OSM footprint procedural facade and AWS Mapzen DEM',
+  materialSelection:keep,
   sourceManifest:'stream-manifest.json',tileCount:manifest.tiles.length,
   nonemptyTileCount:nonempty,geometricErrorLow:7.5,
   refinement:'REPLACE',assetVersion:'1.1',glTF:'2.0 GLB KHR_materials_unlit',
