@@ -262,9 +262,13 @@ export function buildRoadGeometry(roads,{project,ground,bounds,maxStep=6,terrain
   // the surface-road earthwork.
   const sampledProfileHeight=profile?((x,z,grade)=>
     roadbedIntegrated&&grade==='0||'?ground(x,z):profile.heightAt(x,z,grade)):null;
-  meshes.road=mergedRoadSurface(corridorAsphalt,ground,.22,stats,terrainGrid,sampledProfileHeight);
-  meshes['road-edge']=mergedRoadSurface(corridorEdge,ground,.15,stats,terrainGrid,sampledProfileHeight,atGradeMask);
+  const gradeRanges={road:[], 'road-edge':[]};
+  meshes.road=mergedRoadSurface(corridorAsphalt,ground,.22,stats,terrainGrid,
+    sampledProfileHeight,null,gradeRanges.road);
+  meshes['road-edge']=mergedRoadSurface(corridorEdge,ground,.15,stats,terrainGrid,
+    sampledProfileHeight,atGradeMask,gradeRanges['road-edge']);
   if(profile)stats.roadProfile=profile.stats();
+  stats.gradeRanges=gradeRanges;
   stats.integratedRoadbed=roadbedIntegrated;
   // Union meshes do not contain overlapping per-way pieces; drawing order
   // is deterministic, junctions are part of the single asphalt polygon.
