@@ -34,8 +34,16 @@ try{
     }
     if(pathname.endsWith('.glb')&&r.ok())success.add(r.url());
   });
+  const expectedCanceledTiles=[];
   page.on('requestfailed',r=>{
-    errors.push('request failed '+r.url()+' '+r.failure()?.errorText);
+    const reason=r.failure()?.errorText||'unknown';
+    // Cesium cancels obsolete GLB requests during rapid camera movement.
+    // An aborted tile fetch is normal LOD/cache operation, not a bad GLB.
+    if(new URL(r.url()).pathname.endsWith('.glb') && /ERR_ABORTED/i.test(reason)){
+      expectedCanceledTiles.push(r.url());
+    } else {
+      errors.push('request failed '+r.url()+' '+reason);
+    }
   });
   await page.goto(host+'/native-3dtiles.html'+(process.env.GEO_ROAD_VIEW==='1'?'?roadview=1':''),{waitUntil:'load',timeout:180000});
   try{
@@ -60,7 +68,7 @@ try{
   }));
   await fs.mkdir('results',{recursive:true});
   await page.screenshot({path:process.env.GEO_ROAD_VIEW==='1'?'results/native-3dtiles-roadview.png':'results/native-3dtiles-real-browser.png',fullPage:true});
-  const report={status,requestedGLB:requested.size,loadedGLB:success.size,errors,ignoredFavicon404};
+  const report={status,requestedGLB:requested.size,loadedGLB:success.size,errors,ignoredFavicon404,expectedCanceledTiles};
   await fs.writeFile('results/native-smoke.json',JSON.stringify(report,null,2));
   console.log('NATIVE_3DTILES_SMOKE_RESULT',JSON.stringify(report));
   if(status.stats.errors||errors.length)throw Error('Native 3D Tiles errors: '+JSON.stringify(errors).slice(0,1800));
