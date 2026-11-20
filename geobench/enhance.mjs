@@ -241,7 +241,10 @@ for(const road of roads){
   if(segs)stats.roads++;
 }
 if(stats.buildings<10)throw new Error('Building fixture unexpectedly empty');
-const focus=buildingCenters.toSorted((a,b)=>b.height-a.height)[Math.min(2,buildingCenters.length-1)];
+// Focus near the business-district center so all engines show a dense skyline.
+const focus=buildingCenters.toSorted((a,b)=>
+  (Math.hypot(a.x,a.z)-Math.min(a.height,100)*.8)-
+  (Math.hypot(b.x,b.z)-Math.min(b.height,100)*.8))[0];
 const detailed={
   metadata:{
     ...base.metadata,style:'procedural-architectural-visualization',
