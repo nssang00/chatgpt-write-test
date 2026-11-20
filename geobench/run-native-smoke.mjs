@@ -20,8 +20,8 @@ try{
   const errors=[];const requested=new Set(),success=new Set();
   page.on('pageerror',e=>errors.push('pageerror '+String(e.stack||e)));
   page.on('console',m=>{if(m.type()==='error')errors.push('console '+m.text())});
-  page.on('request',r=>{if(r.url().endsWith('.glb'))requested.add(r.url())});
-  page.on('response',r=>{if(r.url().endsWith('.glb')&&r.ok())success.add(r.url())});
+  page.on('request',r=>{if(new URL(r.url()).pathname.endsWith('.glb'))requested.add(r.url())});
+  page.on('response',r=>{if(new URL(r.url()).pathname.endsWith('.glb')&&r.ok())success.add(r.url())});
   await page.goto(host+'/native-3dtiles.html',{waitUntil:'load',timeout:180000});
   try{
     await page.waitForFunction(()=>window.__streamBench?.ready===true,null,{timeout:120000});
