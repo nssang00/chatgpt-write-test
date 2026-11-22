@@ -6,13 +6,16 @@ const d=JSON.parse(await fs.readFile('public/fixture-detailed.json','utf8'));
 const {meshStats,roadGeometryQuality,terrainGrid,bbox,center}=d.metadata;
 const stats=roadGeometryQuality;
 if(!stats.roadRenderSmooth)throw Error('GEO_ROAD_RENDER_SMOOTH=1 not enabled');
+if(!d.metadata.roadDebugFocus?.every(Number.isFinite))
+  throw Error('Missing numeric OSM road junction camera focus');
 const [west,south,east,north]=bbox,[lon,lat]=center;
 const cos=Math.cos(lat*Math.PI/180),[nx,nz]=terrainGrid.map(x=>x-1);
 const grid={nx,nz,xmin:(west-lon)*111320*cos,xmax:(east-lon)*111320*cos,
   zmin:(south-lat)*111320,zmax:(north-lat)*111320};
 const ground=(x,z)=>sampleTerrainGrid(d.terrain,grid,x,z);
 const report={area:bbox,source:'OSM way centerlines and existing smoothed Terrarium roadbed',
-  roadWays:meshStats.roads,roundedJoins:stats.roundedJoins,
+  roadWays:meshStats.roads,roadDebugFocus:d.metadata.roadDebugFocus,
+  roundedJoins:stats.roundedJoins,
   arcVertices:stats.arcVertices,
   asphaltPlanAreaM2:stats.roadAsphaltAreaM2,
   edgeOuterPlanAreaM2:stats.roadEdgeOuterAreaM2,
