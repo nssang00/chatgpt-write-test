@@ -17,6 +17,11 @@ const storages=new Map(ids.map(k=>[k,{high:{},low:{}}]));
 const lowNames=new Set(['terrain','road','road-edge','roof','wall-ivory','wall-ivory-shade',
  'wall-beige','wall-beige-shade','wall-brick','wall-brick-shade',
  'wall-concrete','wall-concrete-shade','wall-dark','wall-dark-shade']);
+const omitLowEdge=process.env.GEO_LOW_LOD_NO_ROAD_EDGE==='1';
+// Thin 1.65m kerb rings are subpixel at low-LOD distances. Keeping them
+// explodes low-LOD triangle counts after asphalt difference and causes
+// distant flicker; high LOD always retains the exact visible border mesh.
+if(omitLowEdge)lowNames.delete('road-edge');
 function appendMaterial(name,source){
   const v=source.positions,indices=source.indices;
   for(let i=0;i<indices.length;i+=3){
@@ -58,14 +63,16 @@ const manifest={
   grid:[count,count],localBounds:[xmin,zmin,xmax,zmax],
   palette:data.metadata.materialColors,tiles,totals,
   highMeans:'All original triangles including procedural facade windows and trees',
-  lowMeans:'Terrain, roadway and basic wall/roof triangles; excludes windows trees equipment',
+  lowMeans:omitLowEdge?'Terrain, asphalt and basic walls/roofs; thin road borders omitted at distant LOD':'Terrain, roadway and basic wall/roof triangles; excludes windows trees equipment',
+  lowRoadEdgePresent:lowNames.has('road-edge'),
   assignment:'Triangle centroid to one grid tile; cross-boundary tris not clipped',
   note:'Identical tile files and JS tile selection for all four engines; not Cesium-native 3D Tiles'
 };
 await fs.writeFile('public/stream-manifest.json',JSON.stringify(manifest));
 console.log('STREAM_PACK_RESULT',JSON.stringify({
   tileCount:tiles.length,buildings:manifest.buildingCount,
-  triangleTotals:totals,bytes:tiles.reduce((t,v)=>t+v.files.high.bytes+v.files.low.bytes,0),
+  triangleTotals:totals,lowRoadEdgePresent:lowNames.has('road-edge'),
+  bytes:tiles.reduce((t,v)=>t+v.files.high.bytes+v.files.low.bytes,0),
   maxTileHighBytes:Math.max(...tiles.map(t=>t.files.high.bytes)),
   totalManifestBytes:(await fs.stat('public/stream-manifest.json')).size
 }));
