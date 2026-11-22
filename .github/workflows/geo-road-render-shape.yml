@@ -147,6 +147,20 @@ jobs:
           $env:GEO_LOW_ROAD_VIEW='1'
           npm run native-smoke
           if ($LASTEXITCODE -ne 0) { throw 'Low-angle native screenshot failed' }
+      - name: Capture plan view over real OSM road junction
+        shell: powershell
+        run: |
+          Remove-Item Env:GEO_LOW_ROAD_VIEW -ErrorAction SilentlyContinue
+          $env:GEO_JUNCTION_TOP='1'
+          npm run native-smoke
+          if ($LASTEXITCODE -ne 0) { throw 'Road-junction top-down screenshot failed' }
+      - name: Capture oblique view over real OSM road junction
+        shell: powershell
+        run: |
+          Remove-Item Env:GEO_JUNCTION_TOP -ErrorAction SilentlyContinue
+          $env:GEO_JUNCTION_VIEW='1'
+          npm run native-smoke
+          if ($LASTEXITCODE -ne 0) { throw 'Road-junction oblique screenshot failed' }
       - name: Upload real RTX captures
         if: always()
         uses: actions/upload-artifact@v4
