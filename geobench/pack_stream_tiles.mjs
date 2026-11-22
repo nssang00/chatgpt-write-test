@@ -58,7 +58,7 @@ for(let r=0;r<count;r++)for(let c=0;c<count;c++){
 const manifest={
   area:'Seoul Gangnam Yeoksam',bbox,center,
   dataSource:data.metadata.demSource||'AWS Mapzen Terrarium',
-  buildingCount:data.metadata.buildingCount,focus:data.metadata.focus,
+  buildingCount:data.metadata.buildingCount,focus:data.metadata.focus,roadDebugFocus:data.metadata.roadDebugFocus,
   originalGeometryTriangles:Object.values(data.metadata.trianglesByMaterial).reduce((s,v)=>s+v,0)+data.metadata.terrainTriangles,
   grid:[count,count],localBounds:[xmin,zmin,xmax,zmax],
   palette:data.metadata.materialColors,tiles,totals,
