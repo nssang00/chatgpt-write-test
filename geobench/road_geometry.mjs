@@ -1,4 +1,5 @@
-import { mergedRoadSurface } from './road_polygon_union.mjs';
+import { mergedRoadSurface, unionRoadPolygons, subtractRoadPolygons } from './road_polygon_union.mjs';
+import { roundedCorridor } from './road_offset_corridor.mjs';
 import { buildRoadElevationProfile } from './road_elevation_profile.mjs';
 import { emitTerrainAlignedTriangle } from './terrain_triangle_clip.mjs';
 // Shared topological OSM road mesher for four engines and Cesium 3D Tiles.
@@ -130,13 +131,14 @@ function circle(mesh,center,radius,yFn,segments=16){
  * ground(x,z) must match the actual triangulated ground surface.
  * bounds = local [xmin,zmin,xmax,zmax].
  */
-export function buildRoadGeometry(roads,{project,ground,bounds,maxStep=6,terrainGrid=null,roadProfile=false,roadbedIntegrated=false}){
+export function buildRoadGeometry(roads,{project,ground,bounds,maxStep=6,terrainGrid=null,roadProfile=false,roadbedIntegrated=false,roadRenderSmooth=false}){
   if(maxStep<=0)throw Error('maxStep must be positive');
   const meshes={'road':flatMesh(),'road-edge':flatMesh(),'road-marking':flatMesh()};
   const stats={sourceWays:0,clippedPaths:0,sourceSegments:0,emittedSubsegments:0,
     joinVertices:0,bevelLimitedJoins:0,reversalJoins:0,
     junctionPatches:0,junctionsByDegree:{},markingDashes:0,
-    protectedGradeWays:0,crossingWithoutSharedNodeNotAutoJoined:true};
+    protectedGradeWays:0,crossingWithoutSharedNodeNotAutoJoined:true,
+    roundedJoins:0,arcVertices:0,roadRenderSmooth};
   const expanded=[bounds[0]-12,bounds[1]-12,bounds[2]+12,bounds[3]+12];
   const nodes=new Map(),classified=[];
   for(const road of roads){
@@ -196,23 +198,22 @@ export function buildRoadGeometry(roads,{project,ground,bounds,maxStep=6,terrain
       const pts=subdivide(path,maxStep);
       if(pts.length<2)continue;
       stats.clippedPaths++;
-      const boundary=pts.map((p,i)=>joinedEdge(pts,i,width/2,stats));
-      const dummy={joinVertices:0,bevelLimitedJoins:0,reversalJoins:0};
-      const border=pts.map((p,i)=>joinedEdge(pts,i,width/2+1.65,dummy));
-      // Separate, ordered corridor outline for polygon boolean union.
-      // Eliminates coplanar overlaps of adjacent OSM ways and the former
-      // circular junction patches that created jagged rooftop-like shards.
-      corridorAsphalt.push({grade,points:[
-        ...boundary.map(b=>b.r),...boundary.toReversed().map(b=>b.l)
-      ]});
-      corridorEdge.push({grade,points:[
-        ...border.map(b=>b.r),...border.toReversed().map(b=>b.l)
-      ]});
+      const dummy={joinVertices:0,bevelLimitedJoins:0,reversalJoins:0,
+        roundedJoins:0,arcVertices:0};
+      const boundary=roadRenderSmooth?null:pts.map((p,i)=>joinedEdge(pts,i,width/2,stats));
+      const border=roadRenderSmooth?null:pts.map((p,i)=>joinedEdge(pts,i,width/2+1.65,dummy));
+      // The new planar road has rounded *outside* turns. Capped inner
+      // joins prevent long miter spikes on acute corners. Keep legacy
+      // corridor generation available for controlled A/B comparison.
+      const asphaltOutline=roadRenderSmooth?roundedCorridor(pts,width/2,stats):
+        [...boundary.map(b=>b.r),...boundary.toReversed().map(b=>b.l)];
+      const edgeOutline=roadRenderSmooth?roundedCorridor(pts,width/2+1.65,dummy):
+        [...border.map(b=>b.r),...border.toReversed().map(b=>b.l)];
+      corridorAsphalt.push({grade,points:asphaltOutline});
+      corridorEdge.push({grade,points:edgeOutline});
       for(let i=0;i<pts.length-1;i++){
         const a=pts[i],b=pts[i+1],dist=length(b.x-a.x,b.z-a.z);
         if(dist<EPS)continue;
-        const r0=boundary[i].r,l0=boundary[i].l,r1=boundary[i+1].r,l1=boundary[i+1].l;
-        const e0=border[i].r,f0=border[i].l,e1=border[i+1].r,f1=border[i+1].l;
         // Do NOT emit overlapping strip quads. A single hole-aware union
         // surface is triangulated below after all ways are processed.
         stats.emittedSubsegments++;
@@ -263,10 +264,17 @@ export function buildRoadGeometry(roads,{project,ground,bounds,maxStep=6,terrain
   const sampledProfileHeight=profile?((x,z,grade)=>
     roadbedIntegrated&&grade==='0||'?ground(x,z):profile.heightAt(x,z,grade)):null;
   const gradeRanges={road:[], 'road-edge':[]};
+  // Reuse each per-grade 2D union and subtract asphalt from its outer
+  // border. The edge is an actual ring, not a second full-width grey road
+  // polygon overlapping the dark asphalt.
+  const asphaltPlanar=roadRenderSmooth?unionRoadPolygons(corridorAsphalt,stats):null;
+  const outerEdgePlanar=roadRenderSmooth?unionRoadPolygons(corridorEdge,stats):null;
+  const visibleEdgePlanar=roadRenderSmooth?
+    subtractRoadPolygons(outerEdgePlanar,asphaltPlanar,stats):null;
   meshes.road=mergedRoadSurface(corridorAsphalt,ground,.22,stats,terrainGrid,
-    sampledProfileHeight,null,gradeRanges.road);
+    sampledProfileHeight,null,gradeRanges.road,asphaltPlanar);
   meshes['road-edge']=mergedRoadSurface(corridorEdge,ground,.15,stats,terrainGrid,
-    sampledProfileHeight,atGradeMask,gradeRanges['road-edge']);
+    sampledProfileHeight,atGradeMask,gradeRanges['road-edge'],visibleEdgePlanar);
   if(profile)stats.roadProfile=profile.stats();
   stats.gradeRanges=gradeRanges;
   stats.integratedRoadbed=roadbedIntegrated;
