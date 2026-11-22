@@ -1,0 +1,49 @@
+name: Seoul OSM 3D tag CPU screenshot fallback
+on:
+  push:
+    branches:
+      - fix/seoul-osm-3d-tags-20261123
+    paths:
+      - .github/workflows/geo-osm-3d-cpu-preview.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  software-preview:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    defaults:
+      run:
+        working-directory: geobench
+    env:
+      NODE_OPTIONS: --max-old-space-size=6144
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm install --no-audit --no-fund
+      - name: Install software WebGL Chromium
+        run: npx playwright install --with-deps chromium
+      - name: Reuse the exact 3D Tiles from primary CI, not a fresh OSM scrape
+        uses: actions/download-artifact@v4
+        with:
+          name: seoul-osm-3d-tags-native-tiles
+          run-id: 45068245995
+          github-token: ${{ github.token }}
+          path: geobench/public
+      - name: Render close road view with SwiftShader
+        run: GEO_ROAD_VIEW=1 npm run native-smoke
+      - name: Render aerial overview with SwiftShader
+        run: npm run native-smoke
+      - name: Render low road view with SwiftShader
+        run: GEO_LOW_ROAD_VIEW=1 npm run native-smoke
+      - name: Upload CPU-rendered images and JSON
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: seoul-osm-3d-tags-cpu-preview
+          path: geobench/results
+          retention-days: 14
+          if-no-files-found: warn
