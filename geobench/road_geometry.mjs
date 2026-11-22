@@ -184,9 +184,15 @@ export function buildRoadGeometry(roads,{project,ground,bounds,maxStep=6,terrain
     // Approximate visually rounded intersection. Accurate traffic/lane
     // polygons require a separate polygon-union and junction design stage.
     // Surface is now joined by planar polygon union, not overlapping circle fans.
-    junctionCoords.push({x:n.pos.x,z:n.pos.z,r:half+2,grade:n.grade});
+    junctionCoords.push({x:n.pos.x,z:n.pos.z,r:half+2,grade:n.grade,degree});
     stats.junctionPatches++;stats.junctionsByDegree[degree]=(stats.junctionsByDegree[degree]||0)+1;
   }
+  const midX=(bounds[0]+bounds[2])/2,midZ=(bounds[1]+bounds[3])/2;
+  stats.debugJunctions=junctionCoords
+    .filter(p=>p.grade==='0||'&&p.x>=bounds[0]&&p.x<=bounds[2]&&p.z>=bounds[1]&&p.z<=bounds[3])
+    .sort((a,b)=>Math.hypot(a.x-midX,a.z-midZ)-Math.hypot(b.x-midX,b.z-midZ))
+    .slice(0,4)
+    .map(({x,z,r,degree})=>({x,z,r,degree}));
   const corridorAsphalt=[],corridorEdge=[];
   for(const entry of classified){
     const {width,grade,tags,paths}=entry;
