@@ -19,8 +19,8 @@ const [jx,jy,jz]=manifest.roadDebugFocus||[fx,fy-45,fz];
 // Road-junction views target the *actual ground* at a shared OSM node rather
 // than looking through a tall building from the old building-centric focus.
 // This makes miter spikes and border ribbons visible at realistic scales.
-const baseEye=junctionTop?[jx+1,jy+125,jz+1]:
-  junctionView?[jx+42,jy+43,jz-48]:
+const baseEye=junctionTop?[jx+1,jy+245,jz+1]:
+  junctionView?[jx+115,jy+180,jz-140]:
   lowView?[fx+85,fy+35,fz-115]:
   roadView?[fx+100,fy+75,fz-155]:
   [fx+250*Math.sin(theta)+120,fy+155,fz-360*Math.cos(theta)];
