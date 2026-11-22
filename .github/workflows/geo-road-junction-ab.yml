@@ -1,4 +1,4 @@
-name: Seoul OSM junction geometry controlled A-B images
+name: Seoul OSM junction above-tower controlled A-B
 on:
   push:
     branches:
