@@ -1,0 +1,75 @@
+name: Seoul OSM junction geometry controlled A-B images
+on:
+  push:
+    branches:
+      - fix/seoul-road-render-shape-20261123
+    paths:
+      - .github/workflows/geo-road-junction-ab.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  junction-ab:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    defaults:
+      run:
+        working-directory: geobench
+    env:
+      NODE_OPTIONS: --max-old-space-size=6144
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm install --no-audit --no-fund
+      - name: Install Chrome SwiftShader for reproducible software preview
+        run: npx playwright install --with-deps chromium
+      - name: Download updated road 3D Tiles
+        uses: actions/download-artifact@v4
+        with:
+          name: seoul-road-render-shape-native-tiles
+          run-id: 45081313847
+          github-token: ${{ github.token }}
+          path: geobench/public
+      - name: Store actual road-level OSM junction target
+        run: |
+          node --input-type=module -e "import fs from 'node:fs'; const m=JSON.parse(fs.readFileSync('public/stream-manifest.json','utf8')); if(!m.roadDebugFocus?.every(Number.isFinite))throw Error('No roadDebugFocus');fs.mkdirSync('results',{recursive:true});fs.writeFileSync('results/junction-focus.json',JSON.stringify(m.roadDebugFocus));"
+      - name: Render updated junction top view
+        run: |
+          GEO_JUNCTION_TOP=1 npm run native-smoke
+          mv results/native-3dtiles-junction-top.png results/road-junction-new-top.png
+      - name: Render updated junction oblique view
+        run: |
+          GEO_JUNCTION_VIEW=1 npm run native-smoke
+          mv results/native-3dtiles-junction-oblique.png results/road-junction-new-oblique.png
+      - name: Download previous OSM-tag road 3D Tiles
+        uses: actions/download-artifact@v4
+        with:
+          name: seoul-osm-3d-tags-native-tiles
+          run-id: 45068245995
+          github-token: ${{ github.token }}
+          path: geobench/public
+      - name: Force identical road target on previous GLBs
+        run: |
+          node --input-type=module -e "import fs from 'node:fs'; const p='public/stream-manifest.json',m=JSON.parse(fs.readFileSync(p,'utf8'));m.roadDebugFocus=JSON.parse(fs.readFileSync('results/junction-focus.json','utf8'));fs.writeFileSync(p,JSON.stringify(m));"
+      - name: Render previous junction top view, same camera
+        run: |
+          GEO_JUNCTION_TOP=1 npm run native-smoke
+          mv results/native-3dtiles-junction-top.png results/road-junction-previous-top.png
+      - name: Render previous junction oblique view, same camera
+        run: |
+          GEO_JUNCTION_VIEW=1 npm run native-smoke
+          mv results/native-3dtiles-junction-oblique.png results/road-junction-previous-oblique.png
+      - name: Upload A-B screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: seoul-road-junction-controlled-ab-screenshots
+          path: |
+            geobench/results/road-junction-*.png
+            geobench/results/junction-focus.json
+            geobench/results/native-smoke.json
+          retention-days: 14
+          if-no-files-found: warn
