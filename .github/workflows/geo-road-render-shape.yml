@@ -47,6 +47,7 @@ jobs:
       GEO_VISUAL_TERRAIN_SMOOTH: '1'
       GEO_ROADBED_INTEGRATED: '1'
       GEO_ROAD_RENDER_SMOOTH: '1'
+      GEO_LOW_LOD_NO_ROAD_EDGE: '1'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -63,6 +64,8 @@ jobs:
         run: node validate_road_render_shape.mjs
       - name: Package common four-engine streaming tiles
         run: npm run pack-tiles
+      - name: Check distant low-LOD road-edge simplification
+        run: node validate_low_road_edge_lod.mjs
       - name: Package actual Cesium 3D Tiles GLB
         run: npm run pack-native-tiles
       - name: Save numerical QA report
