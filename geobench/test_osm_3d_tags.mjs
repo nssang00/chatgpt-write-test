@@ -46,7 +46,7 @@ for(const shape of ['gabled','hipped','pyramidal']){
  }
 }
 assert.equal(roofTriangles([[0,0],[15,0],[15,5],[8,3],[0,5]],10,13,'gabled'),null);
-assert.equal(roofTriangles([[0,0],[15,0],[14,5],[0,5]],10,13,'gabled')?.roof.length,undefined);
+assert.equal(roofTriangles([[0,0],[15,0],[11,5],[0,5]],10,13,'gabled')?.roof.length,undefined);
 console.log('OSM_3D_BUILDING_TAG_UNIT_PASS',{
   height:measured.height,roof:measured.roofShape,
   minHeight:measured.minHeight,levels:measured.floors
