@@ -292,7 +292,8 @@ const roadOutput=buildRoadGeometry(roads,{
   // Shared terrain triangle grid (193x193 in integrated roadbed mode).
   terrainGrid:renderedGrid,
   roadProfile:integratedRoadbed?sharedRoadProfile:process.env.GEO_ROAD_PROFILE_SMOOTH==='1',
-  roadbedIntegrated:integratedRoadbed
+  roadbedIntegrated:integratedRoadbed,
+  roadRenderSmooth:process.env.GEO_ROAD_RENDER_SMOOTH==='1'
 });
 for(const [key,mesh] of Object.entries(roadOutput.meshes))meshes[key]=mesh;
 stats.roads=roadOutput.stats.sourceWays;
@@ -347,7 +348,7 @@ const detailed={
     roadbed:roadbed?.stats||null,
     materialColors:palette,
     meshStats:stats,
-    roadGeometryQuality:{mesh:'OSM-node joins, bounded miters, planar polygon union and terrain-grid subdivision',ground:integratedRoadbed?'shared smoothed roadbed terrain and asphalt heightfield':process.env.GEO_ROAD_PROFILE_SMOOTH==='1'?'experimental graph-smoothed road grade, not exact DEM drape':'terrain-triangle-exact draping',caveat:'Road grades are inferred, not surveyed. Smooth profiles may overlap raw terrain and require cut/fill. Bridge/tunnel elevations and carriageway boundaries are not surveyed.',...roadOutput.stats},
+    roadGeometryQuality:{mesh:process.env.GEO_ROAD_RENDER_SMOOTH==='1'?'rounded outer road joins, capped inner miters, edge-minus-asphalt planar difference and shared terrain':'OSM-node joins, bounded miters, planar polygon union and terrain-grid subdivision',ground:integratedRoadbed?'shared smoothed roadbed terrain and asphalt heightfield':process.env.GEO_ROAD_PROFILE_SMOOTH==='1'?'experimental graph-smoothed road grade, not exact DEM drape':'terrain-triangle-exact draping',caveat:'Road grades are inferred, not surveyed. Smooth profiles may overlap raw terrain and require cut/fill. Bridge/tunnel elevations and carriageway boundaries are not surveyed.',...roadOutput.stats},
     focus:[focus.x,focus.y+focus.height*.40,focus.z],
     trianglesByMaterial:Object.fromEntries(Object.entries(meshes).map(([k,v])=>[k,v.indices.length/3]))
   },
