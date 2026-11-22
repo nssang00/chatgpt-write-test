@@ -350,6 +350,10 @@ const detailed={
     meshStats:stats,
     roadGeometryQuality:{mesh:process.env.GEO_ROAD_RENDER_SMOOTH==='1'?'rounded outer road joins, capped inner miters, edge-minus-asphalt planar difference and shared terrain':'OSM-node joins, bounded miters, planar polygon union and terrain-grid subdivision',ground:integratedRoadbed?'shared smoothed roadbed terrain and asphalt heightfield':process.env.GEO_ROAD_PROFILE_SMOOTH==='1'?'experimental graph-smoothed road grade, not exact DEM drape':'terrain-triangle-exact draping',caveat:'Road grades are inferred, not surveyed. Smooth profiles may overlap raw terrain and require cut/fill. Bridge/tunnel elevations and carriageway boundaries are not surveyed.',...roadOutput.stats},
     focus:[focus.x,focus.y+focus.height*.40,focus.z],
+    roadDebugFocus:roadOutput.stats.debugJunctions?.[0]?
+      [roadOutput.stats.debugJunctions[0].x,
+       ground(roadOutput.stats.debugJunctions[0].x,roadOutput.stats.debugJunctions[0].z),
+       roadOutput.stats.debugJunctions[0].z]:null,
     trianglesByMaterial:Object.fromEntries(Object.entries(meshes).map(([k,v])=>[k,v.indices.length/3]))
   },
   terrain:displayTerrain,
