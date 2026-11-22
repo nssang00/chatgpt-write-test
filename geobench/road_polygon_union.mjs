@@ -96,7 +96,8 @@ export function subtractRoadPolygons(outer,inner,stats=null){
 export function mergedRoadSurface(entries,ground,elevation,stats,terrainGrid=null,roadHeight=null,atGradeMask=null,gradeRanges=null,premerged=null){
   const mesh={positions:[],indices:[]};
   const unionPolygons=premerged??unionRoadPolygons(entries,stats);
-  stats.mergedRoadPolygons=(stats.mergedRoadPolygons||0)+unionPolygons.length;
+  stats.mergedRoadPolygons=unionPolygons.length; // preserve legacy per-surface statistic
+  stats.totalMergedRoadPolygons=(stats.totalMergedRoadPolygons||0)+unionPolygons.length;
   for(const item of unionPolygons){
     const firstTriangle=mesh.indices.length/3;
     const sampledHeight=roadHeight?((x,z)=>roadHeight(x,z,item.grade)):ground;
