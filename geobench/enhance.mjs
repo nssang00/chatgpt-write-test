@@ -5,6 +5,7 @@ import { buildRoadGeometry } from './road_geometry.mjs';
 import { cutTerrainUnderRoads } from './terrain_road_cut.mjs';
 import { buildRoadElevationProfile } from './road_elevation_profile.mjs';
 import { buildIntegratedRoadbed } from './roadbed_terrain.mjs';
+import { interpretBuildingTags, roofTriangles, parseMeters } from './osm_3d_buildings.mjs';
 
 // Procedural architectural DETAIL, not surveyed facade or actual building heights.
 // All coordinates stay in meters: x east, y up, z north.
@@ -66,7 +67,12 @@ const palette={
   'tree-leaf-light':[0.40,0.54,0.35]
 };
 const meshes=Object.fromEntries(Object.keys(palette).map(k=>[k,{positions:[],indices:[]}]));
-const stats={roads:0,roadSegments:0,buildings:0,windows:0,trees:0,inferredHeights:0,rooftopUnits:0};
+const stats={roads:0,roadSegments:0,buildings:0,windows:0,trees:0,inferredHeights:0,rooftopUnits:0,
+  buildingHeightTagged:0,buildingLevelsTagged:0,buildingRoofShapeTagged:0,
+  buildingNonflatRoofRendered:0,buildingRoofHeightEstimated:0,
+  buildingMinHeightTagged:0,buildingNamed:0,buildingStartDateTagged:0,
+  OSMBuildingPartsPresent:0,roadInclineNumeric:0,roadInclineText:0,
+  roadElevationTaggedNodes:0};
 function tri(k,a,b,c){
   const m=meshes[k],i=m.positions.length/3;
   m.positions.push(...a,...b,...c);
@@ -109,6 +115,10 @@ if(!res.ok)throw new Error('OSM '+res.status);
 const parsed=new XMLParser({ignoreAttributes:false,attributeNamePrefix:'@_',isArray:tag=>['node','way','nd','tag'].includes(tag)})
   .parse(await res.text()).osm;
 const nodes=new Map((parsed.node||[]).map(n=>[String(n['@_id']),[Number(n['@_lon']),Number(n['@_lat'])]]));
+for(const n of parsed.node||[]){
+  const nodeTags=Object.fromEntries((n.tag||[]).map(t=>[t['@_k'],t['@_v']]));
+  if(parseMeters(nodeTags.ele)!=null)stats.roadElevationTaggedNodes++;
+}
 const inside=([x,z])=>x>=xMin&&x<=xMax&&z>=zMin&&z<=zMax;
 const roads=[];
 for(const way of parsed.way||[]){
@@ -118,6 +128,7 @@ for(const way of parsed.way||[]){
     return {id,coords:nodes.get(id)};
   }).filter(n=>n.coords);
   const refs=roadRefs.map(n=>n.coords);
+  if(tags['building:part']&&tags['building:part']!=='no')stats.OSMBuildingPartsPresent++;
   if(tags.highway&&roadRefs.length>=2){
     const level=tags.highway;
     const types=new Set(['motorway','trunk','primary','secondary','tertiary',
@@ -131,6 +142,11 @@ for(const way of parsed.way||[]){
         footway:2.2,path:2,cycleway:2.4,pedestrian:4,steps:2.2};
       const measured=Number.parseFloat(tags.width);
       const width=Number.isFinite(measured)&&measured>0?clamp(measured,1.8,35):defaults[level];
+      if(tags.incline!=null){
+        const text=String(tags.incline).trim();
+        if(/^[+-]?(?:\d+(?:\.\d+)?)%$/.test(text))stats.roadInclineNumeric++;
+        else stats.roadInclineText++;
+      }
       roads.push({refs,nodeIds:roadRefs.map(n=>n.id),width,tags,id:String(way['@_id'])});
     }
   }
@@ -177,23 +193,35 @@ for(const way of parsed.way||[]){
   if(!inside([cx,cz]))continue;
   const tris=earcut(points.flat());
   if(tris.length<3)continue;
-  const hTag=Number.parseFloat(tags.height);
-  const lTag=Number.parseFloat(tags['building:levels']);
   const seed=hash(way['@_id']);
-  const actual=Number.isFinite(hTag)&&hTag>0;
-  const levels=Number.isFinite(lTag)&&lTag>0;
-  const floors=actual?clamp(Math.round(hTag/3.05),1,35):levels?clamp(Math.round(lTag),1,35):3+seed%5;
-  const height=actual?clamp(hTag,3,135):floors*3.05;
-  if(!actual&&!levels)stats.inferredHeights++;
+  const building3d=interpretBuildingTags(tags,seed);
+  const {floors,height}=building3d;
+  if(building3d.source==='inferred')stats.inferredHeights++;
+  if(building3d.heightPresent)stats.buildingHeightTagged++;
+  if(building3d.levelsPresent)stats.buildingLevelsTagged++;
+  if(building3d.roofTagPresent)stats.buildingRoofShapeTagged++;
+  if(building3d.roofHeightEstimated)stats.buildingRoofHeightEstimated++;
+  if(building3d.minHeightPresent)stats.buildingMinHeightTagged++;
+  if(building3d.namePresent)stats.buildingNamed++;
+  if(building3d.datePresent)stats.buildingStartDateTagged++;
   const style=(seed>>>4)%5;
   const bases=['wall-ivory','wall-beige','wall-brick','wall-concrete','wall-dark'];
   const shades=['wall-ivory-shade','wall-beige-shade','wall-brick-shade','wall-concrete-shade','wall-dark-shade'];
   const yBase=ground(cx,cz)-0.06,yTop=yBase+height;
+  const yBottom=yBase+building3d.minHeight;
+  const roofGeometry=roofTriangles(points,yBase+building3d.wallHeight,yTop,building3d.roofShape);
+  const facadeTop=roofGeometry?yBase+building3d.wallHeight:yTop;
+  if(roofGeometry)stats.buildingNonflatRoofRendered++;
   const area=points.reduce((sum,p,i)=>{const q=points[(i+1)%points.length];return sum+p[0]*q[1]-q[0]*p[1];},0);
   const sign=area>0?1:-1;
-  for(let k=0;k<tris.length;k+=3){
-    const a=points[tris[k]],b=points[tris[k+1]],c=points[tris[k+2]];
-    tri('roof',[a[0],yTop,a[1]],[b[0],yTop,b[1]],[c[0],yTop,c[1]]);
+  if(roofGeometry){
+    for(const t of roofGeometry.roof)tri('roof',...t);
+    for(const t of roofGeometry.gable)tri(bases[style],...t);
+  }else{
+    for(let k=0;k<tris.length;k+=3){
+      const a=points[tris[k]],b=points[tris[k+1]],c=points[tris[k+2]];
+      tri('roof',[a[0],yTop,a[1]],[b[0],yTop,b[1]],[c[0],yTop,c[1]]);
+    }
   }
   for(let e=0;e<points.length;e++){
     const A=points[e],B=points[(e+1)%points.length];
@@ -201,15 +229,16 @@ for(const way of parsed.way||[]){
     if(length<.35)continue;
     const n=[sign*dz/length,sign*(-dx)/length];
     const side=(dx*.65+dz*.76)>0?bases[style]:shades[style];
-    wall(side,A,B,yBase,yTop,n);
-    wall('ledge',A,B,yBase+0.15,yBase+0.40,n,.035);
-    wall('ledge',A,B,yTop-.15,yTop+.35,n,.05);
+    wall(side,A,B,yBottom,facadeTop,n);
+    wall('ledge',A,B,yBottom+0.15,yBottom+0.40,n,.035);
+    wall('ledge',A,B,facadeTop-.15,facadeTop+.35,n,.05);
     const bayCount=clamp(Math.floor(length/2.9),1,50);
     const step=length/bayCount;
     const topWindowRatio=style===4?.86:.78;
     for(let floor=0;floor<floors;floor++){
-      const y0=yBase+floor*height/floors;
-      const y1=yBase+(floor+1)*height/floors;
+      const occupiedHeight=facadeTop-yBottom;
+      const y0=yBottom+floor*occupiedHeight/floors;
+      const y1=yBottom+(floor+1)*occupiedHeight/floors;
       if(floor>0 && length>5 && style!==4){
         wall('ledge',A,B,y0-.10,y0+.045,n,.065);
       }
@@ -237,19 +266,19 @@ for(const way of parsed.way||[]){
     if(style===4){
       const beam0=[lerp(A[0],B[0],.02),lerp(A[1],B[1],.02)];
       const beam1=[lerp(A[0],B[0],.98),lerp(A[1],B[1],.98)];
-      wall('window-white-frame',beam0,beam1,yTop-.35,yTop-.11,n,.09);
+      wall('window-white-frame',beam0,beam1,facadeTop-.35,facadeTop-.11,n,.09);
     }
     if(length>5){
       const a=[lerp(A[0],B[0],.24),lerp(A[1],B[1],.24)];
       const b=[lerp(A[0],B[0],.76),lerp(A[1],B[1],.76)];
-      wall('entrance',a,b,yBase+.35,yBase+Math.min(2.8,height*.23),n,.17);
+      if(building3d.minHeight<.1)wall('entrance',a,b,yBottom+.35,yBottom+Math.min(2.8,facadeTop-yBottom),n,.17);
     }
   }
   // Roof plant, ventilation housing, parapets; illustrative, not surveyed.
   const minX=Math.min(...points.map(p=>p[0])),maxX=Math.max(...points.map(p=>p[0]));
   const minZ=Math.min(...points.map(p=>p[1])),maxZ=Math.max(...points.map(p=>p[1]));
   const roofWidth=maxX-minX,roofDepth=maxZ-minZ;
-  if(roofWidth>6&&roofDepth>6){
+  if(roofWidth>6&&roofDepth>6&&!roofGeometry){
     box('roof-equipment',cx,yTop+.05,cz,Math.min(roofWidth*.32,7),1.5+seed%3,Math.min(roofDepth*.26,6));
     stats.rooftopUnits++;
   }
