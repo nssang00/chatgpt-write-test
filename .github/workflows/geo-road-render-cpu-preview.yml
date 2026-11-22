@@ -1,0 +1,49 @@
+name: Seoul road contour software screenshot comparison
+on:
+  push:
+    branches:
+      - fix/seoul-road-render-shape-20261123
+    paths:
+      - .github/workflows/geo-road-render-cpu-preview.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  software-preview:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    defaults:
+      run:
+        working-directory: geobench
+    env:
+      NODE_OPTIONS: --max-old-space-size=6144
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm install --no-audit --no-fund
+      - name: Install software WebGL Chromium
+        run: npx playwright install --with-deps chromium
+      - name: Reuse exact geometry from primary Seoul CI
+        uses: actions/download-artifact@v4
+        with:
+          name: seoul-road-render-shape-native-tiles
+          run-id: 45080191810
+          github-token: ${{ github.token }}
+          path: geobench/public
+      - name: Capture fixed roadview
+        run: GEO_ROAD_VIEW=1 npm run native-smoke
+      - name: Capture fixed overview
+        run: npm run native-smoke
+      - name: Capture low road camera
+        run: GEO_LOW_ROAD_VIEW=1 npm run native-smoke
+      - name: Upload software screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: seoul-road-render-shape-cpu-preview
+          path: geobench/results/
+          retention-days: 14
+          if-no-files-found: warn
