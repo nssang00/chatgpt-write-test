@@ -13,11 +13,20 @@ const theta=.18;
 const viewParams=new URLSearchParams(location.search);
 const roadView=viewParams.has('roadview');
 const lowView=viewParams.has('lowview');
-// Low roadside angle is a diagnostic camera for longitudinal road waviness.
-const baseEye=lowView?[fx+85,fy+35,fz-115]:
+const junctionView=viewParams.has('junctionview');
+const junctionTop=viewParams.has('junctiontop');
+const [jx,jy,jz]=manifest.roadDebugFocus||[fx,fy-45,fz];
+// Road-junction views target the *actual ground* at a shared OSM node rather
+// than looking through a tall building from the old building-centric focus.
+// This makes miter spikes and border ribbons visible at realistic scales.
+const baseEye=junctionTop?[jx+1,jy+125,jz+1]:
+  junctionView?[jx+42,jy+43,jz-48]:
+  lowView?[fx+85,fy+35,fz-115]:
   roadView?[fx+100,fy+75,fz-155]:
   [fx+250*Math.sin(theta)+120,fy+155,fz-360*Math.cos(theta)];
-const baseTarget=lowView?[fx,fy-45,fz]:
+const baseTarget=junctionTop?[jx,jy+.2,jz]:
+  junctionView?[jx,jy+.4,jz]:
+  lowView?[fx,fy-45,fz]:
   roadView?[fx,fy-42,fz]:[fx,fy,fz];
 const viewer=new Cesium.Viewer('mount',{
   animation:false,timeline:false,geocoder:false,homeButton:false,
