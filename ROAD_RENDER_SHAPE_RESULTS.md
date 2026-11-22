@@ -113,3 +113,42 @@ Seoul S-Map. They have not been ingested in this branch; verify licensing,
 availability and vertical datum before using them.
 
 No PR or merge to main was performed.
+
+## Final controlled high-camera A/B visual judgment (2026-11-23)
+
+Controlled software-rendered A/B job **PASSED capture**:
+https://github.com/nssang00/chatgpt-write-test/actions/runs/45082244425
+
+- Both snapshots used the same `roadDebugFocus`, Cesium code and
+  software WebGL renderer; old and new native GLBs were loaded in turn.
+- Cameras were raised **245m top-down** and **180m oblique** above the OSM
+  junction to see over tall adjacent buildings; initial 125m / 43m
+  diagnostic cameras had been obstructed and must not be used.
+- Captures are `seoul-road-junction-controlled-ab-screenshots`, and
+  downloadable 1280x720 PNGs; screenshots new and previous in both views.
+- Pixel metrics: mean absolute difference (RGB 0-255) **0.1684**
+  top-down and **0.0805** oblique; only **0.81%** and **0.26%** of pixels
+  respectively changed by >15 in any RGB channel. Differences include
+  varying native tile selection/load counts (top 68 vs 66, oblique 84 vs 90).
+- **Visual judgment: no conspicuous road improvement.** Road edges look
+  broadly the same and still exhibit visibly wavy strips in several
+  places. Rounded 2D corridors and nonoverlapping edge geometry were
+  numerically verified, but do not solve the underlying DEM-derived
+  roadbed height/footprint inaccuracy.
+- **Do not merge for visual quality alone.** The correct next work is
+  source-accurate carriageway elevations/widths and coupled shoulder
+  reconstruction, plus dedicated tile seams and performance CI.
+- Actual RTX GPU CI remains **queued** in
+  https://github.com/nssang00/chatgpt-write-test/actions/runs/45082160210
+  at time of this update. SwiftShader completion is not RTX GPU signoff.
+
+### Reason for limited visual impact
+
+The old full-width road-edge fill was already 7cm below the asphalt,
+so its physically overlapping central area was mostly occluded in the
+rasterized output. Subtracting the asphalt area saves hidden material
+and eliminates problematic overlap geometry, but cannot necessarily
+produce a large color difference. Rounded corner generation impacts
+only some acute 2D turns (299 rounded joins), not the broad terrain
+elevation artifacts.
+
