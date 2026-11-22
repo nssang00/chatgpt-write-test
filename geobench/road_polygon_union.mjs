@@ -29,31 +29,74 @@ function addTriangle(mesh,a,b,c,sampledHeight,elevation){
   mesh.indices.push(offset,offset+1,offset+2);
   return true;
 }
-export function mergedRoadSurface(entries,ground,elevation,stats,terrainGrid=null,roadHeight=null,atGradeMask=null,gradeRanges=null){
-  const mesh={positions:[],indices:[]};
+// Preserve 2D plan geometry separately from terrain-aligned triangulation.
+// This lets us remove the asphalt footprint from the road-edge strip rather
+// than drawing a second large overlapping grey asphalt-shaped polygon.
+export function unionRoadPolygons(entries,stats=null){
   const grouped=new Map();
   for(const item of entries){
     const r=ring(item.points);
-    if(!r||polygonArea(r)<.01){stats.discardedRoadRings++;continue;}
+    if(!r||polygonArea(r)<.01){
+      if(stats)stats.discardedRoadRings=(stats.discardedRoadRings||0)+1;
+      continue;
+    }
     const items=grouped.get(item.grade)||[];
     items.push([r]);grouped.set(item.grade,items);
   }
-  stats.roadPolygonInput=entries.length;
-  const unionPolygons=[];
+  const output=[];
   for(const [grade,polygons] of grouped){
-    // Unary polygon union is performed per grade: a tunnel is never silently
-    // connected to surface ways, even if geometrically overlapping.
-    let geometry=[];
-    try{
-      // Grouping by layer keeps one large union from mixing grade separation.
-      geometry=pc.union(...polygons);
-    }catch(err){
-      throw Error('Road union failed at grade='+grade+' polygons='+polygons.length+
-        ' '+String(err));
-    }
-    for(const poly of geometry)unionPolygons.push({grade,rings:poly});
+    let merged;
+    try{merged=pc.union(...polygons);}
+    catch(e){throw Error('Road union failed grade='+grade+' polygons='+polygons.length+' '+String(e));}
+    for(const rings of merged)output.push({grade,rings});
   }
-  stats.mergedRoadPolygons=unionPolygons.length;
+  if(stats){
+    stats.roadPolygonInput=(stats.roadPolygonInput||0)+entries.length;
+    stats.roadPlanarUnions=(stats.roadPlanarUnions||0)+1;
+  }
+  return output;
+}
+export function roadPolygonArea(polygons){
+  let sum=0;
+  for(const {rings} of polygons){
+    if(!rings.length)continue;
+    sum+=polygonArea(rings[0]);
+    for(const hole of rings.slice(1))sum-=polygonArea(hole);
+  }
+  return sum;
+}
+export function subtractRoadPolygons(outer,inner,stats=null){
+  const innerByGrade=new Map();
+  for(const item of inner){
+    const list=innerByGrade.get(item.grade)||[];
+    list.push(item.rings);innerByGrade.set(item.grade,list);
+  }
+  const outerByGrade=new Map();
+  for(const item of outer){
+    const list=outerByGrade.get(item.grade)||[];
+    list.push(item.rings);outerByGrade.set(item.grade,list);
+  }
+  const result=[];
+  for(const [grade,polys] of outerByGrade){
+    const cuts=innerByGrade.get(grade)||[];
+    let differences;
+    try{differences=cuts.length?pc.difference(polys,cuts):polys;}
+    catch(e){throw Error('Road-edge difference failed grade='+grade+' '+String(e));}
+    for(const rings of differences)result.push({grade,rings});
+  }
+  if(stats){
+    stats.roadEdgeOuterAreaM2=roadPolygonArea(outer);
+    stats.roadAsphaltAreaM2=roadPolygonArea(inner);
+    stats.roadEdgeVisibleAreaM2=roadPolygonArea(result);
+    stats.roadEdgeOverlapRemovedM2=stats.roadEdgeOuterAreaM2-stats.roadEdgeVisibleAreaM2;
+    stats.roadEdgeDifferencePolygons=result.length;
+  }
+  return result;
+}
+export function mergedRoadSurface(entries,ground,elevation,stats,terrainGrid=null,roadHeight=null,atGradeMask=null,gradeRanges=null,premerged=null){
+  const mesh={positions:[],indices:[]};
+  const unionPolygons=premerged??unionRoadPolygons(entries,stats);
+  stats.mergedRoadPolygons=(stats.mergedRoadPolygons||0)+unionPolygons.length;
   for(const item of unionPolygons){
     const firstTriangle=mesh.indices.length/3;
     const sampledHeight=roadHeight?((x,z)=>roadHeight(x,z,item.grade)):ground;
