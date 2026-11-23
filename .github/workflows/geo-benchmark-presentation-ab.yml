@@ -1,0 +1,103 @@
+name: Seoul synthetic benchmark terrain separate from real DEM
+on:
+  push:
+    branches:
+      - experiment/seoul-benchmark-presentation-20261123
+    paths:
+      - .github/workflows/geo-benchmark-presentation-ab.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  regression:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: geobench
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm install --no-audit --no-fund
+      - name: All road, OSM and alternate terrain regressions
+        run: |
+          npm run test:roads
+          node test_road_profile.mjs
+          node test_roadbed_integrated.mjs
+          node test_road_render_shape.mjs
+          node test_osm_3d_tags.mjs
+          node test_local_road_corridor.mjs
+          node test_benchmark_presentation_terrain.mjs
+  frozen-presentation-ab:
+    needs: regression
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    defaults:
+      run:
+        working-directory: geobench
+    env:
+      NODE_OPTIONS: --max-old-space-size=6144
+      GEO_VISUAL_TERRAIN_SMOOTH: '1'
+      GEO_ROADBED_INTEGRATED: '1'
+      GEO_ROAD_RENDER_SMOOTH: '1'
+      GEO_LOW_LOD_NO_ROAD_EDGE: '1'
+      GEO_OSM_SNAPSHOT_PATH: public/osm-snapshot.xml
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm install --no-audit --no-fund
+      - name: Freeze actual Seoul OSM and DEM once
+        run: GEO_CAPTURE_OSM_SNAPSHOT=1 node generate.mjs
+      - name: Rebuild baseline 50m Roadbed on source
+        run: |
+          node enhance.mjs
+          node validate_roadbed_integrated.mjs
+          cp results/roadbed-integrated-validation.json results/presentation-real-dem-validation.json
+          npm run pack-tiles
+          node validate_low_road_edge_lod.mjs
+          npm run pack-native-tiles
+          cp public/stream-manifest.json results/presentation-baseline-manifest.json
+      - name: Save old authentic-DEM-derived approximate terrain tiles
+        uses: actions/upload-artifact@v4
+        with:
+          name: seoul-presentation-real-dem-tiles
+          path: |
+            geobench/public/native-3dtiles/
+            geobench/public/stream-manifest.json
+          retention-days: 7
+          if-no-files-found: error
+      - name: Build separately labelled SYNTHETIC rendering benchmark
+        run: |
+          rm -rf public/native-3dtiles
+          GEO_BENCHMARK_SYNTHETIC_TERRAIN=1 node enhance.mjs
+          node validate_roadbed_integrated.mjs
+          node validate_benchmark_presentation.mjs
+          cp results/roadbed-integrated-validation.json results/presentation-synthetic-validation.json
+          npm run pack-tiles
+          node validate_low_road_edge_lod.mjs
+          node --input-type=module -e "import fs from 'node:fs';const p='public/stream-manifest.json',a=JSON.parse(fs.readFileSync('results/presentation-baseline-manifest.json')),b=JSON.parse(fs.readFileSync(p));b.focus=a.focus;b.roadDebugFocus=a.roadDebugFocus;fs.writeFileSync(p,JSON.stringify(b));"
+          npm run pack-native-tiles
+      - name: Save synthetic benchmark 3D Tiles, same cameras
+        uses: actions/upload-artifact@v4
+        with:
+          name: seoul-presentation-synthetic-tiles
+          path: |
+            geobench/public/native-3dtiles/
+            geobench/public/stream-manifest.json
+          retention-days: 7
+          if-no-files-found: error
+      - name: Upload the two labelled elevation/source reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: seoul-presentation-elevation-qa
+          path: |
+            geobench/results/presentation-real-dem-validation.json
+            geobench/results/presentation-synthetic-validation.json
+            geobench/results/benchmark-presentation-qa.json
+          retention-days: 14
+          if-no-files-found: warn
