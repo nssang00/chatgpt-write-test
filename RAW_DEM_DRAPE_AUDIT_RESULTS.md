@@ -102,8 +102,16 @@ large artificial terrain deformation.
 ## Controlled before/after and hardware gates
 
 - Independent same-frozen-OSM/DEM compare against old integrated
-  roadbed is being run separately; it uses a 200m junction subset to
-  avoid expensive full-city software-GLB screenshot stalls.
+  roadbed **PASSED**:
+  https://github.com/nssang00/chatgpt-write-test/actions/runs/45142901576
+  Artifact: `seoul-frozen-raw-dem-vs-roadbed-debug-screenshots`.
+  Both sides use the same saved source fixture/OSM XML, same local
+  junction target, identical viewer and camera; left = old Roadbed,
+  right = raw DEM drape. The screenshots are actual software WebGL,
+  not RTX hardware.
+- A first full-city old-Roadbed software GLB screenshot attempt timed
+  out in the browser screenshot stage (not a mesh/geometry failure).
+  The 200m light-weight fixed-camera comparison succeeded.
 - A real RTX 5060 Ti run uses the original raw-DEM native 3D Tiles
   and can be queued on the self-hosted Windows runner. **Do not**
   report RTX success until its actual job and screenshot complete.
@@ -119,3 +127,52 @@ experiment; do not merge either into `main` as an accurate Seoul
 digital twin. Future actual-road work requires verified 3D carriageway
 edges/elevations and vertical datum/rights; do not iterate arbitrary
 DEM smoothing indefinitely.
+
+## Final controlled before/after metrics: 2026-11-23
+
+The old integrated Roadbed was rebuilt in CI by checking out the
+original `fix/seoul-road-roadbed-integrated-20261120` code. Its
+OSM network fetch was explicitly replaced with this run's exact
+saved OSM XML; its input `public/fixture.json` was the SAME
+unfiltered DEM and building geometry. Both branches' output road
+triangles were extracted in the same 200m OSM junction area and
+rendered using the exact same Three.js viewer and camera pose.
+
+| Metric | Old integrated Roadbed | Raw DEM drape |
+| --- | ---: | ---: |
+| Terrain vertex heights changed | 37,229 | **0** |
+| Max artificial cut into source DEM | **43.6756m** | **0m** |
+| Max artificial fill above source DEM | **36.4481m** | **0m** |
+| Asphalt surface area >20% grade | **3.761%** | **23.447%** |
+| Asphalt surface area >40% grade | **0.859%** | **7.474%** |
+| At-grade road/terrain contact residual | ~8.84e-9m | ~3.11e-7m |
+
+Old Roadbed differs in cut/fill here from previous visual-smoothed
+baselines (31m cut / 25m fill) because this A/B deliberately uses
+an UNSMOOTHED raw Terrarium DEM for both.
+
+Actual pixel comparison on a 0..255 RGB scale:
+
+| 1280×720 paired shot | Mean abs RGB | Pixels changed >15 |
+| --- | ---: | ---: |
+| Terrain only | 8.823 | 6.789% |
+| Road wireframe only | 29.737 | 29.810% |
+| Terrain + road | 15.296 | 27.258% |
+
+**Visual result:** The old integrated Roadbed makes the road alignment
+comparatively smoother but causes large-scale unnatural cut/fill and
+jagged terrain silhouettes. The raw DEM drape gives correct geometric
+contact and unmodified topography, but the road visibly undulates
+where the source DEM heightfield has implausible slopes.
+
+This confirms the input-adequacy issue rather than just a road
+triangulation bug. The plain single-color terrain debug screenshot is
+not a good slope visualization; an independent height-gradient raster
+was generated from the unchanged source grid to locate the hotspots.
+
+**Decision:** Retain raw DEM draping as the truthful-to-input mesh
+baseline, not as an accurate Seoul road reconstruction. Retain old
+Roadbed only as a separately marked illustrative comparison. Neither
+is merged to main or declared production visual quality. Surveyed
+carriageway elevation/boundary data remains a precondition for
+satisfying both targets.
