@@ -1,7 +1,8 @@
 import fs from 'node:fs/promises';
 import { XMLParser } from 'fast-xml-parser';
 import earcut from 'earcut';
-import { buildRoadGeometry } from './road_geometry.mjs';
+import { buildRoadGeometry, buildAtGradeRoadFootprint } from './road_geometry.mjs';
+import { buildLocalRoadCorridor } from './road_corridor_terrain.mjs';
 import { cutTerrainUnderRoads } from './terrain_road_cut.mjs';
 import { buildRoadElevationProfile } from './road_elevation_profile.mjs';
 import { buildIntegratedRoadbed } from './roadbed_terrain.mjs';
@@ -158,7 +159,8 @@ for(const way of parsed.way||[]){
 }
 // The at-grade roadway and adjacent terrain are solved *before* placing
 // buildings and vegetation. This keeps building bases on the same surface.
-const integratedRoadbed=process.env.GEO_ROADBED_INTEGRATED==='1';
+const localCorridor=process.env.GEO_ROAD_LOCAL_CORRIDOR==='1';
+const integratedRoadbed=process.env.GEO_ROADBED_INTEGRATED==='1'||localCorridor;
 const baseGrid={xmin:xMin,zmin:zMin,xmax:xMax,zmax:zMax,nx:NX,nz:NZ};
 let renderedGrid=baseGrid,roadbed=null,sharedRoadProfile=null;
 if(integratedRoadbed){
@@ -175,11 +177,26 @@ if(integratedRoadbed){
     return {road,pts,grade,width:road.width};
   });
   sharedRoadProfile=buildRoadElevationProfile(classified,sourceGround,{step:6});
-  roadbed=buildIntegratedRoadbed({
-    terrain:base.terrain,sourceGround,profile:sharedRoadProfile,grid:baseGrid,
-    subdivisions:2,shoulderMeters:50,
-    gradeConstrained:process.env.GEO_ROAD_GRADE_RELAX==='1'
-  });
+  if(localCorridor){
+    // A road surface is defined by the independent OSM centerline profile.
+    // Its actual plan-view polygon boundary controls ONLY the local terrain
+    // transition, unlike a 50m kernel deforming most of the scene.
+    const footprint=buildAtGradeRoadFootprint(roads,{
+      project,bounds:[xMin,zMin,xMax,zMax],maxStep:6
+    });
+    roadbed=buildLocalRoadCorridor({
+      terrain:base.terrain,sourceGround,profile:sharedRoadProfile,
+      footprint,grid:baseGrid,subdivisions:2,
+      shoulderMeters:12,maxVerticalAdjustmentMeters:3
+    });
+    roadbed.stats.footprintInput=footprint.stats;
+  }else{
+    roadbed=buildIntegratedRoadbed({
+      terrain:base.terrain,sourceGround,profile:sharedRoadProfile,grid:baseGrid,
+      subdivisions:2,shoulderMeters:50,
+      gradeConstrained:process.env.GEO_ROAD_GRADE_RELAX==='1'
+    });
+  }
   renderedGrid=roadbed.grid;
   renderedGround=roadbed.ground;
   console.log('ROADBED_PREBUILD_RESULT',JSON.stringify({
@@ -354,7 +371,7 @@ const detailed={
     roadbed:roadbed?.stats||null,
     materialColors:palette,
     meshStats:stats,
-    roadGeometryQuality:{mesh:process.env.GEO_ROAD_RENDER_SMOOTH==='1'?'rounded outer road joins, capped inner miters, edge-minus-asphalt planar difference and shared terrain':'OSM-node joins, bounded miters, planar polygon union and terrain-grid subdivision',ground:integratedRoadbed?'shared smoothed roadbed terrain and asphalt heightfield':process.env.GEO_ROAD_PROFILE_SMOOTH==='1'?'experimental graph-smoothed road grade, not exact DEM drape':'terrain-triangle-exact draping',caveat:'Road grades are inferred, not surveyed. Smooth profiles may overlap raw terrain and require cut/fill. Bridge/tunnel elevations and carriageway boundaries are not surveyed.',...roadOutput.stats},
+    roadGeometryQuality:{mesh:process.env.GEO_ROAD_RENDER_SMOOTH==='1'?'rounded outer road joins, capped inner miters, edge-minus-asphalt planar difference and shared terrain':'OSM-node joins, bounded miters, planar polygon union and terrain-grid subdivision',ground:localCorridor?'independent OSM road profile + precise asphalt union boundary + 12m capped local DEM corridor':integratedRoadbed?'shared smoothed roadbed terrain and asphalt heightfield':process.env.GEO_ROAD_PROFILE_SMOOTH==='1'?'experimental graph-smoothed road grade, not exact DEM drape':'terrain-triangle-exact draping',caveat:'Road grades are inferred, not surveyed. Smooth profiles may overlap raw terrain and require cut/fill. Bridge/tunnel elevations and carriageway boundaries are not surveyed.',...roadOutput.stats},
     focus:[focus.x,focus.y+focus.height*.40,focus.z],
     roadDebugFocus:roadOutput.stats.debugJunctions?.[0]?
       [roadOutput.stats.debugJunctions[0].x,
