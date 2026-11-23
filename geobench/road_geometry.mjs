@@ -1,4 +1,5 @@
 import { mergedRoadSurface } from './road_polygon_union.mjs';
+import { emitTerrainAlignedTriangle } from './terrain_triangle_clip.mjs';
 // Shared topological OSM road mesher for four engines and Cesium 3D Tiles.
 // Uses actual OSM node IDs, continuous bounded-miter joins and ground-draped
 // triangles, including roads crossing the region boundary.
@@ -20,6 +21,24 @@ function addTriangle(mesh,a,b,c){
   const offset=mesh.positions.length/3;
   mesh.positions.push(...a,...b,...c);
   mesh.indices.push(offset,offset+1,offset+2);
+}
+// Road paint must follow the same piecewise-linear DEM triangles as the
+// asphalt surface. A long narrow marking quad cannot simply drape its four
+// end vertices: it may cut through the ground between these vertices.
+function addDrapedPaint(mesh,footprint,ground,elevation,terrainGrid){
+  if(!terrainGrid){
+    const points=footprint.map(([x,z])=>[x,ground(x,z)+elevation,z]);
+    addQuad(mesh,...points);
+    return;
+  }
+  for(const ids of [[0,1,2],[0,2,3]]){
+    const [a,b,c]=ids.map(i=>footprint[i]);
+    emitTerrainAlignedTriangle(a,b,c,terrainGrid,(u,v,w)=>{
+      addTriangle(mesh,[u[0],ground(...u)+elevation,u[1]],
+        [v[0],ground(...v)+elevation,v[1]],
+        [w[0],ground(...w)+elevation,w[1]]);
+    });
+  }
 }
 function addQuad(mesh,a,b,c,d){
   const offset=mesh.positions.length/3;
@@ -176,15 +195,19 @@ export function buildRoadGeometry(roads,{project,ground,bounds,maxStep=6,terrain
     // Approximate visually rounded intersection. Accurate traffic/lane
     // polygons require a separate polygon-union and junction design stage.
     // Surface is now joined by planar polygon union, not overlapping circle fans.
-    junctionCoords.push({x:n.pos.x,z:n.pos.z,r:half+2,grade:n.grade});
+    junctionCoords.push({x:n.pos.x,z:n.pos.z,r:half+2,grade:n.grade,degree});
     stats.junctionPatches++;stats.junctionsByDegree[degree]=(stats.junctionsByDegree[degree]||0)+1;
   }
+  stats.debugJunctions=junctionCoords.filter(p=>p.grade==='0||'&&
+    p.x>=bounds[0]&&p.x<=bounds[2]&&p.z>=bounds[1]&&p.z<=bounds[3])
+    .sort((a,b)=>Math.hypot(a.x,a.z)-Math.hypot(b.x,b.z))
+    .slice(0,4).map(({x,z,degree})=>({x,z,degree}));
   const corridorAsphalt=[],corridorEdge=[];
   for(const entry of classified){
     const {width,grade,tags,paths}=entry;
-    const yRoad=(x,z)=>ground(x,z)+.22;
-    const yEdge=(x,z)=>ground(x,z)+.15;
-    const yMark=(x,z)=>ground(x,z)+.285;
+    const yRoad=(x,z)=>ground(x,z)+.04;
+    const yEdge=(x,z)=>ground(x,z)+.025;
+    const yMark=(x,z)=>ground(x,z)+.054;
     let distanceAlong=0;
     for(const path of paths){
       const pts=subdivide(path,maxStep);
@@ -228,9 +251,9 @@ export function buildRoadGeometry(roads,{project,ground,bounds,maxStep=6,terrain
             const a1={x:p1.x+nx*w,z:p1.z+nz*w};
             const b0={x:p0.x-nx*w,z:p0.z-nz*w};
             const b1={x:p1.x-nx*w,z:p1.z-nz*w};
-            addQuad(meshes['road-marking'],
-              [a0.x,yMark(a0.x,a0.z),a0.z],[a1.x,yMark(a1.x,a1.z),a1.z],
-              [b1.x,yMark(b1.x,b1.z),b1.z],[b0.x,yMark(b0.x,b0.z),b0.z]);
+            addDrapedPaint(meshes['road-marking'],
+              [[a0.x,a0.z],[a1.x,a1.z],[b1.x,b1.z],[b0.x,b0.z]],
+              ground,.054,terrainGrid);
             stats.markingDashes++;
           }
         }
@@ -239,8 +262,8 @@ export function buildRoadGeometry(roads,{project,ground,bounds,maxStep=6,terrain
     }
   }
   stats.discardedRoadRings=0;
-  meshes.road=mergedRoadSurface(corridorAsphalt,ground,.22,stats,terrainGrid);
-  meshes['road-edge']=mergedRoadSurface(corridorEdge,ground,.15,stats,terrainGrid);
+  meshes.road=mergedRoadSurface(corridorAsphalt,ground,.04,stats,terrainGrid);
+  meshes['road-edge']=mergedRoadSurface(corridorEdge,ground,.025,stats,terrainGrid);
   // Union meshes do not contain overlapping per-way pieces; drawing order
   // is deterministic, junctions are part of the single asphalt polygon.
   for(const [name,mesh] of Object.entries(meshes)){
