@@ -111,6 +111,8 @@ function visualTerrainFloor(lon,lat){
 
 const osmUrl='https://api.openstreetmap.org/api/0.6/map?bbox='+BBOX.join(',');
 const xml=(await download(osmUrl)).toString('utf8');
+if(process.env.GEO_CAPTURE_OSM_SNAPSHOT==='1')
+  await fs.writeFile('public/osm-snapshot.xml',xml);
 const parser=new XMLParser({ignoreAttributes:false,attributeNamePrefix:'@_',isArray:(tag)=>['node','way','nd','tag'].includes(tag)});
 const parsed=parser.parse(xml).osm;
 if(!parsed||!parsed.node||!parsed.way)throw new Error('OSM response missing nodes or ways');
