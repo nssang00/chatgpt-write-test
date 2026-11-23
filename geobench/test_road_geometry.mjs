@@ -128,7 +128,7 @@ function nearXYZ(a,b){
        const x=a[0]*u+b[0]*v+c[0]*w;
        const z=a[2]*u+b[2]*v+c[2]*w;
        const roadY=a[1]*u+b[1]*v+c[1]*w;
-       maxAbsError=Math.max(maxAbsError,Math.abs(roadY-dem(x,z)-.22));
+       maxAbsError=Math.max(maxAbsError,Math.abs(roadY-dem(x,z)-.04));
        checkedSamples++;
      }
    }
