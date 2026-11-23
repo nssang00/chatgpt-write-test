@@ -1,0 +1,185 @@
+name: Seoul raw DEM draped road mesh + 3-mode visual QA
+on:
+  push:
+    branches:
+      - fix/seoul-road-dem-drape-audit-20261123
+    paths:
+      - geobench/**
+      - .github/workflows/geo-raw-dem-drape.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: seoul-raw-dem-drape
+  cancel-in-progress: true
+jobs:
+  unit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: geobench
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm install --no-audit --no-fund
+      - name: Existing road topology and drape unit tests
+        run: npm run test:roads
+      - name: All three road materials must match a nonplanar synthetic DEM
+        run: node test_raw_dem_drape.mjs
+
+  seoul-geometry:
+    needs: unit
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    defaults:
+      run:
+        working-directory: geobench
+    env:
+      NODE_OPTIONS: --max-old-space-size=6144
+      GEO_VISUAL_TERRAIN_SMOOTH: '0'
+      GEO_CAPTURE_OSM_SNAPSHOT: '1'
+      GEO_OSM_SNAPSHOT_PATH: public/osm-snapshot.xml
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm install --no-audit --no-fund
+      - name: Download unmodified Terrarium DEM and freeze OSM XML once
+        run: node generate.mjs
+      - name: Build basic OSM Line + exact unmodified DEM road polygons
+        run: node enhance.mjs
+      - name: Numerical interior DEM conformance for asphalt, curb and markings
+        run: node validate_road_dem.mjs
+      - name: Verify raw DEM SHA256 never changes and audit road grade statistics
+        run: node validate_raw_dem_drape.mjs
+      - name: Extract true OSM junction raw terrain/road triangulation
+        run: node extract_road_debug.mjs
+      - name: Package common four-engine streaming tiles
+        run: npm run pack-tiles
+      - name: Package native Cesium 3D Tiles
+        run: npm run pack-native-tiles
+      - name: Publish full numerical QA and debug payload
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: seoul-raw-dem-drape-report
+          path: |
+            geobench/results/road-dem-validation.json
+            geobench/results/raw-dem-drape-audit.json
+            geobench/results/road-debug-extract.json
+          retention-days: 14
+          if-no-files-found: warn
+      - name: Publish common native Cesium tiles and debug subset
+        uses: actions/upload-artifact@v4
+        with:
+          name: seoul-raw-dem-drape-native-tiles
+          path: |
+            geobench/public/native-3dtiles/
+            geobench/public/stream-manifest.json
+            geobench/public/road-debug-geometry.json
+          retention-days: 7
+          if-no-files-found: error
+      - name: Publish frozen source DEM and OSM for controlled baseline
+        uses: actions/upload-artifact@v4
+        with:
+          name: seoul-raw-dem-drape-sources
+          path: |
+            geobench/public/fixture.json
+            geobench/public/osm-snapshot.xml
+          retention-days: 7
+          if-no-files-found: error
+
+  software-visual-debug:
+    needs: seoul-geometry
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    defaults:
+      run:
+        working-directory: geobench
+    env:
+      NODE_OPTIONS: --max-old-space-size=6144
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm install --no-audit --no-fund
+      - name: Install Chromium software WebGL
+        run: npx playwright install --with-deps chromium
+      - uses: actions/download-artifact@v4
+        with:
+          name: seoul-raw-dem-drape-native-tiles
+          path: geobench/public
+      - name: Capture terrain-only / road-only wireframe / combined on same junction
+        run: node run-road-debug.mjs
+      - name: Real Cesium native 3D Tiles near-road smoke screenshot
+        run: GEO_ROAD_VIEW=1 npm run native-smoke
+      - name: Capture outputs even if browser failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: seoul-raw-dem-drape-software-visual
+          path: |
+            geobench/results/raw-dem-debug-*.png
+            geobench/results/raw-dem-debug-captures.json
+            geobench/results/native-3dtiles-roadview.png
+            geobench/results/native-smoke.json
+          retention-days: 14
+          if-no-files-found: warn
+
+  actual-rtx:
+    needs: seoul-geometry
+    runs-on: [self-hosted, Windows, X64, m5-gpu]
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: geobench
+    env:
+      GEO_TEST_KIND: hardware
+      NODE_OPTIONS: --max-old-space-size=6144
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/download-artifact@v4
+        with:
+          name: seoul-raw-dem-drape-native-tiles
+          path: geobench/public
+      - name: Choose installed hardware Chrome/Edge
+        shell: powershell
+        run: |
+          npm install --no-audit --no-fund
+          if ($LASTEXITCODE -ne 0) { throw 'npm failed' }
+          $pf86=[Environment]::GetFolderPath('ProgramFilesX86')
+          $chrome = @(
+            "$env:ProgramFiles\Google\Chrome\Application\chrome.exe",
+            (Join-Path $pf86 'Google\Chrome\Application\chrome.exe'),
+            "$env:LOCALAPPDATA\Google\Chrome\Application\chrome.exe"
+          ) | Where-Object { Test-Path $_ } | Select-Object -First 1
+          $edge = @(
+            (Join-Path $pf86 'Microsoft\Edge\Application\msedge.exe'),
+            "$env:ProgramFiles\Microsoft\Edge\Application\msedge.exe"
+          ) | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if ($chrome) { "GEO_BROWSER_CHANNEL=chrome" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV }
+          elseif ($edge) { "GEO_BROWSER_CHANNEL=msedge" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV }
+          else { throw 'No Chrome or Edge found' }
+      - name: Capture RTX close-road Cesium frame and GPU report
+        shell: powershell
+        run: |
+          $env:GEO_ROAD_VIEW='1'
+          npm run native-smoke
+          if ($LASTEXITCODE -ne 0) { throw 'RTX native road-view failed' }
+      - name: Save real hardware screenshot
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: seoul-raw-dem-drape-rtx
+          path: geobench/results/
+          retention-days: 14
+          if-no-files-found: warn
