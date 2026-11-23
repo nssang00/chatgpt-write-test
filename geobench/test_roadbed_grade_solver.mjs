@@ -15,7 +15,7 @@ for(let j=0;j<24;j++)for(let i=0;i<24;i++){
 const sourceGround=(x,z)=>sampleTerrainGrid(source,grid,x,z);
 const profile={
   sampleAt(x,z){
-    return {height:81+.025*x,distance:Math.abs(z),halfWidth:7};
+    return {height:81+.025*x+(Math.abs(x)<1.5?6:0),distance:Math.abs(z),halfWidth:7};
   }
 };
 const old=buildIntegratedRoadbed({terrain:source,sourceGround,profile,grid,
