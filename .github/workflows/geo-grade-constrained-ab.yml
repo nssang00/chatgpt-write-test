@@ -28,7 +28,7 @@ jobs:
           node test_roadbed_integrated.mjs
           node test_road_render_shape.mjs
           node test_osm_3d_tags.mjs
-      - name: New constrained-roadbed unit regression
+      - name: Constrained-roadbed unit regression with abrupt height outlier
         run: node test_roadbed_grade_solver.mjs
 
   identical-input-geometry:
