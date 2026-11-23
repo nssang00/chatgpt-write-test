@@ -110,10 +110,15 @@ function smallCanopy(x,z,y,r,seed){
   stats.trees++;
 }
 const osmUrl=base.metadata.osmEndpoint;
-const res=await fetch(osmUrl,{headers:{'User-Agent':'geo-renderer-benchmark/1.0 (noncommercial single-area experiment)'}});
-if(!res.ok)throw new Error('OSM '+res.status);
+const osmXml=process.env.GEO_OSM_SNAPSHOT_PATH?
+  await fs.readFile(process.env.GEO_OSM_SNAPSHOT_PATH,'utf8'):
+  await (async()=>{
+    const res=await fetch(osmUrl,{headers:{'User-Agent':'geo-renderer-benchmark/1.0 (noncommercial single-area experiment)'}});
+    if(!res.ok)throw new Error('OSM '+res.status);
+    return res.text();
+  })();
 const parsed=new XMLParser({ignoreAttributes:false,attributeNamePrefix:'@_',isArray:tag=>['node','way','nd','tag'].includes(tag)})
-  .parse(await res.text()).osm;
+  .parse(osmXml).osm;
 const nodes=new Map((parsed.node||[]).map(n=>[String(n['@_id']),[Number(n['@_lon']),Number(n['@_lat'])]]));
 for(const n of parsed.node||[]){
   const nodeTags=Object.fromEntries((n.tag||[]).map(t=>[t['@_k'],t['@_v']]));
