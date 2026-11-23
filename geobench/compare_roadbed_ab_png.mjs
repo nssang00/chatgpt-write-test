@@ -1,6 +1,6 @@
 import fs from 'node:fs/promises';
 import {PNG} from 'pngjs';
-const names=['top','oblique'];
+const names=['top','oblique','low'];
 const results={renderer:'Chromium SwiftShader software WebGL',camera:'exact same frozen stream manifest focus and OSM junction for both variants',views:{}};
 for(const name of names){
   const a=PNG.sync.read(await fs.readFile('results/grade-baseline-'+name+'.png'));
