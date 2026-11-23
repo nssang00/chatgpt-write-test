@@ -1,0 +1,81 @@
+name: Seoul synthetic renderer benchmark fixed-camera comparison
+on:
+  push:
+    branches:
+      - experiment/seoul-benchmark-presentation-20261123
+    paths:
+      - .github/workflows/geo-benchmark-presentation-visual.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  same-source-preview:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    defaults:
+      run:
+        working-directory: geobench
+    env:
+      NODE_OPTIONS: --max-old-space-size=6144
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm install --no-audit --no-fund
+      - name: Install Chromium SwiftShader
+        run: npx playwright install --with-deps chromium
+      - name: Download previous DEM-derived terrain, frozen source
+        uses: actions/download-artifact@v4
+        with:
+          name: seoul-presentation-real-dem-tiles
+          run-id: 45112099821
+          github-token: ${{ github.token }}
+          path: geobench/public
+      - name: DEM-derived view from true OSM junction top
+        run: |
+          GEO_JUNCTION_TOP=1 npm run native-smoke
+          mv results/native-3dtiles-junction-top.png results/presentation-real-top.png
+      - name: DEM-derived junction oblique camera
+        run: |
+          GEO_JUNCTION_VIEW=1 npm run native-smoke
+          mv results/native-3dtiles-junction-oblique.png results/presentation-real-oblique.png
+      - name: DEM-derived low roadside camera
+        run: |
+          GEO_LOW_ROAD_VIEW=1 npm run native-smoke
+          mv results/native-3dtiles-lowview.png results/presentation-real-low.png
+      - name: Remove real-DEM-derived tiles
+        run: rm -rf public/native-3dtiles public/stream-manifest.json
+      - name: Download explicitly SYNTHETIC visual benchmark, same OSM
+        uses: actions/download-artifact@v4
+        with:
+          name: seoul-presentation-synthetic-tiles
+          run-id: 45112099821
+          github-token: ${{ github.token }}
+          path: geobench/public
+      - name: Synthetic benchmark junction top camera
+        run: |
+          GEO_JUNCTION_TOP=1 npm run native-smoke
+          mv results/native-3dtiles-junction-top.png results/presentation-synthetic-top.png
+      - name: Synthetic benchmark junction oblique camera
+        run: |
+          GEO_JUNCTION_VIEW=1 npm run native-smoke
+          mv results/native-3dtiles-junction-oblique.png results/presentation-synthetic-oblique.png
+      - name: Synthetic benchmark roadside low camera
+        run: |
+          GEO_LOW_ROAD_VIEW=1 npm run native-smoke
+          mv results/native-3dtiles-lowview.png results/presentation-synthetic-low.png
+      - name: Compare three paired screenshot pixel distances
+        run: node compare_presentation_ab_png.mjs
+      - name: Upload labelled real-data-vs-synthetic paired images
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: seoul-presentation-real-vs-synthetic-screenshots
+          path: |
+            geobench/results/presentation-*.png
+            geobench/results/presentation-ab-image-metrics.json
+            geobench/results/native-smoke.json
+          retention-days: 14
+          if-no-files-found: warn
