@@ -14,7 +14,9 @@ if(!response.ok)throw new Error('Required DEM fixture missing: '+fixtureUrl+' / 
 const fixture=await response.json();
 if(demSource==='ngii' && fixture.metadata.demSource!=='NGII')throw new Error('NGII provenance mismatch; refusing AWS fallback');
 const mount=document.getElementById('mount');
-document.getElementById('meta').textContent=engine.toUpperCase()+' | OSM buildings '+fixture.metadata.buildingCount+
+const sourceWarning=/SYNTHETIC/i.test(fixture.metadata.demSource||'')?
+  '[SYNTHETIC BENCHMARK - NOT REAL SEOUL HEIGHTS] | ':'';
+document.getElementById('meta').textContent=sourceWarning+engine.toUpperCase()+' | OSM buildings '+fixture.metadata.buildingCount+
   ' | '+(style==='detailed'?'procedural facades + windows + real roads':'plain extrusions')+
   ' | '+(style==='detailed'?Object.values(fixture.metadata.trianglesByMaterial).reduce((a,b)=>a+b,0):fixture.metadata.triangles.terrain+fixture.metadata.triangles.buildings)+' triangles';
 const lon=fixture.metadata.center[0],lat=fixture.metadata.center[1];
