@@ -110,3 +110,47 @@ Official catalog:
 - https://www.data.go.kr/data/15059912/fileData.do
 - https://www.data.go.kr/data/15059920/fileData.do
 - https://openlab.eseoul.go.kr/ (Seoul S-Map OpenLab)
+
+
+## Completed frozen-source screenshot evidence
+
+Software Chromium SwiftShader visual CI completed with all three
+camera pairs captured successfully:
+https://github.com/nssang00/chatgpt-write-test/actions/runs/45112250923
+
+Artifact: `seoul-presentation-real-vs-synthetic-screenshots`.
+Compare `presentation-ab-comparison-{top,oblique,low}.png` where LEFT
+uses original OSM/Terrarium-derived integrated Roadbed, and RIGHT
+uses the explicitly synthetic low-frequency rendering benchmark.
+Each pair shares the same cached OSM/DEM input snapshot, Cesium camera
+pose, and renderer. The last screenshot had **81/81** successful GLB
+responses, zero browser/tile errors, 93 rendered frames (software
+SwiftShader, NOT RTX hardware).
+
+| View | Mean absolute RGB change (0-255) | Pixels with >15 RGB change |
+| --- | ---: | ---: |
+| True OSM junction top-down | 16.4785 | 49.56% |
+| OSM junction oblique | 22.3570 | 59.56% |
+| Low road view | 29.1727 | 64.25% |
+
+The visual difference is substantial, but it also reflects changes in
+building base/ground elevations, not only asphalt. Compared to the
+terrain-derived result, the explicitly synthetic version has broad,
+smooth road and terrain surfaces without massive isolated asphalt
+holes. It is suitable as an **experimental, labelled, consistently
+rendered benchmark fixture**, NOT an accurate Seoul digital twin.
+
+The numerical geometry test shows effectively no asphalt area above a
+20% slope (8.64×10⁻⁷%), but **81.27m maximum** discrepancy from
+actual source DEM; fidelity fails by design. Treat it as a distinct
+dataset and never silently substitute it for real elevations.
+
+### Final merge judgment
+
+- Polygon-boundary local corridor: correct 3m bounded earthwork, but
+  9.91% asphalt steeper than 20%. **Reject as a smooth-road fix.**
+- Synthetic presentation: exact contact + smooth roads + 81m source
+  displacement. **Keep optional for rendering benchmarks only.**
+- Source-derived accurate road elevations: **blocked on authoritative
+  road 3D geometry / vertical data**, including CRS, coverage and rights.
+- Neither experimental mode is merged into `main`.
