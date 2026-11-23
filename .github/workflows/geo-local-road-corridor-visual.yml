@@ -1,0 +1,81 @@
+name: Seoul local road corridor fixed-camera visual A-B
+on:
+  push:
+    branches:
+      - experiment/seoul-local-road-corridor-20261123
+    paths:
+      - .github/workflows/geo-local-road-corridor-visual.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  same-camera-preview:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    defaults:
+      run:
+        working-directory: geobench
+    env:
+      NODE_OPTIONS: --max-old-space-size=6144
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm install --no-audit --no-fund
+      - name: Install reproducible SwiftShader Chromium
+        run: npx playwright install --with-deps chromium
+      - name: Download BASELINE original 50m roadbed
+        uses: actions/download-artifact@v4
+        with:
+          name: seoul-local-corridor-baseline-3dtiles
+          run-id: 45111537470
+          github-token: ${{ github.token }}
+          path: geobench/public
+      - name: Baseline ground-junction top camera
+        run: |
+          GEO_JUNCTION_TOP=1 npm run native-smoke
+          mv results/native-3dtiles-junction-top.png results/corridor-baseline-top.png
+      - name: Baseline ground-junction oblique camera
+        run: |
+          GEO_JUNCTION_VIEW=1 npm run native-smoke
+          mv results/native-3dtiles-junction-oblique.png results/corridor-baseline-oblique.png
+      - name: Baseline low roadside camera
+        run: |
+          GEO_LOW_ROAD_VIEW=1 npm run native-smoke
+          mv results/native-3dtiles-lowview.png results/corridor-baseline-low.png
+      - name: Clear previous 3D Tiles before switching to local corridor
+        run: rm -rf public/native-3dtiles public/stream-manifest.json
+      - name: Download LOCAL corridor 3D Tiles, identical OSM and DEM
+        uses: actions/download-artifact@v4
+        with:
+          name: seoul-local-corridor-variant-3dtiles
+          run-id: 45111537470
+          github-token: ${{ github.token }}
+          path: geobench/public
+      - name: Local corridor ground-junction top camera
+        run: |
+          GEO_JUNCTION_TOP=1 npm run native-smoke
+          mv results/native-3dtiles-junction-top.png results/corridor-local-top.png
+      - name: Local corridor ground-junction oblique camera
+        run: |
+          GEO_JUNCTION_VIEW=1 npm run native-smoke
+          mv results/native-3dtiles-junction-oblique.png results/corridor-local-oblique.png
+      - name: Local corridor low roadside camera
+        run: |
+          GEO_LOW_ROAD_VIEW=1 npm run native-smoke
+          mv results/native-3dtiles-lowview.png results/corridor-local-low.png
+      - name: Verify full 3-camera before/after pixel comparison
+        run: node compare_local_corridor_ab_png.mjs
+      - name: Upload all six source frames and pixel comparisons
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: seoul-local-road-corridor-ab-screenshots
+          path: |
+            geobench/results/corridor-*.png
+            geobench/results/corridor-ab-image-metrics.json
+            geobench/results/native-smoke.json
+          retention-days: 14
+          if-no-files-found: warn
