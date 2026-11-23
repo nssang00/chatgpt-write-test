@@ -11,6 +11,8 @@ const manifest=await manifestResponse.json();
 if(manifest.buildingCount<1000)throw Error('Dense Seoul test is not dense enough');
 const mount=document.getElementById('mount');
 const status=document.getElementById('info');
+const sourceWarning=/SYNTHETIC/i.test(manifest.dataSource||'')?
+  '[SYNTHETIC BENCHMARK - NOT REAL SEOUL HEIGHTS] | ':'';
 const center=manifest.center;
 const lon=center[0],lat=center[1];
 let renderCount=0;
@@ -277,7 +279,7 @@ function schedule(){
   }
   stats.activeTiles=records.size;
   const visible=stats.activeTiles;
-  status.textContent=engineName+' | streaming Seoul | active tiles '+visible+
+  status.textContent=sourceWarning+engineName+' | streaming Seoul | active tiles '+visible+
     ' | '+Math.round(stats.activeTriangles/1000)+'k triangles | '+stats.success+' loaded';
 }
 api.move(0);
