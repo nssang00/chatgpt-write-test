@@ -41,6 +41,7 @@ jobs:
     env:
       NODE_OPTIONS: --max-old-space-size=6144
       GEO_VISUAL_TERRAIN_SMOOTH: '0'
+      GEO_ALLOW_STEEP_RAW_DEM_DIAGNOSTIC: '1'
       GEO_CAPTURE_OSM_SNAPSHOT: '1'
       GEO_OSM_SNAPSHOT_PATH: public/osm-snapshot.xml
     steps:
