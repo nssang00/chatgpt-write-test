@@ -4,6 +4,7 @@
 //
 // This is a *visual modelling experiment*. It is not surveyed street grades,
 // earthworks, or retaining-wall engineering. All deformation is quantified.
+import { constrainRoadbedMesh } from './roadbed_grade_solver.mjs';
 const clamp=(n,lo,hi)=>Math.max(lo,Math.min(hi,n));
 const smoothstep=t=>t*t*(3-2*t);
 
@@ -19,7 +20,8 @@ export function sampleTerrainGrid(terrain,grid,x,z){
 }
 
 export function buildIntegratedRoadbed({
-  terrain,sourceGround,profile,grid,subdivisions=2,shoulderMeters=50
+  terrain,sourceGround,profile,grid,subdivisions=2,shoulderMeters=50,
+  gradeConstrained=false
 }){
   if(!profile||typeof profile.sampleAt!=='function')
     throw Error('Roadbed requires a shared road centerline profile');
@@ -59,6 +61,21 @@ export function buildIntegratedRoadbed({
     // The same diagonal and winding as generate.mjs.
     indices.push(a,c,b,b,c,d);
   }
+  const gradeSolver=gradeConstrained?constrainRoadbedMesh(positions,bounds,profile,{
+    maximumGrade:.12,projectionPasses:50,shoulderMeters:30
+  }):null;
+  if(gradeSolver){
+    // Recompute earthworks from the FINAL heightfield. Preliminary values
+    // before slope relaxation must not be reported as the final cut/fill.
+    modified=0;maxCut=0;maxFill=0;sumAbsolute=0;
+    for(let k=0;k<positions.length;k+=3){
+      const x=positions[k],z=positions[k+2],raw=sourceGround(x,z);
+      const diff=positions[k+1]-raw;
+      if(Math.abs(diff)>1e-8){modified++;sumAbsolute+=Math.abs(diff);}
+      maxCut=Math.max(maxCut,-diff);
+      maxFill=Math.max(maxFill,diff);
+    }
+  }
   const renderTerrain={positions,indices};
   const ground=(x,z)=>sampleTerrainGrid(renderTerrain,bounds,x,z);
   return {terrain:renderTerrain,ground,grid:bounds,stats:{
@@ -70,6 +87,7 @@ export function buildIntegratedRoadbed({
     meanAbsoluteChangeOnModified:sumAbsolute/Math.max(1,modified),
     maximumCutMeters:maxCut,maximumFillMeters:maxFill,
     shoulderMeters,
-    method:'shared heightfield: road and terrain triangulated on same grid; continuous smoothstep shoulder'
+    gradeSolver,
+    method:gradeSolver?'shared DEM-roadbed with slope-projected core and diffused correction; experimental visual grade':'shared heightfield: road and terrain triangulated on same grid; continuous smoothstep shoulder'
   }};
 }
