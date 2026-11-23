@@ -29,7 +29,7 @@ const report={
   materials:{}
 };
 let hasFailure=false;
-for(const [name,offset] of [['road',.22],['road-edge',.15]]){
+for(const [name,offset] of [['road',.04],['road-edge',.025],['road-marking',.054]]){
   const mesh=scene.surfaces[name];
   if(!mesh)throw Error('Missing '+name+' material');
   let maxAbsError=0,maxEdge=0,badCoordinates=0,badArea=0,samples=0,outOfBounds=0;
