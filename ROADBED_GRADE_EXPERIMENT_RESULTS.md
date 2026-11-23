@@ -108,3 +108,39 @@ Authoritative catalog links, **not yet obtained or ingested**:
 Source catalog says the road vector/pointcloud downloads normally
 require login and a large-file transfer client. Neither an official
 NGII SHP nor a surveyed road DEM is present in this experiment.
+
+## Frozen-source screenshot A/B: actual results
+
+Workflow **success**:
+https://github.com/nssang00/chatgpt-write-test/actions/runs/45098826675
+
+Artifact: `seoul-grade-constraint-controlled-screenshots`.
+Six 1280x720 source images: `grade-baseline-{top,oblique,low}.png`
+and `grade-constrained-{top,oblique,low}.png`; paired images
+`grade-ab-comparison-{top,oblique,low}.png`. Report:
+`grade-ab-image-metrics.json`.
+
+| Camera | Mean abs RGB difference, 0-255 | Pixels delta >15 |
+| --- | ---: | ---: |
+| Junction top | 1.64525 | 5.41% |
+| Junction oblique | 1.99530 | 6.35% |
+| Low roadside | 1.88474 | 6.24% |
+
+Exact same original DEM / OSM XML, fixed Cesium camera, same
+software Chromium SwiftShader. The screenshot CI loaded 81/81
+GLBs with 0 HTTP, console or tile errors in the final camera run.
+
+**Visual verdict:** The variant is not identical; rendered road edges and
+adjacent terrain move, but the representative screenshots remain broadly
+similar and show no unmistakable large-scale improvement in the natural
+road silhouette. The 98% reduction in steep triangle area is a valid
+numeric result, NOT proof that the current 3D city is surveyed or
+visually satisfactory. The feature stays opt-in experimental, without
+merging to `main`.
+
+Do not keep tweaking the OSM miter/curb renderer as a substitute for
+real street elevations. The next work should be a survey-source data
+ingestion branch, and an actual road/curb/parcel transition design
+using verified 3D features. NGII HD road mapping download requires
+portal login and may need bulk-transfer software; it was not
+downloaded here.
