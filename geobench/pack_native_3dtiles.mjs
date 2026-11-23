@@ -114,14 +114,23 @@ for(const t of manifest.tiles){
   rootBounds=union(rootBounds,b);
 }
 if(nonempty<100)throw Error('Expected at least 100 nonempty tiles');
+const terrainIsSynthetic=/SYNTHETIC BENCHMARK TERRAIN/i.test(manifest.dataSource||'');
+const terrainProvenance=terrainIsSynthetic?
+  'SYNTHETIC VISUAL BENCHMARK ONLY - NOT MEASURED SEOUL TERRAIN':
+  'OSM footprints and approximate AWS Mapzen Terrarium elevations';
 const tileset={
-  asset:{version:'1.1',tilesetVersion:'seoul-osm-20261120'},
+  asset:{version:'1.1',tilesetVersion:'seoul-osm-20261120',
+    extras:{terrainProvenance,sourceManifest:manifest.dataSource}},
   geometricError:5000,
   root:{boundingVolume:{box:box(rootBounds)},geometricError:5000,refine:'REPLACE',transform,children}
 };
 await fs.writeFile(path.join(out,'tileset.json'),JSON.stringify(tileset));
 const validation={
-  dataset:'Seoul Gangnam OSM footprint procedural facade and AWS Mapzen DEM',
+  dataset:terrainIsSynthetic?
+    'SYNTHETIC Seoul-inspired renderer benchmark: OSM 2D geometry; invented smooth elevations':
+    'Seoul Gangnam OSM footprint procedural facade and AWS Mapzen DEM',
+  terrainProvenance,
+  sourceDEMIsUsedAsActualElevation:!terrainIsSynthetic,
   sourceManifest:'stream-manifest.json',tileCount:manifest.tiles.length,
   nonemptyTileCount:nonempty,geometricErrorLow:7.5,
   refinement:'REPLACE',assetVersion:'1.1',glTF:'2.0 GLB KHR_materials_unlit',
