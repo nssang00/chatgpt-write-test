@@ -1,0 +1,80 @@
+name: Seoul grade roadbed frozen-source screenshot A-B
+on:
+  push:
+    branches:
+      - experiment/seoul-grade-constrained-roadbed-20261123
+    paths:
+      - .github/workflows/geo-grade-roadbed-cameras.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  controlled-cameras:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    defaults:
+      run:
+        working-directory: geobench
+    env:
+      NODE_OPTIONS: --max-old-space-size=6144
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm install --no-audit --no-fund
+      - name: Install Chromium with SwiftShader
+        run: npx playwright install --with-deps chromium
+      - name: Load BASELINE 3D Tiles from frozen-source A-B job
+        uses: actions/download-artifact@v4
+        with:
+          name: seoul-grade-ab-baseline-native-tiles
+          run-id: 45098519344
+          github-token: ${{ github.token }}
+          path: geobench/public
+      - name: Screenshot baseline same OSM junction plan
+        run: |
+          GEO_JUNCTION_TOP=1 npm run native-smoke
+          mv results/native-3dtiles-junction-top.png results/grade-baseline-top.png
+      - name: Screenshot baseline same OSM junction oblique
+        run: |
+          GEO_JUNCTION_VIEW=1 npm run native-smoke
+          mv results/native-3dtiles-junction-oblique.png results/grade-baseline-oblique.png
+      - name: Screenshot baseline roadside low angle
+        run: |
+          GEO_LOW_ROAD_VIEW=1 npm run native-smoke
+          mv results/native-3dtiles-lowview.png results/grade-baseline-low.png
+      - name: Load CONSTRAINED 3D Tiles - identical OSM, DEM and camera
+        run: rm -rf public/native-3dtiles public/stream-manifest.json
+      - uses: actions/download-artifact@v4
+        with:
+          name: seoul-grade-ab-constrained-native-tiles
+          run-id: 45098519344
+          github-token: ${{ github.token }}
+          path: geobench/public
+      - name: Screenshot constrained junction plan
+        run: |
+          GEO_JUNCTION_TOP=1 npm run native-smoke
+          mv results/native-3dtiles-junction-top.png results/grade-constrained-top.png
+      - name: Screenshot constrained junction oblique
+        run: |
+          GEO_JUNCTION_VIEW=1 npm run native-smoke
+          mv results/native-3dtiles-junction-oblique.png results/grade-constrained-oblique.png
+      - name: Screenshot constrained roadside low angle
+        run: |
+          GEO_LOW_ROAD_VIEW=1 npm run native-smoke
+          mv results/native-3dtiles-lowview.png results/grade-constrained-low.png
+      - name: Compare pixel differences of all fixed cameras
+        run: node compare_roadbed_ab_png.mjs
+      - name: Upload full A-B images and numerical difference report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: seoul-grade-constraint-controlled-screenshots
+          path: |
+            geobench/results/grade-*.png
+            geobench/results/grade-ab-image-metrics.json
+            geobench/results/native-smoke.json
+          retention-days: 14
+          if-no-files-found: warn
