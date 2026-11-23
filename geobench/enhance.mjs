@@ -172,7 +172,8 @@ if(integratedRoadbed){
   sharedRoadProfile=buildRoadElevationProfile(classified,sourceGround,{step:6});
   roadbed=buildIntegratedRoadbed({
     terrain:base.terrain,sourceGround,profile:sharedRoadProfile,grid:baseGrid,
-    subdivisions:2,shoulderMeters:50
+    subdivisions:2,shoulderMeters:50,
+    gradeConstrained:process.env.GEO_ROAD_GRADE_RELAX==='1'
   });
   renderedGrid=roadbed.grid;
   renderedGround=roadbed.ground;
