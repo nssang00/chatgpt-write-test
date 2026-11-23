@@ -3,6 +3,7 @@ import { XMLParser } from 'fast-xml-parser';
 import earcut from 'earcut';
 import { buildRoadGeometry, buildAtGradeRoadFootprint } from './road_geometry.mjs';
 import { buildLocalRoadCorridor } from './road_corridor_terrain.mjs';
+import { buildBenchmarkPresentationTerrain } from './benchmark_presentation_terrain.mjs';
 import { cutTerrainUnderRoads } from './terrain_road_cut.mjs';
 import { buildRoadElevationProfile } from './road_elevation_profile.mjs';
 import { buildIntegratedRoadbed } from './roadbed_terrain.mjs';
@@ -160,7 +161,9 @@ for(const way of parsed.way||[]){
 // The at-grade roadway and adjacent terrain are solved *before* placing
 // buildings and vegetation. This keeps building bases on the same surface.
 const localCorridor=process.env.GEO_ROAD_LOCAL_CORRIDOR==='1';
-const integratedRoadbed=process.env.GEO_ROADBED_INTEGRATED==='1'||localCorridor;
+const benchmarkPresentation=process.env.GEO_BENCHMARK_SYNTHETIC_TERRAIN==='1';
+if(localCorridor&&benchmarkPresentation)throw Error('Choose either local real-DEM corridor or synthetic benchmark mode');
+const integratedRoadbed=process.env.GEO_ROADBED_INTEGRATED==='1'||localCorridor||benchmarkPresentation;
 const baseGrid={xmin:xMin,zmin:zMin,xmax:xMax,zmax:zMax,nx:NX,nz:NZ};
 let renderedGrid=baseGrid,roadbed=null,sharedRoadProfile=null;
 if(integratedRoadbed){
@@ -176,8 +179,19 @@ if(integratedRoadbed){
     });
     return {road,pts,grade,width:road.width};
   });
-  sharedRoadProfile=buildRoadElevationProfile(classified,sourceGround,{step:6});
-  if(localCorridor){
+  if(benchmarkPresentation){
+    // Here and only here, source elevations are deliberately replaced by
+    // an explicitly labelled synthetic visual benchmark heightfield.
+    roadbed=buildBenchmarkPresentationTerrain({
+      terrain:base.terrain,sourceGround,grid:baseGrid,subdivisions:2
+    });
+    sharedRoadProfile=buildRoadElevationProfile(classified,roadbed.ground,{step:6});
+  }else{
+    sharedRoadProfile=buildRoadElevationProfile(classified,sourceGround,{step:6});
+  }
+  if(benchmarkPresentation){
+    // Already computed independent visual benchmark terrain above.
+  }else if(localCorridor){
     // A road surface is defined by the independent OSM centerline profile.
     // Its actual plan-view polygon boundary controls ONLY the local terrain
     // transition, unlike a 50m kernel deforming most of the scene.
@@ -361,6 +375,10 @@ const displayTerrain=roadbed?.terrain||roadTerrainCut?.terrain||base.terrain;
 const detailed={
   metadata:{
     ...base.metadata,
+    demSource:benchmarkPresentation?
+      'SYNTHETIC BENCHMARK TERRAIN - NOT SEOUL DEM - original Terrarium kept in fixture.json':
+      base.metadata.demSource,
+    groundTruthAccuracy:benchmarkPresentation?'none, illustrative synthetic urban topography only':'OSM/Mapzen-derived approximate elevations',
     terrainGrid:[renderedGrid.nx+1,renderedGrid.nz+1],
     style:'procedural-architectural-visualization',
     visualAccuracy:'Building footprints from OSM, terrain from Terrarium; facades/windows/colors/rooftop units/trees are stylized procedural inventions, NOT surveyed real buildings.',
@@ -371,7 +389,7 @@ const detailed={
     roadbed:roadbed?.stats||null,
     materialColors:palette,
     meshStats:stats,
-    roadGeometryQuality:{mesh:process.env.GEO_ROAD_RENDER_SMOOTH==='1'?'rounded outer road joins, capped inner miters, edge-minus-asphalt planar difference and shared terrain':'OSM-node joins, bounded miters, planar polygon union and terrain-grid subdivision',ground:localCorridor?'independent OSM road profile + precise asphalt union boundary + 12m capped local DEM corridor':integratedRoadbed?'shared smoothed roadbed terrain and asphalt heightfield':process.env.GEO_ROAD_PROFILE_SMOOTH==='1'?'experimental graph-smoothed road grade, not exact DEM drape':'terrain-triangle-exact draping',caveat:'Road grades are inferred, not surveyed. Smooth profiles may overlap raw terrain and require cut/fill. Bridge/tunnel elevations and carriageway boundaries are not surveyed.',...roadOutput.stats},
+    roadGeometryQuality:{mesh:process.env.GEO_ROAD_RENDER_SMOOTH==='1'?'rounded outer road joins, capped inner miters, edge-minus-asphalt planar difference and shared terrain':'OSM-node joins, bounded miters, planar polygon union and terrain-grid subdivision',ground:benchmarkPresentation?'EXPLICIT SYNTHETIC BENCHMARK terrain, not actual Seoul elevations':localCorridor?'independent OSM road profile + precise asphalt union boundary + 12m capped local DEM corridor':integratedRoadbed?'shared smoothed roadbed terrain and asphalt heightfield':process.env.GEO_ROAD_PROFILE_SMOOTH==='1'?'experimental graph-smoothed road grade, not exact DEM drape':'terrain-triangle-exact draping',caveat:'Road grades are inferred, not surveyed. Smooth profiles may overlap raw terrain and require cut/fill. Bridge/tunnel elevations and carriageway boundaries are not surveyed.',...roadOutput.stats},
     focus:[focus.x,focus.y+focus.height*.40,focus.z],
     roadDebugFocus:roadOutput.stats.debugJunctions?.[0]?
       [roadOutput.stats.debugJunctions[0].x,
