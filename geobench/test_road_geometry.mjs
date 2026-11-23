@@ -72,7 +72,7 @@ function nearXYZ(a,b){
     assert.ok(Math.abs(r.meshes.road.positions[i])<=42+8,'not clipped');
   }
 }
-// Surface lies 22cm above the exact terrain height at EACH offset vertex,
+// Surface lies 4cm above the exact terrain height at EACH offset vertex,
 // not interpolated from road centerline endpoints.
 {
   const r=run('terrain',[
@@ -80,7 +80,7 @@ function nearXYZ(a,b){
   ]);
   for(let i=0;i<r.meshes.road.positions.length;i+=3){
     const [x,y,z]=r.meshes.road.positions.slice(i,i+3);
-    assert.ok(eps(y,ground(x,z)+.22),'road is not properly terrain-draped '+JSON.stringify([x,y,z]));
+    assert.ok(eps(y,ground(x,z)+.04),'road is not properly terrain-draped '+JSON.stringify([x,y,z]));
   }
   assert.ok(r.stats.emittedSubsegments>=8);
 }
