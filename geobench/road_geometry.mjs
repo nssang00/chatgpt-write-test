@@ -293,3 +293,36 @@ export function buildRoadGeometry(roads,{project,ground,bounds,maxStep=6,terrain
   stats.triangles=Object.fromEntries(Object.entries(meshes).map(([k,v])=>[k,v.indices.length/3]));
   return {meshes,stats,atGradeMask};
 }
+
+
+// Return the exact plan-view asphalt union used by the 3D road mesher.
+// This is a geometry boundary (including polygon holes), not an arbitrary
+// buffer around a nearby centerline. Only at-grade roads affect DEM earthwork.
+export function buildAtGradeRoadFootprint(roads,{project,bounds,maxStep=6}){
+  if(!(maxStep>0))throw Error('Invalid footprint sampling step');
+  const expanded=[bounds[0]-12,bounds[1]-12,bounds[2]+12,bounds[3]+12];
+  const rings=[];
+  const metric={joinVertices:0,roundedJoins:0,arcVertices:0,
+    reversalJoins:0,bevelLimitedJoins:0};
+  let ways=0,paths=0;
+  for(const road of roads){
+    if(sameLevel(road.tags||{})!=='0||')continue;
+    const points=cleaned(parseRoad(road,project));
+    if(points.length<2)continue;
+    const clipped=clipPolyline(points,expanded);
+    if(!clipped.length)continue;
+    const half=clamp(Number(road.width)||6,1.8,35)/2;
+    ways++;
+    for(const path of clipped){
+      const sampled=subdivide(path,maxStep);
+      if(sampled.length<2)continue;
+      rings.push({grade:'0||',points:roundedCorridor(sampled,half,metric)});
+      paths++;
+    }
+  }
+  const polygons=unionRoadPolygons(rings);
+  if(!polygons.length)throw Error('At-grade road footprint unexpectedly empty');
+  return {polygons,stats:{ways,paths,roundedJoins:metric.roundedJoins,
+    footprintPolygons:polygons.length,
+    source:'exact buffered at-grade OSM roads, unioned as actual asphalt footprints'}};
+}
