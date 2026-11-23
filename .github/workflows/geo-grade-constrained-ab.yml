@@ -1,0 +1,108 @@
+name: Seoul grade-constrained roadbed same-source A-B
+on:
+  push:
+    branches:
+      - experiment/seoul-grade-constrained-roadbed-20261123
+    paths:
+      - .github/workflows/geo-grade-constrained-ab.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  unit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: geobench
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm install --no-audit --no-fund
+      - name: Legacy road geometry and DEM tests
+        run: |
+          npm run test:roads
+          node test_road_profile.mjs
+          node test_roadbed_integrated.mjs
+          node test_road_render_shape.mjs
+          node test_osm_3d_tags.mjs
+      - name: New constrained-roadbed unit regression
+        run: node test_roadbed_grade_solver.mjs
+
+  identical-input-geometry:
+    needs: unit
+    runs-on: ubuntu-24.04
+    timeout-minutes: 55
+    defaults:
+      run:
+        working-directory: geobench
+    env:
+      NODE_OPTIONS: --max-old-space-size=6144
+      GEO_VISUAL_TERRAIN_SMOOTH: '1'
+      GEO_ROADBED_INTEGRATED: '1'
+      GEO_ROAD_RENDER_SMOOTH: '1'
+      GEO_LOW_LOD_NO_ROAD_EDGE: '1'
+      GEO_OSM_SNAPSHOT_PATH: public/osm-snapshot.xml
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm install --no-audit --no-fund
+      - name: Build source DEM once and freeze exact OSM XML
+        run: GEO_CAPTURE_OSM_SNAPSHOT=1 node generate.mjs
+      - name: Baseline unmodified integrated roadbed
+        run: |
+          node enhance.mjs
+          node validate_roadbed_integrated.mjs
+          node validate_road_render_shape.mjs
+          mkdir -p results
+          cp results/roadbed-integrated-validation.json results/roadbed-baseline-validation.json
+          npm run pack-tiles
+          node validate_low_road_edge_lod.mjs
+          npm run pack-native-tiles
+          cp public/stream-manifest.json results/road-camera-baseline-manifest.json
+      - name: Preserve baseline 3D Tiles for identical-camera screenshots
+        uses: actions/upload-artifact@v4
+        with:
+          name: seoul-grade-ab-baseline-native-tiles
+          path: |
+            geobench/public/native-3dtiles/
+            geobench/public/stream-manifest.json
+          retention-days: 7
+          if-no-files-found: error
+      - name: Experimental constrained roadbed on SAME cached OSM and DEM
+        run: |
+          rm -rf public/native-3dtiles
+          GEO_ROAD_GRADE_RELAX=1 node enhance.mjs
+          node validate_roadbed_integrated.mjs
+          node validate_road_render_shape.mjs
+          cp results/roadbed-integrated-validation.json results/roadbed-variant-validation.json
+          npm run pack-tiles
+          node validate_low_road_edge_lod.mjs
+          node --input-type=module -e "import fs from 'node:fs';const p='public/stream-manifest.json',a=JSON.parse(fs.readFileSync('results/road-camera-baseline-manifest.json')),b=JSON.parse(fs.readFileSync(p));b.focus=a.focus;b.roadDebugFocus=a.roadDebugFocus;fs.writeFileSync(p,JSON.stringify(b));"
+          npm run pack-native-tiles
+          node validate_road_grade_ab.mjs
+      - name: Preserve new 3D Tiles with same camera target
+        uses: actions/upload-artifact@v4
+        with:
+          name: seoul-grade-ab-constrained-native-tiles
+          path: |
+            geobench/public/native-3dtiles/
+            geobench/public/stream-manifest.json
+          retention-days: 7
+          if-no-files-found: error
+      - name: A-B slope and source integrity reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: seoul-grade-ab-measurements
+          path: |
+            geobench/results/roadbed-baseline-validation.json
+            geobench/results/roadbed-variant-validation.json
+            geobench/results/road-grade-controlled-ab.json
+            geobench/results/road-camera-baseline-manifest.json
+          retention-days: 14
+          if-no-files-found: warn
