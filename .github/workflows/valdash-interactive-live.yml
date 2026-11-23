@@ -1,0 +1,46 @@
+name: VAL DASH - Interactive Riot smoke (self-hosted)
+# This never runs automatically for pull requests or pushes.
+on:
+  workflow_dispatch:
+    inputs:
+      confirm_own_account:
+        description: "Type YES only when you are present to complete Riot CAPTCHA/MFA"
+        required: true
+        type: string
+      shard:
+        description: "VALORANT shard"
+        type: choice
+        default: kr
+        required: true
+        options: [kr, ap, na, eu]
+
+permissions:
+  contents: read
+
+jobs:
+  interactive-live-smoke:
+    if: ${{ inputs.confirm_own_account == 'YES' }}
+    runs-on: [self-hosted, windows, x64, valdash-interactive]
+    timeout-minutes: 15
+    env:
+      VALDASH_ALLOW_INTERACTIVE_LIVE_TEST: "yes"
+      VALDASH_SHARD: ${{ inputs.shard }}
+      PYTHONUTF8: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Extract source
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path valdash-local | Out-Null
+          tar -xf valdash-local-source.tar.xz -C valdash-local
+      - name: Install app
+        shell: cmd
+        working-directory: valdash-local
+        run: call install.bat
+      - name: Interactive real Riot login + read-only store/penalty checks
+        shell: cmd
+        working-directory: valdash-local
+        run: .venv\Scripts\python.exe -m scripts.real_login_smoke
