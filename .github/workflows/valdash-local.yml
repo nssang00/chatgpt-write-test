@@ -1,4 +1,4 @@
-name: VAL DASH Local (Windows + Frontend)
+name: VAL DASH Local (Windows + OAuth Mock + Frontend)
 
 on:
   push:
@@ -18,7 +18,7 @@ permissions:
 
 jobs:
   windows-batch:
-    name: install.bat / run.bat / security tests
+    name: install.bat / run.bat / 16 security & OAuth tests
     runs-on: windows-latest
     timeout-minutes: 15
     steps:
@@ -38,7 +38,7 @@ jobs:
         shell: cmd
         working-directory: valdash-local
         run: call install.bat
-      - name: Install test dependencies and run backend tests
+      - name: Run backend security and mocked OAuth login tests
         shell: cmd
         working-directory: valdash-local
         run: |
@@ -75,7 +75,7 @@ jobs:
           }
 
   frontend-build:
-    name: React production build
+    name: React + TypeScript production build
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -87,9 +87,29 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - name: Install npm dependencies
+      - name: Build frontend
         working-directory: valdash-local/frontend
-        run: npm install --no-audit --no-fund
-      - name: Build React + TypeScript
-        working-directory: valdash-local/frontend
-        run: npm run build
+        run: |
+          npm install --no-audit --no-fund
+          npm run build
+      - name: Check standalone fallback syntax
+        run: node --check valdash-local/standalone/app.js
+
+  rso-config-preflight:
+    name: Optional approved-RSO settings presence check (no login)
+    if: github.event_name == 'workflow_dispatch' && vars.RIOT_RSO_APPROVED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    env:
+      RSO_CLIENT_ID: ${{ vars.RIOT_RSO_CLIENT_ID }}
+      RSO_CALLBACK: ${{ vars.RIOT_RSO_REDIRECT_URI }}
+      RSO_CLIENT_SECRET: ${{ secrets.RIOT_RSO_CLIENT_SECRET }}
+    steps:
+      - name: Validate approved client settings without exposing secrets
+        shell: bash
+        run: |
+          if [[ -z "$RSO_CLIENT_ID" || -z "$RSO_CLIENT_SECRET" || -z "$RSO_CALLBACK" ]]; then
+            echo 'Missing approved client configuration.'
+            exit 1
+          fi
+          echo 'Approved RSO settings appear configured. This does NOT perform live Riot login.'
