@@ -1,4 +1,4 @@
-name: Seoul grade-constrained roadbed same-source A-B
+name: Seoul grade-constrained roadbed frozen-fixture A-B
 on:
   push:
     branches:
