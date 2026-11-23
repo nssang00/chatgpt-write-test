@@ -1,0 +1,154 @@
+name: Seoul frozen source raw-DEM vs integrated-roadbed A-B
+on:
+  push:
+    branches:
+      - fix/seoul-road-dem-drape-audit-20261123
+    paths:
+      - .github/workflows/geo-raw-dem-frozen-ab.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  same-osm-dem-comparison:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 70
+    env:
+      NODE_OPTIONS: --max-old-space-size=6144
+      GEO_VISUAL_TERRAIN_SMOOTH: '0'
+    steps:
+      - name: Checkout current raw-DEM drape viewer
+        uses: actions/checkout@v4
+      - name: Checkout independent prior integrated roadbed
+        uses: actions/checkout@v4
+        with:
+          ref: fix/seoul-road-roadbed-integrated-20261120
+          path: old
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install current viewer
+        working-directory: geobench
+        run: npm install --no-audit --no-fund
+      - name: Install old integrated roadbed generator
+        working-directory: old/geobench
+        run: npm install --no-audit --no-fund
+      - name: Download EXACT raw DEM and OSM XML from new geometry CI
+        uses: actions/download-artifact@v4
+        with:
+          name: seoul-raw-dem-drape-sources
+          run-id: 45141523301
+          github-token: ${{ github.token }}
+          path: old/geobench/public
+      - name: Download raw-drape tiles and original camera manifest
+        uses: actions/download-artifact@v4
+        with:
+          name: seoul-raw-dem-drape-native-tiles
+          run-id: 45141523301
+          github-token: ${{ github.token }}
+          path: geobench/public
+      - name: Force old roadbed enhancer to use SAME saved OSM snapshot
+        run: |
+          node --input-type=module <<'EOF'
+          import fs from 'node:fs';
+          const p='old/geobench/enhance.mjs';
+          let s=fs.readFileSync(p,'utf8');
+          const old=`const res=await fetch(osmUrl,{headers:{'User-Agent':'geo-renderer-benchmark/1.0 (noncommercial single-area experiment)'}});
+          if(!res.ok)throw new Error('OSM '+res.status);
+          const parsed=new XMLParser({ignoreAttributes:false,attributeNamePrefix:'@_',isArray:tag=>['node','way','nd','tag'].includes(tag)})
+            .parse(await res.text()).osm;`;
+          const patch=`const osmXml=await fs.readFile('public/osm-snapshot.xml','utf8');
+          const parsed=new XMLParser({ignoreAttributes:false,attributeNamePrefix:'@_',isArray:tag=>['node','way','nd','tag'].includes(tag)})
+            .parse(osmXml).osm;`;
+          if(!s.includes(old))throw Error('Old source OSM fetch unexpectedly changed; comparison must not use live input');
+          s=s.replace(old,patch);
+          fs.writeFileSync(p,s);
+          console.log('OLD_BASELINE_FROZEN_OSM_PATCHED');
+          EOF
+      - name: Generate old integrated Roadbed from exact same source DEM/OSM
+        working-directory: old/geobench
+        env:
+          GEO_ROADBED_INTEGRATED: '1'
+        run: |
+          node enhance.mjs
+          node validate_roadbed_integrated.mjs
+          npm run pack-tiles
+          npm run pack-native-tiles
+      - name: Use same target camera for both native 3D Tiles datasets
+        run: |
+          node --input-type=module <<'EOF'
+          import fs from 'node:fs';
+          const a=JSON.parse(fs.readFileSync('geobench/public/stream-manifest.json','utf8'));
+          const p='old/geobench/public/stream-manifest.json';
+          const b=JSON.parse(fs.readFileSync(p,'utf8'));
+          if(JSON.stringify(a.bbox)!==JSON.stringify(b.bbox)||JSON.stringify(a.center)!==JSON.stringify(b.center))
+            throw Error('Source DEM/OSM regions diverged');
+          b.focus=a.focus;
+          fs.writeFileSync(p,JSON.stringify(b));
+          console.log('FROZEN_IDENTICAL_CAMERA_AND_BBOX',JSON.stringify({bbox:a.bbox,focus:a.focus}));
+          EOF
+      - name: Substitute previous Roadbed tiles in SAME browser viewer
+        run: |
+          rm -rf geobench/public/native-3dtiles
+          cp -r old/geobench/public/native-3dtiles geobench/public/native-3dtiles
+          cp old/geobench/public/stream-manifest.json geobench/public/stream-manifest.json
+      - name: Screenshot old Roadbed with fixed road camera
+        working-directory: geobench
+        run: |
+          npx playwright install --with-deps chromium
+          GEO_ROAD_VIEW=1 npm run native-smoke
+          mv results/native-3dtiles-roadview.png results/frozen-old-roadbed.png
+          mv results/native-smoke.json results/frozen-old-roadbed-smoke.json
+      - name: Clean previous tiles and recover new RAW DEM drape
+        run: rm -rf geobench/public/native-3dtiles geobench/public/stream-manifest.json
+      - uses: actions/download-artifact@v4
+        with:
+          name: seoul-raw-dem-drape-native-tiles
+          run-id: 45141523301
+          github-token: ${{ github.token }}
+          path: geobench/public
+      - name: Screenshot new raw DEM drape with IDENTICAL road camera
+        working-directory: geobench
+        run: |
+          GEO_ROAD_VIEW=1 npm run native-smoke
+          mv results/native-3dtiles-roadview.png results/frozen-raw-dem-drape.png
+          mv results/native-smoke.json results/frozen-raw-dem-drape-smoke.json
+      - name: Build side-by-side screenshot with quantitative pixel report
+        working-directory: geobench
+        run: |
+          node --input-type=module <<'EOF'
+          import fs from 'node:fs';
+          import {PNG} from 'pngjs';
+          const a=PNG.sync.read(fs.readFileSync('results/frozen-old-roadbed.png'));
+          const b=PNG.sync.read(fs.readFileSync('results/frozen-raw-dem-drape.png'));
+          if(a.width!==b.width||a.height!==b.height)throw Error('A-B camera/resolution mismatch');
+          const w=a.width,h=a.height,o=new PNG({width:w*2,height:h});
+          let sum=0,changed=0;
+          for(let y=0;y<h;y++)for(let x=0;x<w;x++){
+            const k=(y*w+x)*4,l=(y*2*w+x)*4,r=(y*2*w+w+x)*4;
+            let maximum=0;
+            for(let c=0;c<4;c++){o.data[l+c]=a.data[k+c];o.data[r+c]=b.data[k+c];}
+            for(let c=0;c<3;c++){
+              const d=Math.abs(a.data[k+c]-b.data[k+c]);sum+=d;maximum=Math.max(maximum,d);
+            }
+            if(maximum>15)changed++;
+          }
+          fs.writeFileSync('results/frozen-roadbed-vs-drape-comparison.png',PNG.sync.write(o));
+          const report={sameRawDemAndOsm:true,sameViewerAndCamera:true,
+            renderer:'SwiftShader, not RTX',meanAbsoluteRGB255:sum/(w*h*3),
+            pixelsChangedOver15Pct:100*changed/(w*h),
+            note:'Visual difference does not imply surveying accuracy'};
+          fs.writeFileSync('results/frozen-roadbed-vs-drape.json',JSON.stringify(report,null,2));
+          console.log('FROZEN_RAW_DEM_VS_ROADBED_PIXEL_AB',JSON.stringify(report));
+          EOF
+      - name: Upload reproducible source-identical A-B
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: seoul-frozen-raw-dem-vs-roadbed-screenshots
+          path: |
+            geobench/results/frozen-*.png
+            geobench/results/frozen-*.json
+            old/geobench/results/roadbed-integrated-validation.json
+          retention-days: 14
+          if-no-files-found: warn
