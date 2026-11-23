@@ -97,10 +97,15 @@ function smallCanopy(x,z,y,r,seed){
   stats.trees++;
 }
 const osmUrl=base.metadata.osmEndpoint;
-const res=await fetch(osmUrl,{headers:{'User-Agent':'geo-renderer-benchmark/1.0 (noncommercial single-area experiment)'}});
-if(!res.ok)throw new Error('OSM '+res.status);
+const osmXml=process.env.GEO_OSM_SNAPSHOT_PATH?
+  await fs.readFile(process.env.GEO_OSM_SNAPSHOT_PATH,'utf8'):
+  await (async()=>{
+    const res=await fetch(osmUrl,{headers:{'User-Agent':'geo-renderer-benchmark/1.0 (noncommercial single-area experiment)'}});
+    if(!res.ok)throw new Error('OSM '+res.status);
+    return res.text();
+  })();
 const parsed=new XMLParser({ignoreAttributes:false,attributeNamePrefix:'@_',isArray:tag=>['node','way','nd','tag'].includes(tag)})
-  .parse(await res.text()).osm;
+  .parse(osmXml).osm;
 const nodes=new Map((parsed.node||[]).map(n=>[String(n['@_id']),[Number(n['@_lon']),Number(n['@_lat'])]]));
 const inside=([x,z])=>x>=xMin&&x<=xMax&&z>=zMin&&z<=zMax;
 const buildingCenters=[];
@@ -262,6 +267,12 @@ const detailed={
     inferredBuildingHeights:stats.inferredHeights,
     buildingCount:stats.buildings,
     terrainTriangles:base.terrain.indices.length/3,
+    terrainProcessing:'NO ROADBED CUT/FILL: exactly the generated terrain vertices and indices; visual Gaussian filtering is disabled for raw DEM audits',
+    diagnosticRoadOffsetMeters:{road:.04,'road-edge':.025,'road-marking':.054},
+    roadDebugFocus:roadOutput.stats.debugJunctions?.[0]?
+      [roadOutput.stats.debugJunctions[0].x,
+        ground(roadOutput.stats.debugJunctions[0].x,roadOutput.stats.debugJunctions[0].z),
+        roadOutput.stats.debugJunctions[0].z]:null,
     materialColors:palette,
     meshStats:stats,
     roadGeometryQuality:{mesh:'OSM-node joins, bounded miters, planar polygon union and terrain-grid-conforming triangles',ground:'terrain-triangle-exact draping',caveat:'Bridge/tunnel elevations and actual carriageway intersection boundaries are not surveyed',...roadOutput.stats},
