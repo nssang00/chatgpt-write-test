@@ -1,4 +1,4 @@
-name: Seoul synthetic benchmark terrain separate from real DEM
+name: Seoul synthetic benchmark terrain vs frozen real DEM
 on:
   push:
     branches:
