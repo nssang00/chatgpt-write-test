@@ -98,6 +98,8 @@ const gpu={
   renderer:ext?gl.getParameter(ext.UNMASKED_RENDERER_WEBGL):gl.getParameter(gl.RENDERER)
 };
 const info=document.getElementById('info');
+const syntheticNotice=/SYNTHETIC/i.test(manifest.dataSource||'')?
+  '[SYNTHETIC BENCHMARK TERRAIN - NOT REAL SEOUL ELEVATIONS] | ':'';
 window.__streamBench={
   ready:true,engine:'cesium3dtileset',
   manifest:{
@@ -116,7 +118,7 @@ window.__streamBench={
     stats.frameSteps++;
     if(performance.memory?.usedJSHeapSize)
       stats.peakHeapBytes=Math.max(stats.peakHeapBytes,performance.memory.usedJSHeapSize);
-    info.textContent='CESIUM 3D TILES | '+stats.success+' loaded | '+stats.activeTiles+
+    info.textContent=syntheticNotice+'CESIUM 3D TILES | '+stats.success+' loaded | '+stats.activeTiles+
       ' active | '+stats.evictions+' unloaded';
   },
   resetCounters:()=>{
