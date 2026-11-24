@@ -105,7 +105,7 @@ class CatalogActivity : Activity() {
                                 item.optJSONArray("chromas")?.optJSONObject(0)
                                     ?.optString("displayIcon") ?: ""
                             }
-                            add(Skin(id, name, icon.ifBlank { null }))
+                            add(Skin(id, name, icon.takeIf { it.isNotBlank() }))
                         }
                     }.sortedBy { it.name.lowercase(Locale.ROOT) }
                 } finally { conn.disconnect() }
