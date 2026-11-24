@@ -67,6 +67,18 @@ class MainActivity : Activity() {
             textSize = 12f
         })
 
+        root.addView(TextView(this).apply {
+            text = "내 일일 상점: 미연동 · 계정 사이트 로그인만으로 API 접근 불가"
+            textSize = 12f
+            setTextColor(Color.rgb(145, 45, 39))
+        })
+        root.addView(Button(this).apply {
+            text = "공개 스킨 도감 / 내 수동 목록"
+            setOnClickListener {
+                startActivity(android.content.Intent(this@MainActivity, CatalogActivity::class.java))
+            }
+        })
+
         webView = WebView(this)
         configureWebView()
 
