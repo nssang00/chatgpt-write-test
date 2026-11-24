@@ -1,0 +1,10 @@
+import test from 'node:test';import assert from 'node:assert/strict';
+import {demoLibrary} from './demo.mjs';import {freshProject,checkLibrary,checkProject,validate,resolveTypes,markdown,csv,typeRefs} from './core.mjs';
+test('demo project roundtrip and validation',()=>{const p=freshProject(demoLibrary,true);assert.equal(checkProject(JSON.parse(JSON.stringify(p))).bindings.length,1);assert.deepEqual(validate(p),[]);});
+test('transitive data types',()=>{const x=resolveTypes(demoLibrary,['Demo::HealthReport']);assert.deepEqual(x.found.map(t=>t.name),['Demo::HealthReport','Demo::Timestamp']);assert.deepEqual(x.missing,[]);assert.deepEqual(typeRefs('sequence<Demo::Timestamp, 4>'),['Demo::Timestamp']);assert.deepEqual(typeRefs('string<32>'),[]);});
+test('unknown type and publisher detected',()=>{const p=freshProject(structuredClone(demoLibrary),true);p.library.types=p.library.types.filter(t=>t.name!=='Demo::Timestamp');p.bindings[0].publisher='';assert.equal(validate(p).filter(i=>i.severity==='error').length,2);});
+test('duplicate ids rejected',()=>{const l=structuredClone(demoLibrary);l.services.push(l.services[0]);assert.throws(()=>checkLibrary(l),/중복/);});
+test('empty project fails',()=>{assert.ok(validate(freshProject()).some(i=>i.severity==='error'));});
+test('exports include library version and dependent types',()=>{const p=freshProject(demoLibrary,true);assert.match(markdown(p),/demo-1.0/);assert.match(markdown(p),/Demo::Timestamp/);assert.match(csv(p),/Demo.HealthReport/);});
+test('cycles do not loop',()=>{const l={types:[{name:'A',fields:[{name:'b',type:'B'}]},{name:'B',fields:[{name:'a',type:'A'}]}]};assert.equal(resolveTypes(l,['A']).found.length,2);});
+test('invalid imported project data rejected',()=>{const p=freshProject(demoLibrary,true);p.bindings[0].rate=2;assert.throws(()=>checkProject(p));});

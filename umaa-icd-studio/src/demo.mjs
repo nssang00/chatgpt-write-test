@@ -1,0 +1,15 @@
+export const demoLibrary = {
+  name: 'Illustrative library', version: 'demo-1.0', source: 'Synthetic examples — not official UMAA definitions',
+  services: [
+    {id:'health', area:'Platform monitoring', name:'Health Report (Demo)', pattern:'Report', description:'장비 상태 확인용 예시 서비스', topics:[{id:'health-report',name:'Demo.HealthReport',type:'Demo::HealthReport',role:'Report',description:'상태 보고'}]},
+    {id:'environment',area:'Environmental monitoring',name:'Environment Report (Demo)',pattern:'Report',description:'환경 센서 데이터 예시',topics:[{id:'temperature-report',name:'Demo.TemperatureReport',type:'Demo::TemperatureReport',role:'Report',description:'온도 측정값'},{id:'humidity-report',name:'Demo.HumidityReport',type:'Demo::HumidityReport',role:'Report',description:'습도 측정값'}]},
+    {id:'diagnostics',area:'Platform monitoring',name:'Diagnostics Report (Demo)',pattern:'Report',description:'진단 정보 예시',topics:[{id:'diagnostics-report',name:'Demo.DiagnosticsReport',type:'Demo::DiagnosticsReport',role:'Report',description:'진단 메시지'}]}
+  ],
+  types:[
+    {name:'Demo::Timestamp',fields:[{name:'seconds',type:'long long',unit:'s',description:'예시 시간값'},{name:'nanoseconds',type:'unsigned long',unit:'ns',description:'초 미만 값'}]},
+    {name:'Demo::HealthReport',fields:[{name:'deviceId',type:'string',key:true,description:'장비 식별자'},{name:'timestamp',type:'Demo::Timestamp'},{name:'healthy',type:'boolean'}]},
+    {name:'Demo::TemperatureReport',fields:[{name:'sensorId',type:'string',key:true},{name:'timestamp',type:'Demo::Timestamp'},{name:'value',type:'double',unit:'degC'}]},
+    {name:'Demo::HumidityReport',fields:[{name:'sensorId',type:'string',key:true},{name:'timestamp',type:'Demo::Timestamp'},{name:'value',type:'double',unit:'%'}]},
+    {name:'Demo::DiagnosticsReport',fields:[{name:'deviceId',type:'string',key:true},{name:'timestamp',type:'Demo::Timestamp'},{name:'message',type:'string'}]}
+  ]
+};

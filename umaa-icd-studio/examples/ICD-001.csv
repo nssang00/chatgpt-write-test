@@ -1,0 +1,2 @@
+﻿"Service","Topic","Role","Data type","Publisher","Subscriber","Reliability","Durability","Rate (Hz)","Notes"
+"Health Report (Demo)","Demo.HealthReport","Report","Demo::HealthReport","Sensor Adapter","Monitoring UI","RELIABLE","VOLATILE","1",""
