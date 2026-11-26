@@ -130,3 +130,27 @@ if(WIN32)
     endforeach()
   endforeach()
 endif()
+
+# Isolate checkpoint ownership from timer and retry experiments.
+# Native baseline and 100/250 ms single-owner PASSIVE; three rotations.
+foreach(round IN ITEMS 1 2 3)
+  if(round EQUAL 1)
+    set(modes native owner100 owner250)
+  elseif(round EQUAL 2)
+    set(modes owner100 owner250 native)
+  else()
+    set(modes owner250 native owner100)
+  endif()
+  foreach(mode IN LISTS modes)
+    if(mode STREQUAL "native")
+      set(threshold 1000)
+    else()
+      set(threshold 0)
+    endif()
+    add_test(NAME checkpoint_${round}_${mode}
+      COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/traffic.py"
+      "$<TARGET_FILE:intraflow_pragma>" fast
+      "${CMAKE_CURRENT_BINARY_DIR}/checkpoint/${round}_${mode}.json" "${threshold}" "${mode}")
+    set_tests_properties(checkpoint_${round}_${mode} PROPERTIES TIMEOUT 360 LABELS checkpoint RUN_SERIAL TRUE)
+  endforeach()
+endforeach()

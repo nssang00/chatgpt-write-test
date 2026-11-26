@@ -25,6 +25,7 @@ struct Options {
     int diagnostic_checkpoint = -1;
     bool diagnostic_hooks = false;
     bool diagnostic_short_retry = false;
+    unsigned diagnostic_maintenance_ms = 0; // only designated peer
     std::uint32_t diagnostic_retry_seed = 1;
 #endif
 };

@@ -43,15 +43,17 @@ jobs:
       - name: Install benchmark sampler
         run: python -m pip install psutil==6.1.1
       - name: Functional tests
-        run: ctest --test-dir build-intraflow -C Release -LE "benchmark|multitopic|pragma|winlatency" --output-on-failure
+        run: ctest --test-dir build-intraflow -C Release -LE "benchmark|multitopic|pragma|winlatency|checkpoint" --output-on-failure
       - name: Repeated 30-process multi-topic traffic
         run: ctest --test-dir build-intraflow -C Release -L multitopic -V
       - name: Scale and latency tests
         run: ctest --test-dir build-intraflow -C Release -L benchmark -V
       - name: SQLite PRAGMA and contention diagnostics
         run: ctest --test-dir build-intraflow -C Release -L pragma -V
-      - name: Windows latency improvement A-B comparison
-        if: runner.os == 'Windows'
+      - name: Single-owner checkpoint comparison
+        run: ctest --test-dir build-intraflow -C Release -L checkpoint -V
+      - name: Windows latency improvement A-B comparison (manual experiment)
+        if: runner.os == 'Windows' && github.event_name == 'workflow_dispatch'
         run: ctest --test-dir build-intraflow -C Release -L winlatency -V
       - name: Upload benchmark results
         if: always()
@@ -90,4 +92,12 @@ jobs:
         with:
           name: intraflow-winlatency
           path: build-intraflow/winlatency/*.json
+          if-no-files-found: warn
+
+      - name: Upload checkpoint comparison
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: intraflow-checkpoint-${{ matrix.os }}
+          path: build-intraflow/checkpoint/*.json
           if-no-files-found: warn

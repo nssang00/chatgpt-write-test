@@ -70,6 +70,10 @@ struct Diagnostics {
     DiagClock::time_point retry_start;
     std::int64_t busy_calls=0,busy_episodes=0,checkpoint_busy=0,checkpoint_errors=0,wal_commits=0;
     Timing busy_sleep,checkpoint,insert,poll_wait,read_batch,json_parse,callback;
+    // Separate receiver-owned counters: never read by publishRaw.
+    Timing maintenance;
+    std::int64_t maintenance_busy=0,maintenance_errors=0,maintenance_partial=0,maintenance_valid=0;
+    int max_log_frames=0,max_backfilled_frames=0,max_pending_frames=0,last_log_frames=-1,last_backfilled_frames=-1;
     Json config,slowest_insert;
     static int busy(void* p,int prior) noexcept {
         auto& d=*static_cast<Diagnostics*>(p);
@@ -108,6 +112,22 @@ struct Diagnostics {
         }
         return SQLITE_OK;
     }
+    void maintain(Db& db) noexcept {
+        int log=-1,done=-1;
+        const auto begin=DiagClock::now();
+        const int rc=sqlite3_wal_checkpoint_v2(db.p,"main",SQLITE_CHECKPOINT_PASSIVE,&log,&done);
+        maintenance.add(elapsedUs(begin));
+        if(rc==SQLITE_BUSY)++maintenance_busy;
+        else if(rc!=SQLITE_OK)++maintenance_errors;
+        if(log>=0&&done>=0){
+            ++maintenance_valid;
+            last_log_frames=log;last_backfilled_frames=done;
+            max_log_frames=std::max(max_log_frames,log);
+            max_backfilled_frames=std::max(max_backfilled_frames,done);
+            max_pending_frames=std::max(max_pending_frames,std::max(0,log-done));
+            if(done<log)++maintenance_partial;
+        }
+    }
     static Json pragmas(Db& db) {
         Json r;
         for(const char* key:{"journal_mode","synchronous","busy_timeout","wal_autocheckpoint",
@@ -126,7 +146,12 @@ struct Diagnostics {
             {"wal_commits",wal_commits},{"insert_step",insert.json()},
             {"poll_wait",poll_wait.json()},{"read_batch",read_batch.json()},
             {"json_parse",json_parse.json()},{"callback",callback.json()},
-            {"slowest_insert",slowest_insert}};
+            {"slowest_insert",slowest_insert},{"maintenance",{
+                {"timing",maintenance.json()},{"busy",maintenance_busy},{"errors",maintenance_errors},
+                {"partial",maintenance_partial},{"valid",maintenance_valid},
+                {"max_log_frames",max_log_frames},{"max_backfilled_frames",max_backfilled_frames},
+                {"max_pending_frames",max_pending_frames},{"last_log_frames",last_log_frames},
+                {"last_backfilled_frames",last_backfilled_frames}}}};
     }
 };
 #endif
@@ -169,6 +194,7 @@ struct Session::Impl {
     Db writer, reader;
 #ifdef INTRAFLOW_DIAGNOSTICS
     Diagnostics diag;
+    std::unique_ptr<Db> maintenance_db;
 #endif
     TopicCache topics;
     std::unique_ptr<Stmt> insert, poll;
@@ -205,6 +231,16 @@ struct Session::Impl {
             check(sqlite3_busy_handler(writer.p,Diagnostics::busy,&diag),writer.p);
         if(o.diagnostic_hooks)
             sqlite3_wal_hook(writer.p,Diagnostics::wal,&diag);
+        if(o.diagnostic_maintenance_ms){
+            if(o.diagnostic_checkpoint!=0||o.diagnostic_hooks||o.diagnostic_short_retry)
+                throw std::invalid_argument("maintenance requires native busy and disabled autocheckpoint");
+            // One designated peer, separate writable connection, same
+            // receive thread. PASSIVE never waits for a reader/writer lock.
+            maintenance_db.reset(new Db(o.database,0));
+            maintenance_db->exec(o.full_sync?"PRAGMA synchronous=FULL":"PRAGMA synchronous=NORMAL");
+            check(sqlite3_wal_autocheckpoint(maintenance_db->p,0),maintenance_db->p);
+            high(*maintenance_db); // initialize WAL pager before checkpoint
+        }
 #endif
         loop=std::thread([this]{run();});
     }
@@ -215,6 +251,9 @@ struct Session::Impl {
         if(loop.joinable()) loop.join();
     }
     void run() {
+#ifdef INTRAFLOW_DIAGNOSTICS
+        auto next_maintenance=DiagClock::now()+std::chrono::milliseconds(options.diagnostic_maintenance_ms);
+#endif
         while(running) {
             bool full=false;
             try {
@@ -270,6 +309,14 @@ struct Session::Impl {
                     cursor=m.sequence;
                 }
             } catch(const std::exception& e) { std::cerr<<"receive: "<<e.what()<<std::endl; }
+#ifdef INTRAFLOW_DIAGNOSTICS
+            // The SELECT has been reset and callbacks have returned.
+            // Do not hold the writer/listener mutex during disk work.
+            if(running&&maintenance_db&&DiagClock::now()>=next_maintenance){
+                diag.maintain(*maintenance_db);
+                next_maintenance=DiagClock::now()+std::chrono::milliseconds(options.diagnostic_maintenance_ms);
+            }
+#endif
             if(!full) {
                 std::unique_lock<std::mutex> lock(wait_mu);
 #ifdef INTRAFLOW_DIAGNOSTICS

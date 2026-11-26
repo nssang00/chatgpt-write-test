@@ -253,3 +253,33 @@ Do not compare timer effect solely across separate CI runners.
 No production default changes, extra worker threads, or new user API.
 CI uploads the 12 JSON reports as intraflow-winlatency. Select a
 production change only after repeated results and target-host testing.
+
+## Single-owner checkpoint experiment (diagnostic only)
+
+CI #20 showed the 1 ms timer reduced actual waits, but one timer-only
+run failed with database locked; jittered retry and combined runs had
+unstable tails. The normal runtime stays unchanged. The 12 Windows
+timer/retry experiments remain runnable with CTest -L winlatency and
+in manual workflow dispatch; they are not part of the default push
+workflow while investigating checkpoint ownership. Their #20 failure
+is not waived or treated as a successful result.
+
+CTest -L checkpoint runs three rotated repetitions of native 1000-page
+autocheckpoint vs all writers autocheckpoint=0 with one designated
+peer (App0) running PASSIVE every 100 or 250 ms, on both platforms.
+Same 30 processes, 24 topics, fast profile, native timer and busy
+handler. No extra process or thread: App0 uses a separate writable
+connection on its existing receive loop after the SELECT is reset
+and callbacks return. Checkpoint does not wait for reader/writer
+locks, but can still perform disk I/O and delay that peer's listeners.
+There is no FULL/RESTART/TRUNCATE during traffic; final cleanup and
+integrity verification are unchanged. Record duration, BUSY/errors,
+partial progress, WAL frames, sampled file size, CPU, all latency
+metrics and owner vs other receivers. Require actual checkpoint
+progress and the original exact delivery/database gates. Frame counts
+are snapshots, and file size is not the same as pending frames.
+A designated owner is a test fixture, not a server. Owner crash or
+slow callback can prevent future checkpoints; no failover or WAL
+hard cap is implemented. Do not deploy autocheckpoint=0 based on this
+short experiment. Production would require a bounded maintenance
+policy and sustained load/owner failure tests. No API/default changes.

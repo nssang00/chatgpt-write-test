@@ -200,6 +200,21 @@ try:
                 report["diagnostics"]["slowest_insert_app"]=ds.index(worst)
                 require(report["diagnostics"]["insert_step"]["count"]==expected_pub,"insert sample count")
                 require(report["diagnostics"]["checkpoint_errors"]==0,"checkpoint errors")
+                mode=diagnostic_args[1]
+                interval={"owner100":100,"owner250":250}.get(mode,0)
+                require([r["maintenance_interval_ms"] for r in rows]==[interval]+[0]*(peers-1),"wrong checkpoint owner")
+                maintenance=ds[0]["maintenance"]
+                require(all(d["maintenance"]["timing"]["count"]==0 for d in ds[1:]),"non-owner checkpoint")
+                require(maintenance["errors"]==0,"maintenance checkpoint error")
+                if interval:
+                    require(maintenance["timing"]["count"]>0 and maintenance["valid"]>0 and
+                            maintenance["max_backfilled_frames"]>0,"no actual checkpoint progress")
+                else:
+                    require(maintenance["timing"]["count"]==0,"unexpected maintenance checkpoint")
+                report["diagnostics"]["maintenance"]=maintenance
+                report["diagnostics"]["maintenance_interval_ms"]=interval
+                report["diagnostics"]["owner_sensor_latency"]=stats(rows[0]["latency_us"][0])
+                report["diagnostics"]["other_sensor_latency"]=stats([x for r in rows[1:] for x in r["latency_us"][0]])
             release.touch()
             deadline=time.monotonic()+20
             for p in processes:

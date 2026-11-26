@@ -150,12 +150,13 @@ int main(int argc,char** argv){
         Options options;options.database=db;options.poll_ms=5;options.busy_ms=30000;
 #ifdef INTRAFLOW_DIAGNOSTICS
         const std::string mode=argv[12];
-        if(mode!="native"&&mode!="hooks"&&mode!="timer"&&mode!="retry"&&mode!="combined")return 2;
+        if(mode!="native"&&mode!="hooks"&&mode!="timer"&&mode!="retry"&&mode!="combined"&&mode!="owner100"&&mode!="owner250")return 2;
         TimerResolution timer(mode=="timer"||mode=="combined");
         options.diagnostic_checkpoint=std::atoi(argv[11]);
         options.diagnostic_hooks=mode=="hooks";
         options.diagnostic_short_retry=mode=="retry"||mode=="combined";
         options.diagnostic_retry_seed=0x9e3779b9u*static_cast<std::uint32_t>(id+1);
+        if(id==0)options.diagnostic_maintenance_ms=mode=="owner100"?100:mode=="owner250"?250:0;
 #endif
         auto app=connect("TrafficApp"+std::to_string(id),options);
         const int group=id%groups;
@@ -199,6 +200,7 @@ int main(int argc,char** argv){
 #ifdef INTRAFLOW_DIAGNOSTICS
         report["diagnostics"]=app.diagnostics();
         report["timer_1ms_active"]=timer.active;
+        report["maintenance_interval_ms"]=options.diagnostic_maintenance_ms;
 #endif
         const auto tmp=result+".tmp";
         {std::ofstream f(tmp.c_str());f<<report.dump();if(!f)throw std::runtime_error("report write");}
