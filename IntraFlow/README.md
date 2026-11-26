@@ -147,3 +147,19 @@ The same 30-process tests retain their periods and expected counts; there
 is no lowered load or relaxed correctness gate to obtain a pass. Failed
 worker logs and SQLite statement context help distinguish contention from
 other errors.
+
+## Lambda callback API regression
+
+CTest `lambda_listener_api` exercises the existing C++11 subscription
+API: captureless lambda, reference and value capture, mutable lambda,
+free function, std::function, member function via [this], std::bind,
+multiple listeners on one topic, raw subscribeAll, empty callback
+rejection, unsubscribe before publication, self-unsubscribe, registration
+and publication inside a callback, exception isolation, and single
+receive-thread dispatch. A second Session publishes five inputs; the
+test verifies the replies and nested subscription in SQLite. No new
+runtime API, thread pool or async publish semantics are introduced.
+Publish still returns the committed sequence or throws. Callbacks must
+return promptly; copy data for asynchronous user work, and keep captures
+alive until close. Move-only lambdas are not supported by std::function
+in C++11.

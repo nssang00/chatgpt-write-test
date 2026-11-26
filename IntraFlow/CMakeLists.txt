@@ -77,3 +77,8 @@ foreach(profile IN ITEMS normal fast)
     "${CMAKE_CURRENT_BINARY_DIR}/traffic/${profile}.json")
   set_tests_properties(multitopic_30_${profile} PROPERTIES TIMEOUT 360 LABELS multitopic RUN_SERIAL TRUE)
 endforeach()
+
+add_test(NAME lambda_listener_api
+  COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/stability.py"
+  "$<TARGET_FILE:intraflow_stability>" lambda)
+set_tests_properties(lambda_listener_api PROPERTIES TIMEOUT 90)
