@@ -82,3 +82,8 @@ add_test(NAME lambda_listener_api
   COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/stability.py"
   "$<TARGET_FILE:intraflow_stability>" lambda)
 set_tests_properties(lambda_listener_api PROPERTIES TIMEOUT 90)
+
+add_test(NAME slow_listener_thread_offload
+  COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/stability.py"
+  "$<TARGET_FILE:intraflow_stability>" offload)
+set_tests_properties(slow_listener_thread_offload PROPERTIES TIMEOUT 90)

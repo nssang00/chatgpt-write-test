@@ -163,3 +163,50 @@ Publish still returns the committed sequence or throws. Callbacks must
 return promptly; copy data for asynchronous user work, and keep captures
 alive until close. Move-only lambdas are not supported by std::function
 in C++11.
+
+## Rare slow listener work (no built-in worker pool)
+
+Listeners execute sequentially on the session receive thread. Keep them
+short. For infrequent independent long tasks, a user-owned thread is
+sufficient; copy the message, handle all worker exceptions, and bound
+concurrent work. For example, only when task lifetime is independent:
+
+```cpp
+app.subscribe<Command>("system.command", [](const Command& cmd) {
+    std::thread([cmd] {
+        try {
+            heavyProcess(cmd);
+        } catch (...) {
+            // Report the failure to the application; do not let it escape.
+        }
+    }).detach();
+});
+```
+
+Include <thread>. Detached work is NOT managed by Session::close(), must
+not outlive any captured resources, and may be terminated by process exit.
+If work uses the session or other application resources, prefer an owned
+joinable thread, stop accepting new work and join it before destroying
+those resources. For frequent tasks use a bounded application-owned queue
+and persistent worker instead of a thread per message.
+
+CTest `slow_listener_thread_offload` compares a deliberately blocked
+direct listener with a detached lambda using a copied Command and shared
+lifetime state. Each scenario sends 100 messages at a 10 ms target gap
+while one rare slow task remains pending. An independent session must
+receive all 100; the direct session receives zero before release and all
+100 afterward, while the offloaded session must receive all 100 before
+release. A promise completed at thread exit confirms detached work has
+finished in the test. The Python harness verifies the exact SQLite rows.
+This is a controlled blocking scenario, not a CPU saturation benchmark.
+The runtime/API and thread count per Session are unchanged.
+
+## Pilot deployment status
+
+Suitable for evaluation in trusted local processes, built from source.
+Before unrestricted production use: define and test bounded database
+retention, run sustained-load tests on target hardware, and validate a
+versioned installable SDK with its SQLite/JSON dependencies. Review
+application shutdown and error handling and document supported IDL subset,
+limits and the absence of durable delivery. Do not claim hard real-time
+or guaranteed recovery of undelivered messages.

@@ -8,6 +8,8 @@
 #include <thread>
 #include <vector>
 #include <stdexcept>
+#include <future>
+#include <memory>
 
 using namespace intraflow;
 static void require(bool good,const char* msg){if(!good) throw std::runtime_error(msg);}
@@ -110,12 +112,91 @@ static void lambdaTests(const Options& o){
     std::cout<<"PASS: all lambda/function/member listeners and callback reentrancy"<<std::endl;
 }
 
+// A rare slow task is controlled by the test, not by timing assumptions.
+// The shared state belongs to the detached worker as well as the caller.
+// It deliberately owns no Session pointer or references to stack objects.
+struct SlowTask {
+    std::atomic<bool> started{false}, release{false};
+    std::atomic<int> errors{0};
+    std::promise<void> done;
+    void run(const Command& copy) {
+        started=true;
+        const auto deadline=std::chrono::steady_clock::now()+std::chrono::seconds(15);
+        while(!release && std::chrono::steady_clock::now()<deadline)
+            std::this_thread::sleep_for(std::chrono::milliseconds(2));
+        if(!release || copy.code!=42)++errors;
+    }
+};
+struct ReleaseTask {
+    std::shared_ptr<SlowTask> state;
+    ~ReleaseTask(){state->release=true;}
+};
+static void slowListenerCase(const Options& o,bool detached) {
+    const std::string prefix=detached?"offload.":"direct.";
+    const int count=100;
+    auto state=std::make_shared<SlowTask>();
+    auto done=state->done.get_future();
+    std::atomic<int> fast{0}, independent{0}, errors{0};
+    auto receiver=connect(prefix+"receiver",o);
+    auto other=connect(prefix+"other",o);
+    auto publisher=connect(prefix+"publisher",o);
+    // Ensure the slow task can leave even if a test assertion throws.
+    ReleaseTask release{state};
+    if(detached) {
+        receiver.subscribe<Command>(prefix+"slow",[state](const Command& cmd){
+            std::thread([state,cmd]{
+                try {
+                    state->run(cmd);
+                } catch(...) { ++state->errors; }
+                // Completion becomes observable only once the thread exits.
+                state->done.set_value_at_thread_exit();
+            }).detach();
+        });
+    } else {
+        receiver.subscribe<Command>(prefix+"slow",[state](const Command& cmd){
+            try {state->run(cmd);}catch(...){++state->errors;}
+            state->done.set_value();
+        });
+    }
+    receiver.subscribe<Command>(prefix+"fast",[&](const Command& cmd){
+        if(cmd.code!=fast.load())++errors;
+        ++fast;
+    });
+    other.subscribe<Command>(prefix+"fast",[&](const Command& cmd){
+        if(cmd.code!=independent.load())++errors;
+        ++independent;
+    });
+    Command cmd{};cmd.code=42;publisher.publish(prefix+"slow",cmd);
+    cmd.code=-1;
+    until([&]{return state->started.load();});
+    // About one second of fast traffic while the rare slow task is held.
+    for(int i=0;i<count;++i){
+        Command msg{};msg.code=i;publisher.publish(prefix+"fast",msg);
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    until([&]{return independent==count;});
+    if(detached)until([&]{return fast==count;});
+    else require(fast==0,"direct slow callback did not block its event loop");
+    require(done.wait_for(std::chrono::milliseconds(0))==std::future_status::timeout,
+            "slow task finished prematurely");
+    std::cout<<(detached?"offload":"direct")<<": fast while slow pending="
+             <<fast.load()<<"/"<<count<<", independent="<<independent.load()<<"/"<<count<<std::endl;
+    state->release=true;
+    require(done.wait_for(std::chrono::seconds(5))==std::future_status::ready,"slow task completion timeout");
+    done.get();
+    until([&]{return fast==count;});
+    receiver.close();other.close();publisher.close();
+    require(errors==0 && state->errors==0 && fast==count && independent==count,
+            "slow listener delivery or lifetime failure");
+}
+
 int main(int argc,char** argv) {
     try {
         if(argc!=4) return 2;
         Options o;o.database=argv[2];o.busy_ms=200;
         const std::string mode=argv[1];
         if(mode=="lambda"){lambdaTests(o);return 0;}
+        if(mode=="offload"){slowListenerCase(o,false);slowListenerCase(o,true);return 0;}
         if(mode=="crash"){
             auto app=connect("crash",o);
             Command c{};c.code=111;

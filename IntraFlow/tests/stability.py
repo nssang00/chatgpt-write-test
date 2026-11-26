@@ -7,6 +7,21 @@ import time
 from contextlib import closing
 
 exe=sys.argv[1]
+if len(sys.argv)>2 and sys.argv[2]=="offload":
+    with tempfile.TemporaryDirectory() as directory:
+        root=pathlib.Path(directory)
+        db=root/"offload.db"
+        subprocess.run([exe,"offload",str(db),str(root/"ready")],check=True,timeout=65)
+        with closing(sqlite3.connect(db)) as conn:
+            import json
+            values={}
+            for topic,payload in conn.execute("SELECT topic,payload FROM messages ORDER BY seq"):
+                values.setdefault(topic,[]).append(json.loads(payload)["code"])
+            assert values=={"direct.slow":[42],"direct.fast":list(range(100)),
+                            "offload.slow":[42],"offload.fast":list(range(100))}
+            assert conn.execute("PRAGMA integrity_check").fetchone()[0]=="ok"
+    sys.exit(0)
+
 if len(sys.argv)>2 and sys.argv[2]=="lambda":
     with tempfile.TemporaryDirectory() as directory:
         root=pathlib.Path(directory)
