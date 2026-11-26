@@ -21,11 +21,11 @@ int main(int argc,char** argv) {
         std::string role=argv[1], db=argv[2], ready=argv[3], go=argv[4];
         int n=std::atoi(argv[5]);
         Options options;options.database=db;
-        auto app=connect(role,options);
         std::atomic<int> count{0};
         std::mutex seen_mu;
         std::set<int> seen;
         int expected=0;
+        auto app=connect(role,options);
         if(role=="sensor") {
             app.subscribe<Command>("system.command",[&](const Command& m){if(m.code==7) ++count;});
             expected=1;

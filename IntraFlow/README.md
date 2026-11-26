@@ -22,3 +22,25 @@ The build-time Python generator supports a deliberately limited subset: top-leve
 Build: CMake + SQLite3 + nlohmann-json + Python3. On Ubuntu install libsqlite3-dev and nlohmann-json3-dev; on Windows use vcpkg toolchain. Run ctest --test-dir build -C Release --output-on-failure.
 
 CI: five role processes (sensor, control, device, display, monitor) plus 32 symmetric peer processes. The peer test checks unique sender fan-out (including self) and message history; it is a smoke test, not a throughput benchmark or a certified maximum. No NativeWeb integration or main branch changes are intended.
+
+## Scale and performance tests
+
+The benchmark launches 32, 64, 128 and 256 independent OS processes, each
+publishing and subscribing to one topic. Every case commits 256 messages
+(8, 4, 2, 1 messages per process respectively), with an exact sender/index
+matrix and a 64-byte string checked by every receiver. Self-delivery is
+included. Each test fails on a missing, duplicate, invalid or extra message,
+unexpected history, timeout or process error. This is a concurrent burst
+benchmark; it is not a sustained-rate or maximum-capacity certification.
+
+Run `ctest --test-dir build -C Release -LE benchmark --output-on-failure`
+for functional tests and `ctest --test-dir build -C Release -L benchmark -V`
+for scale tests. JSON reports are written to `build/benchmarks/`.
+GitHub Actions uploads them per operating system even if a later test fails.
+Optional Python psutil (installed by CI) samples aggregate process RSS and
+thread count; RSS includes shared pages and sampled peaks are not exact.
+Publish call duration uses a monotonic clock. End-to-end latency uses the
+same host's UTC system clock, from before publish to listener entry (includes
+write-lock wait). Negative latency fails the test as a clock anomaly.
+Throughput includes the start barrier, publish, delivery, and completion
+reporting overhead, not setup. Results depend on the host and workload.

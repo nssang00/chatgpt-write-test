@@ -3,6 +3,7 @@
 #include <functional>
 #include <memory>
 #include <string>
+#include <stdexcept>
 #include <nlohmann/json.hpp>
 
 namespace intraflow {

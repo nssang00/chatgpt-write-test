@@ -58,7 +58,7 @@ struct Session::Impl {
     Db writer, reader;
     std::mutex write_mu, listeners_mu, wait_mu;
     std::condition_variable cv;
-    std::vector<Listener> listeners;
+    std::vector<std::shared_ptr<Listener>> listeners;
     std::atomic<bool> running{true};
     std::thread loop;
     std::int64_t cursor;
@@ -93,13 +93,13 @@ struct Session::Impl {
                 full=batch.size()==256;
                 for(const auto& m:batch) {
                     if(!running) break;
-                    std::vector<Listener> targets;
+                    std::vector<std::shared_ptr<Listener>> targets;
                     { std::lock_guard<std::mutex> lock(listeners_mu);
-                      for(const auto& l:listeners) if(m.sequence>l.after && (l.topic.empty() || l.topic==m.topic)) targets.push_back(l);
+                      for(const auto& l:listeners) if(m.sequence>l->after && (l->topic.empty() || l->topic==m.topic)) targets.push_back(l);
                     }
                     for(const auto& l:targets) {
                         if(!running) break;
-                        try { l.callback(m); }
+                        try { l->callback(m); }
                         catch(const std::exception& e) { std::cerr<<"listener: "<<e.what()<<std::endl; }
                         catch(...) { std::cerr<<"listener: unknown exception"<<std::endl; }
                     }
@@ -117,8 +117,8 @@ struct Session::Impl {
         std::lock_guard<std::mutex> lock(listeners_mu);
         std::lock_guard<std::mutex> write(write_mu);
         if(!t.empty()) topic(writer,t,name,hash,schema);
-        Listener l; l.id=next++;l.topic=t;l.after=high(writer);l.callback=std::move(cb);
-        listeners.push_back(std::move(l)); return listeners.back().id;
+        auto l=std::make_shared<Listener>(); l->id=next++;l->topic=t;l->after=high(writer);l->callback=std::move(cb);
+        listeners.push_back(l); return l->id;
     }
 };
 Session::Session(const std::string& name,const Options& options):impl_(new Impl(name,options)) {}
@@ -152,7 +152,7 @@ SubscriptionId Session::subscribeRaw(const std::string& t,const std::string& nam
 SubscriptionId Session::subscribeAll(std::function<void(const Message&)> cb) { return checked().add("","","","",std::move(cb)); }
 void Session::unsubscribe(SubscriptionId id) {
     auto& p=checked();std::lock_guard<std::mutex> lock(p.listeners_mu);
-    p.listeners.erase(std::remove_if(p.listeners.begin(),p.listeners.end(),[id](const Impl::Listener& l){return l.id==id;}),p.listeners.end());
+    p.listeners.erase(std::remove_if(p.listeners.begin(),p.listeners.end(),[id](const std::shared_ptr<Impl::Listener>& l){return l->id==id;}),p.listeners.end());
 }
 void Session::close() {
     if(!impl_) return;

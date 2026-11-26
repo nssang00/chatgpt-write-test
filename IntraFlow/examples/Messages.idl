@@ -2,3 +2,4 @@ struct SensorData { long source; double value; };
 struct Command { long code; };
 struct Status { long source; boolean running; };
 struct PeerMessage { long source; sequence<double> values; };
+struct BenchMessage { long source; long index; long long sent_us; string data; };
