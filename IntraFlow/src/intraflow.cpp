@@ -156,8 +156,42 @@ struct Diagnostics {
 };
 #endif
 std::int64_t high(Db& db) {
-    Stmt s(db,"SELECT COALESCE(MAX(seq),0) FROM messages");
+    Stmt s(db,"SELECT COALESCE((SELECT seq FROM sqlite_sequence WHERE name='messages'),0)");
     s.row(); return s.num(0);
+}
+// Shared DB policy; do not allow conflicting per-session retention settings.
+void retention(Db& db,const Options& o) {
+    db.exec("CREATE TABLE IF NOT EXISTS intraflow_retention(id INTEGER PRIMARY KEY CHECK(id=1),retention_sec INTEGER NOT NULL,max_messages INTEGER NOT NULL,cleanup_interval_ms INTEGER NOT NULL,last_cleanup_us INTEGER NOT NULL)");
+    {
+        Stmt s(db,"SELECT retention_sec,max_messages,cleanup_interval_ms FROM intraflow_retention WHERE id=1");
+        if(!s.row()){
+            s.reset();
+            Stmt add(db,"INSERT OR IGNORE INTO intraflow_retention VALUES(1,?,?,?,0)");
+            add.bind(1,static_cast<std::int64_t>(o.retention_sec));
+            add.bind(2,static_cast<std::int64_t>(o.max_messages));
+            add.bind(3,static_cast<std::int64_t>(o.cleanup_interval_ms));
+            add.row();
+        }
+    }
+    {
+        Stmt s(db,"SELECT retention_sec,max_messages,cleanup_interval_ms FROM intraflow_retention WHERE id=1");
+        if(!s.row()||s.num(0)!=o.retention_sec||s.num(1)!=o.max_messages||s.num(2)!=o.cleanup_interval_ms)
+            throw std::runtime_error("retention policy mismatch for shared database");
+    }
+    if(!o.retention_sec&&!o.max_messages)return;
+    // One global cleanup cadence, part of the committing INSERT. At most
+    // 256 oldest rows per invocation; every 128 inserts or elapsed interval.
+    // Delete a prefix even if timestamps are out of sequence, so a receiver
+    // can detect missing global sequences. Never delete the newest row.
+    const std::string countCut=o.max_messages?"NEW.seq-"+std::to_string(o.max_messages):"0";
+    const std::string ageCut=o.retention_sec?
+        "(SELECT COALESCE(MIN(CASE WHEN timestamp>NEW.timestamp-"+std::to_string(static_cast<std::uint64_t>(o.retention_sec)*1000000)+
+        " THEN seq END)-1,MAX(seq),0) FROM (SELECT seq,timestamp FROM messages ORDER BY seq LIMIT 256))":"0";
+    const auto sql=std::string("CREATE TRIGGER IF NOT EXISTS intraflow_prune AFTER INSERT ON messages WHEN NEW.seq%128=0 OR NEW.timestamp >= (SELECT last_cleanup_us+")+
+        std::to_string(static_cast<std::uint64_t>(o.cleanup_interval_ms)*1000)+" FROM intraflow_retention WHERE id=1) BEGIN "
+        "DELETE FROM messages WHERE seq IN (SELECT seq FROM messages WHERE seq<NEW.seq AND seq<=MAX("+countCut+","+ageCut+") ORDER BY seq LIMIT 256); "
+        "UPDATE intraflow_retention SET last_cleanup_us=NEW.timestamp WHERE id=1; END";
+    db.exec(sql.c_str());
 }
 using TypeKey=std::pair<std::string,std::string>;
 using TopicCache=std::unordered_map<std::string,TypeKey>;
@@ -202,11 +236,14 @@ struct Session::Impl {
     std::condition_variable cv;
     std::vector<std::shared_ptr<Listener>> listeners;
     std::atomic<bool> running{true};
+    std::atomic<std::uint64_t> skipped{0};
     std::thread loop;
     std::int64_t cursor;
     SubscriptionId next = 1;
     Impl(const std::string& n,const Options& o):name(n),options(o),writer(o.database,o.busy_ms),reader(o.database,o.busy_ms),cursor(0) {
-        if(n.empty() || !o.poll_ms || o.database.empty()) throw std::invalid_argument("invalid options");
+        if(n.empty() || !o.poll_ms || o.database.empty() ||
+           ((o.retention_sec||o.max_messages)&&!o.cleanup_interval_ms))
+            throw std::invalid_argument("invalid options");
         { Stmt mode(writer,"PRAGMA journal_mode=WAL");
           if(!mode.row()||mode.str(0)!="wal")throw std::runtime_error("WAL mode unavailable"); }
         writer.exec(o.full_sync?"PRAGMA synchronous=FULL":"PRAGMA synchronous=NORMAL");
@@ -214,6 +251,7 @@ struct Session::Impl {
         writer.exec("CREATE TABLE IF NOT EXISTS topics(name TEXT PRIMARY KEY,type TEXT NOT NULL,hash TEXT NOT NULL,schema TEXT NOT NULL)");
         writer.exec("CREATE TABLE IF NOT EXISTS messages(seq INTEGER PRIMARY KEY AUTOINCREMENT,topic TEXT NOT NULL,sender TEXT NOT NULL,timestamp INTEGER NOT NULL,payload TEXT NOT NULL)");
         writer.exec("CREATE INDEX IF NOT EXISTS messages_topic_seq ON messages(topic,seq)");
+        retention(writer,o);
         insert.reset(new Stmt(writer,"INSERT INTO messages(topic,sender,timestamp,payload) VALUES(?,?,?,?)"));
         poll.reset(new Stmt(reader,"SELECT m.seq,m.timestamp,m.topic,m.sender,t.type,t.hash,m.payload FROM messages m JOIN topics t ON t.name=m.topic WHERE m.seq>? ORDER BY m.seq LIMIT 256"));
         cursor=high(reader);
@@ -280,6 +318,7 @@ struct Session::Impl {
                 for(auto& entry:batch) {
                     if(!running) break;
                     auto& m=entry.message;
+                    if(m.sequence>cursor+1)skipped.fetch_add(static_cast<std::uint64_t>(m.sequence-cursor-1));
                     std::vector<std::shared_ptr<Listener>> targets;
                     { std::lock_guard<std::mutex> lock(listeners_mu);
                       for(const auto& l:listeners) if(m.sequence>l->after && (l->topic.empty() || l->topic==m.topic)) targets.push_back(l);
@@ -390,6 +429,9 @@ Json Session::diagnostics() const {
     return impl_->diag.json();
 }
 #endif
+std::uint64_t Session::skippedSequences() const noexcept {
+    return impl_?impl_->skipped.load():0;
+}
 void Session::close() {
     if(!impl_) return;
     if(impl_->loop.get_id()==std::this_thread::get_id()) throw std::logic_error("close from listener not allowed");

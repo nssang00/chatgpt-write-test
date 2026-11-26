@@ -318,3 +318,43 @@ directory after checks; only JSON results uploaded. CI runs the hour
 test in separate PR/manual jobs (100 min timeout); future routine CI
 may move endurance to manual after initial validation. It is not proof
 of indefinite operation or durable offline delivery.
+
+## Bounded message history (default on)
+
+IntraFlow is a transient IPC buffer, not an archival log. Options defaults:
+retention_sec=60, max_messages=100000, cleanup_interval_ms=1000.
+Set both limits to zero for full history. Every Session sharing a DB
+must use the same policy (including interval); first open persists it
+in intraflow_retention and subsequent mismatches are rejected. Existing
+DBs without this table adopt the first opener's policy; back up any
+history that must be preserved and close older library versions before
+upgrade. To change policy use a new DB after stopping all sessions.
+Do not edit metadata or triggers externally.
+
+A SQLite AFTER INSERT trigger prunes at most 256 oldest messages every
+128 committed sequence numbers or after the configured wall-clock
+interval, whichever occurs first. No new thread, connection, server,
+owner election or competing cleanup transaction. The cleanup is part
+of the successful publish transaction; its cost is included in publish
+latency. Sequence-window cutoff uses AUTOINCREMENT, not COUNT(*).
+Age pruning removes a prefix and can be delayed by clock changes,
+backlog or inactivity. No cleanup during idle periods, no timer-driven
+expiry guarantee. The limits are soft (up to 127 extra rows in a
+steady contiguous stream, more during migration/backlog); not a byte
+quota. A large message or long-lived WAL reader can still grow disk
+usage. Freed database pages can be reused; SQLite file size does not
+necessarily shrink, and VACUUM is not run during IPC.
+
+Receive cursors and new subscription boundaries use sqlite_sequence
+rather than MAX of retained rows. Session::skippedSequences() reports
+global missing sequence numbers observed after connect, even after
+close; this includes topics the Session did not subscribe to and is
+not a count of lost callbacks. It is not a durable delivery guarantee.
+An excessively slow listener can miss pruned messages. Tests retain
+exact per-receiver correctness; history is verified as a contiguous
+suffix including the last sequence and each publisher's last index.
+Legacy 6-second diagnostic profiles explicitly disable retention for
+full history; load sweep and 1-hour test now exercise the defaults and
+report retained/pruned counts, age span, page counts and skipped
+sequences. No Windows writer mutex change in this commit; isolate
+retention behavior before addressing the existing lock failure.

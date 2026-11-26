@@ -169,3 +169,12 @@ add_test(NAME endurance_300
   "$<TARGET_FILE:intraflow_traffic>" load_300
   "${CMAKE_CURRENT_BINARY_DIR}/endurance/300.json" 3600000)
 set_tests_properties(endurance_300 PROPERTIES TIMEOUT 4500 LABELS endurance RUN_SERIAL TRUE)
+
+add_executable(intraflow_retention tests/retention.cpp)
+add_dependencies(intraflow_retention intraflow_idl)
+target_include_directories(intraflow_retention PRIVATE "${CMAKE_CURRENT_BINARY_DIR}")
+target_link_libraries(intraflow_retention PRIVATE intraflow)
+add_test(NAME retention_policy_and_gap
+  COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/retention.py"
+  "$<TARGET_FILE:intraflow_retention>")
+set_tests_properties(retention_policy_and_gap PROPERTIES TIMEOUT 90)

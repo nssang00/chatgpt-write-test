@@ -21,6 +21,9 @@ struct Options {
     unsigned poll_ms = 10;
     unsigned busy_ms = 5000;
     bool full_sync = false; // opt into SQLite FULL power-loss durability
+    unsigned retention_sec = 60; // zero disables age limit
+    unsigned max_messages = 100000; // zero disables sequence-window limit
+    unsigned cleanup_interval_ms = 1000; // during publication, not idle
 #ifdef INTRAFLOW_DIAGNOSTICS
     int diagnostic_checkpoint = -1;
     bool diagnostic_hooks = false;
@@ -51,6 +54,9 @@ public:
     SubscriptionId subscribeAll(std::function<void(const Message&)> callback);
     void unsubscribe(SubscriptionId id);
     void close();
+    // Global sequence gaps observed by this Session, not per-topic losses.
+    // Available after close; does not count gaps before connect.
+    std::uint64_t skippedSequences() const noexcept;
 #ifdef INTRAFLOW_DIAGNOSTICS
     Json diagnostics() const; // after close and all publishers stop
 #endif

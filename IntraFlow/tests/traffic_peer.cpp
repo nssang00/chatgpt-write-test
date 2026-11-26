@@ -158,7 +158,11 @@ int main(int argc,char** argv){
         std::array<Clock::time_point,kinds> previous{};
         Options options;options.database=db;
         // New load sweep uses actual SDK defaults, not stress-test timeout.
-        if(!load){options.poll_ms=5;options.busy_ms=30000;}
+        if(!load){
+            options.poll_ms=5;options.busy_ms=30000;
+            // Legacy diagnostic workloads verify full history.
+            options.retention_sec=0;options.max_messages=0;
+        }
 #ifdef INTRAFLOW_DIAGNOSTICS
         const std::string mode=argv[12];
         if(mode!="native"&&mode!="hooks"&&mode!="timer"&&mode!="retry"&&mode!="combined"&&mode!="owner100"&&mode!="owner250")return 2;
@@ -213,6 +217,8 @@ int main(int argc,char** argv){
         Json report={{"id",id},{"group",group},{"published",published},{"received",receiver.received},
             {"duplicates",receiver.duplicates},{"invalid",receiver.invalid},{"out_of_order",receiver.out_of_order},
             {"publish_elapsed_us",publishElapsed},{"poll_ms",options.poll_ms},{"busy_ms",options.busy_ms},
+            {"retention_sec",options.retention_sec},{"max_messages",options.max_messages},
+            {"skipped_sequences",app.skippedSequences()},
             {"latency_us",receiver.latency},{"publish_us",pubTime},
             {"lateness_us",lateness},{"gaps_us",gaps}};
 #ifdef INTRAFLOW_DIAGNOSTICS

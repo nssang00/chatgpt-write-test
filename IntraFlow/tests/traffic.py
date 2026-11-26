@@ -53,7 +53,8 @@ report = dict(status="FAIL", profile=profile, processes=peers, topics=24,
               expected_publishes=expected_pub, expected_deliveries=expected_rx,
               target_publish_rate=expected_pub/(duration/1000),
               poll_ms=10 if load else 5, busy_ms=5000 if load else 30000,
-              phase_staggered=load, history_retention=False)
+              phase_staggered=load, history_retention=load,
+              retention_sec=60 if load else 0,max_messages=100000 if load else 0)
 
 def require(condition, message):
     if not condition:
@@ -73,21 +74,44 @@ def verify_db(db):
         require(conn.execute("PRAGMA integrity_check").fetchone()[0]=="ok", "integrity check")
         topics = dict(conn.execute("SELECT name,type FROM topics"))
         require(topics=={f"group.{g}.{n}":t for g in range(groups) for n,t in zip(names,types)}, "topic registry mismatch")
-        next_idx = [[0]*4 for _ in range(peers)]
+        next_idx = [[None if load else 0]*4 for _ in range(peers)]
         raw_bytes = 0
-        for t,sender,payload in conn.execute("SELECT topic,sender,payload FROM messages ORDER BY seq"):
+        retained=0
+        first_seq,last_seq=None,None
+        first_ts,last_ts=None,None
+        for seq,t,sender,ts,payload in conn.execute("SELECT seq,topic,sender,timestamp,payload FROM messages ORDER BY seq"):
+            if first_seq is None:first_seq,first_ts=seq,ts
+            if last_seq is not None:require(seq==last_seq+1,"history is not contiguous suffix")
+            last_seq,last_ts=seq,ts
+            retained+=1
             _,g,n = t.split(".")
             k=names.index(n)
             m=json.loads(payload)
             h=m["header"]
             src,idx=h["source"],h["index"]
             require(0<=src<peers and src%groups==int(g) and sender==f"TrafficApp{src}" and
-                    idx==next_idx[src][k] and idx<counts[k] and h["sent_us"]>0, "DB sequence/publisher mismatch")
-            next_idx[src][k]+=1
+                    (next_idx[src][k] is None or idx==next_idx[src][k]) and
+                    0<=idx<counts[k] and h["sent_us"]>0, "DB sequence/publisher mismatch")
+            next_idx[src][k]=idx+1
             raw_bytes+=len(payload.encode("utf-8"))
             if k==3:
                 require(m["text"]==chr(65+src%26)*4096, "DB log mismatch")
-        require(all(row==counts for row in next_idx),"DB history count mismatch")
+        require(last_seq==expected_pub and conn.execute("SELECT seq FROM sqlite_sequence WHERE name='messages'").fetchone()[0]==expected_pub,
+                "DB high-water mismatch")
+        require(all(row==counts for row in next_idx),"DB history tail mismatch")
+        require(retained==last_seq-first_seq+1,"DB history suffix count mismatch")
+        if load:
+            require(retained<=100127,"retention sequence window exceeded")
+            if expected_pub>100127 or endurance:
+                require(retained<expected_pub,"retention did not prune")
+            if endurance:
+                require(last_ts-first_ts<=65*1000000,"retention age window exceeded")
+        else:
+            require(retained==expected_pub,"DB full history mismatch")
+        report.update(retained_messages=retained,pruned_messages=expected_pub-retained,
+                      retained_span_seconds=(last_ts-first_ts)/1000000,
+                      db_freelist_pages=conn.execute("PRAGMA freelist_count").fetchone()[0],
+                      db_page_count=conn.execute("PRAGMA page_count").fetchone()[0])
         require(conn.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchone()[0]==0,"checkpoint failed")
         if not load:
             with closing(sqlite3.connect(snapshot)) as dest:
@@ -181,6 +205,7 @@ try:
                           duplicates=sum(r["duplicates"] for r in rows),
                           invalid=sum(r["invalid"] for r in rows),
                           out_of_order=sum(r["out_of_order"] for r in rows),
+                          skipped_sequences=sum(r["skipped_sequences"] for r in rows),
                           send_elapsed_seconds=send_elapsed, elapsed_seconds=elapsed,
                           publish_rate_per_second=published/send_elapsed,
                           delivery_rate_per_second=received/elapsed,
@@ -204,7 +229,10 @@ try:
             for i,r in enumerate(rows):
                 require(r["id"]==i and r["group"]==i%groups and r["published"]==counts and
                         r["received"]==[10*c for c in counts],"per-app matrix failed")
-                require(r["poll_ms"]==report["poll_ms"] and r["busy_ms"]==report["busy_ms"],"unexpected session options")
+                require(r["poll_ms"]==report["poll_ms"] and r["busy_ms"]==report["busy_ms"] and
+                        r["retention_sec"]==report["retention_sec"] and r["max_messages"]==report["max_messages"],
+                        "unexpected session options")
+                require(r["skipped_sequences"]==0,"receiver sequence gap")
                 for k in range(4):
                     require(len(r["latency_us"][k])==10*counts[k] and len(r["publish_us"][k])==counts[k] and
                             len(r["lateness_us"][k])==counts[k] and len(r["gaps_us"][k])==counts[k]-1,"timing sample mismatch")
