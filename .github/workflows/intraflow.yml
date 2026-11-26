@@ -1,0 +1,44 @@
+name: IntraFlow
+on:
+  push:
+    paths:
+      - 'IntraFlow/**'
+      - '.github/workflows/intraflow.yml'
+  pull_request:
+    paths:
+      - 'IntraFlow/**'
+      - '.github/workflows/intraflow.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Linux dependencies
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libsqlite3-dev nlohmann-json3-dev
+      - name: Windows dependencies
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: vcpkg install sqlite3:x64-windows nlohmann-json:x64-windows
+      - name: Configure Linux
+        if: runner.os == 'Linux'
+        run: cmake -S IntraFlow -B build-intraflow -DCMAKE_BUILD_TYPE=Release
+      - name: Configure Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: cmake -S IntraFlow -B build-intraflow -A x64 "-DCMAKE_TOOLCHAIN_FILE=$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" -DVCPKG_TARGET_TRIPLET=x64-windows
+      - name: Build
+        run: cmake --build build-intraflow --config Release --parallel
+      - name: Test
+        run: ctest --test-dir build-intraflow -C Release --output-on-failure

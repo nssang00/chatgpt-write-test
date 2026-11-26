@@ -1,0 +1,56 @@
+#pragma once
+#include <cstdint>
+#include <functional>
+#include <memory>
+#include <string>
+#include <nlohmann/json.hpp>
+
+namespace intraflow {
+using Json = nlohmann::json;
+using SubscriptionId = std::uint64_t;
+template<class T> struct Traits;
+struct Message {
+    std::int64_t sequence;
+    std::int64_t timestamp;
+    std::string topic, sender, type, hash;
+    Json payload;
+};
+struct Options {
+    std::string database = "intraflow.db";
+    unsigned poll_ms = 10;
+    unsigned busy_ms = 5000;
+};
+class Session {
+public:
+    explicit Session(const std::string& name, const Options& options = Options());
+    ~Session();
+    Session(Session&&) noexcept;
+    Session& operator=(Session&&) noexcept;
+    Session(const Session&) = delete;
+    Session& operator=(const Session&) = delete;
+
+    template<class T>
+    std::int64_t publish(const std::string& topic, const T& value) {
+        return publishRaw(topic, Traits<T>::name(), Traits<T>::hash(), Traits<T>::schema(), Json(value));
+    }
+    template<class T>
+    SubscriptionId subscribe(const std::string& topic, std::function<void(const T&)> callback) {
+        if (!callback) throw std::invalid_argument("empty callback");
+        return subscribeRaw(topic, Traits<T>::name(), Traits<T>::hash(), Traits<T>::schema(),
+            [callback](const Message& m) { const T value = m.payload.get<T>(); callback(value); });
+    }
+    SubscriptionId subscribeAll(std::function<void(const Message&)> callback);
+    void unsubscribe(SubscriptionId id);
+    void close();
+
+private:
+    struct Impl;
+    std::unique_ptr<Impl> impl_;
+    Impl& checked();
+    std::int64_t publishRaw(const std::string&, const std::string&, const std::string&, const std::string&, const Json&);
+    SubscriptionId subscribeRaw(const std::string&, const std::string&, const std::string&, const std::string&, std::function<void(const Message&)>);
+};
+inline Session connect(const std::string& name, const Options& options = Options()) {
+    return Session(name, options);
+}
+}
