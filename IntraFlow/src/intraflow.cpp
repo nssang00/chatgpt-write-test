@@ -74,7 +74,8 @@ struct Session::Impl {
     }
     ~Impl() { stop(); }
     void stop() {
-        running=false; cv.notify_all();
+        { std::lock_guard<std::mutex> lock(wait_mu); running=false; }
+        cv.notify_all();
         if(loop.joinable()) loop.join();
     }
     void run() {

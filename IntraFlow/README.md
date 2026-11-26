@@ -70,3 +70,31 @@ The actual payload is stored as SQLite TEXT JSON, one row per message,
 not one column per field. Open a live database read-only. Do not copy just
 the main file while a writer is active; use SQLite backup or checkpoint
 after all sessions close. The sample contains only synthetic test data.
+
+## Standalone applications
+
+Build targets SensorApp, ControlApp, DeviceApp, DisplayApp, MonitorApp are
+independent executables using the same Messages.idl. Pass a common absolute
+database path as the first argument, or run from one directory with the
+default intraflow.db. Start MonitorApp, DisplayApp, DeviceApp, ControlApp,
+then SensorApp in separate terminals. Each prints READY after subscribing.
+In SensorApp enter a numeric reading (e.g. 25.5); the control app publishes
+a command, device app publishes status, display and monitor show results.
+Enter q in SensorApp or press Enter in the other apps to stop. The samples
+do not replay messages sent before subscription. The monitor logs JSON to
+stdout and truncates the displayed payload to 512 bytes (the DB retains it).
+The original app.cpp remains the automation-only multi-role test peer.
+
+## Stability gates
+
+CTest standalone_examples exercises all five actual executable targets
+with independent processes, verifies their output and persisted topic
+history, then stops and restarts the display process after forced termination.
+CTest callback_concurrency_recovery verifies four concurrent writers on a
+single session, per-publisher order and exact receive matrix, single callback
+thread, mutable callback state, self-unsubscribe, callback exceptions,
+late subscription, type mismatch, bounded SQLite lock failure and retry,
+and successful reopening after a forced process exit during an uncommitted
+SQLite transaction. These are focused regression tests, not a long-duration
+soak or proof of all concurrency/lifetime behavior. No durable delivery or
+offline replay is implied.

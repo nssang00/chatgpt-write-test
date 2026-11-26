@@ -45,3 +45,23 @@ add_test(NAME large_payload_sqlite
   COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/large_payload.py"
     "$<TARGET_FILE:intraflow_large>" "${CMAKE_CURRENT_BINARY_DIR}/examples/intraflow-large.db")
 set_tests_properties(large_payload_sqlite PROPERTIES TIMEOUT 90)
+
+# Developer-facing standalone examples, separate from the automated stress peer.
+foreach(example IN ITEMS SensorApp ControlApp DeviceApp DisplayApp MonitorApp)
+  add_executable(${example} examples/${example}.cpp)
+  add_dependencies(${example} intraflow_idl)
+  target_include_directories(${example} PRIVATE "${CMAKE_CURRENT_BINARY_DIR}")
+  target_link_libraries(${example} PRIVATE intraflow)
+endforeach()
+add_test(NAME standalone_examples
+  COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/standalone_examples.py"
+  "$<TARGET_FILE:SensorApp>" "$<TARGET_FILE:ControlApp>" "$<TARGET_FILE:DeviceApp>"
+  "$<TARGET_FILE:DisplayApp>" "$<TARGET_FILE:MonitorApp>")
+add_executable(intraflow_stability tests/stability.cpp)
+add_dependencies(intraflow_stability intraflow_idl)
+target_include_directories(intraflow_stability PRIVATE "${CMAKE_CURRENT_BINARY_DIR}")
+target_link_libraries(intraflow_stability PRIVATE intraflow SQLite::SQLite3)
+add_test(NAME callback_concurrency_recovery
+  COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/stability.py"
+  "$<TARGET_FILE:intraflow_stability>")
+set_tests_properties(standalone_examples callback_concurrency_recovery PROPERTIES TIMEOUT 120)
