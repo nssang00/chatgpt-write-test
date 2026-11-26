@@ -14,7 +14,7 @@ types = {"long": "std::int32_t", "short": "std::int16_t", "double": "double",
          "octet": "std::uint8_t", "unsigned long": "std::uint32_t",
          "long long": "std::int64_t", "unsigned long long": "std::uint64_t"}
 definitions = {}
-out = ['#pragma once', '#include <intraflow.hpp>', '#include <vector>']
+out = ['#pragma once', '#include <intraflow.hpp>', '#include <vector>', '#include <array>', '#include <intraflow/detail/shape.hpp>']
 def take(expected=None):
     global pos
     if pos >= len(tokens):
@@ -29,13 +29,29 @@ def ident():
     if not re.fullmatch(r"[A-Za-z_]\w*", t):
         raise ValueError("expected identifier")
     return t
+def peek():
+    return tokens[pos] if pos < len(tokens) else None
+def bound():
+    value = take()
+    if not value.isdigit() or not 1 <= int(value) <= 1048576:
+        raise ValueError("bound must be a positive integer <= 1048576")
+    return int(value)
 def parse_type():
     t = take()
     if t == "sequence":
         take("<")
         inner, schema = parse_type()
+        limit = None
+        if peek() == ",":
+            take(",")
+            limit = bound()
         take(">")
-        return "std::vector<" + inner + ">", ["sequence", schema]
+        return "std::vector<" + inner + ">", ["sequence", schema] + ([limit] if limit is not None else [])
+    if t == "string" and peek() == "<":
+        take("<")
+        limit = bound()
+        take(">")
+        return "std::string", ["string", limit]
     if t == "unsigned":
         t += " " + take("long")
     if t in ("long", "unsigned long") and pos < len(tokens) and tokens[pos] == "long":
@@ -53,9 +69,17 @@ while pos < len(tokens):
         raise ValueError("duplicate struct")
     take("{")
     fields = []
-    while tokens[pos] != "}":
+    while peek() != "}":
         cpp, schema = parse_type()
         field = ident()
+        dimensions = []
+        while peek() == "[":
+            take("[")
+            dimensions.append(bound())
+            take("]")
+        for dim in reversed(dimensions):
+            cpp = "std::array<" + cpp + ", " + str(dim) + ">"
+            schema = ["array", schema, dim]
         take(";")
         if field in [f[1] for f in fields]:
             raise ValueError("duplicate field")
@@ -69,7 +93,21 @@ while pos < len(tokens):
     canonical = json.dumps(definition, separators=(",", ":"), sort_keys=True)
     digest = hashlib.sha256(canonical.encode()).hexdigest()
     out += ["struct " + name + " {"] + ["    " + f[0] + " " + f[1] + "{};" for f in fields] + ["};"]
-    out.append("NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(" + ", ".join([name]+[f[1] for f in fields]) + ")")
+    # Preserve existing canonical schema/hash while generating explicit serializers.
+    schema_fn = "intraflow_schema_" + name
+    out += ["inline const intraflow::Json& " + schema_fn + "() {",
+            '    static const auto schema = intraflow::Json::parse(R"IDL('+canonical+')IDL");',
+            "    return schema;", "}"]
+    out += ["inline void to_json(intraflow::Json& j, const " + name + "& value) {",
+            "    j = intraflow::Json::object();"]
+    for _, field, _ in fields:
+        out.append('    j["'+field+'"] = value.'+field+';')
+    out += ["    intraflow::detail::validateShape(j, "+schema_fn+"());", "}"]
+    out += ["inline void from_json(const intraflow::Json& j, " + name + "& value) {",
+            "    intraflow::detail::validateShape(j, "+schema_fn+"());"]
+    for _, field, _ in fields:
+        out.append('    j.at("'+field+'").get_to(value.'+field+');')
+    out.append("}")
     out += ["namespace intraflow { template<> struct Traits<"+name+"> {",
             'static const char* name() { return "'+name+'"; }',
             'static const char* hash() { return "'+digest+'"; }',

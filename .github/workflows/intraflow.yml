@@ -53,3 +53,10 @@ jobs:
           name: intraflow-benchmark-${{ matrix.os }}
           path: build-intraflow/benchmarks/*.json
           if-no-files-found: warn
+      - name: Upload inspectable SQLite example
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: intraflow-sqlite-${{ matrix.os }}
+          path: build-intraflow/examples/intraflow-large.db
+          if-no-files-found: warn

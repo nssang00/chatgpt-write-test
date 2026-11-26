@@ -36,3 +36,12 @@ foreach(scale IN ITEMS 32 64 128 256)
     "${CMAKE_CURRENT_BINARY_DIR}/benchmarks/${scale}.json")
   set_tests_properties(benchmark_${scale} PROPERTIES TIMEOUT 300 LABELS benchmark RUN_SERIAL TRUE)
 endforeach()
+
+add_executable(intraflow_large tests/large_payload.cpp)
+add_dependencies(intraflow_large intraflow_idl)
+target_include_directories(intraflow_large PRIVATE "${CMAKE_CURRENT_BINARY_DIR}")
+target_link_libraries(intraflow_large PRIVATE intraflow)
+add_test(NAME large_payload_sqlite
+  COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/large_payload.py"
+    "$<TARGET_FILE:intraflow_large>" "${CMAKE_CURRENT_BINARY_DIR}/examples/intraflow-large.db")
+set_tests_properties(large_payload_sqlite PROPERTIES TIMEOUT 90)

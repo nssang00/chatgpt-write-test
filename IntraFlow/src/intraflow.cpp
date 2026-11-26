@@ -82,15 +82,18 @@ struct Session::Impl {
             bool full=false;
             try {
                 std::vector<Message> batch;
+                std::size_t raw_bytes=0;
                 { Stmt s(reader,"SELECT m.seq,m.timestamp,m.topic,m.sender,t.type,t.hash,m.payload FROM messages m JOIN topics t ON t.name=m.topic WHERE m.seq>? ORDER BY m.seq LIMIT 256");
                   s.bind(1,cursor);
                   while(s.row()) {
                       Message m; m.sequence=s.num(0);m.timestamp=s.num(1);m.topic=s.str(2);m.sender=s.str(3);m.type=s.str(4);m.hash=s.str(5);
-                      try { m.payload=Json::parse(s.str(6)); } catch(const std::exception& e) { std::cerr<<"invalid payload: "<<e.what()<<std::endl; m.payload=Json(); }
+                      const auto raw=s.str(6); raw_bytes+=raw.size();
+                      try { m.payload=Json::parse(raw); } catch(const std::exception& e) { std::cerr<<"invalid payload: "<<e.what()<<std::endl; m.payload=Json(); }
                       batch.push_back(std::move(m));
+                      if(raw_bytes >= 4u*1024u*1024u) {full=true;break;}
                   }
                 }
-                full=batch.size()==256;
+                full=full || batch.size()==256;
                 for(const auto& m:batch) {
                     if(!running) break;
                     std::vector<std::shared_ptr<Listener>> targets;
