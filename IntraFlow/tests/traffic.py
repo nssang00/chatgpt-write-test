@@ -17,7 +17,7 @@ except ImportError:
 exe, profile, output = sys.argv[1:4]
 diagnostic_args = sys.argv[4:]
 if diagnostic_args and len(diagnostic_args)!=2:
-    raise ValueError("expected checkpoint threshold and native/hooks mode")
+    raise ValueError("expected checkpoint threshold and diagnostic mode")
 output = pathlib.Path(output)
 output.parent.mkdir(parents=True, exist_ok=True)
 snapshot = output.with_suffix(".db")
@@ -102,6 +102,12 @@ try:
                     pass
             peak_rss=max(peak_rss,rss)
             peak_threads=max(peak_threads,threads)
+        def cpu_seconds():
+            if psutil is None or len(sampled)!=peers: return None
+            try:
+                return sum(t.user+t.system for t in (p.cpu_times() for p in sampled))
+            except (psutil.NoSuchProcess,psutil.AccessDenied):
+                return None
         def wait_all(paths,timeout):
             deadline=time.monotonic()+timeout
             while not all(p.exists() for p in paths):
@@ -121,6 +127,7 @@ try:
                     except psutil.NoSuchProcess: pass
             wait_all(ready,60)
             sample(True)
+            cpu_start=cpu_seconds()
             start=time.monotonic()
             go.touch()
             wait_all(sent,180)
@@ -128,6 +135,7 @@ try:
             drain.touch()
             wait_all(results,60)
             elapsed=time.monotonic()-start
+            cpu_end=cpu_seconds()
             sample(True)
             rows=[json.loads(p.read_text()) for p in results]
             published=sum(sum(r["published"]) for r in rows)
@@ -143,6 +151,7 @@ try:
                           sampled_peak_rss_mib=peak_rss/1048576 if psutil else None,
                           sampled_peak_threads=peak_threads if psutil else None,
                           sampled_peak_wal_bytes=peak_wal,
+                          peer_cpu_seconds=(cpu_end-cpu_start) if cpu_end is not None and cpu_start is not None else None,
                           per_app_receive_min=min(sum(r["received"]) for r in rows),
                           per_app_receive_max=max(sum(r["received"]) for r in rows))
             report["per_type"]={}
@@ -169,9 +178,12 @@ try:
                     require(int(config["writer"]["wal_autocheckpoint"])==requested,"wrong checkpoint threshold")
                 require(config["writer"]["journal_mode"]=="wal" and config["writer"]["synchronous"]=="1","wrong WAL settings")
                 require(config["custom_hooks"]==(diagnostic_args[1]=="hooks"),"wrong hook mode")
+                require(config["short_retry"]==(diagnostic_args[1] in ("retry","combined")),"wrong retry mode")
+                require(all(r["timer_1ms_active"]==(diagnostic_args[1] in ("timer","combined")) for r in rows),"wrong timer mode")
                 report["diagnostics"]={"config":config,
                     "requested_checkpoint_pages":requested,
                     "mode":diagnostic_args[1],
+                    "timer_1ms_active":rows[0]["timer_1ms_active"],
                     "busy_calls":sum(d["busy_calls"] for d in ds),
                     "busy_episodes":sum(d["busy_episodes"] for d in ds),
                     "checkpoint_busy":sum(d["checkpoint_busy"] for d in ds),

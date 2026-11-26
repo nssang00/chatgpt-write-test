@@ -65,21 +65,34 @@ struct Timing {
 };
 struct Diagnostics {
     int timeout=0,threshold=0,requested=0;
+    bool short_retry=false;
+    std::uint32_t rng=1;
+    DiagClock::time_point retry_start;
     std::int64_t busy_calls=0,busy_episodes=0,checkpoint_busy=0,checkpoint_errors=0,wal_commits=0;
     Timing busy_sleep,checkpoint,insert,poll_wait,read_batch,json_parse,callback;
     Json config,slowest_insert;
     static int busy(void* p,int prior) noexcept {
         auto& d=*static_cast<Diagnostics*>(p);
         ++d.busy_calls;
-        if(prior==0){++d.busy_episodes;d.requested=0;}
-        const int delays[]={1,2,5,10,15,20,25,25,25,50,50,100};
-        const int ms=std::min(d.timeout-d.requested,delays[std::min(prior,11)]);
-        if(ms<=0)return 0;
-        d.requested+=ms;
+        if(prior==0){++d.busy_episodes;d.requested=0;d.retry_start=DiagClock::now();}
+        int ms=0;
+        if(d.short_retry){
+            // Deadline includes actual OS scheduling delay. Jitter prevents
+            // all competing processes retrying at the same instant.
+            const auto remaining=static_cast<std::int64_t>(d.timeout)*1000-elapsedUs(d.retry_start);
+            if(remaining<1000)return 0;
+            d.rng^=d.rng<<13;d.rng^=d.rng>>17;d.rng^=d.rng<<5;
+            ms=static_cast<int>(std::min<std::int64_t>(remaining/1000,1+d.rng%5));
+        } else {
+            const int delays[]={1,2,5,10,15,20,25,25,25,50,50,100};
+            ms=std::min(d.timeout-d.requested,delays[std::min(prior,11)]);
+            if(ms<=0)return 0;
+            d.requested+=ms;
+        }
         const auto begin=DiagClock::now();
         sqlite3_sleep(ms);
         d.busy_sleep.add(elapsedUs(begin));
-        return 1;
+        return !d.short_retry || elapsedUs(d.retry_start)<static_cast<std::int64_t>(d.timeout)*1000;
     }
     // Diagnostic-only replacement for native autocheckpoint.
     static int wal(void* p,sqlite3* db,const char* name,int frames) noexcept {
@@ -182,13 +195,16 @@ struct Session::Impl {
         if(o.diagnostic_checkpoint>=0)
             check(sqlite3_wal_autocheckpoint(writer.p,o.diagnostic_checkpoint),writer.p);
         diag.config={{"sqlite_version",sqlite3_libversion()},{"writer",Diagnostics::pragmas(writer)},
-                     {"reader",Diagnostics::pragmas(reader)},{"custom_hooks",o.diagnostic_hooks}};
+                     {"reader",Diagnostics::pragmas(reader)},{"custom_hooks",o.diagnostic_hooks},
+                     {"short_retry",o.diagnostic_short_retry}};
         diag.threshold=std::stoi(diag.config["writer"]["wal_autocheckpoint"].get<std::string>());
         diag.timeout=static_cast<int>(o.busy_ms);
-        if(o.diagnostic_hooks){
+        diag.short_retry=o.diagnostic_short_retry;
+        diag.rng=o.diagnostic_retry_seed?o.diagnostic_retry_seed:1;
+        if(o.diagnostic_hooks||o.diagnostic_short_retry)
             check(sqlite3_busy_handler(writer.p,Diagnostics::busy,&diag),writer.p);
+        if(o.diagnostic_hooks)
             sqlite3_wal_hook(writer.p,Diagnostics::wal,&diag);
-        }
 #endif
         loop=std::thread([this]{run();});
     }

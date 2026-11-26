@@ -24,6 +24,8 @@ struct Options {
 #ifdef INTRAFLOW_DIAGNOSTICS
     int diagnostic_checkpoint = -1;
     bool diagnostic_hooks = false;
+    bool diagnostic_short_retry = false;
+    std::uint32_t diagnostic_retry_seed = 1;
 #endif
 };
 class Session {

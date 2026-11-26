@@ -232,3 +232,24 @@ not no contention). Aggregate time across processes is not wall time.
 All original correctness gates remain. Normal library API and defaults
 are unchanged. CI uploads JSON as intraflow-pragma-<os>. Do not deploy
 the diagnostic build.
+
+## Windows latency improvement experiment
+
+`ctest --test-dir build -C Release -L winlatency -V` (Windows only)
+compares four modes at the existing 1000-page native autocheckpoint:
+native, process-scoped timeBeginPeriod(1), a 1–5 ms jittered writer
+busy retry, and both. Each mode runs three times on the same CI runner
+in rotated order with fresh DBs and identical 30-process fast traffic.
+All modes retain native WAL checkpoint behavior; the older hooks mode
+remains a separate diagnostic. The short retry uses an elapsed-time
+deadline per busy episode and sqlite3_sleep, not spin waiting; actual
+sleep may exceed the requested time. No strict per-publish latency
+guarantee is implied. Timer requests are checked and paired with
+timeEndPeriod(1) on exit. Only the test peer links winmm. Report peer
+CPU seconds (sampled before go and after results), actual polling,
+throughput, tail latency, WAL size and correctness. Native modes do not
+measure busy wait directly; zero counters mean uninstrumented.
+Do not compare timer effect solely across separate CI runners.
+No production default changes, extra worker threads, or new user API.
+CI uploads the 12 JSON reports as intraflow-winlatency. Select a
+production change only after repeated results and target-host testing.

@@ -1,3 +1,11 @@
+#if defined(_WIN32) && defined(INTRAFLOW_DIAGNOSTICS)
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+#include <mmsystem.h>
+#endif
 #include "Messages.hpp"
 #include <array>
 #include <atomic>
@@ -98,6 +106,30 @@ struct Receiver {
         app.subscribe<TrafficLog>(topic(g,3),[this,g](const TrafficLog& m){record(g,3,m);});
     }
 };
+#ifdef INTRAFLOW_DIAGNOSTICS
+// Only the experimental peer changes process timer resolution. Balance
+// every successful request, including exception paths.
+struct TimerResolution {
+    bool active=false;
+    explicit TimerResolution(bool enable) {
+        if(!enable)return;
+#if defined(_WIN32)
+        if(timeBeginPeriod(1)!=TIMERR_NOERROR)
+            throw std::runtime_error("timeBeginPeriod(1) failed");
+        active=true;
+#else
+        throw std::runtime_error("timer experiment is Windows-only");
+#endif
+    }
+    ~TimerResolution(){
+#if defined(_WIN32)
+        if(active)timeEndPeriod(1);
+#endif
+    }
+    TimerResolution(const TimerResolution&)=delete;
+    TimerResolution& operator=(const TimerResolution&)=delete;
+};
+#endif
 int main(int argc,char** argv){
     try {
 #ifdef INTRAFLOW_DIAGNOSTICS
@@ -117,8 +149,13 @@ int main(int argc,char** argv){
         std::array<Clock::time_point,kinds> previous{};
         Options options;options.database=db;options.poll_ms=5;options.busy_ms=30000;
 #ifdef INTRAFLOW_DIAGNOSTICS
+        const std::string mode=argv[12];
+        if(mode!="native"&&mode!="hooks"&&mode!="timer"&&mode!="retry"&&mode!="combined")return 2;
+        TimerResolution timer(mode=="timer"||mode=="combined");
         options.diagnostic_checkpoint=std::atoi(argv[11]);
-        options.diagnostic_hooks=std::string(argv[12])=="hooks";
+        options.diagnostic_hooks=mode=="hooks";
+        options.diagnostic_short_retry=mode=="retry"||mode=="combined";
+        options.diagnostic_retry_seed=0x9e3779b9u*static_cast<std::uint32_t>(id+1);
 #endif
         auto app=connect("TrafficApp"+std::to_string(id),options);
         const int group=id%groups;
@@ -161,6 +198,7 @@ int main(int argc,char** argv){
             {"lateness_us",lateness},{"gaps_us",gaps}};
 #ifdef INTRAFLOW_DIAGNOSTICS
         report["diagnostics"]=app.diagnostics();
+        report["timer_1ms_active"]=timer.active;
 #endif
         const auto tmp=result+".tmp";
         {std::ofstream f(tmp.c_str());f<<report.dump();if(!f)throw std::runtime_error("report write");}

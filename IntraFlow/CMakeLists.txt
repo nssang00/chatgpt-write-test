@@ -109,3 +109,24 @@ add_test(NAME pragma_hooks_1000
   "$<TARGET_FILE:intraflow_pragma>" fast
   "${CMAKE_CURRENT_BINARY_DIR}/pragma/hooks_1000.json" 1000 hooks)
 set_tests_properties(pragma_hooks_1000 PROPERTIES TIMEOUT 360 LABELS pragma RUN_SERIAL TRUE)
+
+if(WIN32)
+  target_link_libraries(intraflow_pragma PRIVATE winmm)
+  # Balanced rotation on a single runner, three fresh DB runs per mode.
+  foreach(round IN ITEMS 1 2 3)
+    if(round EQUAL 1)
+      set(modes native timer retry combined)
+    elseif(round EQUAL 2)
+      set(modes retry combined native timer)
+    else()
+      set(modes combined retry timer native)
+    endif()
+    foreach(mode IN LISTS modes)
+      add_test(NAME winlatency_${round}_${mode}
+        COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/traffic.py"
+        "$<TARGET_FILE:intraflow_pragma>" fast
+        "${CMAKE_CURRENT_BINARY_DIR}/winlatency/${round}_${mode}.json" 1000 "${mode}")
+      set_tests_properties(winlatency_${round}_${mode} PROPERTIES TIMEOUT 360 LABELS winlatency RUN_SERIAL TRUE)
+    endforeach()
+  endforeach()
+endif()
