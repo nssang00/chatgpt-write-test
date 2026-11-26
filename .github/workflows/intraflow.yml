@@ -43,14 +43,18 @@ jobs:
       - name: Install benchmark sampler
         run: python -m pip install psutil==6.1.1
       - name: Functional tests
-        run: ctest --test-dir build-intraflow -C Release -LE "benchmark|multitopic|pragma|winlatency|checkpoint" --output-on-failure
+        run: ctest --test-dir build-intraflow -C Release -LE "benchmark|multitopic|pragma|winlatency|checkpoint|load_sweep|endurance" --output-on-failure
       - name: Repeated 30-process multi-topic traffic
         run: ctest --test-dir build-intraflow -C Release -L multitopic -V
       - name: Scale and latency tests
         run: ctest --test-dir build-intraflow -C Release -L benchmark -V
       - name: SQLite PRAGMA and contention diagnostics
         run: ctest --test-dir build-intraflow -C Release -L pragma -V
-      - name: Single-owner checkpoint comparison
+      - name: Production-default load sweep
+        if: success()
+        run: ctest --test-dir build-intraflow -C Release -L load_sweep -V
+      - name: Single-owner checkpoint comparison (manual experiment)
+        if: ${{ !cancelled() && github.event_name == 'workflow_dispatch' }}
         run: ctest --test-dir build-intraflow -C Release -L checkpoint -V
       - name: Windows latency improvement A-B comparison (manual experiment)
         if: runner.os == 'Windows' && github.event_name == 'workflow_dispatch'
@@ -100,4 +104,54 @@ jobs:
         with:
           name: intraflow-checkpoint-${{ matrix.os }}
           path: build-intraflow/checkpoint/*.json
+          if-no-files-found: warn
+
+      - name: Upload load sweep
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: intraflow-load-${{ matrix.os }}
+          path: build-intraflow/load/*.json
+          if-no-files-found: warn
+
+  endurance:
+    # Separate jobs so short sweep results are available without waiting an hour.
+    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 100
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Linux dependencies
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libsqlite3-dev nlohmann-json3-dev
+      - name: Windows dependencies
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: vcpkg install sqlite3:x64-windows nlohmann-json:x64-windows
+      - name: Configure Linux
+        if: runner.os == 'Linux'
+        run: cmake -S IntraFlow -B build-intraflow -DCMAKE_BUILD_TYPE=Release
+      - name: Configure Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: cmake -S IntraFlow -B build-intraflow -A x64 "-DCMAKE_TOOLCHAIN_FILE=$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" -DVCPKG_TARGET_TRIPLET=x64-windows
+      - name: Build traffic peer
+        run: cmake --build build-intraflow --config Release --target intraflow_traffic --parallel
+      - name: Install sampler
+        run: python -m pip install psutil==6.1.1
+      - name: One-hour continuous traffic at 300 publishes per second
+        run: ctest --test-dir build-intraflow -C Release -L "^endurance$" -V
+      - name: Upload endurance report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: intraflow-endurance-${{ matrix.os }}
+          path: build-intraflow/endurance/*.json
           if-no-files-found: warn

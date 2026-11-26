@@ -139,15 +139,26 @@ int main(int argc,char** argv){
 #endif
         const int id=std::atoi(argv[1]),duration=std::atoi(argv[2]);
         const std::string profile=argv[3],db=argv[4],ready=argv[5],go=argv[6],sent=argv[7],drain=argv[8],result=argv[9],release=argv[10];
-        if(id<0||id>=peers||duration<200||duration>60000||(profile!="normal"&&profile!="fast"))return 2;
-        const std::array<int,kinds> period=profile=="fast"?std::array<int,kinds>{{10,20,50,100}}:std::array<int,kinds>{{20,40,100,200}};
+        const bool load=profile.compare(0,5,"load_")==0;
+        if(id<0||id>=peers||duration<200||duration>3600000||(!load&&duration>60000))return 2;
+        std::array<int,kinds> period{};
+        if(profile=="normal"||profile=="load_2700")period={{20,40,100,200}};
+        else if(profile=="fast"||profile=="load_5400")period={{10,20,50,100}};
+        else if(profile=="load_30")period={{4000,4000,4000,4000}};
+        else if(profile=="load_300")period={{180,360,900,1800}};
+        else if(profile=="load_900")period={{60,120,300,600}};
+        else if(profile=="load_1800")period={{30,60,150,300}};
+        else return 2;
+        if(load)for(int p:period)if(duration%p||duration/p<2)return 2;
         std::array<int,kinds> count{},published{};
         int expected=0;
         for(int k=0;k<kinds;++k){count[k]=duration/period[k];expected+=10*count[k];}
         Receiver receiver(count);
         std::array<std::vector<std::int64_t>,kinds> pubTime,lateness,gaps;
         std::array<Clock::time_point,kinds> previous{};
-        Options options;options.database=db;options.poll_ms=5;options.busy_ms=30000;
+        Options options;options.database=db;
+        // New load sweep uses actual SDK defaults, not stress-test timeout.
+        if(!load){options.poll_ms=5;options.busy_ms=30000;}
 #ifdef INTRAFLOW_DIAGNOSTICS
         const std::string mode=argv[12];
         if(mode!="native"&&mode!="hooks"&&mode!="timer"&&mode!="retry"&&mode!="combined"&&mode!="owner100"&&mode!="owner250")return 2;
@@ -164,10 +175,15 @@ int main(int argc,char** argv){
         receiver.subscribe(app,(group+groups-1)%groups);
         signal(ready);waitFile(go,90);
         const auto start=Clock::now()+Milli(id%10);
+        // Spread low-rate traffic over the period instead of synchronizing
+        // all 30 applications and four topics at the same instant.
+        std::array<int,kinds> phase{};
+        if(load)for(int k=0;k<kinds;++k)phase[k]=static_cast<int>(
+            static_cast<std::int64_t>(period[k])*(id*kinds+k)/(peers*kinds));
         while(true) {
             int selected=-1;Clock::time_point due;
             for(int k=0;k<kinds;++k)if(published[k]<count[k]){
-                const auto candidate=start+Milli(period[k]*published[k]);
+                const auto candidate=start+Milli(phase[k]+period[k]*published[k]);
                 if(selected<0||candidate<due){selected=k;due=candidate;}
             }
             if(selected<0)break;
@@ -187,6 +203,7 @@ int main(int argc,char** argv){
             }
             pubTime[k].push_back(us(Clock::now()-begin));++published[k];
         }
+        if(load)std::this_thread::sleep_until(start+Milli(duration));
         const auto publishElapsed=us(Clock::now()-start);
         signal(sent);waitFile(drain,180);
         const auto end=Clock::now()+std::chrono::seconds(45);
@@ -195,7 +212,8 @@ int main(int argc,char** argv){
         app.close();
         Json report={{"id",id},{"group",group},{"published",published},{"received",receiver.received},
             {"duplicates",receiver.duplicates},{"invalid",receiver.invalid},{"out_of_order",receiver.out_of_order},
-            {"publish_elapsed_us",publishElapsed},{"latency_us",receiver.latency},{"publish_us",pubTime},
+            {"publish_elapsed_us",publishElapsed},{"poll_ms",options.poll_ms},{"busy_ms",options.busy_ms},
+            {"latency_us",receiver.latency},{"publish_us",pubTime},
             {"lateness_us",lateness},{"gaps_us",gaps}};
 #ifdef INTRAFLOW_DIAGNOSTICS
         report["diagnostics"]=app.diagnostics();
@@ -205,7 +223,7 @@ int main(int argc,char** argv){
         const auto tmp=result+".tmp";
         {std::ofstream f(tmp.c_str());f<<report.dump();if(!f)throw std::runtime_error("report write");}
         if(std::rename(tmp.c_str(),result.c_str()))throw std::runtime_error("report rename");
-        waitFile(release,90);
+        waitFile(release,load?300:90);
         return receiver.total==expected&&!receiver.duplicates&&!receiver.invalid&&!receiver.out_of_order?0:1;
     }catch(const std::exception& e){std::cerr<<e.what()<<std::endl;return 1;}
 }

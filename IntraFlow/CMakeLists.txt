@@ -154,3 +154,18 @@ foreach(round IN ITEMS 1 2 3)
     set_tests_properties(checkpoint_${round}_${mode} PROPERTIES TIMEOUT 360 LABELS checkpoint RUN_SERIAL TRUE)
   endforeach()
 endforeach()
+
+# Production-default load envelope: 36 s per fresh DB, exact target rate,
+# no checkpoint owner, no custom retry, no forced Windows timer.
+foreach(rate IN ITEMS 30 300 900 1800 2700 5400)
+  add_test(NAME load_${rate}
+    COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/traffic.py"
+    "$<TARGET_FILE:intraflow_traffic>" "load_${rate}"
+    "${CMAKE_CURRENT_BINARY_DIR}/load/${rate}.json" 36000)
+  set_tests_properties(load_${rate} PROPERTIES TIMEOUT 360 LABELS load_sweep RUN_SERIAL TRUE)
+endforeach()
+add_test(NAME endurance_300
+  COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/traffic.py"
+  "$<TARGET_FILE:intraflow_traffic>" load_300
+  "${CMAKE_CURRENT_BINARY_DIR}/endurance/300.json" 3600000)
+set_tests_properties(endurance_300 PROPERTIES TIMEOUT 4500 LABELS endurance RUN_SERIAL TRUE)

@@ -283,3 +283,38 @@ slow callback can prevent future checkpoints; no failover or WAL
 hard cap is implemented. Do not deploy autocheckpoint=0 based on this
 short experiment. Production would require a bounded maintenance
 policy and sustained load/owner failure tests. No API/default changes.
+
+## Load envelope and one-hour continuous test
+
+CI #22 passed on both platforms, but the single-owner checkpoint
+experiment did not reliably improve latency or WAL reuse. Keep native
+SQLite autocheckpoint, default timers and busy handling. The checkpoint
+comparison remains available manually; no owner election or production
+runtime changes are introduced.
+
+Run CTest -L load_sweep for 30, 300, 900, 1800, 2700 and 5400 publishes/s
+(ten receivers per message). Each tier uses 30 processes, 24 topics,
+36 seconds, fresh DB, SDK defaults (poll 10 ms, busy timeout 5000 ms).
+30/s uses equal rates of the four types, other tiers retain the fast
+profile's 10:5:2:1 ratio. Deterministic per-process/type phase offsets
+spread scheduled starts; these are not the original burst stress tests
+(5 ms/30 s test settings). No skipped sends; catch-up is included in
+deadline lateness, actual gaps and measured throughput. Test success
+means exact message counts and integrity, not a latency SLA. One run
+per tier is exploratory, not a certified operating limit.
+
+CTest -L '^endurance$' runs the same 300/s profile continuously for
+one hour (1,080,000 publishes, 10,800,000 deliveries). Until actual user
+traffic is known, 300/s is an illustrative moderate target, not a
+requirement. Retain the same processes and DB; no restart between windows.
+The harness samples resource sizes, peer CPU time, latency and deadline
+metrics; reports resource samples about once per minute. It retains
+all timing samples in memory for exact quantiles and validates the
+whole DB after traffic, so RSS includes test instrumentation. No DB
+snapshot artifact for load/endurance (avoid large uploads). No retention
+yet; 4 GiB DB+WAL or <2 GiB free disk aborts the test visibly, not
+silently reducing load. The real DB is deleted with the temporary test
+directory after checks; only JSON results uploaded. CI runs the hour
+test in separate PR/manual jobs (100 min timeout); future routine CI
+may move endurance to manual after initial validation. It is not proof
+of indefinite operation or durable offline delivery.

@@ -3,6 +3,7 @@ import json
 import math
 import pathlib
 import sqlite3
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -15,24 +16,44 @@ except ImportError:
     psutil = None
 
 exe, profile, output = sys.argv[1:4]
-diagnostic_args = sys.argv[4:]
-if diagnostic_args and len(diagnostic_args)!=2:
-    raise ValueError("expected checkpoint threshold and diagnostic mode")
+args = sys.argv[4:]
+load = profile.startswith("load_")
+duration = 6000
+if load:
+    if len(args)!=1:
+        raise ValueError("load profile requires duration in milliseconds")
+    duration = int(args[0])
+    diagnostic_args = []
+else:
+    diagnostic_args = args
+    if diagnostic_args and len(diagnostic_args)!=2:
+        raise ValueError("expected checkpoint threshold and diagnostic mode")
 output = pathlib.Path(output)
 output.parent.mkdir(parents=True, exist_ok=True)
 snapshot = output.with_suffix(".db")
 if snapshot.exists():
     snapshot.unlink()
-peers, groups, duration = 30, 6, 6000
+peers, groups = 30, 6
+endurance = duration >= 3600000
+if not 200<=duration<=3600000 or (endurance and profile!="load_300"):
+    raise ValueError("unsupported duration/profile")
 names = ("sensor", "status", "command", "log")
 types = ("TrafficSensor", "TrafficStatus", "TrafficCommand", "TrafficLog")
-periods = [10, 20, 50, 100] if profile == "fast" else [20, 40, 100, 200]
+periods = {"fast":[10,20,50,100],"normal":[20,40,100,200],
+           "load_30":[4000,4000,4000,4000],"load_300":[180,360,900,1800],
+           "load_900":[60,120,300,600],"load_1800":[30,60,150,300],
+           "load_2700":[20,40,100,200],"load_5400":[10,20,50,100]}[profile]
+if load and any(duration%p or duration//p<2 for p in periods):
+    raise ValueError("duration must contain whole periods and at least two sends per type")
 counts = [duration // p for p in periods]
 expected_pub = peers * sum(counts)
 expected_rx = expected_pub * 10
 report = dict(status="FAIL", profile=profile, processes=peers, topics=24,
               subscriptions=240, target_duration_ms=duration, periods_ms=dict(zip(names, periods)),
-              expected_publishes=expected_pub, expected_deliveries=expected_rx)
+              expected_publishes=expected_pub, expected_deliveries=expected_rx,
+              target_publish_rate=expected_pub/(duration/1000),
+              poll_ms=10 if load else 5, busy_ms=5000 if load else 30000,
+              phase_staggered=load, history_retention=False)
 
 def require(condition, message):
     if not condition:
@@ -68,9 +89,10 @@ def verify_db(db):
                 require(m["text"]==chr(65+src%26)*4096, "DB log mismatch")
         require(all(row==counts for row in next_idx),"DB history count mismatch")
         require(conn.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchone()[0]==0,"checkpoint failed")
-        with closing(sqlite3.connect(snapshot)) as dest:
-            conn.backup(dest)
-            require(dest.execute("PRAGMA integrity_check").fetchone()[0]=="ok","snapshot integrity")
+        if not load:
+            with closing(sqlite3.connect(snapshot)) as dest:
+                conn.backup(dest)
+                require(dest.execute("PRAGMA integrity_check").fetchone()[0]=="ok","snapshot integrity")
         return raw_bytes
 
 try:
@@ -81,16 +103,24 @@ try:
         with closing(sqlite3.connect(db)) as conn:
             conn.execute("PRAGMA journal_mode=WAL").fetchone()
         processes=[]; ready=[]; sent=[]; results=[]; logs=[]; sampled=[]
-        peak_rss=peak_threads=peak_wal=0
-        last_sample=0
+        peak_rss=peak_threads=peak_wal=peak_db=0
+        samples=[]
+        last_sample=last_record=0
+        sample_start=time.monotonic()
         def sample(force=False):
-            global last_sample,peak_rss,peak_threads,peak_wal
+            global last_sample,last_record,peak_rss,peak_threads,peak_wal,peak_db
             now=time.monotonic()
             if not force and now-last_sample<.25:
                 return
             last_sample=now
-            try: peak_wal=max(peak_wal, pathlib.Path(str(db)+"-wal").stat().st_size)
-            except FileNotFoundError: pass
+            try: wal_bytes=pathlib.Path(str(db)+"-wal").stat().st_size
+            except FileNotFoundError: wal_bytes=0
+            db_bytes=db.stat().st_size
+            peak_wal=max(peak_wal,wal_bytes)
+            peak_db=max(peak_db,db_bytes)
+            if load:
+                require(db_bytes+wal_bytes<=4*1024**3,"test disk growth limit (4 GiB)")
+                require(shutil.disk_usage(root).free>=2*1024**3,"test free disk safety limit (2 GiB)")
             if psutil is None: return
             rss=threads=0
             for p in sampled:
@@ -102,6 +132,12 @@ try:
                     pass
             peak_rss=max(peak_rss,rss)
             peak_threads=max(peak_threads,threads)
+            if load and (force or now-last_record>=60):
+                last_record=now
+                samples.append(dict(seconds=now-sample_start,db_bytes=db_bytes,wal_bytes=wal_bytes,
+                                    rss_mib=rss/1048576,threads=threads))
+                if endurance:
+                    print("endurance sample",json.dumps(samples[-1]),flush=True)
         def cpu_seconds():
             if psutil is None or len(sampled)!=peers: return None
             try:
@@ -130,10 +166,10 @@ try:
             cpu_start=cpu_seconds()
             start=time.monotonic()
             go.touch()
-            wait_all(sent,180)
+            wait_all(sent,max(180,duration/1000+180))
             send_elapsed=time.monotonic()-start
             drain.touch()
-            wait_all(results,60)
+            wait_all(results,180 if endurance else 60)
             elapsed=time.monotonic()-start
             cpu_end=cpu_seconds()
             sample(True)
@@ -151,6 +187,8 @@ try:
                           sampled_peak_rss_mib=peak_rss/1048576 if psutil else None,
                           sampled_peak_threads=peak_threads if psutil else None,
                           sampled_peak_wal_bytes=peak_wal,
+                          sampled_peak_db_bytes=peak_db, resource_samples=samples,
+                          target_rate_fraction=(published/send_elapsed)/(expected_pub/(duration/1000)),
                           peer_cpu_seconds=(cpu_end-cpu_start) if cpu_end is not None and cpu_start is not None else None,
                           per_app_receive_min=min(sum(r["received"]) for r in rows),
                           per_app_receive_max=max(sum(r["received"]) for r in rows))
@@ -166,6 +204,7 @@ try:
             for i,r in enumerate(rows):
                 require(r["id"]==i and r["group"]==i%groups and r["published"]==counts and
                         r["received"]==[10*c for c in counts],"per-app matrix failed")
+                require(r["poll_ms"]==report["poll_ms"] and r["busy_ms"]==report["busy_ms"],"unexpected session options")
                 for k in range(4):
                     require(len(r["latency_us"][k])==10*counts[k] and len(r["publish_us"][k])==counts[k] and
                             len(r["lateness_us"][k])==counts[k] and len(r["gaps_us"][k])==counts[k]-1,"timing sample mismatch")
@@ -220,7 +259,9 @@ try:
             for p in processes:
                 require(p.wait(timeout=max(.1,deadline-time.monotonic()))==0,"worker failed")
             report["payload_bytes"]=verify_db(db)
-            report["snapshot_bytes"]=snapshot.stat().st_size
+            report["final_db_bytes"]=db.stat().st_size
+            if not load:
+                report["snapshot_bytes"]=snapshot.stat().st_size
             report["status"]="PASS"
         except Exception:
             for p in logs:
