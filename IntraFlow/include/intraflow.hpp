@@ -20,6 +20,7 @@ struct Options {
     std::string database = "intraflow.db";
     unsigned poll_ms = 10;
     unsigned busy_ms = 5000;
+    bool full_sync = false; // opt into SQLite FULL power-loss durability
 };
 class Session {
 public:

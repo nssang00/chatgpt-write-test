@@ -99,7 +99,7 @@ try:
         def wait_all(paths,timeout):
             deadline=time.monotonic()+timeout
             while not all(p.exists() for p in paths):
-                require(not any(p.poll() is not None for p in processes),"worker exited before barrier")
+                require(not any(p.poll() is not None for p in processes), "worker exited before barrier: "+str([(i,p.returncode) for i,p in enumerate(processes) if p.poll() is not None]))
                 require(time.monotonic()<deadline,"barrier timeout")
                 sample()
                 time.sleep(.02)

@@ -77,6 +77,17 @@ int main(int argc,char** argv) {
         bool mismatch=false;
         try {app.publish("concurrent",old);} catch(const std::exception&){mismatch=true;}
         require(mismatch,"type mismatch accepted");
+        // Another session must validate the persisted topic, not just its cache.
+        {
+            Options durable=o;durable.full_sync=true;
+            auto other=connect("other",durable);
+            bool bad=false;
+            try{other.subscribe<Command>("concurrent",[](const Command&){});}catch(const std::exception&){bad=true;}
+            require(bad,"cross-session mismatch accepted");
+            Command c{};c.code=17;
+            other.publish("durable",c);
+            other.close();
+        }
         std::vector<std::thread> pool;
         for(int i=0;i<workers;++i) pool.emplace_back([&,i]{
             try {

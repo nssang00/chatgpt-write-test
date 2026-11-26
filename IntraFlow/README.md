@@ -124,3 +124,26 @@ A second barrier ensures all writers finish before receivers close.
 The JSON reports and checkpointed synthetic SQLite snapshots are uploaded
 as `intraflow-traffic-<os>`. The workload keeps full history and does not
 test retention or hour-long operation. No external network traffic.
+
+## Small runtime, bounded latency trade-offs
+
+The public messaging API and single receiver thread remain unchanged. The
+runtime reuses two prepared statements per session, caches verified topic
+identities, uses one autocommit INSERT per publish, and parses JSON only
+for matched subscriptions after releasing the read transaction. Topic
+registration is independently committed: a failed first publish can leave
+an empty registered topic, just as a subscription can. Topic metadata must
+not be externally modified while sessions are active.
+
+WAL connections default to SQLite synchronous=NORMAL for IPC throughput.
+A successful publish still means SQLite completed the transaction; it does
+not mean a listener ran. With NORMAL, a power failure or OS crash can lose
+recent commits even though application-process crashes are recoverable.
+Set `Options::full_sync = true` for FULL durability at higher write cost.
+The transport is not hard real-time; SQLite still permits only one writer
+at a time. No extra server, queue, worker pool or batch API is introduced.
+
+The same 30-process tests retain their periods and expected counts; there
+is no lowered load or relaxed correctness gate to obtain a pass. Failed
+worker logs and SQLite statement context help distinguish contention from
+other errors.
