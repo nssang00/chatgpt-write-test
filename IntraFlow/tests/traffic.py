@@ -14,7 +14,10 @@ try:
 except ImportError:
     psutil = None
 
-exe, profile, output = sys.argv[1:]
+exe, profile, output = sys.argv[1:4]
+diagnostic_args = sys.argv[4:]
+if diagnostic_args and len(diagnostic_args)!=2:
+    raise ValueError("expected checkpoint threshold and native/hooks mode")
 output = pathlib.Path(output)
 output.parent.mkdir(parents=True, exist_ok=True)
 snapshot = output.with_suffix(".db")
@@ -78,14 +81,17 @@ try:
         with closing(sqlite3.connect(db)) as conn:
             conn.execute("PRAGMA journal_mode=WAL").fetchone()
         processes=[]; ready=[]; sent=[]; results=[]; logs=[]; sampled=[]
-        peak_rss=peak_threads=0
+        peak_rss=peak_threads=peak_wal=0
         last_sample=0
         def sample(force=False):
-            global last_sample,peak_rss,peak_threads
+            global last_sample,peak_rss,peak_threads,peak_wal
             now=time.monotonic()
-            if psutil is None or (not force and now-last_sample<.25):
+            if not force and now-last_sample<.25:
                 return
             last_sample=now
+            try: peak_wal=max(peak_wal, pathlib.Path(str(db)+"-wal").stat().st_size)
+            except FileNotFoundError: pass
+            if psutil is None: return
             rss=threads=0
             for p in sampled:
                 try:
@@ -108,7 +114,7 @@ try:
                 r,s,j,l=(root/f"{i}.{ext}" for ext in ("ready","sent","json","log"))
                 ready.append(r);sent.append(s);results.append(j);logs.append(l)
                 with l.open("wb") as out:
-                    p=subprocess.Popen([exe,str(i),str(duration),profile,str(db),str(r),str(go),str(s),str(drain),str(j),str(release)],stdout=out,stderr=subprocess.STDOUT)
+                    p=subprocess.Popen([exe,str(i),str(duration),profile,str(db),str(r),str(go),str(s),str(drain),str(j),str(release)]+diagnostic_args,stdout=out,stderr=subprocess.STDOUT)
                 processes.append(p)
                 if psutil:
                     try: sampled.append(psutil.Process(p.pid))
@@ -136,6 +142,7 @@ try:
                           delivery_rate_per_second=received/elapsed,
                           sampled_peak_rss_mib=peak_rss/1048576 if psutil else None,
                           sampled_peak_threads=peak_threads if psutil else None,
+                          sampled_peak_wal_bytes=peak_wal,
                           per_app_receive_min=min(sum(r["received"]) for r in rows),
                           per_app_receive_max=max(sum(r["received"]) for r in rows))
             report["per_type"]={}
@@ -153,6 +160,34 @@ try:
                 for k in range(4):
                     require(len(r["latency_us"][k])==10*counts[k] and len(r["publish_us"][k])==counts[k] and
                             len(r["lateness_us"][k])==counts[k] and len(r["gaps_us"][k])==counts[k]-1,"timing sample mismatch")
+            if diagnostic_args:
+                ds=[r["diagnostics"] for r in rows]
+                config=ds[0]["config"]
+                require(all(d["config"]==config for d in ds),"inconsistent SQLite options")
+                requested=int(diagnostic_args[0])
+                if requested>=0:
+                    require(int(config["writer"]["wal_autocheckpoint"])==requested,"wrong checkpoint threshold")
+                require(config["writer"]["journal_mode"]=="wal" and config["writer"]["synchronous"]=="1","wrong WAL settings")
+                require(config["custom_hooks"]==(diagnostic_args[1]=="hooks"),"wrong hook mode")
+                report["diagnostics"]={"config":config,
+                    "requested_checkpoint_pages":requested,
+                    "mode":diagnostic_args[1],
+                    "busy_calls":sum(d["busy_calls"] for d in ds),
+                    "busy_episodes":sum(d["busy_episodes"] for d in ds),
+                    "checkpoint_busy":sum(d["checkpoint_busy"] for d in ds),
+                    "checkpoint_errors":sum(d["checkpoint_errors"] for d in ds),
+                    "wal_commits":sum(d["wal_commits"] for d in ds)}
+                for key in ("busy_sleep","checkpoint","insert_step","poll_wait","read_batch","json_parse","callback"):
+                    n=sum(d[key]["count"] for d in ds)
+                    t=sum(d[key]["total_us"] for d in ds)
+                    report["diagnostics"][key]={"count":n,"total_ms":t/1000,
+                        "mean_ms":t/n/1000 if n else None,
+                        "max_ms":max(d[key]["max_us"] for d in ds)/1000}
+                worst=max(ds,key=lambda d:d["slowest_insert"]["step_us"])
+                report["diagnostics"]["slowest_insert"]=worst["slowest_insert"]
+                report["diagnostics"]["slowest_insert_app"]=ds.index(worst)
+                require(report["diagnostics"]["insert_step"]["count"]==expected_pub,"insert sample count")
+                require(report["diagnostics"]["checkpoint_errors"]==0,"checkpoint errors")
             release.touch()
             deadline=time.monotonic()+20
             for p in processes:

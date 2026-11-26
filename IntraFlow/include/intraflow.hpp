@@ -21,6 +21,10 @@ struct Options {
     unsigned poll_ms = 10;
     unsigned busy_ms = 5000;
     bool full_sync = false; // opt into SQLite FULL power-loss durability
+#ifdef INTRAFLOW_DIAGNOSTICS
+    int diagnostic_checkpoint = -1;
+    bool diagnostic_hooks = false;
+#endif
 };
 class Session {
 public:
@@ -44,6 +48,9 @@ public:
     SubscriptionId subscribeAll(std::function<void(const Message&)> callback);
     void unsubscribe(SubscriptionId id);
     void close();
+#ifdef INTRAFLOW_DIAGNOSTICS
+    Json diagnostics() const; // after close and all publishers stop
+#endif
 
 private:
     struct Impl;

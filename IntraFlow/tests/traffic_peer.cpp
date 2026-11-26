@@ -100,7 +100,11 @@ struct Receiver {
 };
 int main(int argc,char** argv){
     try {
+#ifdef INTRAFLOW_DIAGNOSTICS
+        if(argc!=13)return 2;
+#else
         if(argc!=11)return 2;
+#endif
         const int id=std::atoi(argv[1]),duration=std::atoi(argv[2]);
         const std::string profile=argv[3],db=argv[4],ready=argv[5],go=argv[6],sent=argv[7],drain=argv[8],result=argv[9],release=argv[10];
         if(id<0||id>=peers||duration<200||duration>60000||(profile!="normal"&&profile!="fast"))return 2;
@@ -112,6 +116,10 @@ int main(int argc,char** argv){
         std::array<std::vector<std::int64_t>,kinds> pubTime,lateness,gaps;
         std::array<Clock::time_point,kinds> previous{};
         Options options;options.database=db;options.poll_ms=5;options.busy_ms=30000;
+#ifdef INTRAFLOW_DIAGNOSTICS
+        options.diagnostic_checkpoint=std::atoi(argv[11]);
+        options.diagnostic_hooks=std::string(argv[12])=="hooks";
+#endif
         auto app=connect("TrafficApp"+std::to_string(id),options);
         const int group=id%groups;
         receiver.subscribe(app,group);
@@ -151,6 +159,9 @@ int main(int argc,char** argv){
             {"duplicates",receiver.duplicates},{"invalid",receiver.invalid},{"out_of_order",receiver.out_of_order},
             {"publish_elapsed_us",publishElapsed},{"latency_us",receiver.latency},{"publish_us",pubTime},
             {"lateness_us",lateness},{"gaps_us",gaps}};
+#ifdef INTRAFLOW_DIAGNOSTICS
+        report["diagnostics"]=app.diagnostics();
+#endif
         const auto tmp=result+".tmp";
         {std::ofstream f(tmp.c_str());f<<report.dump();if(!f)throw std::runtime_error("report write");}
         if(std::rename(tmp.c_str(),result.c_str()))throw std::runtime_error("report rename");

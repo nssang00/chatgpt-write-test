@@ -210,3 +210,25 @@ versioned installable SDK with its SQLite/JSON dependencies. Review
 application shutdown and error handling and document supported IDL subset,
 limits and the absence of durable delivery. Do not claim hard real-time
 or guaranteed recovery of undelivered messages.
+
+## Diagnostic-only SQLite PRAGMA comparison
+
+Run `ctest --test-dir build -C Release -L pragma -V`. Six cases reuse
+the same 30-process fast workload (32,400 commits, 324,000 callbacks,
+six-second target), each with a fresh DB. Native autocheckpoint default
+(-1), 1000, 4000, 8000 and 0 pages use the original SQLite busy handler.
+A separate 1000-page hooks case replaces the busy handler with bounded
+backoff and the WAL hook with a timed PASSIVE checkpoint; its timings
+are diagnostic, not identical to the native retry algorithm. Hook
+counters include topic registration. Reader busy handling remains native.
+Zero is for short diagnostics only, not a production setting.
+
+Actual writer/reader PRAGMAs and SQLite version are recorded before
+hook replacement, with sampled peak WAL size, insert step time, actual
+poll wait, query batch, JSON parsing, typed callback and the slowest
+INSERT's busy and checkpoint time. Native cases cannot directly observe
+busy-handler or checkpoint duration (zero counters mean uninstrumented,
+not no contention). Aggregate time across processes is not wall time.
+All original correctness gates remain. Normal library API and defaults
+are unchanged. CI uploads JSON as intraflow-pragma-<os>. Do not deploy
+the diagnostic build.

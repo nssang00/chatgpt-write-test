@@ -87,3 +87,25 @@ add_test(NAME slow_listener_thread_offload
   COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/stability.py"
   "$<TARGET_FILE:intraflow_stability>" offload)
 set_tests_properties(slow_listener_thread_offload PROPERTIES TIMEOUT 90)
+
+# Test-only instrumented build; normal library/API unchanged.
+add_library(intraflow_diagnostics STATIC src/intraflow.cpp)
+target_compile_definitions(intraflow_diagnostics PUBLIC INTRAFLOW_DIAGNOSTICS)
+target_include_directories(intraflow_diagnostics PUBLIC include)
+target_link_libraries(intraflow_diagnostics PUBLIC nlohmann_json::nlohmann_json PRIVATE SQLite::SQLite3 Threads::Threads)
+add_executable(intraflow_pragma tests/traffic_peer.cpp)
+add_dependencies(intraflow_pragma intraflow_idl)
+target_include_directories(intraflow_pragma PRIVATE "${CMAKE_CURRENT_BINARY_DIR}")
+target_link_libraries(intraflow_pragma PRIVATE intraflow_diagnostics)
+foreach(threshold IN ITEMS -1 1000 4000 8000 0)
+  add_test(NAME pragma_native_${threshold}
+    COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/traffic.py"
+    "$<TARGET_FILE:intraflow_pragma>" fast
+    "${CMAKE_CURRENT_BINARY_DIR}/pragma/native_${threshold}.json" "${threshold}" native)
+  set_tests_properties(pragma_native_${threshold} PROPERTIES TIMEOUT 360 LABELS pragma RUN_SERIAL TRUE)
+endforeach()
+add_test(NAME pragma_hooks_1000
+  COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/traffic.py"
+  "$<TARGET_FILE:intraflow_pragma>" fast
+  "${CMAKE_CURRENT_BINARY_DIR}/pragma/hooks_1000.json" 1000 hooks)
+set_tests_properties(pragma_hooks_1000 PROPERTIES TIMEOUT 360 LABELS pragma RUN_SERIAL TRUE)

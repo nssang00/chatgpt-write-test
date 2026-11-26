@@ -53,6 +53,70 @@ struct ResetStmt {
     Stmt& stmt;
     ~ResetStmt() { stmt.reset(); }
 };
+#ifdef INTRAFLOW_DIAGNOSTICS
+using DiagClock=std::chrono::steady_clock;
+static std::int64_t elapsedUs(DiagClock::time_point t) {
+    return std::chrono::duration_cast<std::chrono::microseconds>(DiagClock::now()-t).count();
+}
+struct Timing {
+    std::int64_t count=0,total=0,max=0;
+    void add(std::int64_t us) noexcept {++count;total+=us;max=std::max(max,us);}
+    Json json() const {return {{"count",count},{"total_us",total},{"max_us",max}};}
+};
+struct Diagnostics {
+    int timeout=0,threshold=0,requested=0;
+    std::int64_t busy_calls=0,busy_episodes=0,checkpoint_busy=0,checkpoint_errors=0,wal_commits=0;
+    Timing busy_sleep,checkpoint,insert,poll_wait,read_batch,json_parse,callback;
+    Json config,slowest_insert;
+    static int busy(void* p,int prior) noexcept {
+        auto& d=*static_cast<Diagnostics*>(p);
+        ++d.busy_calls;
+        if(prior==0){++d.busy_episodes;d.requested=0;}
+        const int delays[]={1,2,5,10,15,20,25,25,25,50,50,100};
+        const int ms=std::min(d.timeout-d.requested,delays[std::min(prior,11)]);
+        if(ms<=0)return 0;
+        d.requested+=ms;
+        const auto begin=DiagClock::now();
+        sqlite3_sleep(ms);
+        d.busy_sleep.add(elapsedUs(begin));
+        return 1;
+    }
+    // Diagnostic-only replacement for native autocheckpoint.
+    static int wal(void* p,sqlite3* db,const char* name,int frames) noexcept {
+        auto& d=*static_cast<Diagnostics*>(p);
+        ++d.wal_commits;
+        if(d.threshold>0&&frames>=d.threshold) {
+            const auto begin=DiagClock::now();
+            int log=0,done=0;
+            const int rc=sqlite3_wal_checkpoint_v2(db,name,SQLITE_CHECKPOINT_PASSIVE,&log,&done);
+            d.checkpoint.add(elapsedUs(begin));
+            if(rc==SQLITE_BUSY)++d.checkpoint_busy;
+            else if(rc!=SQLITE_OK)++d.checkpoint_errors;
+        }
+        return SQLITE_OK;
+    }
+    static Json pragmas(Db& db) {
+        Json r;
+        for(const char* key:{"journal_mode","synchronous","busy_timeout","wal_autocheckpoint",
+                "page_size","cache_size","temp_store","mmap_size","locking_mode",
+                "journal_size_limit","query_only","auto_vacuum","read_uncommitted"}){
+            const auto sql=std::string("PRAGMA ")+key;
+            Stmt s(db,sql.c_str());
+            if(s.row())r[key]=s.str(0);else r[key]=nullptr;
+        }
+        return r;
+    }
+    Json json() const {
+        return {{"config",config},{"busy_calls",busy_calls},{"busy_episodes",busy_episodes},
+            {"busy_sleep",busy_sleep.json()},{"checkpoint",checkpoint.json()},
+            {"checkpoint_busy",checkpoint_busy},{"checkpoint_errors",checkpoint_errors},
+            {"wal_commits",wal_commits},{"insert_step",insert.json()},
+            {"poll_wait",poll_wait.json()},{"read_batch",read_batch.json()},
+            {"json_parse",json_parse.json()},{"callback",callback.json()},
+            {"slowest_insert",slowest_insert}};
+    }
+};
+#endif
 std::int64_t high(Db& db) {
     Stmt s(db,"SELECT COALESCE(MAX(seq),0) FROM messages");
     s.row(); return s.num(0);
@@ -90,6 +154,9 @@ struct Session::Impl {
     std::string name;
     Options options;
     Db writer, reader;
+#ifdef INTRAFLOW_DIAGNOSTICS
+    Diagnostics diag;
+#endif
     TopicCache topics;
     std::unique_ptr<Stmt> insert, poll;
     std::mutex write_mu, listeners_mu, wait_mu;
@@ -111,6 +178,18 @@ struct Session::Impl {
         insert.reset(new Stmt(writer,"INSERT INTO messages(topic,sender,timestamp,payload) VALUES(?,?,?,?)"));
         poll.reset(new Stmt(reader,"SELECT m.seq,m.timestamp,m.topic,m.sender,t.type,t.hash,m.payload FROM messages m JOIN topics t ON t.name=m.topic WHERE m.seq>? ORDER BY m.seq LIMIT 256"));
         cursor=high(reader);
+#ifdef INTRAFLOW_DIAGNOSTICS
+        if(o.diagnostic_checkpoint>=0)
+            check(sqlite3_wal_autocheckpoint(writer.p,o.diagnostic_checkpoint),writer.p);
+        diag.config={{"sqlite_version",sqlite3_libversion()},{"writer",Diagnostics::pragmas(writer)},
+                     {"reader",Diagnostics::pragmas(reader)},{"custom_hooks",o.diagnostic_hooks}};
+        diag.threshold=std::stoi(diag.config["writer"]["wal_autocheckpoint"].get<std::string>());
+        diag.timeout=static_cast<int>(o.busy_ms);
+        if(o.diagnostic_hooks){
+            check(sqlite3_busy_handler(writer.p,Diagnostics::busy,&diag),writer.p);
+            sqlite3_wal_hook(writer.p,Diagnostics::wal,&diag);
+        }
+#endif
         loop=std::thread([this]{run();});
     }
     ~Impl() { stop(); }
@@ -126,6 +205,9 @@ struct Session::Impl {
                 struct Raw { Message message; std::string json; };
                 std::vector<Raw> batch;
                 std::size_t raw_bytes=0;
+#ifdef INTRAFLOW_DIAGNOSTICS
+                const auto readBegin=DiagClock::now();
+#endif
                 { auto& s=*poll;
                   ResetStmt reset{s};
                   s.bind(1,cursor);
@@ -136,6 +218,9 @@ struct Session::Impl {
                       if(raw_bytes >= 4u*1024u*1024u) {full=true;break;}
                   }
                 }
+#ifdef INTRAFLOW_DIAGNOSTICS
+                diag.read_batch.add(elapsedUs(readBegin));
+#endif
                 full=full || batch.size()==256;
                 for(auto& entry:batch) {
                     if(!running) break;
@@ -145,21 +230,39 @@ struct Session::Impl {
                       for(const auto& l:listeners) if(m.sequence>l->after && (l->topic.empty() || l->topic==m.topic)) targets.push_back(l);
                     }
                     if(!targets.empty()) {
+#ifdef INTRAFLOW_DIAGNOSTICS
+                        const auto parseBegin=DiagClock::now();
+#endif
                         try { m.payload=Json::parse(entry.json); }
                         catch(const std::exception& e) { std::cerr<<"invalid payload: "<<e.what()<<std::endl; cursor=m.sequence;continue; }
+#ifdef INTRAFLOW_DIAGNOSTICS
+                        diag.json_parse.add(elapsedUs(parseBegin));
+#endif
                     }
                     for(const auto& l:targets) {
                         if(!running) break;
+#ifdef INTRAFLOW_DIAGNOSTICS
+                        const auto callbackBegin=DiagClock::now();
+#endif
                         try { l->callback(m); }
                         catch(const std::exception& e) { std::cerr<<"listener: "<<e.what()<<std::endl; }
                         catch(...) { std::cerr<<"listener: unknown exception"<<std::endl; }
+#ifdef INTRAFLOW_DIAGNOSTICS
+                        diag.callback.add(elapsedUs(callbackBegin));
+#endif
                     }
                     cursor=m.sequence;
                 }
             } catch(const std::exception& e) { std::cerr<<"receive: "<<e.what()<<std::endl; }
             if(!full) {
                 std::unique_lock<std::mutex> lock(wait_mu);
+#ifdef INTRAFLOW_DIAGNOSTICS
+                const auto waitBegin=DiagClock::now();
+#endif
                 cv.wait_for(lock,std::chrono::milliseconds(options.poll_ms),[this]{return !running;});
+#ifdef INTRAFLOW_DIAGNOSTICS
+                if(running)diag.poll_wait.add(elapsedUs(waitBegin));
+#endif
             }
         }
     }
@@ -192,7 +295,21 @@ std::int64_t Session::publishRaw(const std::string& t,const std::string& name,co
     ResetStmt reset{s};
     s.bind(1,t);s.bind(2,p.name);
     s.bind(3,static_cast<std::int64_t>(std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::system_clock::now().time_since_epoch()).count()));
-    s.bind(4,json);s.row();
+    s.bind(4,json);
+#ifdef INTRAFLOW_DIAGNOSTICS
+    auto& d=p.diag;
+    const auto begin=DiagClock::now();
+    const auto busyBefore=d.busy_sleep.total, checkpointBefore=d.checkpoint.total;
+    const auto callsBefore=d.busy_calls;
+    s.row();
+    const auto stepUs=elapsedUs(begin);
+    if(d.insert.count==0||stepUs>d.insert.max)
+        d.slowest_insert={{"topic",t},{"step_us",stepUs},{"busy_sleep_us",d.busy_sleep.total-busyBefore},
+                          {"busy_calls",d.busy_calls-callsBefore},{"checkpoint_us",d.checkpoint.total-checkpointBefore}};
+    d.insert.add(stepUs);
+#else
+    s.row();
+#endif
     return sqlite3_last_insert_rowid(p.writer.p);
 }
 SubscriptionId Session::subscribeRaw(const std::string& t,const std::string& name,const std::string& hash,const std::string& schema,std::function<void(const Message&)> cb) {
@@ -204,6 +321,12 @@ void Session::unsubscribe(SubscriptionId id) {
     auto& p=checked();std::lock_guard<std::mutex> lock(p.listeners_mu);
     p.listeners.erase(std::remove_if(p.listeners.begin(),p.listeners.end(),[id](const std::shared_ptr<Impl::Listener>& l){return l->id==id;}),p.listeners.end());
 }
+#ifdef INTRAFLOW_DIAGNOSTICS
+Json Session::diagnostics() const {
+    if(!impl_||impl_->running)throw std::logic_error("diagnostics requires closed session");
+    return impl_->diag.json();
+}
+#endif
 void Session::close() {
     if(!impl_) return;
     if(impl_->loop.get_id()==std::this_thread::get_id()) throw std::logic_error("close from listener not allowed");
