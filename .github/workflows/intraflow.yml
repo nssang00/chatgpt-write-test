@@ -43,7 +43,9 @@ jobs:
       - name: Install benchmark sampler
         run: python -m pip install psutil==6.1.1
       - name: Functional tests
-        run: ctest --test-dir build-intraflow -C Release -LE benchmark --output-on-failure
+        run: ctest --test-dir build-intraflow -C Release -LE "benchmark|multitopic" --output-on-failure
+      - name: Repeated 30-process multi-topic traffic
+        run: ctest --test-dir build-intraflow -C Release -L multitopic -V
       - name: Scale and latency tests
         run: ctest --test-dir build-intraflow -C Release -L benchmark -V
       - name: Upload benchmark results
@@ -59,4 +61,13 @@ jobs:
         with:
           name: intraflow-sqlite-${{ matrix.os }}
           path: build-intraflow/examples/intraflow-large.db
+          if-no-files-found: warn
+      - name: Upload multi-topic reports and SQLite history
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: intraflow-traffic-${{ matrix.os }}
+          path: |
+            build-intraflow/traffic/*.json
+            build-intraflow/traffic/*.db
           if-no-files-found: warn

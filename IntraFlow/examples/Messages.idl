@@ -24,3 +24,30 @@ struct DeviceData {
     string<262144> largeText;
     sequence<long, 1024> boundedSamples;
 };
+
+struct TrafficHeader {
+    long source;
+    long index;
+    long long sent_us;
+};
+struct TrafficSensor {
+    TrafficHeader header;
+    double values[32];
+};
+struct TrafficStatus {
+    TrafficHeader header;
+    boolean running;
+    string<64> name;
+    sequence<long, 16> counters;
+};
+struct TrafficCommand {
+    TrafficHeader header;
+    long code;
+    Position target;
+    long channels[8];
+};
+struct TrafficLog {
+    TrafficHeader header;
+    string<8192> text;
+    string tags[4];
+};

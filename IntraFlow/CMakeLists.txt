@@ -65,3 +65,15 @@ add_test(NAME callback_concurrency_recovery
   COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/stability.py"
   "$<TARGET_FILE:intraflow_stability>")
 set_tests_properties(standalone_examples callback_concurrency_recovery PROPERTIES TIMEOUT 120)
+
+add_executable(intraflow_traffic tests/traffic_peer.cpp)
+add_dependencies(intraflow_traffic intraflow_idl)
+target_include_directories(intraflow_traffic PRIVATE "${CMAKE_CURRENT_BINARY_DIR}")
+target_link_libraries(intraflow_traffic PRIVATE intraflow)
+foreach(profile IN ITEMS normal fast)
+  add_test(NAME multitopic_30_${profile}
+    COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/traffic.py"
+    "$<TARGET_FILE:intraflow_traffic>" "${profile}"
+    "${CMAKE_CURRENT_BINARY_DIR}/traffic/${profile}.json")
+  set_tests_properties(multitopic_30_${profile} PROPERTIES TIMEOUT 360 LABELS multitopic RUN_SERIAL TRUE)
+endforeach()

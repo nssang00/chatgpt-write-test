@@ -98,3 +98,29 @@ and successful reopening after a forced process exit during an uncommitted
 SQLite transaction. These are focused regression tests, not a long-duration
 soak or proof of all concurrency/lifetime behavior. No durable delivery or
 offline replay is implied.
+
+## Repeated 30-process mixed-topic traffic
+
+`ctest --test-dir build -C Release -L multitopic -V` starts 30 independent
+processes per profile. Six groups of five publish four typed topics each
+(sensor, status, command, log); each process subscribes to all four topics
+in its own group and the preceding group, for 24 topics and 240 typed
+subscriptions. Five publishers and ten receivers per topic (including self).
+The four payloads include fixed arrays, nested structures, bounded vectors
+and a 4096-byte string. Every source/topic has an independent sequence.
+
+Two independent 6-second target schedules run on Windows and Linux:
+normal periods 20/40/100/200 ms, fast periods 10/20/50/100 ms.
+Each process schedules against steady-clock deadlines, with a small
+phase offset; if it falls behind it catches up without dropping sends.
+This means the target window can extend under contention; the reports
+include actual elapsed time, deadline lateness, actual per-topic send gaps,
+publish-call and delivery latency, throughput, sampled RSS and threads.
+These are requested periods, not hard real-time guarantees. The test fails
+on missing, duplicate, out-of-order or invalid typed payloads, worker
+failure, unexpected database history, or integrity check failure. A
+cross-process barrier ensures all subscribers register before any send.
+A second barrier ensures all writers finish before receivers close.
+The JSON reports and checkpointed synthetic SQLite snapshots are uploaded
+as `intraflow-traffic-<os>`. The workload keeps full history and does not
+test retention or hour-long operation. No external network traffic.
