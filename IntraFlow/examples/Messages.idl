@@ -1,0 +1,53 @@
+struct SensorData { long source; double value; };
+struct Command { long code; };
+struct Status { long source; boolean running; };
+struct PeerMessage { long source; sequence<double> values; };
+struct BenchMessage { long source; long index; long long sent_us; string data; };
+
+struct Position {
+    double x;
+    double y;
+    double z;
+};
+struct DeviceData {
+    long id;
+    string name;
+    double temperatures[128];
+    long channels[256];
+    float matrix[16][16];
+    sequence<double> samples;
+    Position positions[32];
+    sequence<Position> trajectory;
+    string labels[32];
+    sequence<string> descriptions;
+    string document;
+    string<262144> largeText;
+    sequence<long, 1024> boundedSamples;
+};
+
+struct TrafficHeader {
+    long source;
+    long index;
+    long long sent_us;
+};
+struct TrafficSensor {
+    TrafficHeader header;
+    double values[32];
+};
+struct TrafficStatus {
+    TrafficHeader header;
+    boolean running;
+    string<64> name;
+    sequence<long, 16> counters;
+};
+struct TrafficCommand {
+    TrafficHeader header;
+    long code;
+    Position target;
+    long channels[8];
+};
+struct TrafficLog {
+    TrafficHeader header;
+    string<8192> text;
+    string tags[4];
+};

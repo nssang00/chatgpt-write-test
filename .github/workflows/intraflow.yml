@@ -1,0 +1,396 @@
+name: IntraFlow
+on:
+  push:
+    paths:
+      - 'IntraFlow/**'
+      - '.github/workflows/intraflow.yml'
+  pull_request:
+    paths:
+      - 'IntraFlow/**'
+      - '.github/workflows/intraflow.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Linux dependencies
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libsqlite3-dev nlohmann-json3-dev
+      - name: Windows dependencies
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: vcpkg install sqlite3:x64-windows nlohmann-json:x64-windows
+      - name: Configure Linux
+        if: runner.os == 'Linux'
+        run: cmake -S IntraFlow -B build-intraflow -DCMAKE_BUILD_TYPE=Release
+      - name: Configure Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: cmake -S IntraFlow -B build-intraflow -A x64 "-DCMAKE_TOOLCHAIN_FILE=$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" -DVCPKG_TARGET_TRIPLET=x64-windows
+      - name: Build
+        id: build
+        run: cmake --build build-intraflow --config Release --parallel
+      - name: Install benchmark sampler
+        run: python -m pip install psutil==6.1.1
+      - name: Functional tests
+        run: ctest --test-dir build-intraflow -C Release -LE "benchmark|multitopic|pragma|winlatency|checkpoint|load_sweep|endurance|writer_compare|filter_compare|filter_stress|rootcause|batch_compare|maintenance_compare|maintenance_endurance" --output-on-failure
+      - name: Repeated 30-process multi-topic traffic
+        run: ctest --test-dir build-intraflow -C Release -L multitopic -V
+      - name: Scale and latency tests
+        run: ctest --test-dir build-intraflow -C Release -L benchmark -V
+      - name: SQLite PRAGMA and contention diagnostics
+        run: ctest --test-dir build-intraflow -C Release -L pragma -V
+      - name: Production-default load sweep
+        if: success()
+        run: ctest --test-dir build-intraflow -C Release -L load_sweep -V
+      - name: Process writer lock A-B comparison
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        run: ctest --test-dir build-intraflow -C Release -L writer_compare -V
+      - name: Topic filter operational-load comparison
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        run: ctest --test-dir build-intraflow -C Release -L "^filter_compare$" -V
+      - name: Topic filter stress comparison
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        run: ctest --test-dir build-intraflow -C Release -L "^filter_stress$" -V
+      - name: Single-owner checkpoint comparison (manual experiment)
+        if: ${{ !cancelled() && github.event_name == 'workflow_dispatch' }}
+        run: ctest --test-dir build-intraflow -C Release -L checkpoint -V
+      - name: Windows latency improvement A-B comparison (manual experiment)
+        if: runner.os == 'Windows' && github.event_name == 'workflow_dispatch'
+        run: ctest --test-dir build-intraflow -C Release -L winlatency -V
+      - name: Upload benchmark results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: intraflow-benchmark-${{ matrix.os }}
+          path: build-intraflow/benchmarks/*.json
+          if-no-files-found: warn
+      - name: Upload inspectable SQLite example
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: intraflow-sqlite-${{ matrix.os }}
+          path: build-intraflow/examples/intraflow-large.db
+          if-no-files-found: warn
+      - name: Upload multi-topic reports and SQLite history
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: intraflow-traffic-${{ matrix.os }}
+          path: |
+            build-intraflow/traffic/*.json
+            build-intraflow/traffic/*.db
+          if-no-files-found: warn
+      - name: Upload SQLite diagnostic reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: intraflow-pragma-${{ matrix.os }}
+          path: build-intraflow/pragma/*.json
+          if-no-files-found: warn
+
+      - name: Upload Windows latency comparison
+        if: always() && runner.os == 'Windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: intraflow-winlatency
+          path: build-intraflow/winlatency/*.json
+          if-no-files-found: warn
+
+      - name: Upload checkpoint comparison
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: intraflow-checkpoint-${{ matrix.os }}
+          path: build-intraflow/checkpoint/*.json
+          if-no-files-found: warn
+
+      - name: Upload load sweep
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: intraflow-load-${{ matrix.os }}
+          path: build-intraflow/load/*.json
+          if-no-files-found: warn
+
+      - name: Upload writer comparison
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: intraflow-writer-${{ matrix.os }}
+          path: build-intraflow/writer/*.json
+          if-no-files-found: warn
+
+      - name: Upload topic filter comparison
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: intraflow-filter-${{ matrix.os }}
+          path: build-intraflow/filter/*.json
+          if-no-files-found: warn
+
+  endurance:
+    # Separate jobs so short sweep results are available without waiting an hour.
+    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        rate: [100, 300]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 100
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Linux dependencies
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libsqlite3-dev nlohmann-json3-dev
+      - name: Windows dependencies
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: vcpkg install sqlite3:x64-windows nlohmann-json:x64-windows
+      - name: Configure Linux
+        if: runner.os == 'Linux'
+        run: cmake -S IntraFlow -B build-intraflow -DCMAKE_BUILD_TYPE=Release
+      - name: Configure Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: cmake -S IntraFlow -B build-intraflow -A x64 "-DCMAKE_TOOLCHAIN_FILE=$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" -DVCPKG_TARGET_TRIPLET=x64-windows
+      - name: Build traffic peer
+        run: cmake --build build-intraflow --config Release --target intraflow_pragma --parallel
+      - name: Install sampler
+        run: python -m pip install psutil==6.1.1
+      - name: One-hour continuous traffic at selected rate
+        run: ctest --test-dir build-intraflow -C Release -R "^endurance_${{ matrix.rate }}$" -V
+      - name: Upload endurance report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: intraflow-endurance-${{ matrix.os }}-${{ matrix.rate }}
+          path: build-intraflow/endurance/*.json
+          if-no-files-found: warn
+
+  windows-root-cause:
+    runs-on: windows-latest
+    timeout-minutes: 65
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Record runner storage and security context (read-only)
+        shell: pwsh
+        run: |
+          Get-CimInstance Win32_OperatingSystem | Select Caption,Version,BuildNumber | Format-List
+          Get-Volume | Select DriveLetter,FileSystem,SizeRemaining,Size | Format-Table
+          Write-Host "TEMP=$env:TEMP"
+          if (Get-Command Get-MpComputerStatus -ErrorAction SilentlyContinue) {
+            Get-MpComputerStatus -ErrorAction Continue | Select AntivirusEnabled,RealTimeProtectionEnabled | Format-List
+          }
+      - name: Dependencies
+        shell: pwsh
+        run: vcpkg install sqlite3:x64-windows nlohmann-json:x64-windows
+      - name: Configure
+        shell: pwsh
+        run: cmake -S IntraFlow -B build-intraflow -A x64 "-DCMAKE_TOOLCHAIN_FILE=$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" -DVCPKG_TARGET_TRIPLET=x64-windows
+      - name: Build diagnostic peer
+        run: cmake --build build-intraflow --config Release --target intraflow_pragma --parallel
+      - name: Install sampler
+        run: python -m pip install psutil==6.1.1
+      - name: Windows SQLite root-cause comparison
+        run: ctest --test-dir build-intraflow -C Release -L "^rootcause$" -V
+      - name: Upload complete root-cause reports and worker traces
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: intraflow-windows-root-cause
+          path: build-intraflow/rootcause/**
+          if-no-files-found: warn
+
+  batch-comparison:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        rate: [100, 300, 900]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 65
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Linux dependencies
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libsqlite3-dev nlohmann-json3-dev
+      - name: Windows dependencies
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: vcpkg install sqlite3:x64-windows nlohmann-json:x64-windows
+      - name: Configure Linux
+        if: runner.os == 'Linux'
+        run: cmake -S IntraFlow -B build-intraflow -DCMAKE_BUILD_TYPE=Release
+      - name: Configure Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: cmake -S IntraFlow -B build-intraflow -A x64 "-DCMAKE_TOOLCHAIN_FILE=$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" -DVCPKG_TARGET_TRIPLET=x64-windows
+      - name: Build diagnostic peer
+        run: cmake --build build-intraflow --config Release --target intraflow_pragma --parallel
+      - name: Install sampler
+        run: python -m pip install psutil==6.1.1
+      - name: Batch commit interval comparison
+        run: ctest --test-dir build-intraflow -C Release -L "^batch_compare$" -R "^batch_${{ matrix.rate }}_" -V
+      - name: Upload batch measurements and stall logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: intraflow-batch-${{ matrix.os }}-${{ matrix.rate }}
+          path: build-intraflow/batch/**
+          if-no-files-found: warn
+
+  windows-storage-probe:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-2022, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Record drive and OS context
+        shell: pwsh
+        run: |
+          Get-CimInstance Win32_OperatingSystem | Select Caption,Version,BuildNumber | Format-List
+          Get-Volume | Select DriveLetter,FileSystem,SizeRemaining,Size | Format-Table
+          Write-Host "TEMP=$env:TEMP WORKSPACE=$env:GITHUB_WORKSPACE"
+      - name: Raw Windows file flush and single SQLite connection
+        shell: pwsh
+        run: |
+          python IntraFlow/tests/storage_probe.py storage/first.json 120
+          $env:INTRAFLOW_REVERSE_VOLUMES="1"
+          python IntraFlow/tests/storage_probe.py storage/reverse.json 120
+      - name: Upload storage probe reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: intraflow-storage-${{ matrix.os }}
+          path: storage/*.json
+          if-no-files-found: warn
+  maintenance-comparison:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        rate: [100, 300]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Linux dependencies
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libsqlite3-dev nlohmann-json3-dev
+      - name: Windows dependencies
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: vcpkg install sqlite3:x64-windows nlohmann-json:x64-windows
+      - name: Configure Linux
+        if: runner.os == 'Linux'
+        run: cmake -S IntraFlow -B build-intraflow -DCMAKE_BUILD_TYPE=Release
+      - name: Configure Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: cmake -S IntraFlow -B build-intraflow -A x64 "-DCMAKE_TOOLCHAIN_FILE=$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" -DVCPKG_TARGET_TRIPLET=x64-windows
+      - name: Build diagnostic and recovery peers
+        run: cmake --build build-intraflow --config Release --target intraflow_pragma intraflow_maintenance_recovery --parallel
+      - name: Install sampler
+        run: python -m pip install psutil==6.1.1
+      - name: Process-crash recovery NORMAL and OFF
+        run: ctest --test-dir build-intraflow -C Release -R "^maintenance_recovery_" -V
+      - name: Separate checkpoint comparison
+        if: ${{ !cancelled() }}
+        run: ctest --test-dir build-intraflow -C Release -L "^maintenance_compare$" -R "^maintenance_${{ matrix.rate }}_" -V
+      - name: Windows workspace volume comparison
+        if: ${{ !cancelled() && runner.os == 'Windows' }}
+        shell: pwsh
+        run: |
+          if ((Split-Path -Qualifier $env:TEMP) -eq (Split-Path -Qualifier $env:GITHUB_WORKSPACE)) {
+            Write-Host "Same volume: no C/D comparison possible"
+            exit 0
+          }
+          $env:INTRAFLOW_TEST_TEMP=$env:GITHUB_WORKSPACE
+          Copy-Item build-intraflow/maintenance build-intraflow/maintenance-c -Recurse
+          ctest --test-dir build-intraflow -C Release -L "^maintenance_compare$" -R "^maintenance_${{ matrix.rate }}_(baseline|separate_normal)$" -V
+          $code=$LASTEXITCODE
+          exit $code
+      - name: Upload maintenance comparison
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: intraflow-maintenance-${{ matrix.os }}-${{ matrix.rate }}
+          path: |
+            build-intraflow/maintenance/**
+            build-intraflow/maintenance-c/**
+          if-no-files-found: warn
+  maintenance-endurance:
+    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {os: windows-latest, rate: 100, mode: separate_normal}
+          - {os: windows-latest, rate: 300, mode: separate_normal}
+          - {os: windows-latest, rate: 300, mode: separate_off}
+          - {os: ubuntu-latest, rate: 300, mode: separate_normal}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 100
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Linux dependencies
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libsqlite3-dev nlohmann-json3-dev
+      - name: Windows dependencies
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: vcpkg install sqlite3:x64-windows nlohmann-json:x64-windows
+      - name: Configure Linux
+        if: runner.os == 'Linux'
+        run: cmake -S IntraFlow -B build-intraflow -DCMAKE_BUILD_TYPE=Release
+      - name: Configure Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: cmake -S IntraFlow -B build-intraflow -A x64 "-DCMAKE_TOOLCHAIN_FILE=$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" -DVCPKG_TARGET_TRIPLET=x64-windows
+      - name: Build diagnostic peer
+        run: cmake --build build-intraflow --config Release --target intraflow_pragma --parallel
+      - name: Install sampler
+        run: python -m pip install psutil==6.1.1
+      - name: One-hour separate maintenance test
+        run: ctest --test-dir build-intraflow -C Release -R "^maintenance_hour_${{ matrix.rate }}_${{ matrix.mode }}$" -V
+      - name: Upload maintenance endurance report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: intraflow-maintenance-hour-${{ matrix.os }}-${{ matrix.rate }}-${{ matrix.mode }}
+          path: build-intraflow/maintenance_hour/**
+          if-no-files-found: warn

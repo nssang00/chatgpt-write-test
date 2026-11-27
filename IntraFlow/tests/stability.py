@@ -1,0 +1,66 @@
+import pathlib
+import sqlite3
+import subprocess
+import sys
+import tempfile
+import time
+from contextlib import closing
+
+exe=sys.argv[1]
+if len(sys.argv)>2 and sys.argv[2]=="offload":
+    with tempfile.TemporaryDirectory() as directory:
+        root=pathlib.Path(directory)
+        db=root/"offload.db"
+        subprocess.run([exe,"offload",str(db),str(root/"ready")],check=True,timeout=65)
+        with closing(sqlite3.connect(db)) as conn:
+            import json
+            values={}
+            for topic,payload in conn.execute("SELECT topic,payload FROM messages ORDER BY seq"):
+                values.setdefault(topic,[]).append(json.loads(payload)["code"])
+            assert values=={"direct.slow":[42],"direct.fast":list(range(100)),
+                            "offload.slow":[42],"offload.fast":list(range(100))}
+            assert conn.execute("PRAGMA integrity_check").fetchone()[0]=="ok"
+    sys.exit(0)
+
+if len(sys.argv)>2 and sys.argv[2]=="lambda":
+    with tempfile.TemporaryDirectory() as directory:
+        root=pathlib.Path(directory)
+        db,ready=root/"lambda.db",root/"ready"
+        subprocess.run([exe,"lambda",str(db),str(ready)],check=True,timeout=45)
+        with closing(sqlite3.connect(db)) as conn:
+            import json
+            rows=conn.execute("SELECT topic,payload FROM messages ORDER BY seq").fetchall()
+            values={}
+            for topic,payload in rows:
+                values.setdefault(topic,[]).append(json.loads(payload)["code"])
+            assert values=={"lambda.input":[1,2,3,4,5],
+                            "lambda.response":[101,102,103,104,105],
+                            "lambda.late":[7]}
+            assert conn.execute("PRAGMA integrity_check").fetchone()[0]=="ok"
+    sys.exit(0)
+
+with tempfile.TemporaryDirectory() as directory:
+    root=pathlib.Path(directory)
+    db, ready=root/"messages.db", root/"ready"
+    subprocess.run([exe,"concurrent",str(db),str(ready)],check=True,timeout=45)
+    crash=subprocess.Popen([exe,"crash",str(db),str(ready)])
+    try:
+        deadline=time.monotonic()+15
+        while not ready.exists():
+            if crash.poll() is not None or time.monotonic()>=deadline:
+                raise RuntimeError("crash setup failed")
+            time.sleep(.02)
+        crash.kill()
+        crash.wait(timeout=5)
+    finally:
+        if crash.poll() is None:
+            crash.kill()
+        crash.wait()
+    subprocess.run([exe,"reopen",str(db),str(ready)],check=True,timeout=15)
+    with closing(sqlite3.connect(db)) as conn:
+        import json
+        rows=conn.execute("SELECT payload FROM messages WHERE topic='committed' ORDER BY seq").fetchall()
+        assert [json.loads(p)["code"] for p, in rows]==[111,333]
+        assert conn.execute("SELECT count(*) FROM messages WHERE topic='concurrent'").fetchone()[0]==400
+        assert conn.execute("SELECT count(*) FROM messages WHERE topic='late'").fetchone()[0]==2
+        assert conn.execute("PRAGMA integrity_check").fetchone()[0]=="ok"

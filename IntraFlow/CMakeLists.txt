@@ -1,0 +1,337 @@
+cmake_minimum_required(VERSION 3.16)
+project(IntraFlow LANGUAGES CXX)
+set(CMAKE_CXX_STANDARD 11)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
+find_package(SQLite3 REQUIRED)
+find_package(nlohmann_json CONFIG REQUIRED)
+find_package(Threads REQUIRED)
+find_package(Python3 REQUIRED COMPONENTS Interpreter)
+add_library(intraflow STATIC src/intraflow.cpp)
+target_include_directories(intraflow PUBLIC include)
+target_link_libraries(intraflow PUBLIC nlohmann_json::nlohmann_json PRIVATE SQLite::SQLite3 Threads::Threads)
+set(GENERATED "${CMAKE_CURRENT_BINARY_DIR}/Messages.hpp")
+add_custom_command(OUTPUT "${GENERATED}"
+  COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/idlgen.py" "${CMAKE_CURRENT_SOURCE_DIR}/examples/Messages.idl" "${GENERATED}"
+  DEPENDS tools/idlgen.py examples/Messages.idl VERBATIM)
+add_custom_target(intraflow_idl DEPENDS "${GENERATED}")
+add_executable(intraflow_demo examples/app.cpp)
+add_dependencies(intraflow_demo intraflow_idl)
+target_include_directories(intraflow_demo PRIVATE "${CMAKE_CURRENT_BINARY_DIR}")
+target_link_libraries(intraflow_demo PRIVATE intraflow)
+enable_testing()
+add_test(NAME five_applications COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/multiprocess.py" "$<TARGET_FILE:intraflow_demo>" roles)
+add_test(NAME fanout_32 COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/multiprocess.py" "$<TARGET_FILE:intraflow_demo>" 32)
+set_tests_properties(five_applications fanout_32 PROPERTIES TIMEOUT 90)
+
+add_executable(intraflow_bench tests/bench_peer.cpp)
+add_dependencies(intraflow_bench intraflow_idl)
+target_include_directories(intraflow_bench PRIVATE "${CMAKE_CURRENT_BINARY_DIR}")
+target_link_libraries(intraflow_bench PRIVATE intraflow)
+foreach(scale IN ITEMS 32 64 128 256)
+  math(EXPR rounds "256 / ${scale}")
+  add_test(NAME benchmark_${scale}
+    COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/benchmark.py"
+    "$<TARGET_FILE:intraflow_bench>" "${scale}" "${rounds}"
+    "${CMAKE_CURRENT_BINARY_DIR}/benchmarks/${scale}.json")
+  set_tests_properties(benchmark_${scale} PROPERTIES TIMEOUT 300 LABELS benchmark RUN_SERIAL TRUE)
+endforeach()
+
+add_executable(intraflow_large tests/large_payload.cpp)
+add_dependencies(intraflow_large intraflow_idl)
+target_include_directories(intraflow_large PRIVATE "${CMAKE_CURRENT_BINARY_DIR}")
+target_link_libraries(intraflow_large PRIVATE intraflow)
+add_test(NAME large_payload_sqlite
+  COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/large_payload.py"
+    "$<TARGET_FILE:intraflow_large>" "${CMAKE_CURRENT_BINARY_DIR}/examples/intraflow-large.db")
+set_tests_properties(large_payload_sqlite PROPERTIES TIMEOUT 90)
+
+# Developer-facing standalone examples, separate from the automated stress peer.
+foreach(example IN ITEMS SensorApp ControlApp DeviceApp DisplayApp MonitorApp)
+  add_executable(${example} examples/${example}.cpp)
+  add_dependencies(${example} intraflow_idl)
+  target_include_directories(${example} PRIVATE "${CMAKE_CURRENT_BINARY_DIR}")
+  target_link_libraries(${example} PRIVATE intraflow)
+endforeach()
+add_test(NAME standalone_examples
+  COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/standalone_examples.py"
+  "$<TARGET_FILE:SensorApp>" "$<TARGET_FILE:ControlApp>" "$<TARGET_FILE:DeviceApp>"
+  "$<TARGET_FILE:DisplayApp>" "$<TARGET_FILE:MonitorApp>")
+add_executable(intraflow_stability tests/stability.cpp)
+add_dependencies(intraflow_stability intraflow_idl)
+target_include_directories(intraflow_stability PRIVATE "${CMAKE_CURRENT_BINARY_DIR}")
+target_link_libraries(intraflow_stability PRIVATE intraflow SQLite::SQLite3)
+add_test(NAME callback_concurrency_recovery
+  COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/stability.py"
+  "$<TARGET_FILE:intraflow_stability>")
+set_tests_properties(standalone_examples callback_concurrency_recovery PROPERTIES TIMEOUT 120)
+
+add_executable(intraflow_traffic tests/traffic_peer.cpp)
+add_dependencies(intraflow_traffic intraflow_idl)
+target_include_directories(intraflow_traffic PRIVATE "${CMAKE_CURRENT_BINARY_DIR}")
+target_link_libraries(intraflow_traffic PRIVATE intraflow)
+foreach(profile IN ITEMS normal fast)
+  add_test(NAME multitopic_30_${profile}
+    COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/traffic.py"
+    "$<TARGET_FILE:intraflow_traffic>" "${profile}"
+    "${CMAKE_CURRENT_BINARY_DIR}/traffic/${profile}.json")
+  set_tests_properties(multitopic_30_${profile} PROPERTIES TIMEOUT 360 LABELS multitopic RUN_SERIAL TRUE)
+endforeach()
+
+add_test(NAME lambda_listener_api
+  COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/stability.py"
+  "$<TARGET_FILE:intraflow_stability>" lambda)
+set_tests_properties(lambda_listener_api PROPERTIES TIMEOUT 90)
+
+add_test(NAME slow_listener_thread_offload
+  COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/stability.py"
+  "$<TARGET_FILE:intraflow_stability>" offload)
+set_tests_properties(slow_listener_thread_offload PROPERTIES TIMEOUT 90)
+
+# Test-only instrumented build; normal library/API unchanged.
+add_library(intraflow_diagnostics STATIC src/intraflow.cpp)
+target_compile_definitions(intraflow_diagnostics PUBLIC INTRAFLOW_DIAGNOSTICS)
+target_include_directories(intraflow_diagnostics PUBLIC include)
+target_link_libraries(intraflow_diagnostics PUBLIC nlohmann_json::nlohmann_json PRIVATE SQLite::SQLite3 Threads::Threads)
+add_executable(intraflow_pragma tests/traffic_peer.cpp)
+add_dependencies(intraflow_pragma intraflow_idl)
+target_include_directories(intraflow_pragma PRIVATE "${CMAKE_CURRENT_BINARY_DIR}")
+target_link_libraries(intraflow_pragma PRIVATE intraflow_diagnostics)
+foreach(threshold IN ITEMS -1 1000 4000 8000 0)
+  add_test(NAME pragma_native_${threshold}
+    COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/traffic.py"
+    "$<TARGET_FILE:intraflow_pragma>" fast
+    "${CMAKE_CURRENT_BINARY_DIR}/pragma/native_${threshold}.json" "${threshold}" native)
+  set_tests_properties(pragma_native_${threshold} PROPERTIES TIMEOUT 360 LABELS pragma RUN_SERIAL TRUE)
+endforeach()
+add_test(NAME pragma_hooks_1000
+  COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/traffic.py"
+  "$<TARGET_FILE:intraflow_pragma>" fast
+  "${CMAKE_CURRENT_BINARY_DIR}/pragma/hooks_1000.json" 1000 hooks)
+set_tests_properties(pragma_hooks_1000 PROPERTIES TIMEOUT 360 LABELS pragma RUN_SERIAL TRUE)
+
+if(WIN32)
+  target_link_libraries(intraflow_pragma PRIVATE winmm)
+  # Balanced rotation on a single runner, three fresh DB runs per mode.
+  foreach(round IN ITEMS 1 2 3)
+    if(round EQUAL 1)
+      set(modes native timer retry combined)
+    elseif(round EQUAL 2)
+      set(modes retry combined native timer)
+    else()
+      set(modes combined retry timer native)
+    endif()
+    foreach(mode IN LISTS modes)
+      add_test(NAME winlatency_${round}_${mode}
+        COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/traffic.py"
+        "$<TARGET_FILE:intraflow_pragma>" fast
+        "${CMAKE_CURRENT_BINARY_DIR}/winlatency/${round}_${mode}.json" 1000 "${mode}")
+      set_tests_properties(winlatency_${round}_${mode} PROPERTIES TIMEOUT 360 LABELS winlatency RUN_SERIAL TRUE)
+    endforeach()
+  endforeach()
+endif()
+
+# Isolate checkpoint ownership from timer and retry experiments.
+# Native baseline and 100/250 ms single-owner PASSIVE; three rotations.
+foreach(round IN ITEMS 1 2 3)
+  if(round EQUAL 1)
+    set(modes native owner100 owner250)
+  elseif(round EQUAL 2)
+    set(modes owner100 owner250 native)
+  else()
+    set(modes owner250 native owner100)
+  endif()
+  foreach(mode IN LISTS modes)
+    if(mode STREQUAL "native")
+      set(threshold 1000)
+    else()
+      set(threshold 0)
+    endif()
+    add_test(NAME checkpoint_${round}_${mode}
+      COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/traffic.py"
+      "$<TARGET_FILE:intraflow_pragma>" fast
+      "${CMAKE_CURRENT_BINARY_DIR}/checkpoint/${round}_${mode}.json" "${threshold}" "${mode}")
+    set_tests_properties(checkpoint_${round}_${mode} PROPERTIES TIMEOUT 360 LABELS checkpoint RUN_SERIAL TRUE)
+  endforeach()
+endforeach()
+
+# Production-default load envelope: 36 s per fresh DB, exact target rate,
+# no checkpoint owner, no custom retry, no forced Windows timer.
+foreach(rate IN ITEMS 30 300 900 1800 2700 5400)
+  add_test(NAME load_${rate}
+    COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/traffic.py"
+    "$<TARGET_FILE:intraflow_traffic>" "load_${rate}"
+    "${CMAKE_CURRENT_BINARY_DIR}/load/${rate}.json" 36000)
+  set_tests_properties(load_${rate} PROPERTIES TIMEOUT 360 LABELS load_sweep RUN_SERIAL TRUE)
+endforeach()
+add_test(NAME endurance_300
+  COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/traffic.py"
+  "$<TARGET_FILE:intraflow_pragma>" load_300_mutex_filter
+  "${CMAKE_CURRENT_BINARY_DIR}/endurance/300_mutex_filter.json" 3600000 1000 native)
+set_tests_properties(endurance_300 PROPERTIES TIMEOUT 4500 LABELS endurance RUN_SERIAL TRUE)
+
+add_executable(intraflow_retention tests/retention.cpp)
+add_dependencies(intraflow_retention intraflow_idl)
+target_include_directories(intraflow_retention PRIVATE "${CMAKE_CURRENT_BINARY_DIR}")
+target_link_libraries(intraflow_retention PRIVATE intraflow)
+add_test(NAME retention_policy_and_gap
+  COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/retention.py"
+  "$<TARGET_FILE:intraflow_retention>")
+set_tests_properties(retention_policy_and_gap PROPERTIES TIMEOUT 90)
+
+# Same instrumented executable and retention settings, paired fresh DBs.
+foreach(rate IN ITEMS 300 900 2700 5400)
+  foreach(mode IN ITEMS native mutex)
+    if(mode STREQUAL "mutex")
+      set(profile "load_${rate}_mutex")
+    else()
+      set(profile "load_${rate}")
+    endif()
+    add_test(NAME writer_${rate}_${mode}
+      COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/traffic.py"
+      "$<TARGET_FILE:intraflow_pragma>" "${profile}"
+      "${CMAKE_CURRENT_BINARY_DIR}/writer/${rate}_${mode}.json" 36000 1000 native)
+    set_tests_properties(writer_${rate}_${mode} PROPERTIES TIMEOUT 360 LABELS writer_compare RUN_SERIAL TRUE)
+  endforeach()
+endforeach()
+add_executable(intraflow_writer_recovery tests/writer_recovery.cpp)
+add_dependencies(intraflow_writer_recovery intraflow_idl)
+target_include_directories(intraflow_writer_recovery PRIVATE "${CMAKE_CURRENT_BINARY_DIR}" src)
+target_link_libraries(intraflow_writer_recovery PRIVATE intraflow SQLite::SQLite3)
+add_test(NAME writer_mutex_recovery
+  COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/writer_recovery.py"
+  "$<TARGET_FILE:intraflow_writer_recovery>")
+set_tests_properties(writer_mutex_recovery PROPERTIES TIMEOUT 90)
+
+# Operational candidates (30/100/300/900) and separate stress tiers.
+foreach(rate IN ITEMS 30 100 300 900 2700 5400)
+  foreach(mode IN ITEMS raw filter)
+    set(profile "load_${rate}_mutex")
+    if(mode STREQUAL "filter")
+      string(APPEND profile "_filter")
+    endif()
+    add_test(NAME filter_${rate}_${mode}
+      COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/traffic.py"
+      "$<TARGET_FILE:intraflow_pragma>" "${profile}"
+      "${CMAKE_CURRENT_BINARY_DIR}/filter/${rate}_${mode}.json" 36000 1000 native)
+    if(rate GREATER 900)
+      set(label filter_stress)
+    else()
+      set(label filter_compare)
+    endif()
+    set_tests_properties(filter_${rate}_${mode} PROPERTIES TIMEOUT 360 LABELS ${label} RUN_SERIAL TRUE)
+  endforeach()
+endforeach()
+add_test(NAME endurance_100
+  COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/traffic.py"
+  "$<TARGET_FILE:intraflow_pragma>" load_100_mutex_filter
+  "${CMAKE_CURRENT_BINARY_DIR}/endurance/100_mutex_filter.json" 3600000 1000 native)
+set_tests_properties(endurance_100 PROPERTIES TIMEOUT 4500 LABELS endurance RUN_SERIAL TRUE)
+add_executable(intraflow_topic_filter tests/topic_filter.cpp)
+add_dependencies(intraflow_topic_filter intraflow_idl)
+target_include_directories(intraflow_topic_filter PRIVATE "${CMAKE_CURRENT_BINARY_DIR}")
+target_link_libraries(intraflow_topic_filter PRIVATE intraflow)
+add_test(NAME filtered_topic_contract COMMAND "${Python3_EXECUTABLE}"
+  "${CMAKE_CURRENT_SOURCE_DIR}/tests/topic_filter.py" "$<TARGET_FILE:intraflow_topic_filter>")
+add_test(NAME filtered_retention_gap COMMAND "${Python3_EXECUTABLE}"
+  "${CMAKE_CURRENT_SOURCE_DIR}/tests/retention.py" "$<TARGET_FILE:intraflow_retention>" filter)
+set_tests_properties(filtered_topic_contract filtered_retention_gap PROPERTIES TIMEOUT 90)
+
+# Root-cause-only experiments, same 300/s workload and 5-second timeout.
+# 180 s reaches retention steady state and covers the prior 42 s failure.
+# A second rotated round reduces order bias; each uses a fresh DB.
+if(WIN32)
+  foreach(round IN ITEMS 1 2)
+    if(round EQUAL 1)
+      set(modes root_native root_checkpoint root_hooks root_off)
+    else()
+      set(modes root_off root_hooks root_checkpoint root_native)
+    endif()
+    foreach(mode IN LISTS modes)
+      if(mode STREQUAL "root_off")
+        set(threshold 0)
+      else()
+        set(threshold 1000)
+      endif()
+      add_test(NAME cause_${round}_${mode}
+        COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/traffic.py"
+        "$<TARGET_FILE:intraflow_pragma>" load_300_mutex_filter
+        "${CMAKE_CURRENT_BINARY_DIR}/rootcause/${round}_${mode}.json" 180000 "${threshold}" "${mode}")
+      set_tests_properties(cause_${round}_${mode} PROPERTIES TIMEOUT 420 LABELS rootcause RUN_SERIAL TRUE)
+    endforeach()
+  endforeach()
+endif()
+
+add_executable(intraflow_batch tests/batch.cpp)
+add_dependencies(intraflow_batch intraflow_idl)
+target_include_directories(intraflow_batch PRIVATE "${CMAKE_CURRENT_BINARY_DIR}")
+target_link_libraries(intraflow_batch PRIVATE intraflow SQLite::SQLite3)
+add_test(NAME batch_transaction_contract COMMAND "${Python3_EXECUTABLE}"
+  "${CMAKE_CURRENT_SOURCE_DIR}/tests/batch.py" "$<TARGET_FILE:intraflow_batch>")
+set_tests_properties(batch_transaction_contract PROPERTIES TIMEOUT 90)
+
+# Independent tests: caller-owned buffering, no transaction while waiting.
+# Same workload per pair, no topic filter (CPU cost), writer mutex enabled.
+foreach(rate IN ITEMS 100 300 900)
+  foreach(interval IN ITEMS 0 10 20 50 100 200)
+    if(WIN32)
+      set(mode root_checkpoint)
+    else()
+      set(mode native)
+    endif()
+    add_test(NAME batch_${rate}_${interval}_1000
+      COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/traffic.py"
+      "$<TARGET_FILE:intraflow_pragma>" "load_${rate}_mutex_batch${interval}"
+      "${CMAKE_CURRENT_BINARY_DIR}/batch/${rate}_${interval}_1000.json" 72000 1000 "${mode}")
+    set_tests_properties(batch_${rate}_${interval}_1000 PROPERTIES TIMEOUT 420 LABELS batch_compare RUN_SERIAL TRUE)
+  endforeach()
+endforeach()
+# Keep interval fixed while changing only the checkpoint threshold.
+if(WIN32)
+  foreach(interval IN ITEMS 0 200)
+    add_test(NAME batch_300_${interval}_4000
+      COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/traffic.py"
+      "$<TARGET_FILE:intraflow_pragma>" "load_300_mutex_batch${interval}"
+      "${CMAKE_CURRENT_BINARY_DIR}/batch/300_${interval}_4000.json" 72000 4000 root_checkpoint)
+    set_tests_properties(batch_300_${interval}_4000 PROPERTIES TIMEOUT 420 LABELS batch_compare RUN_SERIAL TRUE)
+  endforeach()
+endif()
+
+# Experimental separate maintenance owner, production defaults unchanged.
+add_executable(intraflow_maintenance_recovery tests/maintenance_recovery.cpp)
+add_dependencies(intraflow_maintenance_recovery intraflow_idl)
+target_include_directories(intraflow_maintenance_recovery PRIVATE "${CMAKE_CURRENT_BINARY_DIR}")
+target_link_libraries(intraflow_maintenance_recovery PRIVATE intraflow_diagnostics SQLite::SQLite3)
+foreach(sync IN ITEMS normal off)
+  add_test(NAME maintenance_recovery_${sync}
+    COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/maintenance_recovery.py"
+    "$<TARGET_FILE:intraflow_maintenance_recovery>" "${sync}")
+  set_tests_properties(maintenance_recovery_${sync} PROPERTIES TIMEOUT 90)
+endforeach()
+foreach(rate IN ITEMS 100 300)
+  foreach(mode IN ITEMS baseline separate_normal separate_5s separate_off)
+    if(mode STREQUAL "baseline")
+      set(threshold 1000)
+      if(WIN32)
+        set(wire root_checkpoint)
+      else()
+        set(wire native)
+      endif()
+    else()
+      set(threshold 0)
+      set(wire "${mode}")
+    endif()
+    add_test(NAME maintenance_${rate}_${mode}
+      COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/traffic.py"
+      "$<TARGET_FILE:intraflow_pragma>" "load_${rate}_mutex"
+      "${CMAKE_CURRENT_BINARY_DIR}/maintenance/${rate}_${mode}.json" 180000 "${threshold}" "${wire}")
+    set_tests_properties(maintenance_${rate}_${mode} PROPERTIES TIMEOUT 420 LABELS maintenance_compare RUN_SERIAL TRUE)
+  endforeach()
+  foreach(mode IN ITEMS separate_normal separate_off)
+    add_test(NAME maintenance_hour_${rate}_${mode}
+      COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/traffic.py"
+      "$<TARGET_FILE:intraflow_pragma>" "load_${rate}_mutex"
+      "${CMAKE_CURRENT_BINARY_DIR}/maintenance_hour/${rate}_${mode}.json" 3600000 0 "${mode}")
+    set_tests_properties(maintenance_hour_${rate}_${mode} PROPERTIES TIMEOUT 4500 LABELS maintenance_endurance RUN_SERIAL TRUE)
+  endforeach()
+endforeach()
