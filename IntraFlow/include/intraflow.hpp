@@ -24,6 +24,7 @@ struct Options {
     unsigned retention_sec = 60; // zero disables age limit
     unsigned max_messages = 100000; // zero disables sequence-window limit
     unsigned cleanup_interval_ms = 1000; // during publication, not idle
+    bool serialize_writers = false; // experimental opt-in; same setting for every Session on DB
 #ifdef INTRAFLOW_DIAGNOSTICS
     int diagnostic_checkpoint = -1;
     bool diagnostic_hooks = false;

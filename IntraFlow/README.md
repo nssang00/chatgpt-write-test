@@ -358,3 +358,40 @@ full history; load sweep and 1-hour test now exercise the defaults and
 report retained/pruned counts, age span, page counts and skipped
 sequences. No Windows writer mutex change in this commit; isolate
 retention behavior before addressing the existing lock failure.
+
+## Experimental process writer serialization
+
+Options::serialize_writers (default false) is an opt-in experiment.
+All processes sharing a DB must use the same setting; persisted
+intraflow_writer_policy rejects mixed modes. Use a new DB to change
+mode; stop old SDK processes first. The Windows backend uses a named
+kernel mutex based on the DB file identity, accepting WAIT_ABANDONED
+as ownership. Linux uses flock on <canonical-db>.writer.lock with
+nonblocking attempts and 1 ms sleeps up to busy_ms. Never remove this
+sidecar while a process may use the DB. Use local files under one
+trusted user, no hard-link aliases, replacement, forked inherited
+sessions, or external writers. Cross-user ACLs are not configured.
+The mutex is acquired before WAL/schema initialization, topic
+registration and publish (including retention trigger and native
+autocheckpoint). SQLite opens connections before the OS guard to
+establish file identity; native recovery and final connection close
+are still SQLite's responsibility. Read polling and callback dispatch
+do not acquire the process lock. JSON serialization is before lock.
+No extra worker thread or server. The timeout applies to each OS
+lock acquisition, separately from SQLite busy timeout and local
+mutex wait; no hard end-to-end deadline or FIFO guarantee. Linux
+uses a small sleep, not a spin; this may affect fairness/throughput.
+
+CTest writer_mutex_recovery holds the actual internal OS lock and an
+uncommitted SQLite transaction in a child; an existing Session must
+time out, then after forced child termination receive a committed
+message, with exact SQLite sequence and rollback verification.
+Two same-process Sessions also publish concurrently.
+CTest -L writer_compare compares native and opt-in mode using the
+same diagnostic build, retention on, 10 ms polling, 5 s busy timeout,
+native autocheckpoint, 30 peers, 36 s, rates 300/900/2700/5400.
+Report OS guard wait and SQLite INSERT separately (native guard is
+a no-op); existing uninstrumented load sweep remains baseline.
+Run comparison even if baseline load fails. One pair per rate is
+exploratory; the one-hour test now opts into serialization at 300/s.
+No production default change or SQL topic filtering in this commit.

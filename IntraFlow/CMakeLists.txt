@@ -166,8 +166,8 @@ foreach(rate IN ITEMS 30 300 900 1800 2700 5400)
 endforeach()
 add_test(NAME endurance_300
   COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/traffic.py"
-  "$<TARGET_FILE:intraflow_traffic>" load_300
-  "${CMAKE_CURRENT_BINARY_DIR}/endurance/300.json" 3600000)
+  "$<TARGET_FILE:intraflow_traffic>" load_300_mutex
+  "${CMAKE_CURRENT_BINARY_DIR}/endurance/300_mutex.json" 3600000)
 set_tests_properties(endurance_300 PROPERTIES TIMEOUT 4500 LABELS endurance RUN_SERIAL TRUE)
 
 add_executable(intraflow_retention tests/retention.cpp)
@@ -178,3 +178,27 @@ add_test(NAME retention_policy_and_gap
   COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/retention.py"
   "$<TARGET_FILE:intraflow_retention>")
 set_tests_properties(retention_policy_and_gap PROPERTIES TIMEOUT 90)
+
+# Same instrumented executable and retention settings, paired fresh DBs.
+foreach(rate IN ITEMS 300 900 2700 5400)
+  foreach(mode IN ITEMS native mutex)
+    if(mode STREQUAL "mutex")
+      set(profile "load_${rate}_mutex")
+    else()
+      set(profile "load_${rate}")
+    endif()
+    add_test(NAME writer_${rate}_${mode}
+      COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/traffic.py"
+      "$<TARGET_FILE:intraflow_pragma>" "${profile}"
+      "${CMAKE_CURRENT_BINARY_DIR}/writer/${rate}_${mode}.json" 36000 1000 native)
+    set_tests_properties(writer_${rate}_${mode} PROPERTIES TIMEOUT 360 LABELS writer_compare RUN_SERIAL TRUE)
+  endforeach()
+endforeach()
+add_executable(intraflow_writer_recovery tests/writer_recovery.cpp)
+add_dependencies(intraflow_writer_recovery intraflow_idl)
+target_include_directories(intraflow_writer_recovery PRIVATE "${CMAKE_CURRENT_BINARY_DIR}" src)
+target_link_libraries(intraflow_writer_recovery PRIVATE intraflow SQLite::SQLite3)
+add_test(NAME writer_mutex_recovery
+  COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/writer_recovery.py"
+  "$<TARGET_FILE:intraflow_writer_recovery>")
+set_tests_properties(writer_mutex_recovery PROPERTIES TIMEOUT 90)

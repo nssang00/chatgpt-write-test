@@ -138,7 +138,11 @@ int main(int argc,char** argv){
         if(argc!=11)return 2;
 #endif
         const int id=std::atoi(argv[1]),duration=std::atoi(argv[2]);
-        const std::string profile=argv[3],db=argv[4],ready=argv[5],go=argv[6],sent=argv[7],drain=argv[8],result=argv[9],release=argv[10];
+        std::string profile=argv[3];
+        const std::string db=argv[4],ready=argv[5],go=argv[6],sent=argv[7],drain=argv[8],result=argv[9],release=argv[10];
+        const std::string suffix="_mutex";
+        const bool serialized=profile.size()>suffix.size()&&profile.compare(profile.size()-suffix.size(),suffix.size(),suffix)==0;
+        if(serialized)profile.resize(profile.size()-suffix.size());
         const bool load=profile.compare(0,5,"load_")==0;
         if(id<0||id>=peers||duration<200||duration>3600000||(!load&&duration>60000))return 2;
         std::array<int,kinds> period{};
@@ -156,7 +160,7 @@ int main(int argc,char** argv){
         Receiver receiver(count);
         std::array<std::vector<std::int64_t>,kinds> pubTime,lateness,gaps;
         std::array<Clock::time_point,kinds> previous{};
-        Options options;options.database=db;
+        Options options;options.database=db;options.serialize_writers=serialized;
         // New load sweep uses actual SDK defaults, not stress-test timeout.
         if(!load){
             options.poll_ms=5;options.busy_ms=30000;
@@ -218,6 +222,7 @@ int main(int argc,char** argv){
             {"duplicates",receiver.duplicates},{"invalid",receiver.invalid},{"out_of_order",receiver.out_of_order},
             {"publish_elapsed_us",publishElapsed},{"poll_ms",options.poll_ms},{"busy_ms",options.busy_ms},
             {"retention_sec",options.retention_sec},{"max_messages",options.max_messages},
+            {"serialize_writers",options.serialize_writers},
             {"skipped_sequences",app.skippedSequences()},
             {"latency_us",receiver.latency},{"publish_us",pubTime},
             {"lateness_us",lateness},{"gaps_us",gaps}};

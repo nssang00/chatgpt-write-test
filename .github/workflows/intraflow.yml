@@ -39,11 +39,12 @@ jobs:
         shell: pwsh
         run: cmake -S IntraFlow -B build-intraflow -A x64 "-DCMAKE_TOOLCHAIN_FILE=$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" -DVCPKG_TARGET_TRIPLET=x64-windows
       - name: Build
+        id: build
         run: cmake --build build-intraflow --config Release --parallel
       - name: Install benchmark sampler
         run: python -m pip install psutil==6.1.1
       - name: Functional tests
-        run: ctest --test-dir build-intraflow -C Release -LE "benchmark|multitopic|pragma|winlatency|checkpoint|load_sweep|endurance" --output-on-failure
+        run: ctest --test-dir build-intraflow -C Release -LE "benchmark|multitopic|pragma|winlatency|checkpoint|load_sweep|endurance|writer_compare" --output-on-failure
       - name: Repeated 30-process multi-topic traffic
         run: ctest --test-dir build-intraflow -C Release -L multitopic -V
       - name: Scale and latency tests
@@ -53,6 +54,9 @@ jobs:
       - name: Production-default load sweep
         if: success()
         run: ctest --test-dir build-intraflow -C Release -L load_sweep -V
+      - name: Process writer lock A-B comparison
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        run: ctest --test-dir build-intraflow -C Release -L writer_compare -V
       - name: Single-owner checkpoint comparison (manual experiment)
         if: ${{ !cancelled() && github.event_name == 'workflow_dispatch' }}
         run: ctest --test-dir build-intraflow -C Release -L checkpoint -V
@@ -112,6 +116,14 @@ jobs:
         with:
           name: intraflow-load-${{ matrix.os }}
           path: build-intraflow/load/*.json
+          if-no-files-found: warn
+
+      - name: Upload writer comparison
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: intraflow-writer-${{ matrix.os }}
+          path: build-intraflow/writer/*.json
           if-no-files-found: warn
 
   endurance:

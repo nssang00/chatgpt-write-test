@@ -1,5 +1,6 @@
 #include "intraflow.hpp"
 #include <sqlite3.h>
+#include "process_writer_lock.hpp"
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
@@ -69,7 +70,7 @@ struct Diagnostics {
     std::uint32_t rng=1;
     DiagClock::time_point retry_start;
     std::int64_t busy_calls=0,busy_episodes=0,checkpoint_busy=0,checkpoint_errors=0,wal_commits=0;
-    Timing busy_sleep,checkpoint,insert,poll_wait,read_batch,json_parse,callback;
+    Timing busy_sleep,checkpoint,insert,poll_wait,read_batch,json_parse,callback,writer_wait;
     // Separate receiver-owned counters: never read by publishRaw.
     Timing maintenance;
     std::int64_t maintenance_busy=0,maintenance_errors=0,maintenance_partial=0,maintenance_valid=0;
@@ -146,7 +147,7 @@ struct Diagnostics {
             {"wal_commits",wal_commits},{"insert_step",insert.json()},
             {"poll_wait",poll_wait.json()},{"read_batch",read_batch.json()},
             {"json_parse",json_parse.json()},{"callback",callback.json()},
-            {"slowest_insert",slowest_insert},{"maintenance",{
+            {"slowest_insert",slowest_insert},{"writer_wait",writer_wait.json()},{"maintenance",{
                 {"timing",maintenance.json()},{"busy",maintenance_busy},{"errors",maintenance_errors},
                 {"partial",maintenance_partial},{"valid",maintenance_valid},
                 {"max_log_frames",max_log_frames},{"max_backfilled_frames",max_backfilled_frames},
@@ -226,6 +227,7 @@ struct Session::Impl {
     std::string name;
     Options options;
     Db writer, reader;
+    std::unique_ptr<detail::ProcessWriterLock> process_writer;
 #ifdef INTRAFLOW_DIAGNOSTICS
     Diagnostics diag;
     std::unique_ptr<Db> maintenance_db;
@@ -244,6 +246,11 @@ struct Session::Impl {
         if(n.empty() || !o.poll_ms || o.database.empty() ||
            ((o.retention_sec||o.max_messages)&&!o.cleanup_interval_ms))
             throw std::invalid_argument("invalid options");
+        if(o.serialize_writers){
+            if(o.busy_ms==0xffffffffu)throw std::invalid_argument("invalid writer timeout");
+            process_writer.reset(new detail::ProcessWriterLock(sqlite3_db_filename(writer.p,"main")));
+        }
+        detail::ProcessWriterGuard process(process_writer.get(),o.busy_ms);
         { Stmt mode(writer,"PRAGMA journal_mode=WAL");
           if(!mode.row()||mode.str(0)!="wal")throw std::runtime_error("WAL mode unavailable"); }
         writer.exec(o.full_sync?"PRAGMA synchronous=FULL":"PRAGMA synchronous=NORMAL");
@@ -252,6 +259,20 @@ struct Session::Impl {
         writer.exec("CREATE TABLE IF NOT EXISTS messages(seq INTEGER PRIMARY KEY AUTOINCREMENT,topic TEXT NOT NULL,sender TEXT NOT NULL,timestamp INTEGER NOT NULL,payload TEXT NOT NULL)");
         writer.exec("CREATE INDEX IF NOT EXISTS messages_topic_seq ON messages(topic,seq)");
         retention(writer,o);
+        writer.exec("CREATE TABLE IF NOT EXISTS intraflow_writer_policy(id INTEGER PRIMARY KEY CHECK(id=1),serialized INTEGER NOT NULL)");
+        {
+            Stmt policy(writer,"SELECT serialized FROM intraflow_writer_policy WHERE id=1");
+            if(!policy.row()){
+                policy.reset();
+                Stmt add(writer,"INSERT OR IGNORE INTO intraflow_writer_policy VALUES(1,?)");
+                add.bind(1,static_cast<std::int64_t>(o.serialize_writers));add.row();
+            }
+        }
+        {
+            Stmt policy(writer,"SELECT serialized FROM intraflow_writer_policy WHERE id=1");
+            if(!policy.row()||policy.num(0)!=static_cast<int>(o.serialize_writers))
+                throw std::runtime_error("writer policy mismatch for shared database");
+        }
         insert.reset(new Stmt(writer,"INSERT INTO messages(topic,sender,timestamp,payload) VALUES(?,?,?,?)"));
         poll.reset(new Stmt(reader,"SELECT m.seq,m.timestamp,m.topic,m.sender,t.type,t.hash,m.payload FROM messages m JOIN topics t ON t.name=m.topic WHERE m.seq>? ORDER BY m.seq LIMIT 256"));
         cursor=high(reader);
@@ -260,7 +281,7 @@ struct Session::Impl {
             check(sqlite3_wal_autocheckpoint(writer.p,o.diagnostic_checkpoint),writer.p);
         diag.config={{"sqlite_version",sqlite3_libversion()},{"writer",Diagnostics::pragmas(writer)},
                      {"reader",Diagnostics::pragmas(reader)},{"custom_hooks",o.diagnostic_hooks},
-                     {"short_retry",o.diagnostic_short_retry}};
+                     {"short_retry",o.diagnostic_short_retry},{"serialize_writers",o.serialize_writers}};
         diag.threshold=std::stoi(diag.config["writer"]["wal_autocheckpoint"].get<std::string>());
         diag.timeout=static_cast<int>(o.busy_ms);
         diag.short_retry=o.diagnostic_short_retry;
@@ -270,7 +291,7 @@ struct Session::Impl {
         if(o.diagnostic_hooks)
             sqlite3_wal_hook(writer.p,Diagnostics::wal,&diag);
         if(o.diagnostic_maintenance_ms){
-            if(o.diagnostic_checkpoint!=0||o.diagnostic_hooks||o.diagnostic_short_retry)
+            if(o.diagnostic_checkpoint!=0||o.diagnostic_hooks||o.diagnostic_short_retry||o.serialize_writers)
                 throw std::invalid_argument("maintenance requires native busy and disabled autocheckpoint");
             // One designated peer, separate writable connection, same
             // receive thread. PASSIVE never waits for a reader/writer lock.
@@ -370,9 +391,11 @@ struct Session::Impl {
     }
     SubscriptionId add(const std::string& t,const std::string& name,const std::string& hash,const std::string& schema,std::function<void(const Message&)> cb) {
         if(!cb) throw std::invalid_argument("empty callback");
-        std::lock_guard<std::mutex> lock(listeners_mu);
         std::lock_guard<std::mutex> write(write_mu);
+        detail::ProcessWriterGuard process(process_writer.get(),options.busy_ms);
         if(!t.empty()) topic(writer,topics,t,name,hash,schema);
+        // Do not block the receive loop while waiting for the writer lock.
+        std::lock_guard<std::mutex> lock(listeners_mu);
         auto l=std::make_shared<Listener>(); l->id=next++;l->topic=t;l->after=high(writer);l->callback=std::move(cb);
         listeners.push_back(l); return l->id;
     }
@@ -390,6 +413,13 @@ std::int64_t Session::publishRaw(const std::string& t,const std::string& name,co
     auto json=value.dump();
     if(json.size()>1024*1024) throw std::runtime_error("message exceeds 1 MiB");
     std::lock_guard<std::mutex> lock(p.write_mu);
+#ifdef INTRAFLOW_DIAGNOSTICS
+    const auto lockBegin=DiagClock::now();
+#endif
+    detail::ProcessWriterGuard process(p.process_writer.get(),p.options.busy_ms);
+#ifdef INTRAFLOW_DIAGNOSTICS
+    p.diag.writer_wait.add(elapsedUs(lockBegin));
+#endif
     topic(p.writer,p.topics,t,name,hash,schema);
     // A single autocommit INSERT completes at SQLITE_DONE. Keep the writer
     // lock window small; topic registration is independently committed.
