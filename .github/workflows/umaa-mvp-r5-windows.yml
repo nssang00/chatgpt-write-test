@@ -1,0 +1,81 @@
+name: UMAA MVP r5 Windows CI
+
+on:
+  push:
+    branches: ['umaa/mvp-r5-ci']
+    paths:
+      - 'UMAA_MVP_r5.zip'
+      - 'umaa-mvp/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  standalone:
+    name: esbuild + .NET Framework 4.8 x64 + SQLite
+    runs-on: windows-2022
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Locate or extract UMAA source
+        shell: pwsh
+        run: |
+          $source = Join-Path $env:GITHUB_WORKSPACE 'umaa-mvp'
+          $zip = Join-Path $env:GITHUB_WORKSPACE 'UMAA_MVP_r5.zip'
+          if (Test-Path (Join-Path $source 'UMAA.sln')) {
+            $root = $source
+          } elseif (Test-Path $zip) {
+            $dest = Join-Path $env:RUNNER_TEMP 'umaa-r5'
+            Expand-Archive -LiteralPath $zip -DestinationPath $dest -Force
+            $root = Join-Path $dest 'UMAA_MVP'
+          } else {
+            throw 'Missing source: commit UMAA_MVP_r5.zip at repository root or extracted files under umaa-mvp/.'
+          }
+          foreach ($file in @('UMAA.sln','Build-WebUI.bat','Build-Standalone.bat','Test.bat','UMAA.WebUI/package-lock.json')) {
+            if (!(Test-Path (Join-Path $root $file))) { throw "Missing $file in $root" }
+          }
+          "UMAA_ROOT=$root" >> $env:GITHUB_ENV
+      - name: Build static web bundle
+        shell: cmd
+        working-directory: ${{ env.UMAA_ROOT }}
+        run: call Build-WebUI.bat
+      - name: Build Standalone and check runtime dependencies
+        shell: cmd
+        working-directory: ${{ env.UMAA_ROOT }}
+        run: call Build-Standalone.bat
+      - name: Core and SQLite integration tests
+        shell: cmd
+        working-directory: ${{ env.UMAA_ROOT }}
+        run: call Test.bat
+      - name: Verify x64 native SQLite deployment
+        shell: pwsh
+        run: |
+          $out = Join-Path $env:UMAA_ROOT 'UMAA.Standalone/bin/Release/net48'
+          foreach ($file in @('UMAA.Standalone.exe','System.Data.SQLite.dll','x64/SQLite.Interop.dll','Newtonsoft.Json.dll','Microsoft.Web.WebView2.Core.dll','Microsoft.Web.WebView2.Wpf.dll')) {
+            if (!(Test-Path (Join-Path $out $file))) { throw "Missing runtime file: $file" }
+          }
+      - name: Upload Standalone Windows build
+        uses: actions/upload-artifact@v4
+        with:
+          name: UMAA-MVP-r5-Standalone-win-x64
+          path: ${{ env.UMAA_ROOT }}/UMAA.Standalone/bin/Release/net48/
+          if-no-files-found: error
+      - name: Upload static web build
+        uses: actions/upload-artifact@v4
+        with:
+          name: UMAA-MVP-r5-WebUI
+          path: |
+            ${{ env.UMAA_ROOT }}/UMAA.WebUI/index.html
+            ${{ env.UMAA_ROOT }}/UMAA.WebUI/dist/
+          if-no-files-found: error
+      - name: Note EA integration scope
+        shell: pwsh
+        run: |
+          'EA AddIn build and runtime excluded: a licensed EA Windows environment and Interop.EA.dll are required for full integration verification.' >> $env:GITHUB_STEP_SUMMARY
