@@ -197,6 +197,8 @@ struct Diagnostics {
     std::int64_t busy_calls=0,busy_episodes=0,checkpoint_busy=0,checkpoint_errors=0,wal_commits=0;
     Timing busy_sleep,checkpoint,insert,poll_wait,read_batch,json_parse,callback,writer_wait,writer_hold;
     WriterActivity activity;
+    Timing explicit_commit;
+    std::uint64_t message_transactions=0,batched_messages=0;
     ActivityDetail phase;
     std::atomic<std::uint64_t> current_busy_calls{0},current_busy_us{0};
 #ifdef _WIN32
@@ -305,6 +307,7 @@ struct Diagnostics {
             {"poll_wait",poll_wait.json()},{"read_batch",read_batch.json()},
             {"json_parse",json_parse.json()},{"callback",callback.json()},
             {"slowest_insert",slowest_insert},{"writer_wait",writer_wait.json()},{"writer_hold",writer_hold.json()},
+            {"explicit_commit",explicit_commit.json()},{"message_transactions",message_transactions},{"batched_messages",batched_messages},
             {"raw_rows",raw_rows},{"raw_bytes",raw_bytes},{"filtered_polls",filtered_polls},{"maintenance",{
                 {"timing",maintenance.json()},{"busy",maintenance_busy},{"errors",maintenance_errors},
                 {"partial",maintenance_partial},{"valid",maintenance_valid},
@@ -667,11 +670,92 @@ std::int64_t Session::publishRaw(const std::string& t,const std::string& name,co
     if(d.insert.count==0||stepUs>d.insert.max)
         d.slowest_insert={{"topic",t},{"step_us",stepUs},{"busy_sleep_us",d.busy_sleep.total-busyBefore},
                           {"busy_calls",d.busy_calls-callsBefore},{"checkpoint_us",d.checkpoint.total-checkpointBefore}};
-    d.insert.add(stepUs);
+    d.insert.add(stepUs);++d.message_transactions;
 #else
     s.row();
 #endif
     return sqlite3_last_insert_rowid(p.writer.p);
+}
+std::vector<std::int64_t> Session::publishBatch(const Batch& batch) {
+    auto& p=checked();
+    if(batch.entries_.empty())return {};
+    // Allocate result storage before the transaction. Payloads are already
+    // serialized; no application callbacks run while the writer is locked.
+    std::vector<std::int64_t> sequences;
+    sequences.reserve(batch.entries_.size());
+    std::lock_guard<std::mutex> lock(p.write_mu);
+#ifdef INTRAFLOW_DIAGNOSTICS
+    const auto lockBegin=DiagClock::now();
+    Diagnostics::PublishTrace trace(p.diag);
+#endif
+    detail::ProcessWriterGuard process(p.process_writer.get(),p.options.busy_ms);
+#ifdef INTRAFLOW_DIAGNOSTICS
+    auto& d=p.diag;
+    d.writer_wait.add(elapsedUs(lockBegin));trace.acquire();
+#endif
+    // Topic metadata is immutable and independently registered, just as
+    // in publishRaw. A rejected batch may leave an empty topic, but no rows.
+    for(const auto& entry:batch.entries_)
+        topic(p.writer,p.topics,entry.topic,entry.type,entry.hash,entry.schema);
+    const bool multi=batch.entries_.size()>1;
+#ifdef INTRAFLOW_DIAGNOSTICS
+    d.current_busy_calls=0;d.current_busy_us=0;
+    d.activity.set(3);
+#ifdef _WIN32
+    WinTraceScope io(d.trace_win_io?&d.win_io:nullptr);
+#endif
+#endif
+    try{
+        if(multi)p.writer.exec("BEGIN IMMEDIATE");
+        for(const auto& entry:batch.entries_){
+            auto& s=*p.insert;
+            ResetStmt reset{s};
+            s.bind(1,entry.topic);s.bind(2,p.name);
+            s.bind(3,static_cast<std::int64_t>(std::chrono::duration_cast<std::chrono::microseconds>(
+                std::chrono::system_clock::now().time_since_epoch()).count()));
+            s.bind(4,entry.payload);
+#ifdef INTRAFLOW_DIAGNOSTICS
+            const auto begin=DiagClock::now();
+            const auto busyBefore=d.busy_sleep.total,checkpointBefore=d.checkpoint.total;
+            const auto callsBefore=d.busy_calls;
+#endif
+            s.row();
+#ifdef INTRAFLOW_DIAGNOSTICS
+            const auto stepUs=elapsedUs(begin);
+            if(d.insert.count==0||stepUs>d.insert.max)
+                d.slowest_insert={{"topic",entry.topic},{"step_us",stepUs},{"busy_sleep_us",d.busy_sleep.total-busyBefore},
+                    {"busy_calls",d.busy_calls-callsBefore},{"checkpoint_us",d.checkpoint.total-checkpointBefore}};
+            d.insert.add(stepUs);
+#endif
+            sequences.push_back(sqlite3_last_insert_rowid(p.writer.p));
+        }
+        if(multi){
+#ifdef INTRAFLOW_DIAGNOSTICS
+            const auto commitBegin=DiagClock::now();
+#endif
+            p.writer.exec("COMMIT");
+#ifdef INTRAFLOW_DIAGNOSTICS
+            d.explicit_commit.add(elapsedUs(commitBegin));
+#endif
+        }
+    }catch(...){
+        if(!sqlite3_get_autocommit(p.writer.p)){
+            try{p.writer.exec("ROLLBACK");}catch(...){
+                // Do not let a connection with an unclosed transaction be
+                // reused; stop the session's receive loop without joining
+                // under the writer lock.
+                {std::lock_guard<std::mutex> wait(p.wait_mu);p.running=false;}
+                p.cv.notify_all();
+            }
+        }
+        throw;
+    }
+#ifdef INTRAFLOW_DIAGNOSTICS
+    ++d.message_transactions;
+    if(multi)d.batched_messages+=batch.entries_.size();
+    d.activity.set(4);
+#endif
+    return sequences;
 }
 SubscriptionId Session::subscribeRaw(const std::string& t,const std::string& name,const std::string& hash,const std::string& schema,std::function<void(const Message&)> cb) {
     if(t.empty()) throw std::invalid_argument("empty topic");

@@ -162,6 +162,15 @@ int main(int argc,char** argv){
 #endif
         const int id=std::atoi(argv[1]),duration=std::atoi(argv[2]);
         std::string profile=argv[3];
+        unsigned batchMs=0;
+        const auto batchPos=profile.rfind("_batch");
+        if(batchPos!=std::string::npos){
+            const auto value=profile.substr(batchPos+6);
+            if(value.empty()||value.find_first_not_of("0123456789")!=std::string::npos)return 2;
+            batchMs=static_cast<unsigned>(std::stoul(value));
+            if(batchMs>500)return 2;
+            profile.resize(batchPos);
+        }
         const std::string db=argv[4],ready=argv[5],go=argv[6],sent=argv[7],drain=argv[8],result=argv[9],release=argv[10];
         const std::string filterSuffix="_filter";
         const bool filtered=profile.size()>filterSuffix.size()&&profile.compare(profile.size()-filterSuffix.size(),filterSuffix.size(),filterSuffix)==0;
@@ -221,29 +230,73 @@ int main(int argc,char** argv){
         std::array<int,kinds> phase{};
         if(load)for(int k=0;k<kinds;++k)phase[k]=static_cast<int>(
             static_cast<std::int64_t>(period[k])*(id*kinds+k)/(peers*kinds));
+        Batch pending;
+        struct PendingSample {int kind;Clock::time_point begin;};
+        std::vector<PendingSample> pendingSamples;
+        Clock::time_point batchDeadline;
+        std::vector<std::int64_t> transactionUs;
+        std::uint64_t transactions=0,multiTransactions=0,multiMessages=0;
+        std::size_t largestBatch=0;
+        auto flush=[&]{
+            if(!pending.size())return;
+            const auto begin=Clock::now();
+            const auto size=pending.size();
+            const auto ids=app.publishBatch(pending);
+            if(ids.size()!=size)throw std::runtime_error("batch sequence count");
+            const auto done=Clock::now();
+            transactionUs.push_back(us(done-begin));++transactions;
+            largestBatch=std::max(largestBatch,size);
+            if(size>1){++multiTransactions;multiMessages+=size;}
+            for(const auto& item:pendingSamples)pubTime[item.kind].push_back(us(done-item.begin));
+            pending.clear();pendingSamples.clear();
+        };
         while(true) {
             int selected=-1;Clock::time_point due;
             for(int k=0;k<kinds;++k)if(published[k]<count[k]){
                 const auto candidate=start+Milli(phase[k]+period[k]*published[k]);
                 if(selected<0||candidate<due){selected=k;due=candidate;}
             }
+            if(batchMs&&pending.size()&&(selected<0||due>=batchDeadline||Clock::now()>=batchDeadline)){
+                std::this_thread::sleep_until(batchDeadline);
+                flush();
+                continue;
+            }
             if(selected<0)break;
             const int k=selected;
             std::this_thread::sleep_until(due);
+            if(batchMs&&pending.size()&&Clock::now()>=batchDeadline){
+                flush();continue;
+            }
             const auto begin=Clock::now();
             lateness[k].push_back(std::max<std::int64_t>(0,us(begin-due)));
             if(published[k])gaps[k].push_back(us(begin-previous[k]));
             previous[k]=begin;
             TrafficHeader h{};h.source=id;h.index=published[k];h.sent_us=utc();
             const auto t=topic(group,k);
-            switch(k){
-                case 0:app.publish(t,sensor(h));break;
-                case 1:app.publish(t,status(h));break;
-                case 2:app.publish(t,command(h));break;
-                case 3:app.publish(t,logmsg(h));break;
+            if(batchMs){
+                if(!pending.size())batchDeadline=begin+Milli(batchMs);
+                switch(k){
+                    case 0:pending.add(t,sensor(h));break;
+                    case 1:pending.add(t,status(h));break;
+                    case 2:pending.add(t,command(h));break;
+                    case 3:pending.add(t,logmsg(h));break;
+                }
+                pendingSamples.push_back(PendingSample{k,begin});
+                ++published[k];
+                if(pending.size()==32)flush();
+            }else{
+                switch(k){
+                    case 0:app.publish(t,sensor(h));break;
+                    case 1:app.publish(t,status(h));break;
+                    case 2:app.publish(t,command(h));break;
+                    case 3:app.publish(t,logmsg(h));break;
+                }
+                const auto elapsed=us(Clock::now()-begin);
+                pubTime[k].push_back(elapsed);transactionUs.push_back(elapsed);
+                ++transactions;largestBatch=1;++published[k];
             }
-            pubTime[k].push_back(us(Clock::now()-begin));++published[k];
         }
+        flush();
         if(load)std::this_thread::sleep_until(start+Milli(duration));
         const auto publishElapsed=us(Clock::now()-start);
         signal(sent);waitFile(drain,180);
@@ -257,6 +310,8 @@ int main(int argc,char** argv){
             {"retention_sec",options.retention_sec},{"max_messages",options.max_messages},
             {"serialize_writers",options.serialize_writers},{"filter_topics",options.filter_topics},
             {"skipped_sequences",app.skippedSequences()},
+            {"batch_ms",batchMs},{"transactions",transactions},{"multi_transactions",multiTransactions},
+            {"multi_messages",multiMessages},{"largest_batch",largestBatch},{"transaction_us",transactionUs},
             {"latency_us",receiver.latency},{"publish_us",pubTime},
             {"lateness_us",lateness},{"gaps_us",gaps}};
 #ifdef INTRAFLOW_DIAGNOSTICS

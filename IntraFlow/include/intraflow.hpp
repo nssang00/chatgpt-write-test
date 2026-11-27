@@ -3,6 +3,8 @@
 #include <functional>
 #include <memory>
 #include <string>
+#include <vector>
+#include <utility>
 #include <stdexcept>
 #include <nlohmann/json.hpp>
 
@@ -36,6 +38,27 @@ struct Options {
     std::uint32_t diagnostic_retry_seed = 1;
 #endif
 };
+// Caller-owned, bounded staging area; no database lock or background thread.
+class Batch {
+public:
+    template<class T> void add(const std::string& topic,const T& value) {
+        if(topic.empty())throw std::invalid_argument("empty topic");
+        if(entries_.size()>=32)throw std::length_error("batch exceeds 32 messages");
+        auto payload=Json(value).dump();
+        if(payload.size()>1024u*1024u||bytes_+payload.size()>4u*1024u*1024u)
+            throw std::length_error("batch payload limit");
+        const auto size=payload.size();
+        entries_.push_back(Entry{topic,Traits<T>::name(),Traits<T>::hash(),Traits<T>::schema(),std::move(payload)});
+        bytes_+=size;
+    }
+    std::size_t size() const noexcept {return entries_.size();}
+    void clear() noexcept {entries_.clear();bytes_=0;}
+private:
+    friend class Session;
+    struct Entry {std::string topic,type,hash,schema,payload;};
+    std::vector<Entry> entries_;
+    std::size_t bytes_=0;
+};
 class Session {
 public:
     explicit Session(const std::string& name, const Options& options = Options());
@@ -49,6 +72,9 @@ public:
     std::int64_t publish(const std::string& topic, const T& value) {
         return publishRaw(topic, Traits<T>::name(), Traits<T>::hash(), Traits<T>::schema(), Json(value));
     }
+    // Synchronous: all message rows commit together or the call throws.
+    // An empty batch is a no-op. Entries are not consumed.
+    std::vector<std::int64_t> publishBatch(const Batch& batch);
     template<class T>
     SubscriptionId subscribe(const std::string& topic, std::function<void(const T&)> callback) {
         if (!callback) throw std::invalid_argument("empty callback");

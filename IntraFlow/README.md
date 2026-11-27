@@ -475,3 +475,50 @@ exclusions, no sync=OFF, no longer timeout, no production policy
 changes. An observed slow syscall identifies where time is spent,
 not the underlying disk/driver/security/VM cause. Unobserved stalls
 require deeper ETW or a representative physical Windows machine.
+
+## Explicit synchronous batch publishing
+
+The Windows #32 root-cause experiment reproduced stalls inside
+FlushFileBuffers during PASSIVE checkpoint (at least 9342 ms).
+Native checkpoint 1/2 passed, timed checkpoint 2/2, timed checkpoint
+plus busy hook 1/2, checkpoint disabled 2/2 in 180 s trials. This
+locates the immediate I/O stall, not the underlying Windows storage
+driver/VM issue. Disabling checkpoint is not a production solution.
+
+Batch is a caller-owned, non-thread-safe staging object. Example:
+
+    intraflow::Batch batch;
+    batch.add("position", position);
+    batch.add("command", command);
+    auto sequences = app.publishBatch(batch);
+    batch.clear();
+
+The existing publish() remains synchronous and unchanged.
+publishBatch() returns sequences in insertion order only after the
+message transaction commits. Empty batch is a no-op; one message
+uses autocommit, multiple messages use BEGIN IMMEDIATE/COMMIT and
+reused prepared INSERT. On failure rollback all message rows (as
+usual ambiguous storage/commit failures cannot promise exactly-once
+retry); independently registered topic metadata may remain.
+At most 32 messages, 1 MiB per serialized payload, 4 MiB total
+payload; metadata is not included in that byte limit. No background
+thread, automatic buffering, or open write transaction while waiting.
+Batch entries remain caller-owned and must not be mutated concurrently.
+A failed rollback makes the Session unusable; destroy/reconnect.
+
+Batch contract tests cover mixed topics/types, atomic rollback with
+an injected second-row SQL error, sequence continuity, empty/single
+batch, old publish and count bound. Traffic peer stages messages
+until first enqueue + interval or 32 entries, then synchronously
+flushes; it does not change SDK defaults. Compare 0/10/20/50/100/200
+ms at 100/300/900 aggregate messages/s, 72 s, fresh DB per trial.
+Same writer mutex, raw receive query, retention, NORMAL and 5 s
+timeouts; Windows uses timed checkpoint and Win32 tracing in all
+pairs. At 300/s Windows additionally compares 4000 vs 1000 pages
+at 0 and 200 ms to distinguish threshold effects. Report message
+transaction count (excluding topic/schema registration), actual
+mean/max batch size, multi-row count, transaction call duration,
+explicit COMMIT timing, and enqueue-to-commit per-message delay.
+Receive latency starts at message generation, includes buffering.
+No automatic interval in the SDK; no guarantee of flush deadline
+under scheduling or lock delay. A single trial is exploratory.

@@ -261,3 +261,38 @@ if(WIN32)
     endforeach()
   endforeach()
 endif()
+
+add_executable(intraflow_batch tests/batch.cpp)
+add_dependencies(intraflow_batch intraflow_idl)
+target_include_directories(intraflow_batch PRIVATE "${CMAKE_CURRENT_BINARY_DIR}")
+target_link_libraries(intraflow_batch PRIVATE intraflow SQLite::SQLite3)
+add_test(NAME batch_transaction_contract COMMAND "${Python3_EXECUTABLE}"
+  "${CMAKE_CURRENT_SOURCE_DIR}/tests/batch.py" "$<TARGET_FILE:intraflow_batch>")
+set_tests_properties(batch_transaction_contract PROPERTIES TIMEOUT 90)
+
+# Independent tests: caller-owned buffering, no transaction while waiting.
+# Same workload per pair, no topic filter (CPU cost), writer mutex enabled.
+foreach(rate IN ITEMS 100 300 900)
+  foreach(interval IN ITEMS 0 10 20 50 100 200)
+    if(WIN32)
+      set(mode root_checkpoint)
+    else()
+      set(mode native)
+    endif()
+    add_test(NAME batch_${rate}_${interval}_1000
+      COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/traffic.py"
+      "$<TARGET_FILE:intraflow_pragma>" "load_${rate}_mutex_batch${interval}"
+      "${CMAKE_CURRENT_BINARY_DIR}/batch/${rate}_${interval}_1000.json" 72000 1000 "${mode}")
+    set_tests_properties(batch_${rate}_${interval}_1000 PROPERTIES TIMEOUT 420 LABELS batch_compare RUN_SERIAL TRUE)
+  endforeach()
+endforeach()
+# Keep interval fixed while changing only the checkpoint threshold.
+if(WIN32)
+  foreach(interval IN ITEMS 0 200)
+    add_test(NAME batch_300_${interval}_4000
+      COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/traffic.py"
+      "$<TARGET_FILE:intraflow_pragma>" "load_300_mutex_batch${interval}"
+      "${CMAKE_CURRENT_BINARY_DIR}/batch/300_${interval}_4000.json" 72000 4000 root_checkpoint)
+    set_tests_properties(batch_300_${interval}_4000 PROPERTIES TIMEOUT 420 LABELS batch_compare RUN_SERIAL TRUE)
+  endforeach()
+endif()

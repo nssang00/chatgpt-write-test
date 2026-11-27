@@ -16,8 +16,14 @@ except ImportError:
     psutil = None
 
 exe, wire_profile, output = sys.argv[1:4]
-filtered = wire_profile.endswith("_filter")
-profile = wire_profile[:-7] if filtered else wire_profile
+batch_ms=0
+base_profile=wire_profile
+if "_batch" in base_profile:
+    base_profile, interval=base_profile.rsplit("_batch",1)
+    batch_ms=int(interval)
+    if not 0<=batch_ms<=500:raise ValueError("batch interval")
+filtered = base_profile.endswith("_filter")
+profile = base_profile[:-7] if filtered else base_profile
 serialized = profile.endswith("_mutex")
 profile = profile[:-6] if serialized else profile
 args = sys.argv[4:]
@@ -58,7 +64,7 @@ report = dict(status="FAIL", profile=profile, processes=peers, topics=24,
               target_publish_rate=expected_pub/(duration/1000),
               poll_ms=10 if load else 5, busy_ms=5000 if load else 30000,
               phase_staggered=load, history_retention=load, serialize_writers=serialized,filter_topics=filtered,
-              retention_sec=60 if load else 0,max_messages=100000 if load else 0)
+              retention_sec=60 if load else 0,max_messages=100000 if load else 0,batch_ms=batch_ms)
 
 def require(condition, message):
     if not condition:
@@ -221,6 +227,17 @@ try:
                           peer_cpu_seconds=(cpu_end-cpu_start) if cpu_end is not None and cpu_start is not None else None,
                           per_app_receive_min=min(sum(r["received"]) for r in rows),
                           per_app_receive_max=max(sum(r["received"]) for r in rows))
+            transactions=sum(r["transactions"] for r in rows)
+            multi_transactions=sum(r["multi_transactions"] for r in rows)
+            multi_messages=sum(r["multi_messages"] for r in rows)
+            report.update(message_transactions=transactions,multi_transactions=multi_transactions,
+                multi_messages=multi_messages,largest_batch=max(r["largest_batch"] for r in rows),
+                mean_batch_size=published/transactions,transaction_rate=transactions/send_elapsed,
+                transaction_call=stats([x for r in rows for x in r["transaction_us"]]),
+                publish_sample_semantics="enqueue_to_commit" if batch_ms else "synchronous_publish")
+            require(transactions-multi_transactions+multi_messages==published,"batch accounting")
+            require(all(r["batch_ms"]==batch_ms and len(r["transaction_us"])==r["transactions"] for r in rows),"batch sample mismatch")
+            require(0<report["largest_batch"]<=32 and (batch_ms or transactions==published),"batch size")
             report["per_type"]={}
             for k,n in enumerate(names):
                 report["per_type"][n]=dict(target_period_ms=periods[k],
@@ -264,7 +281,7 @@ try:
                     "checkpoint_busy":sum(d["checkpoint_busy"] for d in ds),
                     "checkpoint_errors":sum(d["checkpoint_errors"] for d in ds),
                     "wal_commits":sum(d["wal_commits"] for d in ds)}
-                for key in ("busy_sleep","checkpoint","insert_step","poll_wait","read_batch","json_parse","callback","writer_wait","writer_hold"):
+                for key in ("busy_sleep","checkpoint","insert_step","poll_wait","read_batch","json_parse","callback","writer_wait","writer_hold","explicit_commit"):
                     n=sum(d[key]["count"] for d in ds)
                     t=sum(d[key]["total_us"] for d in ds)
                     report["diagnostics"][key]={"count":n,"total_ms":t/1000,
@@ -283,7 +300,10 @@ try:
                 report["diagnostics"]["slowest_insert"]=worst["slowest_insert"]
                 report["diagnostics"]["slowest_insert_app"]=ds.index(worst)
                 require(report["diagnostics"]["insert_step"]["count"]==expected_pub,"insert sample count")
-                require(report["diagnostics"]["writer_wait"]["count"]==expected_pub,"writer wait sample count")
+                require(report["diagnostics"]["writer_wait"]["count"]==transactions,"writer wait sample count")
+                require(sum(d["message_transactions"] for d in ds)==transactions,"runtime transaction count")
+                require(sum(d["batched_messages"] for d in ds)==multi_messages,"runtime batch count")
+                require(report["diagnostics"]["explicit_commit"]["count"]==multi_transactions,"explicit commit count")
                 for key in ("raw_rows","raw_bytes","filtered_polls"):
                     report["diagnostics"][key]=sum(d[key] for d in ds)
                 if filtered:
