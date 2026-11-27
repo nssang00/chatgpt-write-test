@@ -1,6 +1,7 @@
 """Thirty independent applications, four publish and eight subscribe topics each."""
 import json
 import math
+import os
 import pathlib
 import sqlite3
 import shutil
@@ -130,9 +131,10 @@ def verify_db(db):
         return raw_bytes
 
 try:
-    with tempfile.TemporaryDirectory() as directory:
+    with tempfile.TemporaryDirectory(dir=os.environ.get("INTRAFLOW_TEST_TEMP") or None) as directory:
         root=pathlib.Path(directory)
         db=root/"traffic.db"
+        report["test_volume"]=root.anchor
         go,drain,release=(root/x for x in ("go","drain","release"))
         with closing(sqlite3.connect(db)) as conn:
             conn.execute("PRAGMA journal_mode=WAL").fetchone()
@@ -265,10 +267,13 @@ try:
                 requested=int(diagnostic_args[0])
                 if requested>=0:
                     require(int(config["writer"]["wal_autocheckpoint"])==requested,"wrong checkpoint threshold")
-                require(config["writer"]["journal_mode"]=="wal" and config["writer"]["synchronous"]=="1","wrong WAL settings")
+                mode=diagnostic_args[1]
+                separate=mode.startswith("separate_")
+                require(config["writer"]["journal_mode"]=="wal" and config["writer"]["synchronous"]==("0" if mode=="separate_off" else "1"),"wrong WAL settings")
+                require(config["separate_maintenance"]==separate and config["sync_off"]==(mode=="separate_off"),"wrong maintenance/sync mode")
                 require(config["custom_hooks"]==(diagnostic_args[1] in ("hooks","root_hooks")),"wrong hook mode")
                 require(config["checkpoint_trace"]==(diagnostic_args[1] in ("hooks","root_hooks","root_checkpoint")),"wrong checkpoint trace mode")
-                require(config["win_io_trace"]==diagnostic_args[1].startswith("root_"),"wrong Windows I/O mode")
+                require(config["win_io_trace"]==(mode.startswith("root_") or (separate and os.name=="nt")),"wrong Windows I/O mode")
                 require(config["short_retry"]==(diagnostic_args[1] in ("retry","combined")),"wrong retry mode")
                 require(config["serialize_writers"]==serialized and config["filter_topics"]==filtered,"wrong experiment mode")
                 require(all(r["timer_1ms_active"]==(diagnostic_args[1] in ("timer","combined")) for r in rows),"wrong timer mode")
@@ -310,7 +315,8 @@ try:
                     require(report["diagnostics"]["filtered_polls"]>0 and report["diagnostics"]["raw_rows"]==expected_rx,"filtered row count mismatch")
                 require(report["diagnostics"]["checkpoint_errors"]==0,"checkpoint errors")
                 mode=diagnostic_args[1]
-                interval={"owner100":100,"owner250":250}.get(mode,0)
+                interval={"owner100":100,"owner250":250,"separate_normal":1000,
+                          "separate_off":1000,"separate_5s":5000}.get(mode,0)
                 require([r["maintenance_interval_ms"] for r in rows]==[interval]+[0]*(peers-1),"wrong checkpoint owner")
                 maintenance=ds[0]["maintenance"]
                 require(all(d["maintenance"]["timing"]["count"]==0 for d in ds[1:]),"non-owner checkpoint")
@@ -321,6 +327,12 @@ try:
                 else:
                     require(maintenance["timing"]["count"]==0,"unexpected maintenance checkpoint")
                 report["diagnostics"]["maintenance"]=maintenance
+                if config["win_io_trace"]:
+                    report["diagnostics"]["maintenance_io"]={key:dict(count=value["count"],
+                        total_ms=value["total_us"]/1000,max_ms=value["max_us"]/1000)
+                        for key,value in ds[0]["maintenance_io"].items()}
+                report["wal_warning_64_mib"]=peak_wal>=64*1024**2
+                report["wal_exceeded_256_mib"]=peak_wal>=256*1024**2
                 report["diagnostics"]["maintenance_interval_ms"]=interval
                 report["diagnostics"]["owner_sensor_latency"]=stats(rows[0]["latency_us"][0])
                 report["diagnostics"]["other_sensor_latency"]=stats([x for r in rows[1:] for x in r["latency_us"][0]])
@@ -348,7 +360,7 @@ try:
             for p in processes:
                 if p.poll() is None:p.kill()
                 p.wait()
-            if diagnostic_args and diagnostic_args[1].startswith("root_"):
+            if diagnostic_args and diagnostic_args[1].startswith(("root_","separate_")):
                 # Keep full per-worker logs, not just a tail. Summarize
                 # longest observed stage/phase/syscall for each peer.
                 log_dir=output.with_suffix(".logs")
@@ -362,7 +374,9 @@ try:
                         if not line.startswith("writer_stall "):continue
                         try:
                             v=json.loads(line[len("writer_stall "):])
-                            for field,detail in (("stage",v),("phase",v.get("phase",{})),("win_io",v.get("win_io",{}))):
+                            for field,detail in (("stage",v),("phase",v.get("phase",{})),("win_io",v.get("win_io",{})),
+                                                 ("maintenance_activity",v.get("maintenance_activity",{})),
+                                                 ("maintenance_io",v.get("maintenance_io",{}))):
                                 label=detail.get("stage",detail.get("operation","none"))
                                 if label in ("idle","none"):continue
                                 key=field+":"+label

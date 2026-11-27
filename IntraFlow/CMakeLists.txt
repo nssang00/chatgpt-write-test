@@ -296,3 +296,42 @@ if(WIN32)
     set_tests_properties(batch_300_${interval}_4000 PROPERTIES TIMEOUT 420 LABELS batch_compare RUN_SERIAL TRUE)
   endforeach()
 endif()
+
+# Experimental separate maintenance owner, production defaults unchanged.
+add_executable(intraflow_maintenance_recovery tests/maintenance_recovery.cpp)
+add_dependencies(intraflow_maintenance_recovery intraflow_idl)
+target_include_directories(intraflow_maintenance_recovery PRIVATE "${CMAKE_CURRENT_BINARY_DIR}")
+target_link_libraries(intraflow_maintenance_recovery PRIVATE intraflow_diagnostics SQLite::SQLite3)
+foreach(sync IN ITEMS normal off)
+  add_test(NAME maintenance_recovery_${sync}
+    COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/maintenance_recovery.py"
+    "$<TARGET_FILE:intraflow_maintenance_recovery>" "${sync}")
+  set_tests_properties(maintenance_recovery_${sync} PROPERTIES TIMEOUT 90)
+endforeach()
+foreach(rate IN ITEMS 100 300)
+  foreach(mode IN ITEMS baseline separate_normal separate_5s separate_off)
+    if(mode STREQUAL "baseline")
+      set(threshold 1000)
+      if(WIN32)
+        set(wire root_checkpoint)
+      else()
+        set(wire native)
+      endif()
+    else()
+      set(threshold 0)
+      set(wire "${mode}")
+    endif()
+    add_test(NAME maintenance_${rate}_${mode}
+      COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/traffic.py"
+      "$<TARGET_FILE:intraflow_pragma>" "load_${rate}_mutex"
+      "${CMAKE_CURRENT_BINARY_DIR}/maintenance/${rate}_${mode}.json" 180000 "${threshold}" "${wire}")
+    set_tests_properties(maintenance_${rate}_${mode} PROPERTIES TIMEOUT 420 LABELS maintenance_compare RUN_SERIAL TRUE)
+  endforeach()
+  foreach(mode IN ITEMS separate_normal separate_off)
+    add_test(NAME maintenance_hour_${rate}_${mode}
+      COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/traffic.py"
+      "$<TARGET_FILE:intraflow_pragma>" "load_${rate}_mutex"
+      "${CMAKE_CURRENT_BINARY_DIR}/maintenance_hour/${rate}_${mode}.json" 3600000 0 "${mode}")
+    set_tests_properties(maintenance_hour_${rate}_${mode} PROPERTIES TIMEOUT 4500 LABELS maintenance_endurance RUN_SERIAL TRUE)
+  endforeach()
+endforeach()

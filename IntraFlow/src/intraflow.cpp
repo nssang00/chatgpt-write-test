@@ -212,8 +212,13 @@ struct Diagnostics {
         j["busy_calls"]=current_busy_calls.load();
         j["busy_sleep_ms"]=current_busy_us.load()/1000.0;
 #ifdef _WIN32
-        if(trace_win_io)j["win_io"]=win_io.active.json(WinIoTrace::names());
+        if(trace_win_io){
+            j["win_io"]=win_io.active.json(WinIoTrace::names());
+            j["maintenance_io"]=maintenance_io.active.json(WinIoTrace::names());
+        }
 #endif
+        static const char* const maintenance_names[]={"none","passive_checkpoint"};
+        j["maintenance_activity"]=maintenance_activity.json(maintenance_names);
         return j;
     }
     std::uint64_t raw_rows=0,raw_bytes=0,filtered_polls=0;
@@ -227,6 +232,10 @@ struct Diagnostics {
     };
     // Separate receiver-owned counters: never read by publishRaw.
     Timing maintenance;
+    ActivityDetail maintenance_activity;
+#ifdef _WIN32
+    WinIoTrace maintenance_io;
+#endif
     std::int64_t maintenance_busy=0,maintenance_errors=0,maintenance_partial=0,maintenance_valid=0;
     int max_log_frames=0,max_backfilled_frames=0,max_pending_frames=0,last_log_frames=-1,last_backfilled_frames=-1;
     Json config,slowest_insert;
@@ -275,6 +284,10 @@ struct Diagnostics {
     void maintain(Db& db) noexcept {
         int log=-1,done=-1;
         const auto begin=DiagClock::now();
+        ActivityScope active(maintenance_activity,1);
+#ifdef _WIN32
+        WinTraceScope io(trace_win_io?&maintenance_io:nullptr);
+#endif
         const int rc=sqlite3_wal_checkpoint_v2(db.p,"main",SQLITE_CHECKPOINT_PASSIVE,&log,&done);
         maintenance.add(elapsedUs(begin));
         if(rc==SQLITE_BUSY)++maintenance_busy;
@@ -315,7 +328,10 @@ struct Diagnostics {
                 {"max_pending_frames",max_pending_frames},{"last_log_frames",last_log_frames},
                 {"last_backfilled_frames",last_backfilled_frames}}}};
 #ifdef _WIN32
-        if(trace_win_io)result["win_io"]=win_io.json();
+        if(trace_win_io){
+            result["win_io"]=win_io.json();
+            result["maintenance_io"]=maintenance_io.json();
+        }
 #endif
         return result;
     }
@@ -396,6 +412,7 @@ struct Session::Impl {
 #ifdef INTRAFLOW_DIAGNOSTICS
     Diagnostics diag;
     std::unique_ptr<Db> maintenance_db;
+    std::thread maintenance_loop;
 #endif
     TopicCache topics;
     std::unique_ptr<Stmt> insert, poll, filtered_poll;
@@ -420,6 +437,18 @@ struct Session::Impl {
         { Stmt mode(writer,"PRAGMA journal_mode=WAL");
           if(!mode.row()||mode.str(0)!="wal")throw std::runtime_error("WAL mode unavailable"); }
         writer.exec(o.full_sync?"PRAGMA synchronous=FULL":"PRAGMA synchronous=NORMAL");
+#ifdef INTRAFLOW_DIAGNOSTICS
+        if(o.diagnostic_separate_maintenance){
+            if(o.diagnostic_checkpoint!=0||o.diagnostic_hooks||o.diagnostic_short_retry||
+                o.diagnostic_checkpoint_trace||!o.serialize_writers||o.full_sync)
+                throw std::invalid_argument("separate maintenance requires serialized writers, native busy, NORMAL/OFF and auto checkpoint disabled");
+            check(sqlite3_wal_autocheckpoint(writer.p,0),writer.p);
+        }
+        if(o.diagnostic_sync_off){
+            if(!o.diagnostic_separate_maintenance)throw std::invalid_argument("OFF requires separate maintenance experiment");
+            writer.exec("PRAGMA synchronous=OFF");
+        }
+#endif
         reader.exec("PRAGMA query_only=ON");
         writer.exec("CREATE TABLE IF NOT EXISTS topics(name TEXT PRIMARY KEY,type TEXT NOT NULL,hash TEXT NOT NULL,schema TEXT NOT NULL)");
         writer.exec("CREATE TABLE IF NOT EXISTS messages(seq INTEGER PRIMARY KEY AUTOINCREMENT,topic TEXT NOT NULL,sender TEXT NOT NULL,timestamp INTEGER NOT NULL,payload TEXT NOT NULL)");
@@ -454,7 +483,9 @@ struct Session::Impl {
         }
         diag.config={{"sqlite_version",sqlite3_libversion()},{"sqlite_sourceid",sqlite3_sourceid()},
                      {"checkpoint_trace",o.diagnostic_hooks||o.diagnostic_checkpoint_trace},
-                     {"win_io_trace",o.diagnostic_win_io},{"writer",Diagnostics::pragmas(writer)},
+                     {"win_io_trace",o.diagnostic_win_io},
+                     {"separate_maintenance",o.diagnostic_separate_maintenance},{"sync_off",o.diagnostic_sync_off},
+                     {"writer",Diagnostics::pragmas(writer)},
                      {"reader",Diagnostics::pragmas(reader)},{"custom_hooks",o.diagnostic_hooks},
                      {"short_retry",o.diagnostic_short_retry},{"serialize_writers",o.serialize_writers},{"filter_topics",o.filter_topics}};
         diag.threshold=std::stoi(diag.config["writer"]["wal_autocheckpoint"].get<std::string>());
@@ -466,24 +497,49 @@ struct Session::Impl {
         if(o.diagnostic_hooks||o.diagnostic_checkpoint_trace)
             sqlite3_wal_hook(writer.p,Diagnostics::wal,&diag);
         if(o.diagnostic_maintenance_ms){
-            if(o.diagnostic_checkpoint!=0||o.diagnostic_hooks||o.diagnostic_short_retry||o.diagnostic_checkpoint_trace||o.diagnostic_win_io||o.serialize_writers)
-                throw std::invalid_argument("maintenance requires native busy and disabled autocheckpoint");
+            if(!o.diagnostic_separate_maintenance&&
+               (o.diagnostic_checkpoint!=0||o.diagnostic_hooks||o.diagnostic_short_retry||o.diagnostic_checkpoint_trace||o.diagnostic_win_io||o.serialize_writers))
+                throw std::invalid_argument("legacy maintenance requires native busy and disabled autocheckpoint");
             // One designated peer, separate writable connection, same
             // receive thread. PASSIVE never waits for a reader/writer lock.
             maintenance_db.reset(new Db(o.database,0));
-            maintenance_db->exec(o.full_sync?"PRAGMA synchronous=FULL":"PRAGMA synchronous=NORMAL");
+            maintenance_db->exec(o.diagnostic_sync_off?"PRAGMA synchronous=OFF":
+                                 o.full_sync?"PRAGMA synchronous=FULL":"PRAGMA synchronous=NORMAL");
             check(sqlite3_wal_autocheckpoint(maintenance_db->p,0),maintenance_db->p);
             high(*maintenance_db); // initialize WAL pager before checkpoint
         }
 #endif
-        loop=std::thread([this]{run();});
+        // If creation of either thread fails, join the one already started.
+        try{
+            loop=std::thread([this]{run();});
+#ifdef INTRAFLOW_DIAGNOSTICS
+            if(o.diagnostic_separate_maintenance&&maintenance_db)
+                maintenance_loop=std::thread([this]{runMaintenance();});
+#endif
+        }catch(...){stop();throw;}
     }
     ~Impl() { stop(); }
     void stop() {
         { std::lock_guard<std::mutex> lock(wait_mu); running=false; }
         cv.notify_all();
         if(loop.joinable()) loop.join();
+#ifdef INTRAFLOW_DIAGNOSTICS
+        if(maintenance_loop.joinable())maintenance_loop.join();
+#endif
     }
+#ifdef INTRAFLOW_DIAGNOSTICS
+    void runMaintenance(){
+        // One fixed, explicitly designated test owner. No application
+        // writer/listener lock, no receive thread, no overlapping checkpoints.
+        std::unique_lock<std::mutex> lock(wait_mu);
+        while(!cv.wait_for(lock,std::chrono::milliseconds(options.diagnostic_maintenance_ms),
+                           [this]{return !running;})){
+            lock.unlock();
+            diag.maintain(*maintenance_db);
+            lock.lock();
+        }
+    }
+#endif
     void run() {
 #ifdef INTRAFLOW_DIAGNOSTICS
         auto next_maintenance=DiagClock::now()+std::chrono::milliseconds(options.diagnostic_maintenance_ms);
@@ -593,7 +649,7 @@ struct Session::Impl {
 #ifdef INTRAFLOW_DIAGNOSTICS
             // The SELECT has been reset and callbacks have returned.
             // Do not hold the writer/listener mutex during disk work.
-            if(running&&maintenance_db&&DiagClock::now()>=next_maintenance){
+            if(running&&maintenance_db&&!options.diagnostic_separate_maintenance&&DiagClock::now()>=next_maintenance){
                 diag.maintain(*maintenance_db);
                 next_maintenance=DiagClock::now()+std::chrono::milliseconds(options.diagnostic_maintenance_ms);
             }

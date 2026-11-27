@@ -142,7 +142,9 @@ struct WriterWatch {
             std::unique_lock<std::mutex> l(mu);
             while(!cv.wait_for(l,Milli(detailed?100:500),[this]{return stopped;})){
                 const auto state=app.writerActivity();
-                if(state.at("elapsed_ms").get<double>()>=500)
+                if(state.at("elapsed_ms").get<double>()>=500||
+                   (state.contains("maintenance_activity")&&
+                    state.at("maintenance_activity").at("elapsed_ms").get<double>()>=500))
                     std::cerr<<"writer_stall "<<state.dump()<<std::endl;
             }
         });
@@ -205,23 +207,30 @@ int main(int argc,char** argv){
         }
 #ifdef INTRAFLOW_DIAGNOSTICS
         const std::string mode=argv[12];
-        if(mode!="native"&&mode!="hooks"&&mode!="timer"&&mode!="retry"&&mode!="combined"&&mode!="owner100"&&mode!="owner250"&&mode!="root_native"&&mode!="root_checkpoint"&&mode!="root_hooks"&&mode!="root_off")return 2;
+        if(mode!="native"&&mode!="hooks"&&mode!="timer"&&mode!="retry"&&mode!="combined"&&mode!="owner100"&&mode!="owner250"&&mode!="root_native"&&mode!="root_checkpoint"&&mode!="root_hooks"&&mode!="root_off"&&mode!="separate_normal"&&mode!="separate_5s"&&mode!="separate_off")return 2;
         TimerResolution timer(mode=="timer"||mode=="combined");
         options.diagnostic_checkpoint=std::atoi(argv[11]);
         const bool root=mode.compare(0,5,"root_")==0;
+        const bool separate=mode.compare(0,9,"separate_")==0;
+        options.diagnostic_separate_maintenance=separate;
+        options.diagnostic_sync_off=mode=="separate_off";
         options.diagnostic_hooks=mode=="hooks"||mode=="root_hooks";
         options.diagnostic_checkpoint_trace=mode=="root_checkpoint";
         options.diagnostic_win_io=root;
+#ifdef _WIN32
+        options.diagnostic_win_io=options.diagnostic_win_io||separate;
+#endif
         options.diagnostic_short_retry=mode=="retry"||mode=="combined";
         options.diagnostic_retry_seed=0x9e3779b9u*static_cast<std::uint32_t>(id+1);
-        if(id==0)options.diagnostic_maintenance_ms=mode=="owner100"?100:mode=="owner250"?250:0;
+        if(id==0)options.diagnostic_maintenance_ms=mode=="owner100"?100:mode=="owner250"?250:
+            mode=="separate_5s"?5000:separate?1000:0;
 #endif
         auto app=connect("TrafficApp"+std::to_string(id),options);
         const int group=id%groups;
         receiver.subscribe(app,group);
         receiver.subscribe(app,(group+groups-1)%groups);
 #ifdef INTRAFLOW_DIAGNOSTICS
-        WriterWatch watch(app,load&&serialized,root);
+        WriterWatch watch(app,load&&serialized,root||separate);
 #endif
         signal(ready);waitFile(go,90);
         const auto start=Clock::now()+Milli(id%10);

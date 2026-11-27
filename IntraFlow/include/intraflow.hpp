@@ -35,6 +35,8 @@ struct Options {
     bool diagnostic_checkpoint_trace = false; // WAL hook only, native busy handler
     bool diagnostic_win_io = false; // Windows test process only
     unsigned diagnostic_maintenance_ms = 0; // only designated peer
+    bool diagnostic_separate_maintenance = false; // all peers; owner interval nonzero
+    bool diagnostic_sync_off = false; // disposable DB experiments only
     std::uint32_t diagnostic_retry_seed = 1;
 #endif
 };

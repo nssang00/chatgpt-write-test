@@ -522,3 +522,39 @@ explicit COMMIT timing, and enqueue-to-commit per-message delay.
 Receive latency starts at message generation, includes buffering.
 No automatic interval in the SDK; no guarantee of flush deadline
 under scheduling or lock delay. A single trial is exploratory.
+
+## Separate checkpoint / storage investigation
+
+Diagnostic-only, disposable fresh DBs. Normal library defaults, synchronous
+publish semantics and public API remain unchanged. All peers in a separate
+maintenance trial disable auto-checkpoint before schema setup, use the
+existing serialized writer lock and NORMAL (or explicitly OFF). One
+designated peer (0) owns a dedicated maintenance thread and separate SQLite
+connection, with PASSIVE checkpoint every 1 s or 5 s after the previous
+call completes. No application writer or listener lock is held during
+checkpoint. There is no election, failover, hard WAL byte cap, or automatic
+production mode yet. Shutdown joins the maintenance thread and can block
+while an in-flight OS I/O completes. WAL reuse and SQLite-internal lock/I/O
+contention may still stall publishers.
+
+Compare native auto-checkpoint, separate NORMAL 1s/5s, separate OFF 1s,
+30 peers, 100/300 messages/s, raw receive, retention, 5s timeout, 180s.
+Track actual backfilled/pending frames separately from allocated WAL bytes;
+64/256 MiB allocation warning flags are observations, not enforcement.
+The existing 4 GiB test disk ceiling still applies. Interval-based
+checkpointing is the first controlled experiment, not a 16 MiB
+threshold-based production algorithm. Logs include live maintenance
+operation and Windows syscall timings separately from writer statistics.
+OFF is experimental and can corrupt DB on system crash/power loss; no
+claim of power-loss safety. Dedicated tests kill a process with 100
+committed and one uncommitted row, reopen and verify 101 committed rows
+and integrity; they test process kill only.
+
+Windows standalone probes run raw 64 KiB writes/FlushFileBuffers at
+10 Hz on a 4 MiB file, and single Python SQLite connection at target
+300 inserts/s, with manual PASSIVE checkpoint every second. No IntraFlow
+or multiprocess contention. Python SQLite version reported separately
+from SDK-linked SQLite. Repeat on temp and workspace volumes if distinct,
+reverse order, Windows 2022/2025 runner images. CI also compares baseline
+and separate NORMAL on workspace volume if distinct. Actual physical PC,
+ETW, same-version SQLite and 24-hour tests remain follow-up work.
