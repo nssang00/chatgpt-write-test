@@ -30,6 +30,8 @@ struct Options {
     int diagnostic_checkpoint = -1;
     bool diagnostic_hooks = false;
     bool diagnostic_short_retry = false;
+    bool diagnostic_checkpoint_trace = false; // WAL hook only, native busy handler
+    bool diagnostic_win_io = false; // Windows test process only
     unsigned diagnostic_maintenance_ms = 0; // only designated peer
     std::uint32_t diagnostic_retry_seed = 1;
 #endif

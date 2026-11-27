@@ -236,3 +236,28 @@ add_test(NAME filtered_topic_contract COMMAND "${Python3_EXECUTABLE}"
 add_test(NAME filtered_retention_gap COMMAND "${Python3_EXECUTABLE}"
   "${CMAKE_CURRENT_SOURCE_DIR}/tests/retention.py" "$<TARGET_FILE:intraflow_retention>" filter)
 set_tests_properties(filtered_topic_contract filtered_retention_gap PROPERTIES TIMEOUT 90)
+
+# Root-cause-only experiments, same 300/s workload and 5-second timeout.
+# 180 s reaches retention steady state and covers the prior 42 s failure.
+# A second rotated round reduces order bias; each uses a fresh DB.
+if(WIN32)
+  foreach(round IN ITEMS 1 2)
+    if(round EQUAL 1)
+      set(modes root_native root_checkpoint root_hooks root_off)
+    else()
+      set(modes root_off root_hooks root_checkpoint root_native)
+    endif()
+    foreach(mode IN LISTS modes)
+      if(mode STREQUAL "root_off")
+        set(threshold 0)
+      else()
+        set(threshold 1000)
+      endif()
+      add_test(NAME cause_${round}_${mode}
+        COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/traffic.py"
+        "$<TARGET_FILE:intraflow_pragma>" load_300_mutex_filter
+        "${CMAKE_CURRENT_BINARY_DIR}/rootcause/${round}_${mode}.json" 180000 "${threshold}" "${mode}")
+      set_tests_properties(cause_${round}_${mode} PROPERTIES TIMEOUT 420 LABELS rootcause RUN_SERIAL TRUE)
+    endforeach()
+  endforeach()
+endif()

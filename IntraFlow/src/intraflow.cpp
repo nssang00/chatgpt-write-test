@@ -80,6 +80,115 @@ struct WriterActivity {
         return {{"stage",names[stage]},{"elapsed_ms",stage&&t>=(v>>3)?(t-(v>>3))/1000.0:0.0}};
     }
 };
+// A second atomic clock identifies the active nested operation without
+// acquiring a SQLite lock from the diagnostic watchdog.
+struct ActivityDetail {
+    std::atomic<std::uint64_t> state{0};
+    std::uint64_t enter(unsigned kind) noexcept {
+        return state.exchange((WriterActivity::now()<<4)|kind);
+    }
+    void restore(std::uint64_t previous) noexcept {state.store(previous);}
+    Json json(const char* const* names) const {
+        const auto v=state.load(),t=WriterActivity::now();
+        return {{"operation",names[v&15]},{"elapsed_ms",v&&t>=(v>>4)?(t-(v>>4))/1000.0:0.0}};
+    }
+};
+struct ActivityScope {
+    ActivityDetail& detail;
+    std::uint64_t previous;
+    ActivityScope(ActivityDetail& d,unsigned kind):detail(d),previous(d.enter(kind)){}
+    ~ActivityScope(){detail.restore(previous);}
+};
+#ifdef _WIN32
+// Diagnostic test processes only: use SQLite's supported Win32 VFS
+// system-call override API. Forward to the original function unchanged.
+// LastError must survive the measurement and clock calls.
+struct WinIoTrace {
+    ActivityDetail active;
+    Timing calls[10];
+    static const char* const* names(){
+        static const char* const n[]={"none","FlushFileBuffers","WriteFile","ReadFile",
+            "LockFileEx","UnlockFileEx","LockFile","UnlockFile","SetEndOfFile","Sleep"};
+        return n;
+    }
+    Json json() const {
+        Json j=Json::object();
+        for(unsigned i=1;i<10;++i)j[names()[i]]=calls[i].json();
+        return j;
+    }
+};
+thread_local WinIoTrace* currentWinTrace=nullptr;
+struct WinTraceScope {
+    WinIoTrace* previous;
+    explicit WinTraceScope(WinIoTrace* t):previous(currentWinTrace){currentWinTrace=t;}
+    ~WinTraceScope(){currentWinTrace=previous;}
+};
+template<class F,class... Args>
+BOOL tracedWinCall(unsigned kind,F fn,Args... args) noexcept {
+    auto* t=currentWinTrace;
+    if(!t)return fn(args...);
+    const DWORD before=GetLastError();
+    const auto start=DiagClock::now();
+    const auto old=t->active.enter(kind);
+    SetLastError(before);
+    const BOOL result=fn(args...);
+    const DWORD after=GetLastError();
+    t->active.restore(old);
+    t->calls[kind].add(elapsedUs(start));
+    SetLastError(after);
+    return result;
+}
+#define INTRAFLOW_WIN_TRACE(Name,Kind,Signature,...) \
+    static decltype(&::Name) real##Name=nullptr; \
+    static BOOL WINAPI trace##Name Signature noexcept {return tracedWinCall(Kind,real##Name,__VA_ARGS__);}
+INTRAFLOW_WIN_TRACE(FlushFileBuffers,1,(HANDLE h),h)
+INTRAFLOW_WIN_TRACE(WriteFile,2,(HANDLE h,LPCVOID p,DWORD n,LPDWORD done,LPOVERLAPPED o),h,p,n,done,o)
+INTRAFLOW_WIN_TRACE(ReadFile,3,(HANDLE h,LPVOID p,DWORD n,LPDWORD done,LPOVERLAPPED o),h,p,n,done,o)
+INTRAFLOW_WIN_TRACE(LockFileEx,4,(HANDLE h,DWORD f,DWORD r,DWORD a,DWORD b,LPOVERLAPPED o),h,f,r,a,b,o)
+INTRAFLOW_WIN_TRACE(UnlockFileEx,5,(HANDLE h,DWORD r,DWORD a,DWORD b,LPOVERLAPPED o),h,r,a,b,o)
+INTRAFLOW_WIN_TRACE(LockFile,6,(HANDLE h,DWORD a,DWORD b,DWORD c,DWORD d),h,a,b,c,d)
+INTRAFLOW_WIN_TRACE(UnlockFile,7,(HANDLE h,DWORD a,DWORD b,DWORD c,DWORD d),h,a,b,c,d)
+INTRAFLOW_WIN_TRACE(SetEndOfFile,8,(HANDLE h),h)
+#undef INTRAFLOW_WIN_TRACE
+static decltype(&::Sleep) realSleep=nullptr;
+static void WINAPI traceSleep(DWORD ms) noexcept {
+    auto* t=currentWinTrace;
+    if(!t){realSleep(ms);return;}
+    const DWORD before=GetLastError();
+    const auto start=DiagClock::now();
+    const auto old=t->active.enter(9);
+    SetLastError(before);realSleep(ms);
+    const DWORD after=GetLastError();
+    t->active.restore(old);t->calls[9].add(elapsedUs(start));SetLastError(after);
+}
+static void installWinTrace(){
+    // Called only at startup of a diagnostic traffic peer, before its
+    // receiver starts. Never change a live production process's VFS.
+    static std::once_flag once;
+    std::call_once(once,[]{
+        auto* v=sqlite3_vfs_find(nullptr);
+        if(!v||v->iVersion<3||!v->xGetSystemCall||!v->xSetSystemCall||
+                std::string(v->zName).find("win32")!=0)
+            throw std::runtime_error("Windows VFS syscall tracing unavailable");
+#define INTRAFLOW_INSTALL(Name,Required) \
+        real##Name=reinterpret_cast<decltype(real##Name)>(v->xGetSystemCall(v,#Name)); \
+        if(real##Name){ \
+            if(v->xSetSystemCall(v,#Name,reinterpret_cast<sqlite3_syscall_ptr>(&trace##Name))!=SQLITE_OK) \
+                throw std::runtime_error("cannot trace " #Name); \
+        }else if(Required)throw std::runtime_error("missing syscall " #Name);
+        INTRAFLOW_INSTALL(FlushFileBuffers,true)
+        INTRAFLOW_INSTALL(WriteFile,true)
+        INTRAFLOW_INSTALL(ReadFile,true)
+        INTRAFLOW_INSTALL(LockFileEx,true)
+        INTRAFLOW_INSTALL(UnlockFileEx,true)
+        INTRAFLOW_INSTALL(LockFile,false)
+        INTRAFLOW_INSTALL(UnlockFile,false)
+        INTRAFLOW_INSTALL(SetEndOfFile,false)
+        INTRAFLOW_INSTALL(Sleep,false)
+#undef INTRAFLOW_INSTALL
+    });
+}
+#endif
 struct Diagnostics {
     int timeout=0,threshold=0,requested=0;
     bool short_retry=false;
@@ -88,6 +197,23 @@ struct Diagnostics {
     std::int64_t busy_calls=0,busy_episodes=0,checkpoint_busy=0,checkpoint_errors=0,wal_commits=0;
     Timing busy_sleep,checkpoint,insert,poll_wait,read_batch,json_parse,callback,writer_wait,writer_hold;
     WriterActivity activity;
+    ActivityDetail phase;
+    std::atomic<std::uint64_t> current_busy_calls{0},current_busy_us{0};
+#ifdef _WIN32
+    WinIoTrace win_io;
+    bool trace_win_io=false;
+#endif
+    Json live() const {
+        auto j=activity.json();
+        static const char* const phases[]={"none","busy_sleep","passive_checkpoint"};
+        j["phase"]=phase.json(phases);
+        j["busy_calls"]=current_busy_calls.load();
+        j["busy_sleep_ms"]=current_busy_us.load()/1000.0;
+#ifdef _WIN32
+        if(trace_win_io)j["win_io"]=win_io.active.json(WinIoTrace::names());
+#endif
+        return j;
+    }
     std::uint64_t raw_rows=0,raw_bytes=0,filtered_polls=0;
     struct PublishTrace {
         Diagnostics& d;
@@ -104,7 +230,7 @@ struct Diagnostics {
     Json config,slowest_insert;
     static int busy(void* p,int prior) noexcept {
         auto& d=*static_cast<Diagnostics*>(p);
-        ++d.busy_calls;
+        ++d.busy_calls;++d.current_busy_calls;
         if(prior==0){++d.busy_episodes;d.requested=0;d.retry_start=DiagClock::now();}
         int ms=0;
         if(d.short_retry){
@@ -121,8 +247,12 @@ struct Diagnostics {
             d.requested+=ms;
         }
         const auto begin=DiagClock::now();
-        sqlite3_sleep(ms);
-        d.busy_sleep.add(elapsedUs(begin));
+        {
+            ActivityScope scope(d.phase,1);
+            sqlite3_sleep(ms);
+        }
+        const auto slept=elapsedUs(begin);
+        d.busy_sleep.add(slept);d.current_busy_us.fetch_add(static_cast<std::uint64_t>(slept));
         return !d.short_retry || elapsedUs(d.retry_start)<static_cast<std::int64_t>(d.timeout)*1000;
     }
     // Diagnostic-only replacement for native autocheckpoint.
@@ -132,6 +262,7 @@ struct Diagnostics {
         if(d.threshold>0&&frames>=d.threshold) {
             const auto begin=DiagClock::now();
             int log=0,done=0;
+            ActivityScope scope(d.phase,2);
             const int rc=sqlite3_wal_checkpoint_v2(db,name,SQLITE_CHECKPOINT_PASSIVE,&log,&done);
             d.checkpoint.add(elapsedUs(begin));
             if(rc==SQLITE_BUSY)++d.checkpoint_busy;
@@ -167,7 +298,7 @@ struct Diagnostics {
         return r;
     }
     Json json() const {
-        return {{"config",config},{"busy_calls",busy_calls},{"busy_episodes",busy_episodes},
+        Json result={{"config",config},{"busy_calls",busy_calls},{"busy_episodes",busy_episodes},
             {"busy_sleep",busy_sleep.json()},{"checkpoint",checkpoint.json()},
             {"checkpoint_busy",checkpoint_busy},{"checkpoint_errors",checkpoint_errors},
             {"wal_commits",wal_commits},{"insert_step",insert.json()},
@@ -180,6 +311,10 @@ struct Diagnostics {
                 {"max_log_frames",max_log_frames},{"max_backfilled_frames",max_backfilled_frames},
                 {"max_pending_frames",max_pending_frames},{"last_log_frames",last_log_frames},
                 {"last_backfilled_frames",last_backfilled_frames}}}};
+#ifdef _WIN32
+        if(trace_win_io)result["win_io"]=win_io.json();
+#endif
+        return result;
     }
 };
 #endif
@@ -307,7 +442,16 @@ struct Session::Impl {
 #ifdef INTRAFLOW_DIAGNOSTICS
         if(o.diagnostic_checkpoint>=0)
             check(sqlite3_wal_autocheckpoint(writer.p,o.diagnostic_checkpoint),writer.p);
-        diag.config={{"sqlite_version",sqlite3_libversion()},{"writer",Diagnostics::pragmas(writer)},
+        if(o.diagnostic_win_io){
+#ifdef _WIN32
+            installWinTrace();diag.trace_win_io=true;
+#else
+            throw std::invalid_argument("Windows syscall tracing requires Windows");
+#endif
+        }
+        diag.config={{"sqlite_version",sqlite3_libversion()},{"sqlite_sourceid",sqlite3_sourceid()},
+                     {"checkpoint_trace",o.diagnostic_hooks||o.diagnostic_checkpoint_trace},
+                     {"win_io_trace",o.diagnostic_win_io},{"writer",Diagnostics::pragmas(writer)},
                      {"reader",Diagnostics::pragmas(reader)},{"custom_hooks",o.diagnostic_hooks},
                      {"short_retry",o.diagnostic_short_retry},{"serialize_writers",o.serialize_writers},{"filter_topics",o.filter_topics}};
         diag.threshold=std::stoi(diag.config["writer"]["wal_autocheckpoint"].get<std::string>());
@@ -316,10 +460,10 @@ struct Session::Impl {
         diag.rng=o.diagnostic_retry_seed?o.diagnostic_retry_seed:1;
         if(o.diagnostic_hooks||o.diagnostic_short_retry)
             check(sqlite3_busy_handler(writer.p,Diagnostics::busy,&diag),writer.p);
-        if(o.diagnostic_hooks)
+        if(o.diagnostic_hooks||o.diagnostic_checkpoint_trace)
             sqlite3_wal_hook(writer.p,Diagnostics::wal,&diag);
         if(o.diagnostic_maintenance_ms){
-            if(o.diagnostic_checkpoint!=0||o.diagnostic_hooks||o.diagnostic_short_retry||o.serialize_writers)
+            if(o.diagnostic_checkpoint!=0||o.diagnostic_hooks||o.diagnostic_short_retry||o.diagnostic_checkpoint_trace||o.diagnostic_win_io||o.serialize_writers)
                 throw std::invalid_argument("maintenance requires native busy and disabled autocheckpoint");
             // One designated peer, separate writable connection, same
             // receive thread. PASSIVE never waits for a reader/writer lock.
@@ -508,8 +652,16 @@ std::int64_t Session::publishRaw(const std::string& t,const std::string& name,co
     const auto begin=DiagClock::now();
     const auto busyBefore=d.busy_sleep.total, checkpointBefore=d.checkpoint.total;
     const auto callsBefore=d.busy_calls;
+    d.current_busy_calls=0;d.current_busy_us=0;
     d.activity.set(3);
+#ifdef _WIN32
+    {
+        WinTraceScope io(d.trace_win_io?&d.win_io:nullptr);
+        s.row();
+    }
+#else
     s.row();
+#endif
     d.activity.set(4);
     const auto stepUs=elapsedUs(begin);
     if(d.insert.count==0||stepUs>d.insert.max)
@@ -532,7 +684,7 @@ void Session::unsubscribe(SubscriptionId id) {
 }
 #ifdef INTRAFLOW_DIAGNOSTICS
 Json Session::writerActivity() const {
-    return impl_?impl_->diag.activity.json():Json{{"stage","idle"},{"elapsed_ms",0}};
+    return impl_?impl_->diag.live():Json{{"stage","idle"},{"elapsed_ms",0}};
 }
 Json Session::diagnostics() const {
     if(!impl_||impl_->running)throw std::logic_error("diagnostics requires closed session");

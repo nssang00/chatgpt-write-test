@@ -136,11 +136,11 @@ struct TimerResolution {
 // Test-only watchdog. Never reads non-atomic diagnostic aggregates.
 struct WriterWatch {
     std::mutex mu;std::condition_variable cv;bool stopped=false;std::thread worker;
-    WriterWatch(Session& app,bool enable){
+    WriterWatch(Session& app,bool enable,bool detailed=false){
         if(!enable)return;
-        worker=std::thread([this,&app]{
+        worker=std::thread([this,&app,detailed]{
             std::unique_lock<std::mutex> l(mu);
-            while(!cv.wait_for(l,Milli(500),[this]{return stopped;})){
+            while(!cv.wait_for(l,Milli(detailed?100:500),[this]{return stopped;})){
                 const auto state=app.writerActivity();
                 if(state.at("elapsed_ms").get<double>()>=500)
                     std::cerr<<"writer_stall "<<state.dump()<<std::endl;
@@ -196,10 +196,13 @@ int main(int argc,char** argv){
         }
 #ifdef INTRAFLOW_DIAGNOSTICS
         const std::string mode=argv[12];
-        if(mode!="native"&&mode!="hooks"&&mode!="timer"&&mode!="retry"&&mode!="combined"&&mode!="owner100"&&mode!="owner250")return 2;
+        if(mode!="native"&&mode!="hooks"&&mode!="timer"&&mode!="retry"&&mode!="combined"&&mode!="owner100"&&mode!="owner250"&&mode!="root_native"&&mode!="root_checkpoint"&&mode!="root_hooks"&&mode!="root_off")return 2;
         TimerResolution timer(mode=="timer"||mode=="combined");
         options.diagnostic_checkpoint=std::atoi(argv[11]);
-        options.diagnostic_hooks=mode=="hooks";
+        const bool root=mode.compare(0,5,"root_")==0;
+        options.diagnostic_hooks=mode=="hooks"||mode=="root_hooks";
+        options.diagnostic_checkpoint_trace=mode=="root_checkpoint";
+        options.diagnostic_win_io=root;
         options.diagnostic_short_retry=mode=="retry"||mode=="combined";
         options.diagnostic_retry_seed=0x9e3779b9u*static_cast<std::uint32_t>(id+1);
         if(id==0)options.diagnostic_maintenance_ms=mode=="owner100"?100:mode=="owner250"?250:0;
@@ -209,7 +212,7 @@ int main(int argc,char** argv){
         receiver.subscribe(app,group);
         receiver.subscribe(app,(group+groups-1)%groups);
 #ifdef INTRAFLOW_DIAGNOSTICS
-        WriterWatch watch(app,load&&serialized);
+        WriterWatch watch(app,load&&serialized,root);
 #endif
         signal(ready);waitFile(go,90);
         const auto start=Clock::now()+Milli(id%10);

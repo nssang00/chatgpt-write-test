@@ -435,3 +435,43 @@ use mutex+filter and diagnostics; 100/s is an exploratory lower
 load, not a demonstrated safe operating range. A completed test
 requires exact deliveries and DB suffix integrity; rate and latency
 are separately assessed, not guaranteed by PASS.
+
+## Windows stall investigation (diagnostics only)
+
+CI #30 Windows 300/s failed at 42.44 s: peer 29 remained in
+sqlite3_step/commit/autocheckpoint for at least 10583 ms, with other
+peers timing out on the process writer mutex. This is not evidence
+that the mutex itself is broken, or that checkpoint is definitively
+responsible. The failure preceded the 60 s age limit and 100000-row
+limit, so bulk retention deletion is not needed to reproduce it.
+
+The rootcause tests use the same 30 peers, 300/s, 10 ms poll, 5 s
+timeout, mutex+filter, retention and NORMAL durability. Four modes,
+two fresh DB trials in rotated order, 180 s each:
+root_native (native checkpoint and busy), root_checkpoint (timed
+PASSIVE WAL hook only, native busy), root_hooks (timed WAL hook and
+approximate instrumented busy handler), root_off (no autocheckpoint,
+native busy). All four trace Win32 SQLite VFS syscalls, not the
+application's own mutex. No checkpoint-disabled production setting.
+The 4 GiB test disk limit still applies; final integrity check and
+TRUNCATE checkpoint run after peers exit. No production changes.
+
+Windows diagnostic peers use sqlite3_vfs xGetSystemCall/xSetSystemCall
+at startup before receiver threads start, calling the original
+Win32 functions with unchanged arguments, return values and LastError.
+Only publishing-thread operations inside sqlite3_step are timed:
+FlushFileBuffers, WriteFile, ReadFile, LockFileEx, UnlockFileEx,
+and available LockFile/UnlockFile/SetEndOfFile/Sleep. Other operations
+are uninstrumented. Atomic live snapshots show outer writer stage,
+nested busy sleep or checkpoint, and active syscall; watchdog
+samples every 100 ms in root mode and logs >=500 ms writer stages.
+Aggregate completed-call timing, full failed-worker logs and per-peer
+stall maxima are saved. The WAL hook replaces native autocheckpoint
+and custom busy handler changes retry behavior, so compare native
+and hook modes rather than treating them as identical. Instrumentation
+may perturb timings; no reproduction is not proof of absence.
+Runner storage/Defender context is recorded read-only; no antivirus
+exclusions, no sync=OFF, no longer timeout, no production policy
+changes. An observed slow syscall identifies where time is spent,
+not the underlying disk/driver/security/VM cause. Unobserved stalls
+require deeper ETW or a representative physical Windows machine.

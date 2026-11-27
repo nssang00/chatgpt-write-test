@@ -249,7 +249,9 @@ try:
                 if requested>=0:
                     require(int(config["writer"]["wal_autocheckpoint"])==requested,"wrong checkpoint threshold")
                 require(config["writer"]["journal_mode"]=="wal" and config["writer"]["synchronous"]=="1","wrong WAL settings")
-                require(config["custom_hooks"]==(diagnostic_args[1]=="hooks"),"wrong hook mode")
+                require(config["custom_hooks"]==(diagnostic_args[1] in ("hooks","root_hooks")),"wrong hook mode")
+                require(config["checkpoint_trace"]==(diagnostic_args[1] in ("hooks","root_hooks","root_checkpoint")),"wrong checkpoint trace mode")
+                require(config["win_io_trace"]==diagnostic_args[1].startswith("root_"),"wrong Windows I/O mode")
                 require(config["short_retry"]==(diagnostic_args[1] in ("retry","combined")),"wrong retry mode")
                 require(config["serialize_writers"]==serialized and config["filter_topics"]==filtered,"wrong experiment mode")
                 require(all(r["timer_1ms_active"]==(diagnostic_args[1] in ("timer","combined")) for r in rows),"wrong timer mode")
@@ -268,6 +270,15 @@ try:
                     report["diagnostics"][key]={"count":n,"total_ms":t/1000,
                         "mean_ms":t/n/1000 if n else None,
                         "max_ms":max(d[key]["max_us"] for d in ds)/1000}
+                if config["win_io_trace"]:
+                    report["diagnostics"]["win_io"]={}
+                    for key in ds[0]["win_io"]:
+                        n=sum(d["win_io"][key]["count"] for d in ds)
+                        t=sum(d["win_io"][key]["total_us"] for d in ds)
+                        report["diagnostics"]["win_io"][key]=dict(count=n,total_ms=t/1000,
+                            mean_ms=t/n/1000 if n else None,
+                            max_ms=max(d["win_io"][key]["max_us"] for d in ds)/1000)
+                    require(report["diagnostics"]["win_io"]["WriteFile"]["count"]>0,"Windows I/O trace inactive")
                 worst=max(ds,key=lambda d:d["slowest_insert"]["step_us"])
                 report["diagnostics"]["slowest_insert"]=worst["slowest_insert"]
                 report["diagnostics"]["slowest_insert_app"]=ds.index(worst)
@@ -317,6 +328,30 @@ try:
             for p in processes:
                 if p.poll() is None:p.kill()
                 p.wait()
+            if diagnostic_args and diagnostic_args[1].startswith("root_"):
+                # Keep full per-worker logs, not just a tail. Summarize
+                # longest observed stage/phase/syscall for each peer.
+                log_dir=output.with_suffix(".logs")
+                log_dir.mkdir(exist_ok=True)
+                maxima=[]
+                for p in logs:
+                    if not p.exists():continue
+                    shutil.copyfile(p,log_dir/p.name)
+                    observed={}
+                    for line in p.read_text(errors="replace").splitlines():
+                        if not line.startswith("writer_stall "):continue
+                        try:
+                            v=json.loads(line[len("writer_stall "):])
+                            for field,detail in (("stage",v),("phase",v.get("phase",{})),("win_io",v.get("win_io",{}))):
+                                label=detail.get("stage",detail.get("operation","none"))
+                                if label in ("idle","none"):continue
+                                key=field+":"+label
+                                if detail.get("elapsed_ms",0)>observed.get(key,{}).get("elapsed_ms",0):
+                                    observed[key]=dict(elapsed_ms=detail["elapsed_ms"],snapshot=v)
+                        except (ValueError,KeyError,TypeError):pass
+                    if observed:maxima.append(dict(worker=p.stem,observed=observed))
+                report["stall_maxima"]=maxima
+                print("rootcause stall summary",json.dumps(maxima),flush=True)
 except Exception as e:
     report["error"]=str(e)
     raise
