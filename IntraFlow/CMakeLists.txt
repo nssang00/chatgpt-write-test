@@ -166,8 +166,8 @@ foreach(rate IN ITEMS 30 300 900 1800 2700 5400)
 endforeach()
 add_test(NAME endurance_300
   COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/traffic.py"
-  "$<TARGET_FILE:intraflow_traffic>" load_300_mutex
-  "${CMAKE_CURRENT_BINARY_DIR}/endurance/300_mutex.json" 3600000)
+  "$<TARGET_FILE:intraflow_pragma>" load_300_mutex_filter
+  "${CMAKE_CURRENT_BINARY_DIR}/endurance/300_mutex_filter.json" 3600000 1000 native)
 set_tests_properties(endurance_300 PROPERTIES TIMEOUT 4500 LABELS endurance RUN_SERIAL TRUE)
 
 add_executable(intraflow_retention tests/retention.cpp)
@@ -202,3 +202,37 @@ add_test(NAME writer_mutex_recovery
   COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/writer_recovery.py"
   "$<TARGET_FILE:intraflow_writer_recovery>")
 set_tests_properties(writer_mutex_recovery PROPERTIES TIMEOUT 90)
+
+# Operational candidates (30/100/300/900) and separate stress tiers.
+foreach(rate IN ITEMS 30 100 300 900 2700 5400)
+  foreach(mode IN ITEMS raw filter)
+    set(profile "load_${rate}_mutex")
+    if(mode STREQUAL "filter")
+      string(APPEND profile "_filter")
+    endif()
+    add_test(NAME filter_${rate}_${mode}
+      COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/traffic.py"
+      "$<TARGET_FILE:intraflow_pragma>" "${profile}"
+      "${CMAKE_CURRENT_BINARY_DIR}/filter/${rate}_${mode}.json" 36000 1000 native)
+    if(rate GREATER 900)
+      set(label filter_stress)
+    else()
+      set(label filter_compare)
+    endif()
+    set_tests_properties(filter_${rate}_${mode} PROPERTIES TIMEOUT 360 LABELS ${label} RUN_SERIAL TRUE)
+  endforeach()
+endforeach()
+add_test(NAME endurance_100
+  COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/traffic.py"
+  "$<TARGET_FILE:intraflow_pragma>" load_100_mutex_filter
+  "${CMAKE_CURRENT_BINARY_DIR}/endurance/100_mutex_filter.json" 3600000 1000 native)
+set_tests_properties(endurance_100 PROPERTIES TIMEOUT 4500 LABELS endurance RUN_SERIAL TRUE)
+add_executable(intraflow_topic_filter tests/topic_filter.cpp)
+add_dependencies(intraflow_topic_filter intraflow_idl)
+target_include_directories(intraflow_topic_filter PRIVATE "${CMAKE_CURRENT_BINARY_DIR}")
+target_link_libraries(intraflow_topic_filter PRIVATE intraflow)
+add_test(NAME filtered_topic_contract COMMAND "${Python3_EXECUTABLE}"
+  "${CMAKE_CURRENT_SOURCE_DIR}/tests/topic_filter.py" "$<TARGET_FILE:intraflow_topic_filter>")
+add_test(NAME filtered_retention_gap COMMAND "${Python3_EXECUTABLE}"
+  "${CMAKE_CURRENT_SOURCE_DIR}/tests/retention.py" "$<TARGET_FILE:intraflow_retention>" filter)
+set_tests_properties(filtered_topic_contract filtered_retention_gap PROPERTIES TIMEOUT 90)

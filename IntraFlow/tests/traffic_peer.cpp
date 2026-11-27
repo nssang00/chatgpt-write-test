@@ -18,6 +18,8 @@
 #include <thread>
 #include <vector>
 #include <algorithm>
+#include <condition_variable>
+#include <mutex>
 
 using namespace intraflow;
 using Clock=std::chrono::steady_clock;
@@ -130,6 +132,27 @@ struct TimerResolution {
     TimerResolution& operator=(const TimerResolution&)=delete;
 };
 #endif
+#ifdef INTRAFLOW_DIAGNOSTICS
+// Test-only watchdog. Never reads non-atomic diagnostic aggregates.
+struct WriterWatch {
+    std::mutex mu;std::condition_variable cv;bool stopped=false;std::thread worker;
+    WriterWatch(Session& app,bool enable){
+        if(!enable)return;
+        worker=std::thread([this,&app]{
+            std::unique_lock<std::mutex> l(mu);
+            while(!cv.wait_for(l,Milli(500),[this]{return stopped;})){
+                const auto state=app.writerActivity();
+                if(state.at("elapsed_ms").get<double>()>=500)
+                    std::cerr<<"writer_stall "<<state.dump()<<std::endl;
+            }
+        });
+    }
+    ~WriterWatch(){
+        {std::lock_guard<std::mutex> l(mu);stopped=true;}cv.notify_all();
+        if(worker.joinable())worker.join();
+    }
+};
+#endif
 int main(int argc,char** argv){
     try {
 #ifdef INTRAFLOW_DIAGNOSTICS
@@ -140,6 +163,9 @@ int main(int argc,char** argv){
         const int id=std::atoi(argv[1]),duration=std::atoi(argv[2]);
         std::string profile=argv[3];
         const std::string db=argv[4],ready=argv[5],go=argv[6],sent=argv[7],drain=argv[8],result=argv[9],release=argv[10];
+        const std::string filterSuffix="_filter";
+        const bool filtered=profile.size()>filterSuffix.size()&&profile.compare(profile.size()-filterSuffix.size(),filterSuffix.size(),filterSuffix)==0;
+        if(filtered)profile.resize(profile.size()-filterSuffix.size());
         const std::string suffix="_mutex";
         const bool serialized=profile.size()>suffix.size()&&profile.compare(profile.size()-suffix.size(),suffix.size(),suffix)==0;
         if(serialized)profile.resize(profile.size()-suffix.size());
@@ -149,6 +175,7 @@ int main(int argc,char** argv){
         if(profile=="normal"||profile=="load_2700")period={{20,40,100,200}};
         else if(profile=="fast"||profile=="load_5400")period={{10,20,50,100}};
         else if(profile=="load_30")period={{4000,4000,4000,4000}};
+        else if(profile=="load_100")period={{600,1000,2000,6000}};
         else if(profile=="load_300")period={{180,360,900,1800}};
         else if(profile=="load_900")period={{60,120,300,600}};
         else if(profile=="load_1800")period={{30,60,150,300}};
@@ -160,7 +187,7 @@ int main(int argc,char** argv){
         Receiver receiver(count);
         std::array<std::vector<std::int64_t>,kinds> pubTime,lateness,gaps;
         std::array<Clock::time_point,kinds> previous{};
-        Options options;options.database=db;options.serialize_writers=serialized;
+        Options options;options.database=db;options.serialize_writers=serialized;options.filter_topics=filtered;
         // New load sweep uses actual SDK defaults, not stress-test timeout.
         if(!load){
             options.poll_ms=5;options.busy_ms=30000;
@@ -181,6 +208,9 @@ int main(int argc,char** argv){
         const int group=id%groups;
         receiver.subscribe(app,group);
         receiver.subscribe(app,(group+groups-1)%groups);
+#ifdef INTRAFLOW_DIAGNOSTICS
+        WriterWatch watch(app,load&&serialized);
+#endif
         signal(ready);waitFile(go,90);
         const auto start=Clock::now()+Milli(id%10);
         // Spread low-rate traffic over the period instead of synchronizing
@@ -222,7 +252,7 @@ int main(int argc,char** argv){
             {"duplicates",receiver.duplicates},{"invalid",receiver.invalid},{"out_of_order",receiver.out_of_order},
             {"publish_elapsed_us",publishElapsed},{"poll_ms",options.poll_ms},{"busy_ms",options.busy_ms},
             {"retention_sec",options.retention_sec},{"max_messages",options.max_messages},
-            {"serialize_writers",options.serialize_writers},
+            {"serialize_writers",options.serialize_writers},{"filter_topics",options.filter_topics},
             {"skipped_sequences",app.skippedSequences()},
             {"latency_us",receiver.latency},{"publish_us",pubTime},
             {"lateness_us",lateness},{"gaps_us",gaps}};

@@ -395,3 +395,43 @@ a no-op); existing uninstrumented load sweep remains baseline.
 Run comparison even if baseline load fails. One pair per rate is
 exploratory; the one-hour test now opts into serialization at 300/s.
 No production default change or SQL topic filtering in this commit.
+
+## Experimental SQL topic filtering and operating load
+
+Options::filter_topics defaults false; it is a per-Session choice,
+independent of the shared writer policy. In filtered mode the receive
+loop takes a short read snapshot under listeners_mu, reads the global
+high-water and oldest retained seq, and selects only subscribed topics
+with a cached bound IN query. subscribeAll or >64 distinct topics use
+the raw query; no subscription skips payload reads. Snapshot completion
+advances the cursor only when all matching rows have been fetched.
+A new subscription takes its high-water after this snapshot (no lost
+post-registration row); callbacks are outside both DB transaction and
+locks. Pruned prefix gaps are counted; intentional topic skips are not.
+This assumes library-managed prefix-only retention, not arbitrary
+external deletes. Diagnostics measure raw rows/bytes transferred,
+not SQLite internal scanned rows. The short read transaction and SQL
+planning may themselves add overhead.
+
+CI #28: serialized Windows 300/s improved mean 62.05 -> 22.01 ms
+and WAL 46.28 -> 3.96 MiB, but one-hour test failed at 406.68 s
+with OS lock timeouts. Do not enable either experiment by default.
+Diagnostic-only atomic writer activity distinguishes OS wait,
+topic/bind, SQLite step/commit/autocheckpoint (combined), and
+reset/unlock. Test-only watchdog samples every 500 ms and logs
+stalls >=500 ms; per-peer log tails are retained on failed runs.
+A stall inside sqlite3_step does not identify the internal cause.
+No production watchdog or additional SDK thread.
+
+Operational candidate tiers: 30,100,300,900 aggregate publishes/s
+with 30 processes and ten deliveries per publish. 100/s uses periods
+600/1000/2000/6000 ms (not the fast mix), 30/s equal rates.
+2700/5400 are stress tests, not expected production requirements.
+All historical tests remain; new raw-vs-filter pairs keep the same
+writer mutex, retention, timer and SQLite options. High stress
+comparisons have a separate label but are still run and failures
+remain visible. One-hour tests at 100 and 300/s on both platforms
+use mutex+filter and diagnostics; 100/s is an exploratory lower
+load, not a demonstrated safe operating range. A completed test
+requires exact deliveries and DB suffix integrity; rate and latency
+are separately assessed, not guaranteed by PASS.

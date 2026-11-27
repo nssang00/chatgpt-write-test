@@ -12,9 +12,9 @@ template<class F> void until(F f){
     while(!f()){require(Clock::now()<end,"wait timeout");std::this_thread::sleep_for(std::chrono::milliseconds(2));}
 }
 int main(int argc,char** argv){
-    if(argc!=3)return 2;
+    if(argc!=3&&argc!=4)return 2;
     try{
-        Options o;o.database=argv[1];o.retention_sec=0;o.max_messages=16;
+        Options o;o.filter_topics=argc==4;o.database=argv[1];o.retention_sec=0;o.max_messages=16;
         auto pub=connect("pub",o);
         std::atomic<bool> entered{false},release{false};
         std::atomic<int> received{0},last{0},late{0};

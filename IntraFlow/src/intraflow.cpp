@@ -64,13 +64,39 @@ struct Timing {
     void add(std::int64_t us) noexcept {++count;total+=us;max=std::max(max,us);}
     Json json() const {return {{"count",count},{"total_us",total},{"max_us",max}};}
 };
+struct WriterActivity {
+    // Pack the stage and its monotonic start into one atomic snapshot.
+    std::atomic<std::uint64_t> state{0};
+    static std::uint64_t now() noexcept {
+        return static_cast<std::uint64_t>(std::chrono::duration_cast<std::chrono::microseconds>(
+            DiagClock::now().time_since_epoch()).count());
+    }
+    void set(unsigned stage) noexcept {state.store(stage?(now()<<3)|stage:0);}
+    Json json() const {
+        const auto v=state.load();
+        const auto t=now();
+        const char* names[]={"idle","os_wait","topic_bind","sqlite_step_commit_checkpoint","reset_unlock"};
+        const unsigned stage=static_cast<unsigned>(v&7);
+        return {{"stage",names[stage]},{"elapsed_ms",stage&&t>=(v>>3)?(t-(v>>3))/1000.0:0.0}};
+    }
+};
 struct Diagnostics {
     int timeout=0,threshold=0,requested=0;
     bool short_retry=false;
     std::uint32_t rng=1;
     DiagClock::time_point retry_start;
     std::int64_t busy_calls=0,busy_episodes=0,checkpoint_busy=0,checkpoint_errors=0,wal_commits=0;
-    Timing busy_sleep,checkpoint,insert,poll_wait,read_batch,json_parse,callback,writer_wait;
+    Timing busy_sleep,checkpoint,insert,poll_wait,read_batch,json_parse,callback,writer_wait,writer_hold;
+    WriterActivity activity;
+    std::uint64_t raw_rows=0,raw_bytes=0,filtered_polls=0;
+    struct PublishTrace {
+        Diagnostics& d;
+        bool acquired=false;
+        DiagClock::time_point held;
+        explicit PublishTrace(Diagnostics& diag):d(diag){d.activity.set(1);}
+        void acquire(){held=DiagClock::now();acquired=true;d.activity.set(2);}
+        ~PublishTrace(){if(acquired)d.writer_hold.add(elapsedUs(held));d.activity.set(0);}
+    };
     // Separate receiver-owned counters: never read by publishRaw.
     Timing maintenance;
     std::int64_t maintenance_busy=0,maintenance_errors=0,maintenance_partial=0,maintenance_valid=0;
@@ -147,7 +173,8 @@ struct Diagnostics {
             {"wal_commits",wal_commits},{"insert_step",insert.json()},
             {"poll_wait",poll_wait.json()},{"read_batch",read_batch.json()},
             {"json_parse",json_parse.json()},{"callback",callback.json()},
-            {"slowest_insert",slowest_insert},{"writer_wait",writer_wait.json()},{"maintenance",{
+            {"slowest_insert",slowest_insert},{"writer_wait",writer_wait.json()},{"writer_hold",writer_hold.json()},
+            {"raw_rows",raw_rows},{"raw_bytes",raw_bytes},{"filtered_polls",filtered_polls},{"maintenance",{
                 {"timing",maintenance.json()},{"busy",maintenance_busy},{"errors",maintenance_errors},
                 {"partial",maintenance_partial},{"valid",maintenance_valid},
                 {"max_log_frames",max_log_frames},{"max_backfilled_frames",max_backfilled_frames},
@@ -233,7 +260,8 @@ struct Session::Impl {
     std::unique_ptr<Db> maintenance_db;
 #endif
     TopicCache topics;
-    std::unique_ptr<Stmt> insert, poll;
+    std::unique_ptr<Stmt> insert, poll, filtered_poll;
+    std::vector<std::string> poll_topics;
     std::mutex write_mu, listeners_mu, wait_mu;
     std::condition_variable cv;
     std::vector<std::shared_ptr<Listener>> listeners;
@@ -281,7 +309,7 @@ struct Session::Impl {
             check(sqlite3_wal_autocheckpoint(writer.p,o.diagnostic_checkpoint),writer.p);
         diag.config={{"sqlite_version",sqlite3_libversion()},{"writer",Diagnostics::pragmas(writer)},
                      {"reader",Diagnostics::pragmas(reader)},{"custom_hooks",o.diagnostic_hooks},
-                     {"short_retry",o.diagnostic_short_retry},{"serialize_writers",o.serialize_writers}};
+                     {"short_retry",o.diagnostic_short_retry},{"serialize_writers",o.serialize_writers},{"filter_topics",o.filter_topics}};
         diag.threshold=std::stoi(diag.config["writer"]["wal_autocheckpoint"].get<std::string>());
         diag.timeout=static_cast<int>(o.busy_ms);
         diag.short_retry=o.diagnostic_short_retry;
@@ -322,16 +350,61 @@ struct Session::Impl {
 #ifdef INTRAFLOW_DIAGNOSTICS
                 const auto readBegin=DiagClock::now();
 #endif
-                { auto& s=*poll;
-                  ResetStmt reset{s};
-                  s.bind(1,cursor);
-                  while(s.row()) {
-                      Message m; m.sequence=s.num(0);m.timestamp=s.num(1);m.topic=s.str(2);m.sender=s.str(3);m.type=s.str(4);m.hash=s.str(5);
-                      auto raw=s.str(6); raw_bytes+=raw.size();
-                      batch.push_back(Raw{std::move(m),std::move(raw)});
-                      if(raw_bytes >= 4u*1024u*1024u) {full=true;break;}
-                  }
-                }
+                auto read=[&](Stmt& s,const std::vector<std::string>& topics){
+                    ResetStmt reset{s};
+                    s.bind(1,cursor);
+                    for(std::size_t i=0;i<topics.size();++i)s.bind(static_cast<int>(i+2),topics[i]);
+                    while(s.row()){
+                        Message m;m.sequence=s.num(0);m.timestamp=s.num(1);m.topic=s.str(2);m.sender=s.str(3);m.type=s.str(4);m.hash=s.str(5);
+                        auto raw=s.str(6);raw_bytes+=raw.size();
+                        batch.push_back(Raw{std::move(m),std::move(raw)});
+                        if(raw_bytes>=4u*1024u*1024u){full=true;break;}
+                    }
+                };
+                std::int64_t snapshot_high=cursor;
+                if(options.filter_topics){
+                    // Serialize the short snapshot with subscription registration,
+                    // not with callbacks or writers. A new subscription reads its
+                    // boundary after this snapshot, so no matching row is skipped.
+                    std::lock_guard<std::mutex> lock(listeners_mu);
+                    std::vector<std::string> wanted;
+                    bool all=false;
+                    for(const auto& l:listeners){
+                        if(l->topic.empty()){all=true;break;}
+                        wanted.push_back(l->topic);
+                    }
+                    std::sort(wanted.begin(),wanted.end());
+                    wanted.erase(std::unique(wanted.begin(),wanted.end()),wanted.end());
+                    if(wanted.size()>64)all=true; // bounded SQL variable count
+                    reader.exec("BEGIN");
+                    try{
+                        snapshot_high=high(reader);
+                        std::int64_t oldest=0;
+                        {Stmt lo(reader,"SELECT COALESCE(MIN(seq),0) FROM messages");lo.row();oldest=lo.num(0);}
+                        if(all)read(*poll,{});
+                        else if(!wanted.empty()){
+                            if(!filtered_poll||poll_topics!=wanted){
+                                std::string sql="SELECT m.seq,m.timestamp,m.topic,m.sender,t.type,t.hash,m.payload FROM messages m JOIN topics t ON t.name=m.topic WHERE m.seq>? AND m.topic IN (";
+                                for(std::size_t i=0;i<wanted.size();++i)sql+=i?",?":"?";
+                                sql+=") ORDER BY m.seq LIMIT 256";
+                                filtered_poll.reset(new Stmt(reader,sql.c_str()));
+                                poll_topics=wanted;
+                            }
+                            read(*filtered_poll,wanted);
+                        }
+                        reader.exec("COMMIT");
+                        // Retention deletes only a prefix. Filtered-out sequences
+                        // are NOT losses; detect the pruned prefix in this snapshot.
+                        const auto boundary=oldest?oldest-1:snapshot_high;
+                        if(boundary>cursor){skipped.fetch_add(static_cast<std::uint64_t>(boundary-cursor));cursor=boundary;}
+                    }catch(...){try{reader.exec("ROLLBACK");}catch(...){}throw;}
+#ifdef INTRAFLOW_DIAGNOSTICS
+                    if(!all)++diag.filtered_polls;
+#endif
+                }else read(*poll,{});
+#ifdef INTRAFLOW_DIAGNOSTICS
+                diag.raw_rows+=batch.size();diag.raw_bytes+=raw_bytes;
+#endif
 #ifdef INTRAFLOW_DIAGNOSTICS
                 diag.read_batch.add(elapsedUs(readBegin));
 #endif
@@ -339,7 +412,7 @@ struct Session::Impl {
                 for(auto& entry:batch) {
                     if(!running) break;
                     auto& m=entry.message;
-                    if(m.sequence>cursor+1)skipped.fetch_add(static_cast<std::uint64_t>(m.sequence-cursor-1));
+                    if(!options.filter_topics&&m.sequence>cursor+1)skipped.fetch_add(static_cast<std::uint64_t>(m.sequence-cursor-1));
                     std::vector<std::shared_ptr<Listener>> targets;
                     { std::lock_guard<std::mutex> lock(listeners_mu);
                       for(const auto& l:listeners) if(m.sequence>l->after && (l->topic.empty() || l->topic==m.topic)) targets.push_back(l);
@@ -368,6 +441,7 @@ struct Session::Impl {
                     }
                     cursor=m.sequence;
                 }
+                if(options.filter_topics&&!full&&running)cursor=std::max(cursor,snapshot_high);
             } catch(const std::exception& e) { std::cerr<<"receive: "<<e.what()<<std::endl; }
 #ifdef INTRAFLOW_DIAGNOSTICS
             // The SELECT has been reset and callbacks have returned.
@@ -415,10 +489,11 @@ std::int64_t Session::publishRaw(const std::string& t,const std::string& name,co
     std::lock_guard<std::mutex> lock(p.write_mu);
 #ifdef INTRAFLOW_DIAGNOSTICS
     const auto lockBegin=DiagClock::now();
+    Diagnostics::PublishTrace trace(p.diag);
 #endif
     detail::ProcessWriterGuard process(p.process_writer.get(),p.options.busy_ms);
 #ifdef INTRAFLOW_DIAGNOSTICS
-    p.diag.writer_wait.add(elapsedUs(lockBegin));
+    p.diag.writer_wait.add(elapsedUs(lockBegin));trace.acquire();
 #endif
     topic(p.writer,p.topics,t,name,hash,schema);
     // A single autocommit INSERT completes at SQLITE_DONE. Keep the writer
@@ -433,7 +508,9 @@ std::int64_t Session::publishRaw(const std::string& t,const std::string& name,co
     const auto begin=DiagClock::now();
     const auto busyBefore=d.busy_sleep.total, checkpointBefore=d.checkpoint.total;
     const auto callsBefore=d.busy_calls;
+    d.activity.set(3);
     s.row();
+    d.activity.set(4);
     const auto stepUs=elapsedUs(begin);
     if(d.insert.count==0||stepUs>d.insert.max)
         d.slowest_insert={{"topic",t},{"step_us",stepUs},{"busy_sleep_us",d.busy_sleep.total-busyBefore},
@@ -454,6 +531,9 @@ void Session::unsubscribe(SubscriptionId id) {
     p.listeners.erase(std::remove_if(p.listeners.begin(),p.listeners.end(),[id](const std::shared_ptr<Impl::Listener>& l){return l->id==id;}),p.listeners.end());
 }
 #ifdef INTRAFLOW_DIAGNOSTICS
+Json Session::writerActivity() const {
+    return impl_?impl_->diag.activity.json():Json{{"stage","idle"},{"elapsed_ms",0}};
+}
 Json Session::diagnostics() const {
     if(!impl_||impl_->running)throw std::logic_error("diagnostics requires closed session");
     return impl_->diag.json();

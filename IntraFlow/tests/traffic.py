@@ -16,8 +16,10 @@ except ImportError:
     psutil = None
 
 exe, wire_profile, output = sys.argv[1:4]
-serialized = wire_profile.endswith("_mutex")
-profile = wire_profile[:-6] if serialized else wire_profile
+filtered = wire_profile.endswith("_filter")
+profile = wire_profile[:-7] if filtered else wire_profile
+serialized = profile.endswith("_mutex")
+profile = profile[:-6] if serialized else profile
 args = sys.argv[4:]
 load = profile.startswith("load_")
 duration = 6000
@@ -37,12 +39,12 @@ if snapshot.exists():
     snapshot.unlink()
 peers, groups = 30, 6
 endurance = duration >= 3600000
-if not 200<=duration<=3600000 or (endurance and profile!="load_300"):
+if not 200<=duration<=3600000 or (endurance and profile not in ("load_100","load_300")):
     raise ValueError("unsupported duration/profile")
 names = ("sensor", "status", "command", "log")
 types = ("TrafficSensor", "TrafficStatus", "TrafficCommand", "TrafficLog")
 periods = {"fast":[10,20,50,100],"normal":[20,40,100,200],
-           "load_30":[4000,4000,4000,4000],"load_300":[180,360,900,1800],
+           "load_30":[4000,4000,4000,4000],"load_100":[600,1000,2000,6000],"load_300":[180,360,900,1800],
            "load_900":[60,120,300,600],"load_1800":[30,60,150,300],
            "load_2700":[20,40,100,200],"load_5400":[10,20,50,100]}[profile]
 if load and any(duration%p or duration//p<2 for p in periods):
@@ -55,7 +57,7 @@ report = dict(status="FAIL", profile=profile, processes=peers, topics=24,
               expected_publishes=expected_pub, expected_deliveries=expected_rx,
               target_publish_rate=expected_pub/(duration/1000),
               poll_ms=10 if load else 5, busy_ms=5000 if load else 30000,
-              phase_staggered=load, history_retention=load, serialize_writers=serialized,
+              phase_staggered=load, history_retention=load, serialize_writers=serialized,filter_topics=filtered,
               retention_sec=60 if load else 0,max_messages=100000 if load else 0)
 
 def require(condition, message):
@@ -233,7 +235,7 @@ try:
                         r["received"]==[10*c for c in counts],"per-app matrix failed")
                 require(r["poll_ms"]==report["poll_ms"] and r["busy_ms"]==report["busy_ms"] and
                         r["retention_sec"]==report["retention_sec"] and r["max_messages"]==report["max_messages"] and
-                        r["serialize_writers"]==serialized,
+                        r["serialize_writers"]==serialized and r["filter_topics"]==filtered,
                         "unexpected session options")
                 require(r["skipped_sequences"]==0,"receiver sequence gap")
                 for k in range(4):
@@ -249,7 +251,7 @@ try:
                 require(config["writer"]["journal_mode"]=="wal" and config["writer"]["synchronous"]=="1","wrong WAL settings")
                 require(config["custom_hooks"]==(diagnostic_args[1]=="hooks"),"wrong hook mode")
                 require(config["short_retry"]==(diagnostic_args[1] in ("retry","combined")),"wrong retry mode")
-                require(config["serialize_writers"]==serialized,"wrong writer lock mode")
+                require(config["serialize_writers"]==serialized and config["filter_topics"]==filtered,"wrong experiment mode")
                 require(all(r["timer_1ms_active"]==(diagnostic_args[1] in ("timer","combined")) for r in rows),"wrong timer mode")
                 report["diagnostics"]={"config":config,
                     "requested_checkpoint_pages":requested,
@@ -260,7 +262,7 @@ try:
                     "checkpoint_busy":sum(d["checkpoint_busy"] for d in ds),
                     "checkpoint_errors":sum(d["checkpoint_errors"] for d in ds),
                     "wal_commits":sum(d["wal_commits"] for d in ds)}
-                for key in ("busy_sleep","checkpoint","insert_step","poll_wait","read_batch","json_parse","callback","writer_wait"):
+                for key in ("busy_sleep","checkpoint","insert_step","poll_wait","read_batch","json_parse","callback","writer_wait","writer_hold"):
                     n=sum(d[key]["count"] for d in ds)
                     t=sum(d[key]["total_us"] for d in ds)
                     report["diagnostics"][key]={"count":n,"total_ms":t/1000,
@@ -271,6 +273,10 @@ try:
                 report["diagnostics"]["slowest_insert_app"]=ds.index(worst)
                 require(report["diagnostics"]["insert_step"]["count"]==expected_pub,"insert sample count")
                 require(report["diagnostics"]["writer_wait"]["count"]==expected_pub,"writer wait sample count")
+                for key in ("raw_rows","raw_bytes","filtered_polls"):
+                    report["diagnostics"][key]=sum(d[key] for d in ds)
+                if filtered:
+                    require(report["diagnostics"]["filtered_polls"]>0 and report["diagnostics"]["raw_rows"]==expected_rx,"filtered row count mismatch")
                 require(report["diagnostics"]["checkpoint_errors"]==0,"checkpoint errors")
                 mode=diagnostic_args[1]
                 interval={"owner100":100,"owner250":250}.get(mode,0)
@@ -297,9 +303,15 @@ try:
                 report["snapshot_bytes"]=snapshot.stat().st_size
             report["status"]="PASS"
         except Exception:
+            report["worker_log_tails"]={}
             for p in logs:
                 if p.exists() and p.stat().st_size:
-                    print(p.name,p.read_text(errors="replace")[-1000:],file=sys.stderr)
+                    tail=p.read_text(errors="replace")[-2000:]
+                    report["worker_log_tails"][p.name]=tail
+                    print(p.name,tail,file=sys.stderr)
+            report["resource_samples"]=samples
+            report["sampled_peak_wal_bytes"]=peak_wal
+            report["sampled_peak_db_bytes"]=peak_db
             raise
         finally:
             for p in processes:
